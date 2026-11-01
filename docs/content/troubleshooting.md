@@ -27,6 +27,20 @@ Ensure timestamps in your JSON logs are in a consistent format that phēnix can 
 
 ## Configuration Issues
 
+### Output Shows Escape Codes Such as `^[[32m`
+
+phēnix colors its output when `--color` is `on`, or when it is `auto` and
+the output is a terminal. A program that reads the output, or a terminal
+without colors, then shows the codes as text. To remove the colors, do one
+of these steps:
+
+* Run the command with `--color off`.
+* Set `NO_COLOR=1` in the environment of the command. `auto` then colors no
+  output.
+* Set `color: off` in the config file, or `PHENIX_COLOR=off`.
+
+JSON and YAML output never have color. See [Colors](settings.md#colors).
+
 ### Do Not Delete `config.yaml`
 
 If you delete the `config.yaml` file while phēnix is running, the internal file watcher will break, and dynamic configuration changes will no longer apply.

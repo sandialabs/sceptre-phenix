@@ -26,6 +26,7 @@ has a matching config-file key and `PHENIX_*` env var):
 | `--bridge-mode` | `bridge-mode` / `PHENIX_BRIDGE_MODE` | (unset) | `manual` (user/`phenix`-named bridge) or `auto` (experiment-named bridge) |
 | `--deploy-mode` | `deploy-mode` / `PHENIX_DEPLOY_MODE` | (unset) | `all`, `no-headnode`, or `only-headnode` — which minimega VMs to deploy |
 | `--use-gre-mesh` | `use-gre-mesh` / `PHENIX_USE_GRE_MESH` | `false` | Use GRE tunnels between mesh nodes for VLAN trunking |
+| `--color` | `color` / `PHENIX_COLOR` | `auto` | When to color the text output: `auto`, `on`, or `off` |
 | `--unix-socket` | `unix-socket` / `PHENIX_UNIX_SOCKET` | `/tmp/phenix.sock` | Unix socket to listen on (`ui`) or connect to (other commands, to inherit server-set options; `phenix workflow apply` sends all its requests through it) |
 
 Precedence (highest to lowest): **1. command-line flag** → **2. `config.yaml`**

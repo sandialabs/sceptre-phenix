@@ -63,7 +63,7 @@ func With(args ...any) *slog.Logger {
 
 type LogType string
 
-// Keep in sync with Log.vue.
+// Keep in sync with Logs.vue.
 const logAttrType = "type"
 
 const (
@@ -100,4 +100,24 @@ func Warn(t LogType, msg string, args ...any) {
 
 func Error(t LogType, msg string, args ...any) {
 	Log(slog.LevelError, t, msg, args...)
+}
+
+// alarmKey marks the context of a warning that the console shows in red.
+type alarmKey struct{}
+
+// WarnAlarm logs a warning that a colored console shows in red, as it shows an
+// error: a problem that makes a later step fail. Other handlers see a warning.
+func WarnAlarm(t LogType, msg string, args ...any) {
+	if logger == nil {
+		return
+	}
+
+	ctx := context.WithValue(context.Background(), alarmKey{}, true)
+	logger.Log(ctx, slog.LevelWarn, msg, append([]any{logAttrType, t}, args...)...)
+}
+
+func isAlarm(ctx context.Context) bool {
+	alarm, _ := ctx.Value(alarmKey{}).(bool)
+
+	return alarm
 }

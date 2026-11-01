@@ -2,8 +2,10 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"sync"
 
 	"phenix/api/settings"
 	"phenix/util/plog"
@@ -69,6 +71,10 @@ func SetSettings(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	err = settings.UpdateAllSettings(*s)
+	if errors.Is(err, settings.ErrPasswordMinLength) {
+		return weberror.New(http.StatusBadRequest, err.Error())
+	}
+
 	if err != nil {
 		plog.Error(plog.TypeSystem, "Updating all settings", "err", err)
 
@@ -88,7 +94,7 @@ func SetSettings(w http.ResponseWriter, r *http.Request) error {
 
 // GetPasswordRequirements - GET /settings/password.
 func GetPasswordRequirements(w http.ResponseWriter, r *http.Request) error {
-	_ = settings.SetDefaults()
+	ensureSettingDefaults()
 
 	passwordReqs, err := settings.GetPasswordSettings()
 	if err != nil {
@@ -111,11 +117,20 @@ func GetPasswordRequirements(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// settingDefaultsOnce stores the default settings once per process: the
+// settings pages ask for them often, storing them opens the store for writing,
+// and settings.List already fills in any defaults missing afterwards.
+var settingDefaultsOnce sync.Once //nolint:gochecknoglobals // process-wide once
+
+func ensureSettingDefaults() {
+	settingDefaultsOnce.Do(func() { _ = settings.SetDefaults() })
+}
+
 // GetTimeoutSettings - GET /settings/timeout.
 func GetTimeoutSettings(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetTimeoutSettings")
 
-	_ = settings.SetDefaults()
+	ensureSettingDefaults()
 
 	timeoutReqs, err := settings.GetTimeoutSettings()
 	if err != nil {

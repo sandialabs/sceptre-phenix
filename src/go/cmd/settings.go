@@ -157,7 +157,7 @@ func settingsKeyCompletion(_ *cobra.Command, args []string, toComplete string) (
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	settings := getEffectiveSettings()
+	settings := viper.AllSettings()
 	flat := make(map[string]any)
 	flattenSettingsMap("", settings, flat)
 
@@ -174,92 +174,20 @@ func newSettingsSetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set <key> <value>",
 		Short: "Set a configuration value",
-		Long:  "Sets a configuration value in the config file. If the file does not exist, it will be created.",
+		Long: "Sets a configuration value in the YAML config file phenix read, or, when it read none, in " +
+			"$HOME/.config/phenix/config.yaml (/etc/phenix/config.yaml as root), creating it. " +
+			"A flag or PHENIX_ environment variable for the key still overrides the file.",
 		Example: `
   phenix settings set log.level debug
   phenix settings set log.system.max-size 200`,
 		Args:              cobra.ExactArgs(setArgs),
 		ValidArgsFunction: settingsKeyCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			key := args[0]
-			val := inferType(args[1])
+			uid, home := getCurrentUserInfo()
+			configFile := settingsFile(viper.ConfigFileUsed(), uid, home)
 
-			configFile := viper.ConfigFileUsed()
-			if configFile == "" {
-				uid, home := getCurrentUserInfo()
-				targetDir := configDir
-
-				if uid != "0" {
-					targetDir = filepath.Join(home, ".config", appName)
-				}
-
-				err := os.MkdirAll(targetDir, 0o750)
-				if err != nil {
-					return fmt.Errorf("creating config directory: %w", err)
-				}
-
-				configFile = filepath.Join(targetDir, "config.yaml")
-			}
-
-			// Read existing config file
-			data, err := os.ReadFile(configFile)
-			if err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("reading config file: %w", err)
-			}
-
-			configMap := make(map[string]any)
-			if len(data) > 0 {
-				err := yaml.Unmarshal(data, &configMap)
-				if err != nil {
-					return fmt.Errorf("parsing config file: %w", err)
-				}
-			}
-
-			// Helper to set nested keys
-			var setKey func(m map[string]any, k string, v any)
-
-			setKey = func(m map[string]any, k string, v any) {
-				parts := strings.SplitN(k, ".", keyParts)
-				target := parts[0]
-
-				// Find existing key with case-insensitive match
-				for mk := range m {
-					if strings.EqualFold(mk, target) {
-						target = mk
-						break
-					}
-				}
-
-				if len(parts) == 1 {
-					m[target] = v
-
-					return
-				}
-
-				if _, ok := m[target]; !ok {
-					m[target] = make(map[string]any)
-				}
-
-				if next, ok := m[target].(map[string]any); ok {
-					setKey(next, parts[1], v)
-				} else {
-					// Overwrite if it's not a map (e.g. changing a leaf to a branch, which shouldn't happen in valid config but good for robustness)
-					next := make(map[string]any)
-					m[target] = next
-					setKey(next, parts[1], v)
-				}
-			}
-
-			setKey(configMap, key, val)
-
-			newData, err := yaml.Marshal(configMap)
-			if err != nil {
-				return fmt.Errorf("marshaling config: %w", err)
-			}
-
-			// Write back to file
-			if err := os.WriteFile(configFile, newData, 0o600); err != nil {
-				return fmt.Errorf("writing config file: %w", err)
+			if err := setConfigValue(configFile, args[0], inferType(args[1])); err != nil {
+				return err
 			}
 
 			plog.Info(plog.TypeSystem, "configuration updated", "file", configFile)
@@ -271,12 +199,110 @@ func newSettingsSetCmd() *cobra.Command {
 	return cmd
 }
 
+// settingsFile is the config file phenix settings set and unset change: used,
+// the file phenix read, or else config.yaml in the user's config directory.
+func settingsFile(used, uid, home string) string {
+	if used != "" {
+		return used
+	}
+
+	if uid == "0" {
+		return filepath.Join(configDir, "config.yaml")
+	}
+
+	return filepath.Join(home, ".config", appName, "config.yaml")
+}
+
+// errNotYAML is the error for a config file phenix settings cannot rewrite.
+var errNotYAML = errors.New("phenix settings set and unset rewrite only YAML config files")
+
+func checkYAMLConfigFile(path string) error {
+	switch filepath.Ext(path) {
+	case ".yaml", ".yml":
+		return nil
+	}
+
+	return fmt.Errorf("%w, so edit %s by hand", errNotYAML, path)
+}
+
+// setConfigValue sets key to val in the YAML config file path, creating the
+// file and its directory when they do not exist.
+func setConfigValue(path, key string, val any) error {
+	if err := checkYAMLConfigFile(path); err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return fmt.Errorf("creating config directory: %w", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading config file: %w", err)
+	}
+
+	configMap := make(map[string]any)
+	if len(data) > 0 {
+		if err := yaml.Unmarshal(data, &configMap); err != nil {
+			return fmt.Errorf("parsing config file: %w", err)
+		}
+	}
+
+	// Helper to set nested keys
+	var setKey func(m map[string]any, k string, v any)
+
+	setKey = func(m map[string]any, k string, v any) {
+		parts := strings.SplitN(k, ".", keyParts)
+		target := parts[0]
+
+		// Find existing key with case-insensitive match
+		for mk := range m {
+			if strings.EqualFold(mk, target) {
+				target = mk
+				break
+			}
+		}
+
+		if len(parts) == 1 {
+			m[target] = v
+
+			return
+		}
+
+		if _, ok := m[target]; !ok {
+			m[target] = make(map[string]any)
+		}
+
+		if next, ok := m[target].(map[string]any); ok {
+			setKey(next, parts[1], v)
+		} else {
+			// Overwrite if it's not a map (e.g. changing a leaf to a branch, which shouldn't happen in valid config but good for robustness)
+			next := make(map[string]any)
+			m[target] = next
+			setKey(next, parts[1], v)
+		}
+	}
+
+	setKey(configMap, key, val)
+
+	newData, err := yaml.Marshal(configMap)
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+
+	if err := os.WriteFile(path, newData, 0o600); err != nil {
+		return fmt.Errorf("writing config file: %w", err)
+	}
+
+	return nil
+}
+
 func newSettingsListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   commandList,
 		Short: "List all runtime settings",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			settings := getEffectiveSettings()
+			settings := viper.AllSettings()
 
 			if filter := mustGet(cmd.Flags().GetString, "filter"); filter != "" {
 				flat := make(map[string]any)
@@ -342,10 +368,10 @@ func newSettingsGetCmd() *cobra.Command {
 			outputFormat := mustGet(cmd.Flags().GetString, "format")
 
 			if len(args) == 0 {
-				val = getEffectiveSettings()
+				val = viper.AllSettings()
 			} else {
 				key := args[0]
-				val = getEffectiveValue(key)
+				val = viper.Get(key)
 				if val == nil {
 					return errors.New("setting not found")
 				}
@@ -404,7 +430,8 @@ func newSettingsUnsetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "unset [key]",
 		Short: "Unset configuration value(s)",
-		Long:  "Unsets a configuration value in the config file, reverting it to the default. Use --all to reset all settings.",
+		Long: "Unsets a configuration value in the config file phenix read, so a PHENIX_ environment variable " +
+			"or the default applies. Use --all to reset all settings.",
 		Example: `
   phenix settings unset log.level
   phenix settings unset --all`,
@@ -429,20 +456,15 @@ func newSettingsUnsetCmd() *cobra.Command {
 				key = args[0]
 			}
 
-			configFile := viper.ConfigFileUsed()
-			if configFile == "" {
-				uid, home := getCurrentUserInfo()
-				targetDir := configDir
+			uid, home := getCurrentUserInfo()
+			configFile := settingsFile(viper.ConfigFileUsed(), uid, home)
 
-				if uid != "0" {
-					targetDir = filepath.Join(home, ".config", appName)
-				}
+			if _, err := os.Stat(configFile); os.IsNotExist(err) {
+				return errors.New("no configuration file found")
+			}
 
-				configFile = filepath.Join(targetDir, "config.yaml")
-
-				if _, err := os.Stat(configFile); os.IsNotExist(err) {
-					return errors.New("no configuration file found")
-				}
+			if err := checkYAMLConfigFile(configFile); !all && err != nil {
+				return err
 			}
 
 			if all {

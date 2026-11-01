@@ -1,20 +1,39 @@
 # Settings & Configuration
 
 phēnix supports dynamic configuration management via the `phenix settings` command.
-Changes made via this command are applied immediately (hot-swapped) without restarting the service.
+A running `phenix ui` applies changes to the `log.*` settings, `ui.logs.level`
+and the users file at once, without restarting. It reads every other setting only at
+startup. On each config file change it logs a warning that names every such key
+that now differs from the value it started with (never the values themselves):
+
+```text
+config change takes effect only when phenix ui restarts keys="store.endpoint, ui.listen-endpoint"
+```
 
 ## Configuration Files
 
-phēnix looks for a configuration file (e.g. `config.yaml`, `config.json`, `config.toml`) in the following locations:
+phēnix looks for a configuration file (e.g. `config.yaml`, `config.json`, `config.toml`) in the following locations, in order, and reads the first it finds:
 
 **When run as root:**
 
+* `./config.yaml` (the working directory)
 * `/etc/phenix/config.yaml`
 
 **When run as a regular user:**
 
+* `./config.yaml` (the working directory)
 * `$HOME/.config/phenix/config.yaml`
 * `/etc/phenix/config.yaml`
+
+It looks for `users.yaml` in the same locations. `sudo phenix` searches as
+the user that runs `sudo`, so it also searches that user's
+`$HOME/.config/phenix`.
+
+Before any command runs, phēnix creates the default log directory
+(`$HOME/phenix_logs`, or `/var/log/phenix` as root) and, as root,
+`/etc/phenix`. When it finds no config file, it also creates
+`$HOME/.config/phenix/config.yaml` (`/etc/phenix/config.yaml` as root),
+empty, so that it can watch the file for changes.
 
 ### Example Configuration
 
@@ -67,12 +86,21 @@ phenix settings unset --all
 
 ## Configuration Precedence
 
-phēnix resolves configuration settings in the following order (highest to lowest):
+phēnix resolves each setting in the following order (highest to lowest):
 
 1. **Command Line Flags**: Arguments passed directly to the binary (e.g., `phenix ui --log.level=debug`).
-2. **Config File**: Settings defined in `config.yaml` (managed via `phenix settings set`).
-3. **Environment Variables**: Variables like `PHENIX_LOG_LEVEL`.
+2. **Environment Variables**: Variables like `PHENIX_LOG_LEVEL`. An empty variable is ignored.
+3. **Config File**: Settings in `config.yaml` (managed via `phenix settings set`), with
+   `users.yaml` merged over it.
 4. **Defaults**: Internal application defaults.
+
+A `PHENIX_*` variable therefore hides a value that `phenix settings set` writes
+to the config file. Unset the variable to use the file's value.
+
+`phenix settings set` and `phenix settings unset` change the config file
+phēnix read, the first one found in the locations above. When phēnix read
+none, `set` creates `config.yaml` in `$HOME/.config/phenix/`, or
+`/etc/phenix/` as root. Both refuse a config file that is not YAML.
 
 ## Global Flags
 
@@ -84,7 +112,8 @@ The following global flags are supported by all `phenix` subcommands:
 | `--base-dir.minimega` | `string` | `/tmp/minimega` | Base minimega directory. |
 | `--base-dir.phenix` | `string` | `/phenix` | Base phēnix directory. |
 | `--base-dir.topologies` | `string` | `<base-dir.phenix>/topologies` | Directory that `phenix workflow apply` looks up topology directory names in. See [Workflow](workflow.md). |
-| `--bridge-mode` | `string` | `manual` | Bridge naming mode for experiments (`auto` uses experiment name for bridge; `manual` uses user-specified bridge name, or `phenix` if omitted). |
+| `--bridge-mode` | `string` | `manual` | Bridge naming mode for experiments (`auto` uses experiment name for bridge; `manual` uses user-specified bridge name, or `phenix` if omitted). A `phenix ui` running in `auto` mode makes the commands that reach it over `--unix-socket` use `auto`. See [Bridge Mode](bridge-mode.md). |
+| `--color` | `string` | `auto` | When to color the output (`auto`, `on`, or `off`). `auto` colors only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`. See [Colors](#colors). |
 | `--deploy-mode` | `string` | — | Deploy mode for minimega VMs (`all`, `no-headnode`, or `only-headnode`). |
 | `-h, --help` | — | — | Display help information for the command. |
 | `--hostname-suffixes` | `string` | `-minimega,-phenix` | Hostname suffixes to strip. |
@@ -97,7 +126,27 @@ The following global flags are supported by all `phenix` subcommands:
 | `--mount-dir` | `string` | `<base-dir.phenix>/mounts` | Base directory for VM filesystem mounts. |
 | `--store.endpoint` | `string` | `bolt:///etc/phenix/store.bdb` | BoltDB store endpoint (`bolt://<path>`). |
 | `--unix-socket` | `string` | `/tmp/phenix.sock` | phēnix unix socket to listen on (`ui` subcommand) or connect to. |
-| `--use-gre-mesh` | — | `false` | Use GRE tunnels between mesh nodes for VLAN trunking. See [GRE Mesh](gre-mesh.md). |
+| `--use-gre-mesh` | `bool` | `false` | Use GRE tunnels between mesh nodes for VLAN trunking. See [GRE Mesh](gre-mesh.md). |
+
+## Colors
+
+phēnix colors parts of its text output. The `--color` flag, the `color`
+setting or `PHENIX_COLOR` sets when:
+
+* `auto` (the default) colors an output only when it is a terminal. It
+  does not color when `NO_COLOR` is set to a value or `TERM` is `dumb`.
+* `on` colors every output, also a file or a pipe.
+* `off` colors no output.
+
+phēnix refuses another value. JSON and YAML output never have color. A
+table keeps its columns aligned, because phēnix measures each cell without
+its color codes.
+
+| Output | Colors |
+| :--- | :--- |
+| Every command | The `Error:` label of a failed command is red. A console log record shows its level in color, the message of a warning in yellow, and the message of an error in red. |
+| `phenix experiment list` | The `Started` time of a running experiment is green. |
+| `phenix vm info` | The `Running` value is green for a running VM, red for a VM that minimega shows as `QUIT` or `ERROR`, and faint for other VMs. |
 
 ## Settings Reference
 
@@ -106,6 +155,7 @@ The following global flags are supported by all `phenix` subcommands:
 | `bridge-mode` | `PHENIX_BRIDGE_MODE` | `manual` | Bridge naming mode for experiments. `auto` uses the experiment name as the bridge name; `manual` uses the user-specified bridge name, or `phenix` if not specified. See [Bridge Mode](bridge-mode.md). |
 | `use-gre-mesh` | `PHENIX_USE_GRE_MESH` | `false` | Enable Layer 2 GRE tunnels for the default bridge of experiments created or updated with this setting. See [GRE Mesh](gre-mesh.md) for usage, server inheritance, and MTU requirements. `phenix ui` reads this setting at startup. **(Restart Required)** |
 | `log.level` | `PHENIX_LOG_LEVEL` | `info` | Global log verbosity (`debug`, `info`, `warn`, `error`). |
+| `color` | `PHENIX_COLOR` | `auto` | When phēnix colors its output: statuses in tables, warnings and errors. `auto` colors only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`. `on` and `off` ignore both variables. JSON and YAML output never have color. phēnix refuses another value. See [Colors](#colors). |
 | `log.console` | `PHENIX_LOG_CONSOLE` | `stderr` | Destination for console logs (`stderr`, `stdout`, or a file path). Uses **Text/Human-Readable** format. Note: Setting this to a file path will prevent console logs from appearing in `docker logs`. |
 | `log.system.path` | `PHENIX_LOG_SYSTEM_PATH` | `/var/log/phenix/phenix.log` | Path to the persistent system log file (used by UI). Uses **JSON** format. This is independent of `log.console` and is always active. |
 | `log.system.max-size` | `PHENIX_LOG_SYSTEM_MAX_SIZE` | `100` | Max size in MB before rotation. |

@@ -14,7 +14,21 @@ import (
 	"phenix/web/weberror"
 )
 
-const defaultJWTLifetime = 24 * time.Hour
+const (
+	defaultJWTLifetime = 24 * time.Hour
+
+	// TunnelerDownloadDir holds the phenix-tunneler builds the server offers,
+	// relative to the directory it starts in.
+	TunnelerDownloadDir = "downloads/tunneler"
+)
+
+// The ui.features names. Only FeatureVMMount is set by hand; the server turns
+// on the others itself when it finds what each one needs.
+const (
+	FeatureVMMount          = "vm-mount"
+	FeatureTunnelerDownload = "tunneler-download"
+	FeatureFileServer       = "file-server"
+)
 
 type ServerOption func(*serverOptions)
 
@@ -46,7 +60,7 @@ type serverOptions struct {
 func newServerOptions(opts ...ServerOption) serverOptions {
 	so := serverOptions{ //nolint:exhaustruct // partial initialization
 		endpoint:    ":3000",
-		users:       []string{"admin@foo.com:foobar:Global Admin"},
+		users:       []string{DefaultAdminName + ":foobar:Global Admin"},
 		basePath:    "/",
 		jwtLifetime: defaultJWTLifetime,
 		features:    make(map[string]bool),
@@ -56,16 +70,10 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 		opt(&so)
 	}
 
-	if !strings.HasPrefix(so.basePath, "/") {
-		so.basePath = "/" + so.basePath
-	}
+	so.basePath = NormalizeBasePath(so.basePath)
 
-	if !strings.HasSuffix(so.basePath, "/") {
-		so.basePath += "/"
-	}
-
-	if _, err := os.Stat("downloads/tunneler"); err == nil {
-		so.features["tunneler-download"] = true
+	if _, err := os.Stat(TunnelerDownloadDir); err == nil {
+		so.features[FeatureTunnelerDownload] = true
 	}
 
 	return so
@@ -140,6 +148,20 @@ func ServeBasePath(p string) ServerOption {
 	}
 }
 
+// NormalizeBasePath returns the path the server serves under for p: p with a
+// leading and a trailing slash added when either is missing.
+func NormalizeBasePath(p string) string {
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+
+	if !strings.HasSuffix(p, "/") {
+		p += "/"
+	}
+
+	return p
+}
+
 // ServeFileServerEndpoint sets the optional experiment file upload server endpoint.
 func ServeFileServerEndpoint(e string) ServerOption {
 	return func(o *serverOptions) {
@@ -167,16 +189,8 @@ func ServeWithProxyAuthHeader(h string) ServerOption {
 
 func ServeWithFeatures(f []string) ServerOption {
 	return func(o *serverOptions) {
-		if f == nil {
-			for k, v := range o.features {
-				if !v {
-					delete(o.features, k)
-				}
-			}
-		} else {
-			for _, feature := range f {
-				o.features[feature] = false
-			}
+		for _, feature := range f {
+			o.features[feature] = true
 		}
 	}
 }
