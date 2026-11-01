@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"phenix/api/disk"
 	"phenix/api/experiment"
 	"phenix/api/job"
 	"phenix/api/vm"
@@ -319,7 +320,7 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 
 		audit.Failure(r, audit.VMUpdate, "updating vm failed", updated, err)
 
-		if errors.Is(err, vm.ErrInvalidAnnotations) || errors.Is(err, mm.ErrUnsafeArg) {
+		if errors.Is(err, vm.ErrInvalidAnnotations) || errors.Is(err, vm.ErrInvalidDisk) || errors.Is(err, mm.ErrUnsafeArg) {
 			return weberror.New(http.StatusBadRequest, err.Error())
 		}
 
@@ -390,8 +391,12 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
-	// refused before any VM changes, as minimega could not take the VLAN
+	// refused before any VM changes, as minimega could not take the disk or VLAN
 	for _, vmRequest := range req.GetVms() {
+		if err := disk.ValidateMinimegaPath(vmRequest.GetDisk()); err != nil {
+			return weberror.New(http.StatusBadRequest, fmt.Sprintf("VM %s: %v", vmRequest.GetName(), err))
+		}
+
 		if vlan := vmRequest.GetInterface().GetVlan(); vlan != "" {
 			if err := mm.ValidateArg(vlan); err != nil {
 				return weberror.New(http.StatusBadRequest, fmt.Sprintf("VM %s: VLAN: %v", vmRequest.GetName(), err))
@@ -598,6 +603,11 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) error {
 
 	var req proto.VMRedeployRequest
 	if err := unmarshaler.Unmarshal(body, &req); err != nil {
+		return weberror.New(http.StatusBadRequest, err.Error())
+	}
+
+	// refused before the VM is touched, as minimega could not boot it
+	if err := disk.ValidateMinimegaPath(req.GetDisk()); err != nil {
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 

@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"phenix/api/disk"
 	"phenix/api/experiment"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
@@ -330,14 +331,23 @@ func GetFor(ctx context.Context, exp *types.Experiment, vmName string) (*mm.VM, 
 	return vm, nil
 }
 
-// ErrInvalidAnnotations wraps why Update rejected a VM's new annotations.
-var ErrInvalidAnnotations = errors.New("invalid annotations")
+var (
+	// ErrInvalidAnnotations wraps why Update rejected a VM's new annotations.
+	ErrInvalidAnnotations = errors.New("invalid annotations")
+
+	// ErrInvalidDisk wraps why Update or Redeploy rejected a VM's new disk.
+	ErrInvalidDisk = errors.New("invalid disk")
+)
 
 func Update(opts ...UpdateOption) error { //nolint:funlen,gocyclo,cyclop  // complex logic
 	o := newUpdateOptions(opts...)
 
 	if o.exp == "" || o.vm == "" {
 		return errors.New("experiment or VM name not provided")
+	}
+
+	if err := validateDisk(o.disk); err != nil {
+		return err
 	}
 
 	if o.tags != nil {
@@ -822,6 +832,10 @@ func Redeploy(ctx context.Context, expName, vmName string, opts ...RedeployOptio
 		}
 	}
 
+	if err := validateDisk(o.disk); err != nil {
+		return err
+	}
+
 	mmOpts := []mm.Option{
 		mm.NS(expName),
 		mm.VMName(vmName),
@@ -836,6 +850,21 @@ func Redeploy(ctx context.Context, expName, vmName string, opts ...RedeployOptio
 	err := mm.RedeployVM(mmOpts...)
 	if err != nil {
 		return fmt.Errorf("redeploying VM: %w", err)
+	}
+
+	return nil
+}
+
+// validateDisk returns an error wrapping ErrInvalidDisk when minimega could
+// not boot a VM from the disk image path, which is "" to leave a VM's disk
+// unchanged.
+func validateDisk(path string) error {
+	if path == "" {
+		return nil
+	}
+
+	if err := disk.ValidateMinimegaPath(path); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidDisk, err)
 	}
 
 	return nil

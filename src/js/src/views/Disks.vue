@@ -1,133 +1,60 @@
 <template>
   <div class="content">
+    <!-- UPLOAD MODAL -->
+    <b-modal v-model="uploader.active" has-modal-card>
+      <div class="modal-card" style="width: auto">
+        <header class="modal-card-head">
+          <p class="modal-card-title">Upload a Disk</p>
+        </header>
+        <section class="modal-card-body">
+          <b-field v-if="currentUploadProgress == null">
+            <b-upload
+              :model-value="null"
+              drag-drop
+              :accept="uploadAccept"
+              @update:modelValue="uploadDisk">
+              <section class="section">
+                <div class="content has-text-centered">
+                  <p>
+                    <b-icon icon="upload" size="is-large"></b-icon>
+                  </p>
+                  <p>Drop your disk here or click to upload</p>
+                  <p>(Valid file types are {{ uploadTypesText }})</p>
+                </div>
+              </section>
+            </b-upload>
+          </b-field>
+          <template v-else>
+            <p>Uploading {{ uploader.name }}</p>
+            <b-progress
+              :value="currentUploadProgress"
+              show-value
+              format="percent"
+              type="is-success"
+              size="is-medium" />
+            <p class="is-size-7">
+              Closing this window does not stop the upload; the upload button
+              shows its progress.
+            </p>
+          </template>
+        </section>
+      </div>
+    </b-modal>
+
     <!-- DETAILS MODAL -->
     <b-modal
       v-model="detailsModal.active"
       @close="() => (detailsModal.active = false)"
-      has-modal-card>
-      <div class="modal-card">
-        <header class="modal-card-head">
-          <p class="modal-card-title">{{ detailsModal.disk.name }}</p>
-        </header>
-        <section class="modal-card-body">
-          <p class="title is-5">Details</p>
-          <dl>
-            <div>
-              <dt>Full Path:</dt>
-              <dd>{{ detailsModal.disk.fullPath }}</dd>
-            </div>
-            <div>
-              <dt>Kind:</dt>
-              <dd>{{ detailsModal.disk.kind }}</dd>
-            </div>
-            <div>
-              <dt>Size on Disk:</dt>
-              <dd>{{ detailsModal.disk.size }}</dd>
-            </div>
-            <div>
-              <dt>Virtual Size:</dt>
-              <dd>{{ detailsModal.disk.virtualSize }}</dd>
-            </div>
-            <div>
-              <dt>Experiment:</dt>
-              <dd>{{ detailsModal.disk.experiment || 'N/A' }}</dd>
-            </div>
-            <div>
-              <dt>In Use:</dt>
-              <dd>{{ detailsModal.disk.inUse }}</dd>
-            </div>
-          </dl>
-          <div
-            v-if="
-              detailsModal.disk.backingImages &&
-              detailsModal.disk.backingImages.length > 0
-            ">
-            <hr />
-            <p class="title is-5">Backing Chain</p>
-            <div style="text-align: center">
-              <b>{{ detailsModal.disk.name }}</b>
-              <div
-                v-for="(i, index) in detailsModal.disk.backingImages"
-                :key="index">
-                &darr;<br />
-                <a
-                  @click="detailsModal.disk = disks.find((d) => d.name == i)"
-                  >{{ i }}</a
-                >
-              </div>
-            </div>
-          </div>
-
-          <div class="actions">
-            <hr />
-            <p class="title is-5">Actions</p>
-            <b-button
-              type="is-text"
-              expanded
-              @click="snapshotDisk(detailsModal.disk.fullPath)"
-              :disabled="shouldDisableAction('snapshot')">
-              <b>Snapshot</b> - Creates a new image backed by this image
-            </b-button>
-            <hr class="action-separator" />
-            <b-button
-              type="is-text"
-              expanded
-              @click="() => (commitModal.active = true)"
-              :disabled="shouldDisableAction('commit')">
-              <b>Commit</b> - Commits change in this image to its backing image
-            </b-button>
-            <hr class="action-separator" />
-            <b-button
-              type="is-text"
-              expanded
-              @click="() => (rebaseModal.active = true)"
-              :disabled="shouldDisableAction('rebase')">
-              <b>Rebase</b> - Updates image and rebases onto a different backing
-              image
-            </b-button>
-            <hr class="action-separator" />
-            <b-button
-              type="is-text"
-              expanded
-              @click="cloneDisk(detailsModal.disk.fullPath)"
-              :disabled="shouldDisableAction('clone')">
-              <b>Clone</b> - Creates a copy of the disk file
-            </b-button>
-            <hr class="action-separator" />
-            <b-button
-              type="is-text"
-              expanded
-              @click="resizeDisk(detailsModal.disk.fullPath)"
-              :disabled="shouldDisableAction('resize')">
-              <b>Resize</b>
-            </b-button>
-            <hr class="action-separator" />
-            <b-button
-              type="is-text"
-              expanded
-              @click="downloadDisk(detailsModal.disk.fullPath)"
-              :disabled="shouldDisableAction('download')">
-              <b>Download</b>
-            </b-button>
-            <hr class="action-separator" />
-            <b-button
-              type="is-text"
-              expanded
-              @click="renameDisk(detailsModal.disk.fullPath)"
-              :disabled="shouldDisableAction('rename')">
-              <b>Rename</b>
-            </b-button>
-            <hr class="action-separator" />
-            <b-button
-              type="is-text"
-              expanded
-              @click="deleteDisk(detailsModal.disk.fullPath)"
-              :disabled="shouldDisableAction('delete')">
-              <b>Delete</b>
-            </b-button>
-          </div>
-        </section>
-      </div>
+      has-modal-card
+      width="min(1280px, 95vw)">
+      <DiskDetailsCard
+        :disk="detailsDisk"
+        :disks="disks"
+        :files-dir="filesDir"
+        :actions="cardActions"
+        :clone-jobs="cloneJobsOf(detailsDisk)"
+        @action="runCardAction"
+        @open="openBacking" />
     </b-modal>
     <!-- REBASE MODAL -->
     <b-modal v-model="rebaseModal.active" :can-cancel="false" has-modal-card>
@@ -142,14 +69,16 @@
           name without updating files.
           <b-select
             placeholder="New Backing Image"
+            aria-label="New backing image"
             v-model="rebaseModal.dst"
             style="margin-bottom: 8px; margin-top: 16px">
             <option value="">None</option>
-            <template v-for="d in disks" :key="d.fullPath">
-              <option v-if="d !== detailsModal.disk" :value="d.fullPath">
-                {{ d.name }}
-              </option>
-            </template>
+            <option
+              v-for="d in rebaseTargets"
+              :key="d.fullPath"
+              :value="d.fullPath">
+              {{ diskLabel(d) }}
+            </option>
           </b-select>
           <b-checkbox v-model="rebaseModal.unsafe"
             >Change reference only</b-checkbox
@@ -167,7 +96,7 @@
             @click="
               () =>
                 rebaseDisk(
-                  detailsModal.disk.fullPath,
+                  detailsDisk.fullPath,
                   rebaseModal.dst,
                   rebaseModal.unsafe,
                 )
@@ -199,64 +128,78 @@
             type="is-primary"
             :loading="commitModal.isWaiting"
             @click="
-              () => commitDisk(detailsModal.disk.fullPath, commitModal.delete)
+              () => commitDisk(detailsDisk.fullPath, commitModal.delete)
             " />
         </footer>
       </div>
     </b-modal>
     <!-- CONTENT -->
-    <b-field grouped position="is-right" style="margin: 12px 0px">
-      <b-field>
-        <b-autocomplete
-          v-model="filterString"
-          placeholder="Find a disk"
-          icon="search"
-          @select="(option) => (selected = option)"
-          :data="filteredDisks.map((d) => d.name)"
-          style="width: 512px">
-        </b-autocomplete>
+    <div class="level disks-toolbar">
+      <div class="level-left">
+        <stat-strip v-if="loaded" label="Disk totals" :stats="totalsShown" />
+      </div>
+      <div class="level-right">
+        <div class="level-item">
+          <b-field grouped position="is-right">
+            <div
+              v-if="paginationNeeded"
+              class="control is-flex is-align-items-center">
+              <b-switch
+                v-model="table.isPaginated"
+                size="is-small"
+                type="is-light"
+                >Paginate</b-switch
+              >
+            </div>
+            <b-field :addons="false" class="has-addons">
+              <b-autocomplete
+                v-model="filterString"
+                placeholder="Find a Disk"
+                icon="search"
+                @select="(option) => (selected = option)"
+                :data="filteredDisks.map(diskLabel)">
+              </b-autocomplete>
 
-        <p class="control">
-          <button
-            class="button input-button"
-            aria-label="Clear disk search"
-            @click="filterString = ''">
-            <b-icon icon="window-close"></b-icon>
-          </button>
-        </p>
-      </b-field>
-      <b-tooltip label="Refresh List" type="is-light is-left">
-        <button
-          class="button is-light"
-          aria-label="Refresh disk list"
-          @click="updateDisks">
-          <b-icon icon="refresh"></b-icon>
-        </button>
-      </b-tooltip>
-      <b-tooltip
-        v-if="roleAllowed('disks', 'upload')"
-        label="Upload a disk"
-        type="is-light is-left">
-        <b-upload
-          class="file-label"
-          style="margin-left: 8px"
-          @update:modelValue="uploadDisk"
-          accept=".qcow2,.qc2,.tgz,.hdd,.iso"
-          :disabled="currentUploadProgress != null">
-          <span class="file-cta">
-            <span class="is-sr-only">Upload a disk</span>
-            <b-icon v-if="currentUploadProgress == null" icon="upload"></b-icon>
-            <p v-else style="width: 32px">{{ currentUploadProgress }}%</p>
-          </span>
-        </b-upload>
-      </b-tooltip>
-    </b-field>
+              <p v-if="filterString" class="control">
+                <button
+                  class="button input-button"
+                  aria-label="Clear disk search"
+                  @click="filterString = ''">
+                  <b-icon icon="window-close"></b-icon>
+                </button>
+              </p>
+            </b-field>
+            <b-tooltip
+              v-if="roleAllowed('disks', 'upload')"
+              :label="
+                currentUploadProgress == null
+                  ? 'Upload a disk'
+                  : 'Upload progress'
+              "
+              type="is-light is-left">
+              <button
+                class="button is-light"
+                style="margin-left: 8px"
+                aria-label="Upload a disk"
+                @click="uploader.active = true">
+                <b-icon
+                  v-if="currentUploadProgress == null"
+                  icon="upload"></b-icon>
+                <span v-else style="width: 32px"
+                  >{{ currentUploadProgress }}%</span
+                >
+              </button>
+            </b-tooltip>
+          </b-field>
+        </div>
+      </div>
+    </div>
 
     <b-table
       :data="filteredDisks"
       @click="rowClick"
       :row-class="(r, i) => 'is-clickable'"
-      :paginated="table.isPaginated"
+      :paginated="table.isPaginated && paginationNeeded"
       aria-next-label="Next page"
       aria-previous-label="Previous page"
       aria-page-label="Page"
@@ -266,94 +209,321 @@
       :pagination-simple="table.isPaginationSimple"
       :pagination-size="table.paginationSize"
       :default-sort-direction="table.defaultSortDirection"
-      :loading="isWaiting"
       sortable
       hoverable
       default-sort="name">
       <template #empty>
         <section class="section">
           <div class="content has-text-white has-text-centered">
-            No Disks Found
+            {{ emptyText }}
           </div>
         </section>
       </template>
 
-      <b-table-column field="name" label="Name" sortable v-slot="props">
-        {{ props.row.name }}
+      <b-table-column
+        field="name"
+        label="Name"
+        width="30%"
+        sortable
+        header-class="sort-inline"
+        :custom-sort="sortByLabel"
+        v-slot="props">
+        <span class="disk-name">
+          <span class="disk-label">{{ diskLabel(props.row) }}</span>
+          <b-tooltip
+            v-if="props.row.brokenChain"
+            class="name-warning"
+            :label="chainProblem(props.row)"
+            type="is-dark"
+            multilined
+            append-to-body
+            :triggers="['hover', 'focus']">
+            <!-- the problem is in the name too, for a screen reader -->
+            <button
+              type="button"
+              class="tag is-danger is-light broken-tag"
+              @click.stop="rowClick(props.row)">
+              Broken chain<span class="is-sr-only"
+                >: {{ chainProblem(props.row) }}</span
+              >
+            </button>
+          </b-tooltip>
+          <span
+            v-if="props.row.outsideFilesDir"
+            class="name-warning"
+            @click.stop>
+            <DiskWarning :reasons="['outside']" :files-dir="filesDir" />
+          </span>
+        </span>
       </b-table-column>
 
-      <b-table-column field="kind" label="Kind" sortable v-slot="props">
+      <b-table-column
+        field="kind"
+        label="Kind"
+        sortable
+        header-class="sort-inline"
+        v-slot="props">
         {{ props.row.kind }}
+      </b-table-column>
+
+      <b-table-column
+        field="format"
+        label="Type"
+        sortable
+        header-class="sort-inline"
+        :custom-sort="sortByType"
+        v-slot="props">
+        <DiskFormat :disk="props.row" />
       </b-table-column>
 
       <b-table-column
         field="inUse"
         label="In Use"
+        width="7em"
         centered
         sortable
+        header-class="sort-inline"
         v-slot="props">
-        <b-icon v-if="props.row.inUse" icon="play-circle" size="is-small" />
+        <b-tooltip
+          v-if="props.row.inUse"
+          :label="`In use by ${runningText(props.row)}`"
+          type="is-dark"
+          multilined>
+          <b-icon icon="play-circle" size="is-small" />
+        </b-tooltip>
       </b-table-column>
 
       <b-table-column
         field="size"
-        label="Size"
+        label="Size on Disk"
         sortable
-        :custom-sort="sortBySize"
+        header-class="sort-inline"
+        :custom-sort="sortBy('size')"
         v-slot="props">
         {{ props.row.size }}
       </b-table-column>
+
+      <b-table-column
+        field="virtualSize"
+        label="Virtual Size"
+        sortable
+        header-class="sort-inline"
+        :custom-sort="sortBy('virtualSize')"
+        v-slot="props">
+        {{ props.row.virtualSize }}
+      </b-table-column>
+
+      <b-table-column label="Actions" centered v-slot="props">
+        <div class="row-actions" @click.stop>
+          <!-- the last column: a tooltip above a button would leave the window -->
+          <b-tooltip
+            v-for="action in rowActions"
+            :key="action.name"
+            :label="actionTooltip(action, props.row)"
+            type="is-dark"
+            position="is-left"
+            multilined>
+            <button
+              class="button is-light is-small action"
+              :aria-label="action.label"
+              :disabled="shouldDisableAction(action.name, props.row)"
+              @click="action.run(props.row.fullPath)">
+              <b-icon :icon="action.icon" />
+            </button>
+          </b-tooltip>
+        </div>
+      </b-table-column>
     </b-table>
-    <br />
-    <b-field v-if="paginationNeeded" grouped position="is-right">
-      <div class="control is-flex">
-        <b-switch
-          v-model="table.isPaginated"
-          size="is-small"
-          type="is-light"
-          @input="changePaginate()"
-          >Paginate</b-switch
-        >
-      </div>
-    </b-field>
   </div>
 </template>
 
 <script>
-  import axiosInstance from '@/utils/axios.js';
-  import { useErrorNotification } from '@/utils/errorNotif';
+  import DiskDetailsCard from '@/components/DiskDetailsCard.vue';
+  import DiskFormat from '@/components/DiskFormat.vue';
+  import DiskWarning from '@/components/DiskWarning.vue';
+  import StatStrip from '@/components/StatStrip.vue';
+  import { useJobStore } from '@/utils/jobs.js';
+  import { bytesText, parseBytes } from '@/utils/bytes.js';
+  import { diskTotals } from '@/utils/diskTotals.js';
+  import {
+    errorLine,
+    notifyOutcome,
+    outcomeFromJob,
+  } from '@/utils/operations.js';
+  import * as disksApi from '@/api/disks.js';
+  import {
+    chainProblem,
+    diskLabel,
+    filesDir,
+    findDisk,
+    minimegaSafe,
+  } from '@/utils/diskChain.js';
+  import { compareDiskTypes } from '@/utils/diskFormat.js';
+  import {
+    diskActionState,
+    diskDisabledReason,
+    diskRunningText,
+  } from '@/utils/diskActions.js';
+  import { showError, useErrorNotification } from '@/utils/errorNotif';
   import { usePhenixStore } from '@/store.js';
   import { useTable } from '@/utils/useTable.js';
   import { roleAllowed } from '@/utils/rbac.js';
+  import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
+  import { pageFetchers } from '@/utils/pageData.js';
+  import { addWsHandler, removeWsHandler } from '@/utils/websocket';
+
+  // the disk kinds phenix recognizes, see knownImageExtensions in
+  // src/go/api/disk/details.go
+  const UPLOAD_TYPES = [
+    '.qcow2',
+    '.qc2',
+    '.qcow',
+    '_rootfs.tgz',
+    '.hdd',
+    '.iso',
+  ];
+
+  // a header refresh asked the server to inspect every image again; the next
+  // disk list request to start takes it, whichever load that request serves
+  let rescanPending = false;
 
   export default {
+    components: { DiskDetailsCard, DiskFormat, DiskWarning, StatStrip },
     setup() {
-      return { ...useTable(), roleAllowed };
+      return {
+        ...useTable({ name: 'disks' }),
+        roleAllowed,
+        chainProblem,
+        diskLabel,
+      };
     },
     async created() {
-      this.updateDisks();
-      this.restorePaginate();
+      this.loader = createPageLoader({
+        key: 'disks',
+        fetch: (signal, meta) => {
+          const rescan = rescanPending;
+          rescanPending = false;
+          return pageFetchers.disks(signal, meta, { rescan });
+        },
+        apply: (disks) => {
+          this.disks = disks;
+          this.loaded = true;
+          this.openLinkedDisk();
+        },
+        // the header button has the server inspect every image again, not
+        // just the ones that changed
+        refresh: () => {
+          rescanPending = true;
+          return this.loader.load({ force: true });
+        },
+      });
+      this.loader.start();
+      addWsHandler(this.handleWs);
+    },
+
+    beforeUnmount() {
+      removeWsHandler(this.handleWs);
+      this.loader.stop();
+    },
+
+    watch: {
+      '$route.query.disk'(path) {
+        if (!path) this.linkedDisk = '';
+        this.openLinkedDisk();
+      },
+      // a closed card takes its link out of the URL, so a reload does not
+      // open it again
+      'detailsModal.active'(open) {
+        const query = { ...this.$route.query };
+        if (open || this.$route.name !== 'disks' || !('disk' in query)) return;
+        delete query.disk;
+        this.$router.replace({ query });
+      },
     },
 
     computed: {
+      // the details window's actions that each row offers too
+      rowActions() {
+        return this.diskActions.filter((action) => action.row);
+      },
+      // the disk the details window shows, as the list has it now
+      detailsDisk() {
+        const shown = this.detailsModal.disk;
+        return findDisk(this.disks, shown.fullPath) ?? shown;
+      },
+      // the details window's actions, each disabled with the reason when it
+      // cannot be used on the disk
+      cardActions() {
+        return this.diskActions.map((action) => ({
+          name: action.name,
+          label: action.label,
+          description: action.description,
+          icon: action.icon,
+          disabled: this.shouldDisableAction(action.name, this.detailsDisk),
+          tooltip: this.actionTooltip(action, this.detailsDisk),
+        }));
+      },
+      // file pickers match extensions only, so rootfs archives show as .tgz
+      uploadAccept() {
+        return UPLOAD_TYPES.map((t) => t.replace('_rootfs', '')).join(',');
+      },
+      uploadTypesText() {
+        const types = UPLOAD_TYPES.map((t) =>
+          t.startsWith('.') ? t : `*${t}`,
+        );
+        return `${types.slice(0, -1).join(', ')}, and ${types.at(-1)}`;
+      },
+      // the counts beside the search box, of every disk, not only those shown
+      totalsShown() {
+        const totals = diskTotals(this.disks);
+        return [
+          { key: 'disks', label: 'Disks', value: totals.disks },
+          { key: 'in-use', label: 'In use', value: totals.inUse },
+          {
+            key: 'disk-size',
+            label: 'Total size on disk',
+            value: bytesText(totals.sizeBytes),
+            detail: totals.unknownDiskSizes
+              ? `(${totals.unknownDiskSizes} unknown)`
+              : '',
+          },
+        ];
+      },
+      emptyText() {
+        if (!this.loaded) return loadingText('disks');
+        if (this.disks.length === 0) return 'No disk images found';
+        return 'No disk images match your search';
+      },
       paginationNeeded() {
         return this.disks.length > this.table.perPage;
       },
       filteredDisks() {
-        return this.disks == null
-          ? []
-          : this.disks.filter(
-              (disk) =>
-                disk.name
-                  .toLowerCase()
-                  .indexOf(this.filterString.toLowerCase()) >= 0,
-            );
+        const filter = this.filterString.toLowerCase();
+        return (this.disks ?? []).filter((disk) =>
+          diskLabel(disk).toLowerCase().includes(filter),
+        );
+      },
+      // the minimega files directory, as the list shows it
+      filesDir() {
+        return filesDir(this.disks);
+      },
+      // the disks the open disk can be rebased onto, by label: the others
+      // phēnix can act on and minimega can take
+      rebaseTargets() {
+        const current = this.detailsDisk.fullPath;
+        return this.disks
+          .filter(
+            (disk) =>
+              !disk.readOnly &&
+              disk.fullPath !== current &&
+              minimegaSafe(disk.fullPath),
+          )
+          .sort((a, b) => diskLabel(a).localeCompare(diskLabel(b)));
       },
     },
 
     methods: {
       resetData() {
-        this.disks = [];
         this.detailsModal.active = false;
         this.rebaseModal = {
           active: false,
@@ -367,70 +537,62 @@
           isWaiting: false,
         };
       },
+      handleWs(msg) {
+        // the server saw images added, changed or removed
+        if (msg.resource.type === 'disks' && msg.resource.action === 'update') {
+          this.loader.load({ force: true });
+        }
+      },
+      // closes any open dialog and reloads the list after a change
       updateDisks() {
         this.resetData();
-        this.isWaiting = true;
-        axiosInstance
-          .get('disks')
-          .then((response) => {
-            const state = response.data;
-            console.log(state);
-            for (let i = 0; i < state.disks.length; i++) {
-              this.disks.push(state.disks[i]);
-            }
-            this.isWaiting = false;
-          })
-          .catch((err) => {
-            useErrorNotification(err);
-          });
+        this.loader.load({ force: true });
       },
       rowClick(row) {
-        console.log(row);
         this.detailsModal.disk = row;
         this.detailsModal.active = true;
       },
-      shouldDisableAction(action) {
-        let disk = this.detailsModal.disk;
-        switch (action) {
-          case 'snapshot':
-            return (
-              disk.inUse || disk.kind != 'VM' || !roleAllowed('disks', 'create')
-            );
-          case 'commit':
-            return (
-              disk.inUse ||
-              (disk.backingImages && disk.backingImages.length == 0) ||
-              disk.kind != 'VM'
-            );
-          case 'rebase':
-            return (
-              disk.inUse ||
-              disk.kind != 'VM' ||
-              !roleAllowed('disks', 'update', disk.name)
-            );
-          case 'delete':
-            return disk.inUse || !roleAllowed('disks', 'delete', disk.name);
-          case 'rename':
-          case 'resize':
-            return disk.inUse || !roleAllowed('disks', 'update', disk.name);
-          case 'clone':
-            return !roleAllowed('disks', 'create');
-          case 'download':
-            return !roleAllowed('disks', 'get', disk.name);
-          default:
-            return false;
-        }
+      // Opens the card of the image a link names (/disks?disk=<full path>),
+      // once the list holds it.
+      openLinkedDisk() {
+        const path = this.$route.query.disk;
+        if (typeof path !== 'string' || path === this.linkedDisk) return;
+        const disk = findDisk(this.disks, path);
+        if (!disk) return;
+        this.linkedDisk = path;
+        this.rowClick(disk);
       },
-      actionWrapper(httpPath, dialog = null, method = 'post') {
-        console.log(dialog);
+      // shows the details of another listed image, from the open disk's
+      // backing chain or the images built on it
+      openBacking(path) {
+        const disk = findDisk(this.disks, path);
+        if (disk) this.detailsModal.disk = disk;
+      },
+      runCardAction(name) {
+        const action = this.diskActions.find((a) => a.name === name);
+        action?.run(this.detailsDisk.fullPath);
+      },
+      // why an action can't be used on a disk, or null when it can
+      disabledReason(action, disk) {
+        return diskDisabledReason(action, disk, {
+          disks: this.disks,
+          can: (verb, name) =>
+            name === undefined
+              ? roleAllowed('disks', verb)
+              : roleAllowed('disks', verb, name),
+        });
+      },
+      shouldDisableAction(action, disk = this.detailsDisk) {
+        return this.disabledReason(action, disk) !== null;
+      },
+      // Sends an action's request (send returns it), then reloads the list
+      // and closes the dialog, or reports the error.
+      actionWrapper(send, dialog = null) {
         if (dialog != null) {
           dialog.startLoading();
         }
 
-        axiosInstance({
-          method: method,
-          url: httpPath,
-        })
+        send()
           .then(() => {
             this.updateDisks();
             if (dialog != null) {
@@ -444,19 +606,16 @@
             }
           });
       },
+      // a failed commit or rebase leaves its dialog open, ready to cancel
       commitDisk(path, deleteOnSuccess) {
         this.commitModal.isWaiting = true;
-        axiosInstance
-          .post(`disks/commit?disk=${path}`)
-          .then(() => {
-            if (deleteOnSuccess) {
-              this.actionWrapper(`disks?disk=${path}`, null, 'delete');
-            } else {
-              this.updateDisks();
-            }
-          })
+        disksApi
+          .commitDisk(path)
+          .then(() => deleteOnSuccess && disksApi.deleteDisk(path))
+          .then(() => this.updateDisks())
           .catch((err) => {
             useErrorNotification(err);
+            this.commitModal.isWaiting = false;
           });
       },
       snapshotDisk(path) {
@@ -471,16 +630,20 @@
           closeOnConfirm: false,
           onConfirm: (value, dialog) =>
             this.actionWrapper(
-              `disks/snapshot?disk=${path}&new=${value}`,
+              () => disksApi.snapshotDisk(path, value),
               dialog,
             ),
         });
       },
       rebaseDisk(path, dst, unsafe) {
         this.rebaseModal.isWaiting = true;
-        this.actionWrapper(
-          `disks/rebase?disk=${path}&backing=${dst}&unsafe=${unsafe}`,
-        );
+        disksApi
+          .rebaseDisk(path, dst, unsafe)
+          .then(() => this.updateDisks())
+          .catch((err) => {
+            useErrorNotification(err);
+            this.rebaseModal.isWaiting = false;
+          });
       },
       resizeDisk(path) {
         this.$buefy.dialog.prompt({
@@ -494,15 +657,17 @@
           canCancel: ['button'],
           closeOnConfirm: false,
           onConfirm: (value, dialog) =>
-            this.actionWrapper(
-              `disks/resize?disk=${path}&size=${encodeURIComponent(value)}`,
-              dialog,
-            ),
+            this.actionWrapper(() => disksApi.resizeDisk(path, value), dialog),
         });
       },
+      // Clones the disk in a background job: the prompt closes once the
+      // server has started it, the jobs menu and the disk's details show its
+      // progress, and the list reloads when it ends.
       cloneDisk(path) {
         this.$buefy.dialog.prompt({
-          message: 'Are you sure you want to clone this disk?',
+          message:
+            'Are you sure you want to clone this disk? The copy is made in ' +
+            'the background.',
           inputAttrs: {
             type: 'text',
             placeholder: 'New image name',
@@ -510,9 +675,39 @@
           },
           canCancel: ['button'],
           closeOnConfirm: false,
-          onConfirm: (value, dialog) =>
-            this.actionWrapper(`disks/clone?disk=${path}&new=${value}`, dialog),
+          onConfirm: async (value, dialog) => {
+            dialog.startLoading();
+            let job;
+            try {
+              job = await disksApi.cloneDisk(path, value);
+            } catch (err) {
+              useErrorNotification(err);
+              dialog.cancelLoading();
+              return;
+            }
+            dialog.close();
+            try {
+              // a canceled clone needs no report: the user stopped it
+              const done = await useJobStore().whenDone(job.id);
+              if (done.status !== 'canceled')
+                notifyOutcome(this.$buefy, {
+                  verbPast: 'Cloned',
+                  noun: 'disk image',
+                  items: outcomeFromJob(done),
+                });
+            } catch (err) {
+              useErrorNotification(err);
+            }
+            this.loader.load({ force: true });
+          },
         });
+      },
+      // the clone jobs of a disk, as the jobs store keeps them
+      cloneJobsOf(disk) {
+        return useJobStore().list.filter(
+          (job) =>
+            job.kind === 'disk.clone' && job.params?.disk === disk.fullPath,
+        );
       },
       renameDisk(path) {
         this.$buefy.dialog.prompt({
@@ -526,21 +721,17 @@
           canCancel: ['button'],
           closeOnConfirm: false,
           onConfirm: (value, dialog) =>
-            this.actionWrapper(
-              `disks/rename?disk=${path}&new=${value}`,
-              dialog,
-            ),
+            this.actionWrapper(() => disksApi.renameDisk(path, value), dialog),
         });
       },
       deleteDisk(path) {
-        console.log(path);
         this.$buefy.dialog.confirm({
           message:
             'Are you sure you want to delete this disk? <b class="has-text-danger">If this disk backs others, they will become invalid.</b>',
           canCancel: ['button'],
           closeOnConfirm: false,
           onConfirm: (_, dialog) =>
-            this.actionWrapper(`disks?disk=${path}`, dialog, 'delete'),
+            this.actionWrapper(() => disksApi.deleteDisk(path), dialog),
         });
       },
       downloadDisk(path) {
@@ -557,44 +748,65 @@
         });
       },
       uploadDisk(file) {
+        if (!file) return;
+        if (!UPLOAD_TYPES.some((ext) => file.name.endsWith(ext))) {
+          showError(
+            `Cannot upload ${file.name}`,
+            `Valid disk file types are ${this.uploadTypesText}.`,
+          );
+          return;
+        }
+
         let formData = new FormData();
         formData.append('file', file);
+        this.uploader.name = file.name;
         this.currentUploadProgress = 0;
-        console.log(file.name);
-        axiosInstance
-          .post(`disks`, formData, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-            onUploadProgress: (event) => {
-              this.currentUploadProgress = Math.round(
-                (event.loaded / event.total) * 100,
-              );
-            },
+        disksApi
+          .uploadDisk(formData, (event) => {
+            this.currentUploadProgress = Math.round(
+              (event.loaded / event.total) * 100,
+            );
           })
           .then(() => {
             this.currentUploadProgress = null;
+            this.uploader.active = false;
             this.updateDisks();
           })
           .catch((err) => {
-            useErrorNotification(
-              `Error uploading: ${err.response?.data ?? err.message}`,
-            );
+            useErrorNotification(`Error uploading: ${errorLine(err)}`);
             this.currentUploadProgress = null;
           });
       },
-      // converts a human-readable string in IEC format to a byte count
-      toByteCount(s) {
-        const units = 'KMGTPE';
-        const base = s.match(/[/.0-9]*/);
-        const unit = s[s.indexOf(' ') + 1];
-        if (unit == 'B') {
-          return parseFloat(base);
-        }
-        return parseFloat(base) * Math.pow(1024, units.indexOf(unit));
+      // sorts by a human-readable size field; unknown sizes sort first
+      sortBy(field) {
+        const bytes = (disk) => parseBytes(disk[field]) ?? -1;
+        return (diskA, diskB, isAsc) =>
+          (bytes(diskA) - bytes(diskB)) * (isAsc ? 1 : -1);
       },
-      sortBySize(diskA, diskB, isAsc) {
+      // sorts by the names the Name column shows
+      sortByLabel(diskA, diskB, isAsc) {
         return (
-          (this.toByteCount(diskA.size) - this.toByteCount(diskB.size)) *
-          (isAsc ? 1 : -1)
+          diskLabel(diskA).localeCompare(diskLabel(diskB)) * (isAsc ? 1 : -1)
+        );
+      },
+      // sorts by the types the Type column shows, such as qcow2 v3
+      sortByType(diskA, diskB, isAsc) {
+        return compareDiskTypes(diskA, diskB) * (isAsc ? 1 : -1);
+      },
+      // the running experiments using a disk, which hold it in use
+      runningText(disk) {
+        return diskRunningText(disk);
+      },
+      // an action's name, or why it cannot be used on the disk
+      actionTooltip(action, disk) {
+        return (
+          diskActionState(action, disk, {
+            disks: this.disks,
+            can: (verb, name) =>
+              name === undefined
+                ? roleAllowed('disks', verb)
+                : roleAllowed('disks', verb, name),
+          }).reason ?? action.label
         );
       },
     },
@@ -602,13 +814,82 @@
     data() {
       return {
         currentUploadProgress: null,
+        uploader: { active: false, name: null },
         disks: [],
+        // the details window's actions, each run with the disk's full path;
+        // row marks the ones each row offers too
+        diskActions: [
+          {
+            name: 'snapshot',
+            label: 'Snapshot',
+            description: 'Creates a new image backed by this image',
+            icon: 'camera',
+            row: true,
+            run: this.snapshotDisk,
+          },
+          {
+            name: 'commit',
+            label: 'Commit',
+            description: 'Commits change in this image to its backing image',
+            icon: 'save',
+            run: () => (this.commitModal.active = true),
+          },
+          {
+            name: 'rebase',
+            label: 'Rebase',
+            description:
+              'Updates image and rebases onto a different backing image',
+            icon: 'route',
+            run: () => (this.rebaseModal.active = true),
+          },
+          {
+            name: 'clone',
+            label: 'Clone',
+            description: 'Creates a copy of the disk file',
+            icon: 'copy',
+            row: true,
+            run: this.cloneDisk,
+          },
+          {
+            name: 'resize',
+            label: 'Resize',
+            description: 'Changes the virtual size of the disk',
+            icon: 'expand',
+            run: this.resizeDisk,
+          },
+          {
+            name: 'download',
+            label: 'Download',
+            description: 'Saves the image file to this computer',
+            icon: 'download',
+            row: true,
+            run: this.downloadDisk,
+          },
+          {
+            name: 'rename',
+            label: 'Rename',
+            description: 'Gives the image a new name',
+            icon: 'pencil',
+            row: true,
+            run: this.renameDisk,
+          },
+          {
+            name: 'delete',
+            label: 'Delete',
+            description: 'Removes the image file',
+            icon: 'trash',
+            row: true,
+            run: this.deleteDisk,
+          },
+        ],
         filterString: '',
-        isWaiting: false,
+        loaded: false, // false until the first list arrives
         detailsModal: {
           active: false,
           disk: {},
         },
+        // the image of the link whose card the page opened
+        linkedDisk: '',
         rebaseModal: {
           active: false,
           isWaiting: false,
@@ -630,55 +911,37 @@
     white-space: pre !important;
   }
 
-  dl {
-    display: table;
+  .row-actions {
+    display: inline-flex;
+    gap: 5px;
   }
 
-  dl > div {
-    display: table-row;
+  /* as on the Configs page: the controls drop below the counts together when
+     both do not fit on one row */
+  .level.disks-toolbar {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 12px 0;
   }
 
-  dl > div > dt,
-  dl > div > dd {
-    display: table-cell;
-    padding: 0.25em;
+  .disks-toolbar .level-right {
+    margin-left: auto;
   }
 
-  dl > div > dt {
-    font-weight: bold;
-    width: 20%;
+  /* a long name wraps beside its warning icon, never under it */
+  .disk-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    max-width: 100%;
   }
 
-  hr {
-    margin: 4px 0px;
+  .disk-label {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
-  .action-button {
-    color: dimgray;
-    padding: 8px;
-    cursor: pointer !important;
-  }
-
-  .action-button:hover {
-    background-color: #ddd;
-  }
-
-  .action-separator {
-    margin: 0 8px;
-  }
-
-  .actions > button {
-    text-align: start;
-    /* color: blue; */
-    text-decoration: none;
-    display: inline;
-  }
-
-  .file-cta,
-  .file-cta > p,
-  .file-cta:hover {
-    border: none;
-    background-color: #686868;
-    color: whitesmoke !important;
+  .name-warning {
+    flex: none;
   }
 </style>

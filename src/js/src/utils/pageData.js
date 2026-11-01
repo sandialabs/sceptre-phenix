@@ -1,6 +1,7 @@
 // How each cached page fetches its data. They live here rather than in the
 // pages so the data can be preloaded before a page is ever opened.
 import * as configsApi from '@/api/configs.js';
+import * as disksApi from '@/api/disks.js';
 import * as experimentsApi from '@/api/experiments.js';
 import * as hostsApi from '@/api/hosts.js';
 import * as logsApi from '@/api/logs.js';
@@ -97,6 +98,17 @@ export const pageFetchers = {
   configs: async (signal, meta) =>
     (await body(configsApi.listConfigs({ signal, meta }))).configs ?? [],
 
+  // rescan: have the server inspect every image again, not only changed ones
+  disks: async (signal, meta, { rescan = false } = {}) =>
+    (
+      await body(
+        disksApi.listDisks(rescan ? { refresh: true } : undefined, {
+          signal,
+          meta,
+        }),
+      )
+    ).disks ?? [],
+
   hosts: async (signal, meta) =>
     (await body(hostsApi.listHosts({ signal, meta }))).hosts ?? [],
 
@@ -142,6 +154,8 @@ const PRELOADS = [
   ['logs', () => roleAllowed('logs', 'get')],
   ['hosts', () => roleAllowed('hosts', 'list')],
   ['settings', () => roleAllowed('settings', 'update')],
+  // last: the server inspects every disk image, one at a time
+  ['disks', () => roleAllowed('disks', 'list')],
 ];
 
 // Preload requests in flight at once, so the page on screen keeps its share

@@ -255,6 +255,18 @@ const requests = [
     ['disks', { params: { refresh: true }, ...fetchConfig }],
   ],
   [
+    'getDiskDetails',
+    () => disksApi.getDiskDetails('/phenix/images/kali.qc2'),
+    'get',
+    ['disks/details', { params: { disk: '/phenix/images/kali.qc2' } }],
+  ],
+  [
+    'getDiskDetails with a config',
+    () => disksApi.getDiskDetails('kali.qc2', { signal }),
+    'get',
+    ['disks/details', { params: { disk: 'kali.qc2' }, signal }],
+  ],
+  [
     'uploadDisk',
     () => disksApi.uploadDisk(form, onProgress),
     'post',
@@ -319,6 +331,12 @@ const requests = [
         params: { disk: 'a.qc2', new: 'b.qc2' },
       },
     ],
+  ],
+  [
+    'cloneDisk',
+    () => disksApi.cloneDisk('a.qc2', 'b.qc2'),
+    'post',
+    ['disks/clone/jobs', null, { params: { disk: 'a.qc2', new: 'b.qc2' } }],
   ],
 
   // experiments
