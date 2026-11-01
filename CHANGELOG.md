@@ -48,6 +48,7 @@ All notable changes to this project will be documented in this file.
 - **State of Health Overview**: Added the `State of Health` tab and `GET /api/v1/soh`, which show the SoH verdict, VM states, checks and last 20 runs of each experiment. The `soh` app gets DHCP addresses without a data race, and its `skipHosts` setting also matches `.qcow` disk images.
 - **State of Health Graph**: The State of Health topology graph has a layout picker (Force, Radial tree, Layered, VLAN groups and ELK layered), a `Fit` button and a `Download` menu for PNG, SVG and GEXF files.
 - **SCORCH Runs**: The SCORCH runs page can clear run status, run only the cleanup stage, and download the artifact archive of a finished run. Added `POST /api/v1/experiments/{name}/scorch/pipelines/{run}/clear` and `POST /api/v1/experiments/{name}/scorch/pipelines/{run}/cleanup`.
+- **Health Checks**: Added the `/healthz` and `/readyz` endpoints and the `phenix healthcheck` command, which is the health check of the `phenix` container.
 
 ### Changed
 

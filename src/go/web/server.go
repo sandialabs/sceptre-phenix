@@ -171,6 +171,8 @@ func Start(ctx context.Context, opts ...ServerOption) error {
 		}
 	}
 
+	markStarted()
+
 	recoverExperiments()
 
 	router := newRouter(assets)
@@ -315,6 +317,13 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 
 	router.HandleFunc("/features", GetFeatures).Methods("GET")
 	router.HandleFunc("/version", GetVersion).Methods("GET")
+
+	// Health endpoints sit outside /api/v1, and so outside its auth,
+	// compression and request logging: probes need no credentials, and only
+	// their output fields depend on the request's.
+	probes := newHealthHandlers()
+	router.Handle("/healthz", probes.live).Methods("GET", "HEAD")
+	router.Handle("/readyz", probes.ready).Methods("GET", "HEAD")
 
 	plog.Info(plog.TypeSystem, "setting up assets")
 

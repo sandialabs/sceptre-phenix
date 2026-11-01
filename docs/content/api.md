@@ -50,9 +50,9 @@ Machines`, `Hosts`, `Applications`, `Topologies`, `Disks`, `Users`,
 parameters, response schemas and status codes. That includes the websockets
 (`/ws` and the netflow, VNC, console, port forward and SCORCH streams), each
 described as a `GET` that answers `101` with its message protocol, and the
-routes outside `/api/v1`: the features, version and tunneler download routes.
-Only the web UI's own files (scripts, styles, images and the documentation
-site) are left out.
+routes outside `/api/v1`: the health, features, version and tunneler download
+routes. Only the web UI's own files (scripts, styles, images and the
+documentation site) are left out.
 
 !!! info
     The underlying OpenAPI spec is maintained at
@@ -101,6 +101,14 @@ jobs, `POST /api/v1/jobs/{id}/cancel` cancels one, `DELETE /api/v1/jobs/{id}`
 dismisses a finished one, and `GET /api/v1/jobs/{id}/artifact` downloads the
 file it produced. A download can continue from where it stopped. Another
 user's job answers `404`, as if it did not exist.
+
+## Health Endpoints
+
+`GET /healthz` (liveness) and `GET /readyz` (readiness) report the server's
+health in the `application/health+json` format, answering `503` when it
+fails. Like `/features`, they are served from the server root, outside
+`/api/v1`, and need no credentials; only their `output` details need a token.
+See [Health Checks](health.md).
 
 ## Integrations
 

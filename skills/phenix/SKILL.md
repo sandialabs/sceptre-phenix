@@ -141,8 +141,8 @@ through `PATCH /api/v1/experiments/{name}` on a stopped experiment.
 Command groups: `config` (stored configs), `experiment` (lifecycle), `vm`
 (running VMs), `image` (vmdb2 disk images), `vlan` (per-experiment VLAN
 aliases/ranges), `workflow` (topology directory deployment), `job`
-(background jobs), plus `mm`,
-`settings`, `ui`, `util`, `completion`, and `version`. Every subcommand
+(background jobs), `healthcheck` (the server's liveness and readiness), plus
+`mm`, `settings`, `ui`, `util`, `completion`, and `version`. Every subcommand
 accepts the persistent flags documented in
 [`references/cli.md`](references/cli.md), which also lists each subcommand's
 own flags.
@@ -173,6 +173,7 @@ are run with `docker exec` rather than a host-installed binary:
 
 ```bash
 docker exec phenix phenix experiment list   # no -it for scripted/agentic use
+docker exec phenix phenix healthcheck --ready  # is minimega, the store and disk OK?
 ```
 
 For interactive human use, `make install-wrapper` installs

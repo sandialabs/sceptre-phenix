@@ -822,8 +822,8 @@ func TestContractJSONContentType(t *testing.T) {
 	}
 }
 
-// Routes outside API auth answer without credentials, with their own statuses: features, version and tunneler
-// downloads.
+// Routes outside API auth answer without credentials, with their own statuses: health, features, version and
+// tunneler downloads.
 func TestContractPublicRoutes(t *testing.T) {
 	useContractFixture(t)
 
@@ -833,6 +833,8 @@ func TestContractPublicRoutes(t *testing.T) {
 		want        []int
 		contentType string
 	}{
+		"/healthz":  {[]int{http.StatusOK}, "application/health+json"},
+		"/readyz":   {[]int{http.StatusOK, http.StatusServiceUnavailable}, "application/health+json"},
 		"/features": {[]int{http.StatusOK}, "application/json"},
 		"/version":  {[]int{http.StatusOK}, "application/json"},
 		// the tunneler builds there are to download
