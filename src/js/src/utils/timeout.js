@@ -85,7 +85,7 @@ export class TimeoutTool {
       this.warnToast.close();
       this.warnToast = null;
     }
-    axiosInstance.get('logout').then((resp) => {
+    axiosInstance.post('logout').then((resp) => {
       if (resp.status == 204) {
         const store = usePhenixStore();
         store.logout();

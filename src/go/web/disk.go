@@ -25,6 +25,9 @@ import (
 )
 
 // GetDisks - GET /disks.
+//
+// Lists the images the role may list, sorted by name and paged by pageNum and
+// perPage (total counts all).
 func GetDisks(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetDisks")
 
@@ -47,6 +50,11 @@ func GetDisks(w http.ResponseWriter, r *http.Request) error {
 		)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
+	}
+
+	page, pageSize, err := util.ParsePage(query.Get("pageNum"), query.Get("perPage"))
+	if err != nil {
+		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	if len(diskType) > 0 {
@@ -81,7 +89,7 @@ func GetDisks(w http.ResponseWriter, r *http.Request) error {
 		return allowed[i].Name < allowed[j].Name
 	})
 
-	body, err := json.Marshal(util.WithRoot("disks", allowed))
+	body, err := json.Marshal(map[string]any{"disks": util.Page(allowed, page, pageSize), "total": len(allowed)})
 	if err != nil {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -47,6 +46,11 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
+	page, pageSize, err := util.ParsePage(pageNum, perPage)
+	if err != nil {
+		return weberror.New(http.StatusBadRequest, err.Error())
+	}
+
 	files, err := experiment.Files(name, clientFilter)
 	if err != nil {
 		// minimega did not list every node's files; an empty or partial list
@@ -60,11 +64,8 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) error {
 		files.SortBy(sortCol, sortDir == "asc")
 	}
 
-	if pageNum != "" && perPage != "" {
-		n, _ := strconv.Atoi(pageNum)
-		s, _ := strconv.Atoi(perPage)
-
-		files = files.Paginate(n, s)
+	if page > 0 {
+		files = files.Paginate(page, pageSize)
 	}
 
 	body, err := json.Marshal(util.WithRoot("files", files))

@@ -208,6 +208,7 @@ func Start(opts ...ServerOption) error {
 
 		api.Use(middleware.NoAuth)
 		api.Use(middleware.Freshness)
+		api.Use(middleware.Version)
 
 		_ = os.Remove(common.UnixSocket)
 
@@ -284,6 +285,7 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 
 	plog.Info(plog.TypeSystem, "setting up assets")
 
+	router.Handle(openAPIPath, OpenAPISpecHandler(assets)).Methods("GET", "HEAD")
 	router.PathPrefix("/docs/").Handler(
 		StaticHandler(assets, false),
 	)
@@ -345,7 +347,7 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 	api.NotFoundHandler = apiNotFoundHandler()
 	api.MethodNotAllowedHandler = http.HandlerFunc(methodNotAllowed)
 
-	// OPTIONS method needed for CORS
+	// API routes take OPTIONS, which AnswerOptions answers with 204
 	api.Handle("/configs", weberror.ErrorHandler(GetConfigs)).Methods("GET", "OPTIONS")
 	api.Handle("/configs", weberror.ErrorHandler(CreateConfig)).Methods("POST", "OPTIONS")
 	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(GetConfig)).Methods("GET", "OPTIONS")
@@ -420,11 +422,11 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 	api.Handle("/experiments/{exp}/vms/{name}", weberror.ErrorHandler(GetVM)).Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms/{name}", weberror.ErrorHandler(UpdateVM)).Methods("PATCH", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms/{name}", weberror.ErrorHandler(DeleteVM)).Methods("DELETE", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/reset", weberror.ErrorHandler(ResetVM)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/restart", weberror.ErrorHandler(RestartVM)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}/reset", weberror.ErrorHandler(ResetVM)).Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}/restart", weberror.ErrorHandler(RestartVM)).Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms/{name}/start", weberror.ErrorHandler(StartVM)).Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms/{name}/stop", weberror.ErrorHandler(StopVM)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/shutdown", weberror.ErrorHandler(ShutdownVM)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}/shutdown", weberror.ErrorHandler(ShutdownVM)).Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms/{name}/redeploy", weberror.ErrorHandler(RedeployVM)).Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms/{name}/cdrom", weberror.ErrorHandler(ChangeOpticalDisc)).
 		Methods("POST", "OPTIONS")
@@ -513,7 +515,7 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 	api.Handle("/roles", weberror.ErrorHandler(GetRoles)).Methods("GET", "OPTIONS")
 	api.Handle("/signup", weberror.ErrorHandler(Signup)).Methods("POST", "OPTIONS")
 	api.Handle("/login", weberror.ErrorHandler(Login)).Methods("GET", "POST", "OPTIONS")
-	api.Handle("/logout", weberror.ErrorHandler(Logout)).Methods("GET", "OPTIONS")
+	api.Handle("/logout", weberror.ErrorHandler(Logout)).Methods("POST", "OPTIONS")
 	api.Handle("/logs", weberror.ErrorHandler(GetLogs)).Methods("GET", "OPTIONS")
 	api.HandleFunc("/ws", broker.ServeWS).Methods("GET")
 	api.Handle("/console", weberror.ErrorHandler(CreateConsole)).Methods("POST", "OPTIONS")
@@ -527,15 +529,21 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 	api.Handle("/settings/password", weberror.ErrorHandler(GetPasswordRequirements)).Methods("GET", "OPTIONS")
 	api.Handle("/settings/timeout", weberror.ErrorHandler(GetTimeoutSettings)).Methods("GET", "OPTIONS")
 
-	addRoutesToRouter(api, socketRoutes()...)
+	// with OPTIONS, as every API route takes it
+	for _, r := range socketRoutes() {
+		api.Handle(r.path, r.handler).Methods(append(r.methods, "OPTIONS")...)
+	}
 
 	// outermost, so the other middleware (full logging in particular) sees the
 	// uncompressed response
 	api.Use(CompressResponses)
 
+	api.Use(middleware.AnswerOptions)
+
 	api.Use(middleware.Auth(o.jwtKey, o.proxyAuthHeader))
 	// after Auth, so a refused request takes no sequence number
 	api.Use(middleware.Freshness)
+	api.Use(middleware.Version)
 
 	switch o.logMiddleware {
 	case "full":

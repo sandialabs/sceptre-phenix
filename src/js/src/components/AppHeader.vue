@@ -149,7 +149,7 @@ are only available to Global Administrator or Global Viewer.
         this.loggingOut = true;
 
         axiosInstance
-          .get('logout')
+          .post('logout')
           .then(
             (response) => response.status,
             (error) => error.response?.status,
