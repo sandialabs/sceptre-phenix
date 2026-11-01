@@ -114,8 +114,6 @@ func (m *testMM) GetVMStates(...mm.Option) (map[string]string, error) {
 }
 
 // useTestMM makes fake answer for minimega for the rest of the test.
-//
-//nolint:unparam // a test can read the fake back
 func useTestMM(t *testing.T, fake *testMM) *testMM {
 	t.Helper()
 
