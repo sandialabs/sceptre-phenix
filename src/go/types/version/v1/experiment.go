@@ -345,6 +345,13 @@ type ExperimentStatus struct {
 	FrequencyF map[string]string `json:"appRunningStageFrequency,omitempty" mapstructure:"appRunningStageFrequency" structs:"appRunningStageFrequency" yaml:"appRunningStageFrequency,omitempty"`
 	RunningF   map[string]bool   `json:"appRunningStageStatus,omitempty"    mapstructure:"appRunningStageStatus"    structs:"appRunningStageStatus"    yaml:"appRunningStageStatus,omitempty"`
 	CleanupF   map[string]bool   `json:"appCleanupStagePending,omitempty"   mapstructure:"appCleanupStagePending"   structs:"appCleanupStagePending"   yaml:"appCleanupStagePending,omitempty"`
+
+	// The delayed VM starts and post-start apps a started experiment still
+	// waits on, kept so phenix can resume them after a restart.
+	DelayedTimersF    map[string]string          `json:"delayedTimers,omitempty"    mapstructure:"delayedTimers"    structs:"delayedTimers"    yaml:"delayedTimers,omitempty"`
+	DelayedC2F        map[string]map[string]bool `json:"delayedC2,omitempty"        mapstructure:"delayedC2"        structs:"delayedC2"        yaml:"delayedC2,omitempty"`
+	PostStartPendingF bool                       `json:"postStartPending,omitempty" mapstructure:"postStartPending" structs:"postStartPending" yaml:"postStartPending,omitempty"`
+	InterruptedF      string                     `json:"interrupted,omitempty"      mapstructure:"interrupted"      structs:"interrupted"      yaml:"interrupted,omitempty"`
 }
 
 func (s *ExperimentStatus) Init() error {
@@ -513,4 +520,45 @@ func (s *ExperimentStatus) ResetAppStatus() {
 
 	s.FrequencyF = nil
 	s.RunningF = nil
+}
+
+func (s ExperimentStatus) DelayedTimers() map[string]string {
+	if s.DelayedTimersF == nil {
+		return make(map[string]string)
+	}
+
+	return s.DelayedTimersF
+}
+
+func (s ExperimentStatus) DelayedC2() map[string]map[string]bool {
+	if s.DelayedC2F == nil {
+		return make(map[string]map[string]bool)
+	}
+
+	return s.DelayedC2F
+}
+
+func (s ExperimentStatus) PostStartPending() bool {
+	return s.PostStartPendingF
+}
+
+func (s ExperimentStatus) Interrupted() string {
+	return s.InterruptedF
+}
+
+// SetDelayedStarts records the starts still pending; empty maps are kept as nil.
+func (s *ExperimentStatus) SetDelayedStarts(timers map[string]string, c2 map[string]map[string]bool, postStart bool) {
+	s.DelayedTimersF, s.DelayedC2F, s.PostStartPendingF = nil, nil, postStart
+
+	if len(timers) > 0 {
+		s.DelayedTimersF = timers
+	}
+
+	if len(c2) > 0 {
+		s.DelayedC2F = c2
+	}
+}
+
+func (s *ExperimentStatus) SetInterrupted(reason string) {
+	s.InterruptedF = reason
 }
