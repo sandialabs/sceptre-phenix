@@ -16,6 +16,7 @@ import (
 	"phenix/api/vm"
 	ucache "phenix/util/cache"
 	"phenix/util/common"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/notes"
 	"phenix/util/plog"
@@ -189,9 +190,18 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 	experiments, err := experiment.List()
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting experiments", "err", err)
+
+		// an empty list would read as no experiments
+		if len(experiments) == 0 {
+			return weberror.New(http.StatusInternalServerError, "unable to read experiments from the store")
+		}
 	}
 
 	allowed := []*proto.Experiment{}
+
+	// some experiments could not be read, so the list is incomplete
+	observed := freshness.Unobserved()
+	observed.Stale = err != nil
 
 	for _, exp := range experiments {
 		if !role.Allowed("experiments", "list", exp.Metadata.Name) {
@@ -255,6 +265,7 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 	}
 
+	freshness.SetObserved(w, observed)
 	_, _ = w.Write(body)
 
 	return nil

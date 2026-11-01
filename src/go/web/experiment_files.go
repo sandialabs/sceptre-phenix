@@ -49,9 +49,11 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) error {
 
 	files, err := experiment.Files(name, clientFilter)
 	if err != nil {
+		// minimega did not list every node's files; an empty or partial list
+		// would read as files missing
 		plog.Error(plog.TypeSystem, "getting list of files for experiment", "exp", name, "err", err)
 
-		return weberror.New(http.StatusInternalServerError, err.Error())
+		return weberror.New(http.StatusBadGateway, "could not list files: "+err.Error())
 	}
 
 	if sortCol != "" && sortDir != "" {
