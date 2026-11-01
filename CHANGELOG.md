@@ -39,6 +39,7 @@ All notable changes to this project will be documented in this file.
 - **VM Details and VM Table**: Added a VM details card and a VM table to the web UI. The table has row actions, host and label filters, and bulk actions that run as background jobs.
 - **Disk Check Before a Start**: A start, a restart and a bulk VM start or restart refuse a VM when qemu cannot open its disk image, backing file or CD-ROM image. The new `experiment.disk-check` setting (`error`, `warn` or `off`) changes this, and a workflow dry run lists the problems in `warnings`.
 - **Experiment Files**: Added API routes that delete one or more experiment files and download several files as a zip archive, also as a `files.archive` background job. Stored Experiment Admin roles get the new `experiments/files` `delete` permission at startup.
+- **Stopped Experiment and VM Tiles**: The stopped experiment page and the VM tiles page open from the page cache, and the VM tiles get screenshots only for the tiles on screen. The stopped page keeps its open tab and search in the URL.
 
 ### Changed
 
