@@ -49,6 +49,7 @@ All notable changes to this project will be documented in this file.
 - **State of Health Graph**: The State of Health topology graph has a layout picker (Force, Radial tree, Layered, VLAN groups and ELK layered), a `Fit` button and a `Download` menu for PNG, SVG and GEXF files.
 - **SCORCH Runs**: The SCORCH runs page can clear run status, run only the cleanup stage, and download the artifact archive of a finished run. Added `POST /api/v1/experiments/{name}/scorch/pipelines/{run}/clear` and `POST /api/v1/experiments/{name}/scorch/pipelines/{run}/cleanup`.
 - **Health Checks**: Added the `/healthz` and `/readyz` endpoints and the `phenix healthcheck` command, which is the health check of the `phenix` container.
+- **Configuration Checks**: Added `phenix doctor`, which checks the config files, environment variables, settings, store, log files, base directories and `phenix ui` startup settings without a running server. `--report` prints the output for a bug report, with host names, addresses, user names and secrets replaced by tokens.
 
 ### Changed
 
