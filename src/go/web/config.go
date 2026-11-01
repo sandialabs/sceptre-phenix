@@ -392,8 +392,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to create new config")
 	}
 
-	w.Header().
-		Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))
+	w.Header().Set("Location", apiLocation(strings.ToLower(fmt.Sprintf("configs/%s/%s", c.Kind, c.Metadata.Name))))
 	w.WriteHeader(http.StatusCreated)
 
 	if err := broadcastConfig(c, c.FullName(), "create"); err != nil {
@@ -663,8 +662,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	w.Header().
-		Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))
+	w.Header().Set("Location", apiLocation(strings.ToLower(fmt.Sprintf("configs/%s/%s", c.Kind, c.Metadata.Name))))
 	w.WriteHeader(http.StatusNoContent)
 
 	// The old name, so clients know which config to update.

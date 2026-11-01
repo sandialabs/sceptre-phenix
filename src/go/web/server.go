@@ -140,7 +140,7 @@ func ConfigureUsers(users []string) error {
 	return errors.Join(errs...)
 }
 
-//nolint:funlen,maintidx // server startup
+//nolint:funlen // server startup
 func Start(opts ...ServerOption) error {
 	o = newServerOptions(opts...)
 	fileServerEndpoint, err := normalizeFileServerEndpoint(o.fileServerEndpoint)
@@ -154,10 +154,7 @@ func Start(opts ...ServerOption) error {
 
 	_ = ConfigureUsers(o.users)
 
-	var (
-		router = mux.NewRouter().StrictSlash(true)
-		assets http.FileSystem
-	)
+	var assets http.FileSystem
 
 	if o.unbundled {
 		assets = http.Dir("web/public")
@@ -170,6 +167,105 @@ func Start(opts ...ServerOption) error {
 			return err
 		}
 	}
+
+	router := newRouter(assets)
+
+	plog.Info(plog.TypeSystem, "starting websockets broker")
+
+	go broker.Start()
+
+	plog.Info(plog.TypeSystem, "starting scorch processors")
+
+	go scorch.Start(o.basePath)
+
+	plog.Info(plog.TypeSystem, "starting log publisher")
+
+	go SyncMinimegaLogs(context.Background(), o.minimegaLogs)
+
+	plog.Info(plog.TypeSystem, "using base path", "path", o.basePath)
+	plog.Info(plog.TypeSystem, "using JWT lifetime", "lifetime", o.jwtLifetime)
+
+	if fileServerEndpoint != "" {
+		go StartFileServer(fileServerEndpoint, o.jwtKey, o.proxyAuthHeader)
+	}
+
+	if common.UnixSocket != "" {
+		var (
+			router = mux.NewRouter().StrictSlash(true)
+			api    = router.PathPrefix("/api/v1").Subrouter()
+		)
+
+		addRoutesToRouter(api, socketRoutes()...)
+
+		api.MethodNotAllowedHandler = http.HandlerFunc(methodNotAllowed)
+
+		api.Use(middleware.NoAuth)
+		api.Use(middleware.Freshness)
+
+		_ = os.Remove(common.UnixSocket)
+
+		plog.Info(plog.TypeSystem, "starting Unix socket server", "path", common.UnixSocket)
+
+		server := http.Server{Handler: router} //nolint:gosec // Potential Slowloris Attack
+
+		//nolint:exhaustruct // partial initialization
+		listener, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", common.UnixSocket)
+		if err != nil {
+			return err
+		}
+
+		if o.unixSocketGID != -1 {
+			plog.Info(
+				plog.TypeSystem,
+				"setting Unix socket group permissions",
+				"gid",
+				o.unixSocketGID,
+			)
+
+			err = os.Chown(common.UnixSocket, -1, o.unixSocketGID)
+			if err != nil {
+				return err
+			}
+
+			err := os.Chmod(common.UnixSocket, 0o770) //nolint:gosec // unix socket permissions
+			if err != nil {
+				return err
+			}
+		}
+
+		go func() {
+			err := server.Serve(listener)
+			if err != nil {
+				plog.Error(plog.TypeSystem, "serving Unix socket", "err", err)
+			}
+		}()
+	}
+
+	plog.Info(plog.TypeSecurity, "starting server", "tls_enabled", o.tlsEnabled())
+
+	if o.tlsEnabled() {
+		plog.Info(plog.TypeSystem, "starting HTTPS server", "endpoint", o.endpoint)
+
+		//nolint:gosec // Use of net/http serve function that has no support for setting timeouts
+		return http.ListenAndServeTLS(
+			o.endpoint,
+			o.tlsCrtPath,
+			o.tlsKeyPath,
+			router,
+		)
+	} else {
+		plog.Info(plog.TypeSystem, "Starting HTTP server", "endpoint", o.endpoint)
+		//nolint:gosec // Use of net/http serve function that has no support for setting timeouts
+		return http.ListenAndServe(
+			o.endpoint,
+			router,
+		)
+	}
+}
+
+// newRouter routes the UI pages, the assets and the REST API, as the server options say.
+func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx // the route table
+	router := mux.NewRouter().StrictSlash(true)
 
 	if o.featured("tunneler-download") {
 		plog.Info(plog.TypeSystem, "Serving phēnix tunneler downloads")
@@ -215,7 +311,7 @@ func Start(opts ...ServerOption) error {
 			f, err := assets.Open("index.html")
 			if err != nil {
 				plog.Error(plog.TypeSystem, "opening index.html from assets", "err", err)
-				http.NotFound(w, r)
+				weberror.Error(w, "not found", http.StatusNotFound)
 				return
 			}
 			defer f.Close()
@@ -223,7 +319,7 @@ func Start(opts ...ServerOption) error {
 			fi, err := f.Stat()
 			if err != nil {
 				plog.Error(plog.TypeSystem, "statting index.html from assets", "err", err)
-				http.NotFound(w, r)
+				weberror.Error(w, "not found", http.StatusNotFound)
 				return
 			}
 
@@ -236,6 +332,7 @@ func Start(opts ...ServerOption) error {
 	// The router's NotFoundHandler serves the SPA index, so an API client would get 200 HTML.
 	// A route behind a disabled feature flag would then also look enabled.
 	api.NotFoundHandler = apiNotFoundHandler()
+	api.MethodNotAllowedHandler = http.HandlerFunc(methodNotAllowed)
 
 	// OPTIONS method needed for CORS
 	api.Handle("/configs", weberror.ErrorHandler(GetConfigs)).Methods("GET", "OPTIONS")
@@ -419,23 +516,11 @@ func Start(opts ...ServerOption) error {
 	api.Handle("/settings/password", weberror.ErrorHandler(GetPasswordRequirements)).Methods("GET", "OPTIONS")
 	api.Handle("/settings/timeout", weberror.ErrorHandler(GetTimeoutSettings)).Methods("GET", "OPTIONS")
 
-	workflowRoutes := []route{
-		{"/workflow/apply/{branch}", weberror.ErrorHandler(ApplyWorkflow), []string{"POST"}},
-		{
-			"/workflow/configs/{branch}",
-			weberror.ErrorHandler(WorkflowUpsertConfig),
-			[]string{"POST"},
-		},
-	}
-
-	optionRoutes := []route{
-		{"/options", weberror.ErrorHandler(GetOptions), []string{"GET"}},
-	}
-
-	addRoutesToRouter(api, workflowRoutes...)
-	addRoutesToRouter(api, optionRoutes...)
+	addRoutesToRouter(api, socketRoutes()...)
 
 	api.Use(middleware.Auth(o.jwtKey, o.proxyAuthHeader))
+	// after Auth, so a refused request takes no sequence number
+	api.Use(middleware.Freshness)
 
 	switch o.logMiddleware {
 	case "full":
@@ -446,95 +531,41 @@ func Start(opts ...ServerOption) error {
 		api.Use(middleware.LogRequests)
 	}
 
-	plog.Info(plog.TypeSystem, "starting websockets broker")
+	return router
+}
 
-	go broker.Start()
-
-	plog.Info(plog.TypeSystem, "starting scorch processors")
-
-	go scorch.Start(o.basePath)
-
-	plog.Info(plog.TypeSystem, "starting log publisher")
-
-	go SyncMinimegaLogs(context.Background(), o.minimegaLogs)
-
-	plog.Info(plog.TypeSystem, "using base path", "path", o.basePath)
-	plog.Info(plog.TypeSystem, "using JWT lifetime", "lifetime", o.jwtLifetime)
-
-	if fileServerEndpoint != "" {
-		go StartFileServer(fileServerEndpoint, o.jwtKey, o.proxyAuthHeader)
+// apiLocation returns the path of the API resource p (relative to /api/v1/) behind the
+// UI base path o.basePath, which it makes start and end with "/".
+func apiLocation(p string) string {
+	base := o.basePath
+	if !strings.HasPrefix(base, "/") {
+		base = "/" + base
 	}
 
-	if common.UnixSocket != "" {
-		var (
-			router = mux.NewRouter().StrictSlash(true)
-			api    = router.PathPrefix("/api/v1").Subrouter()
-		)
-
-		addRoutesToRouter(api, workflowRoutes...)
-		addRoutesToRouter(api, optionRoutes...)
-
-		api.Use(middleware.NoAuth)
-
-		_ = os.Remove(common.UnixSocket)
-
-		plog.Info(plog.TypeSystem, "starting Unix socket server", "path", common.UnixSocket)
-
-		server := http.Server{Handler: router} //nolint:gosec // Potential Slowloris Attack
-
-		//nolint:exhaustruct // partial initialization
-		listener, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", common.UnixSocket)
-		if err != nil {
-			return err
-		}
-
-		if o.unixSocketGID != -1 {
-			plog.Info(
-				plog.TypeSystem,
-				"setting Unix socket group permissions",
-				"gid",
-				o.unixSocketGID,
-			)
-
-			err = os.Chown(common.UnixSocket, -1, o.unixSocketGID)
-			if err != nil {
-				return err
-			}
-
-			err := os.Chmod(common.UnixSocket, 0o770) //nolint:gosec // unix socket permissions
-			if err != nil {
-				return err
-			}
-		}
-
-		go func() {
-			err := server.Serve(listener)
-			if err != nil {
-				plog.Error(plog.TypeSystem, "serving Unix socket", "err", err)
-			}
-		}()
+	if !strings.HasSuffix(base, "/") {
+		base += "/"
 	}
 
-	plog.Info(plog.TypeSecurity, "starting server", "tls_enabled", o.tlsEnabled())
+	return base + "api/v1/" + p
+}
 
-	if o.tlsEnabled() {
-		plog.Info(plog.TypeSystem, "starting HTTPS server", "endpoint", o.endpoint)
-
-		//nolint:gosec // Use of net/http serve function that has no support for setting timeouts
-		return http.ListenAndServeTLS(
-			o.endpoint,
-			o.tlsCrtPath,
-			o.tlsKeyPath,
-			router,
-		)
-	} else {
-		plog.Info(plog.TypeSystem, "Starting HTTP server", "endpoint", o.endpoint)
-		//nolint:gosec // Use of net/http serve function that has no support for setting timeouts
-		return http.ListenAndServe(
-			o.endpoint,
-			router,
-		)
+// socketRoutes are the API routes the Unix socket serves as well.
+func socketRoutes() []route {
+	return []route{
+		{"/workflow/apply/{branch}", weberror.ErrorHandler(ApplyWorkflow), []string{"POST"}},
+		{
+			"/workflow/configs/{branch}",
+			weberror.ErrorHandler(WorkflowUpsertConfig),
+			[]string{"POST"},
+		},
+		{"/options", weberror.ErrorHandler(GetOptions), []string{"GET"}},
 	}
+}
+
+// methodNotAllowed answers a request for an API path that does not take its
+// method, with the JSON Error rather than gorilla's empty 405.
+func methodNotAllowed(w http.ResponseWriter, _ *http.Request) {
+	weberror.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func addRoutesToRouter(router *mux.Router, routes ...route) {
