@@ -87,12 +87,10 @@ To anyone else, another user's job answers `404`, as if it did not exist.
 
 ## Web UI
 
-The background jobs menu in the header lists your jobs, with their progress,
-and cancels, downloads and dismisses them. It picks up jobs again after a
-reload. Its button turns red or green when jobs have failed or succeeded since
-you last opened it.
-
-![The open jobs menu: running jobs with progress bars and Cancel buttons, and finished jobs with Download and Dismiss buttons](images/jobs_menu.png){: width=450 .center}
+The [background jobs menu](web-ui.md#background-jobs-menu) in the header lists
+your jobs, with their progress, and cancels, downloads and dismisses them. It
+picks up jobs again after a reload. Its button turns red or green when jobs
+have failed or succeeded since you last opened it.
 
 ## Command line
 

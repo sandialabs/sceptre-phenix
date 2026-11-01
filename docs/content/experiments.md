@@ -537,7 +537,7 @@ The experiment must be stopped; click on the experiment name to enter the
 Stopped Experiment component. Click on the hamburger menu to the right of the
 filter field and start button to select a desired schedule.
 
-![screenshot](images/schedule.png){: width=400 .center}
+![Scheduling menu button circled in red on a stopped experiment's toolbar, open to the isolate_experiment and round_robin algorithms.](images/schedule.png){: width=400 .center}
 
 ### From the Command Line Binary
 
@@ -686,7 +686,8 @@ The table has a `Name`, `Path`, `Category`, `Date`, `Size`, and `Actions`
 column. `Path` is an information icon; hover over it for the file's full path on
 the phēnix server, such as
 `/phenix/images/my-experiment/files/scorch/1/tcpdump/capture.pcap`. `Date`
-shows when the file last changed, with its age. Click the
+shows when the file last changed, with its age, as described in
+[Timestamps](web-ui.md#timestamps). Click the
 `Name`, `Date`, or `Size` heading to sort by that column; the table starts with
 the newest file first. `Category` cannot be sorted on.
 
@@ -738,13 +739,14 @@ these your role allows:
 
 * `Download (N)` has the server build the checked files into one
   `<experiment name>-files.zip` archive in a [background job](jobs.md), whose
-  progress shows in the toolbar and the jobs menu, and downloads it once built.
-  A file the server cannot fetch is left out, and one that grows after you ask
+  progress shows in the toolbar and the
+  [jobs menu](web-ui.md#background-jobs-menu), and downloads it once built. A
+  file the server cannot fetch is left out, and one that grows after you ask
   holds only the part it had then: the archive is then named
   `<experiment name>-files-incomplete.zip`, lists each such file and why in its
-  `MISSING.txt`, and downloads only when you click `Download incomplete archive`
-  and confirm. If you leave the page meanwhile, download the archive from the
-  jobs menu, within the hour.
+  `MISSING.txt`, and downloads only when you click
+  `Download incomplete archive` and confirm. If you leave the page meanwhile,
+  download the archive from the jobs menu, within the hour.
 * `Delete (N)` asks to confirm once for all of them, with `Delete N Files` as
   the confirm button, then deletes them together.
 * The last button clears the selection.

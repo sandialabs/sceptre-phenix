@@ -102,6 +102,65 @@ describe('the menu', () => {
   });
 });
 
+describe('the Tunneler button', () => {
+  const viewer = () =>
+    Object.assign(store, {
+      role: role('Viewer', ['experiments', 'list']),
+      features: ['tunneler-download'],
+    });
+  const button = (wrapper) => wrapper.find('.navbar-end a.tunneler-button');
+
+  it('links to the Tunneler page at the right of the header, not as a tab', async () => {
+    viewer();
+    const page = await header();
+
+    expect(links(page)).not.toContain('Tunneler');
+    const link = button(page);
+    expect(link.attributes('href')).toBe('/tunneler');
+    expect(link.classes()).toEqual(
+      expect.arrayContaining(['button', 'is-primary']),
+    );
+    expect(link.find('[data-icon="download"]').exists()).toBe(true);
+    expect(textOf(link)).toBe('Tunneler');
+    expect(link.attributes('aria-current')).toBeUndefined();
+  });
+
+  it('is marked as the current page on the Tunneler page', async () => {
+    viewer();
+    const page = await header({ route: '/tunneler' });
+    expect(button(page).attributes('aria-current')).toBe('page');
+  });
+
+  it('closes the burger menu when followed', async () => {
+    viewer();
+    const page = await header();
+    const menuOpen = () => page.find('.navbar-menu').classes('is-active');
+    expect(menuOpen()).toBe(false);
+
+    await page.find('.navbar-burger').trigger('click');
+    expect(menuOpen()).toBe(true);
+    // a click on the label, which Buefy's navbar leaves open
+    await button(page).find('span:not(.icon)').trigger('click');
+    await flushPromises();
+    expect(menuOpen()).toBe(false);
+    expect(page.router.currentRoute.value.name).toBe('tunneler');
+  });
+
+  it.each([
+    ['the server has no tunneler downloads', true, []],
+    ['no one is signed in', false, ['tunneler-download']],
+  ])('is left out when %s', async (_, auth, features) => {
+    Object.assign(store, {
+      auth,
+      role: role('Viewer', ['experiments', 'list']),
+      features,
+    });
+    const page = await header();
+    expect(page.find('.tunneler-button').exists()).toBe(false);
+    expect(page.find('a[href="/tunneler"]').exists()).toBe(false);
+  });
+});
+
 describe('the refresh status', () => {
   const minute = 60 * 1000;
 

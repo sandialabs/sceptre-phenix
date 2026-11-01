@@ -2,7 +2,6 @@
 @import 'bulma/sass/utilities/_all';
 @import 'buefy/src/scss/utils/_all';
 
-$logo: #9a4420;
 // derived via: https://m2.material.io/design/color/the-color-system.html#tools-for-picking-colors
 $primary: #da622d;
 $link: #62c0d7;
@@ -20,8 +19,6 @@ $background-ter: #5a5a5a;
 $border: white;
 $text: whitesmoke;
 $text-strong: white;
-$text-weak: whitesmoke;
-$input-color: black;
 
 $body-background-color: $background;
 $table-background-color: $background-bis;
@@ -36,8 +33,34 @@ $modal-background-background-color: rgba($black, 0.86);
 $modal-card-head-border-bottom: transparent;
 $modal-card-foot-border-top: 1px solid $scheme-main-bis;
 
+// $colors was built from Bulma's turquoise; primary fills use a darker
+// orange, as white is 3.7:1 on $primary and 5.1:1 on this
+$colors: map.merge(
+  $colors,
+  (
+    'primary': (
+      #b5501f,
+      white,
+      findLightColor($primary),
+      findDarkColor($primary),
+    ),
+  )
+);
+
+// success buttons and tags: white is 2.1:1 on Bulma's #48c78e, 5.3:1 on this
+$success-fill: (#1e7b4b, white, $success-light, $success-dark);
+$tag-colors: map.merge(
+  $colors,
+  (
+    'success': $success-fill,
+  )
+);
+
 $button-border-color: lighten($scheme-main, 10);
 $button-hover-color: $text-strong;
+// Bulma's focused and pressed text, #363636, is 2.2:1 on a default button
+$button-focus-color: $text-strong;
+$button-active-color: $text-strong;
 $button-text-hover-background-color: $scheme-main;
 // this line isn't ideal, but a lot of existing buttons were tagged with `is-light` so this sets them to what you would expect
 $button-colors: map.merge(
@@ -47,6 +70,7 @@ $button-colors: map.merge(
       $scheme-main,
       $scheme-invert,
     ),
+    'success': $success-fill,
   )
 );
 
@@ -66,7 +90,6 @@ $input-icon-color: lighten($scheme-main, 20);
 $input-icon-active-color: lighten($scheme-main, 10);
 $input-hover-color: lighten($link, 10); // dropdown arrows etc.
 
-$progress-text-color: black;
 $hr-background-color: whitesmoke;
 
 $fullhd: 1536px + (2 * $gap);

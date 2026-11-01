@@ -310,7 +310,7 @@ A VM disk that an update or redeploy of a VM sets must follow the same rule.
 
 A clone copies the whole file, which can take minutes for a large image, so
 `Clone` runs it in the background: the dialog closes as soon as the server has
-started the copy, the [jobs menu](jobs.md#web-ui) and the
+started the copy, the [jobs menu](web-ui.md#background-jobs-menu) and the
 `Clone jobs` section of the image's details card show its progress and can
 cancel it, and the list reloads when it ends.
 

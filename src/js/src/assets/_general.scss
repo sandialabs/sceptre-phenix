@@ -36,39 +36,26 @@ textarea:focus {
   margin-bottom: 0.5em;
 }
 
-.close {
-  text-align: right;
-  height: 10px;
-  width: 10px;
-  position: relative;
-  box-sizing: border-box;
-  line-height: 10px;
-  display: inline-block;
-}
+// A role with every page, on a server with every download, needs a wider
+// header than most screens: it wraps onto a second row instead of off-screen.
+@include from($navbar-breakpoint) {
+  .navbar-menu {
+    flex-shrink: 1;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
 
-.close:before,
-.close:after {
-  transform: rotate(-45deg);
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  margin-top: -1px;
-  margin-left: -5px;
-  display: block;
-  height: 2px;
-  width: 10px;
-  background-color: black;
-  transition: all 0.25s ease-out;
-}
+  .navbar-start,
+  .navbar-end {
+    flex-shrink: 1;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
 
-.close:after {
-  transform: rotate(-135deg);
-}
-
-.close:hover:before,
-.close:hover:after {
-  transform: rotate(0deg);
+  .navbar-start > .navbar-item,
+  .navbar-end > .navbar-item {
+    padding-inline: 0.4rem;
+  }
 }
 
 // Focus looks like hover, as Bulma's focus colors are about 1:1 here. Keyboard
@@ -80,8 +67,9 @@ a.navbar-item:focus {
   color: whitesmoke !important;
 }
 
+// $success is 4.3:1 on the table's $background-bis; this tint of it is 5:1
 div.is-success {
-  color: $success;
+  color: #5cd69c;
 }
 
 .b-table {
@@ -105,6 +93,15 @@ div.is-success {
   width: 75% !important;
 }
 
+// Bulma keeps a modal title from shrinking, so a long one (a user or VM
+// name) runs past the head's padding; wrap it instead
+.modal-card-title {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+
 // round bottom of modal-card even if not explicitly a footer
 .modal-card > :last-child {
   border-radius: 0 0 $modal-card-foot-radius $modal-card-foot-radius;
@@ -124,9 +121,62 @@ div.is-success {
   border-radius: 12px;
 }
 
+// A button drawn as the text or tag inside it: a click target in a table
+// cell or card that the keyboard reaches too.
+.plain-button {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+// a plain-button that reads as a link
+.plain-button.link-button {
+  color: $link;
+}
+
+.plain-button.link-button:hover {
+  text-decoration: underline;
+}
+
+button.tag {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
 //useful for buttons side by side in table
 .action:not(:last-child) {
   margin-right: 5px;
+}
+
+// Greyed buttons that stay focusable, so the keyboard reaches their tooltip
+// saying why: drawn as Bulma draws a disabled button.
+.button[aria-disabled='true'] {
+  background-color: $button-disabled-background-color;
+  border-color: $button-disabled-border-color;
+  box-shadow: $button-disabled-shadow;
+  opacity: $button-disabled-opacity;
+  cursor: not-allowed;
+}
+
+@each $name, $pair in $button-colors {
+  $color: nth($pair, 1);
+  .button.is-#{$name}[aria-disabled='true'] {
+    background-color: $color;
+    border-color: $color;
+    box-shadow: none;
+  }
+
+  .button.is-#{$name}.is-outlined[aria-disabled='true'] {
+    background-color: transparent;
+    border-color: $color;
+    color: $color;
+  }
 }
 
 input::placeholder,
@@ -183,7 +233,7 @@ button:focus-visible,
 }
 
 // Buefy renders an unselected b-select placeholder as rgba($grey, 0.7)
-// (#a2a2a2 on white, 2.6:1); use a colour with 4.5:1 on the white input.
+// (#a2a2a2 on white, 2.6:1); use a color with 4.5:1 on the white input.
 .select.is-empty select {
   color: #5c6672;
 }
@@ -193,6 +243,7 @@ button:focus-visible,
 // its contrast on the dark page background.
 .notification.is-danger,
 .message.is-danger .message-header,
+.tag.is-danger:not(.is-light),
 .button.is-danger:not(.is-outlined):not(.is-inverted) {
   background-color: #a91f3d;
   border-color: #a91f3d;
@@ -208,4 +259,109 @@ button:focus-visible,
 // This pale red is 4.7:1 there.
 .modal-card-body .help.is-danger {
   color: #ffc8cf;
+}
+
+// the icon of a disk image whose backing chain is broken, in the same pale red
+.broken-chain-icon {
+  color: #ffc8cf;
+}
+
+// $link (#62c0d7) is 4.4:1 on table rows ($table-background-color); lighten
+// links in table cells, such as the Users page's user names, to 4.75:1.
+.table td a:not(.button):not(.tag),
+.table td .plain-button.link-button {
+  color: lighten($link, 4);
+}
+
+// Tables: sort arrows sit next to their headings (header-class="sort-inline")
+// rather than at the far edge of the column, and never over centered text.
+.b-table .table th.sort-inline .th-wrap {
+  flex-wrap: nowrap;
+}
+
+.b-table .table th.sort-inline .th-wrap:not(.is-centered) {
+  justify-content: flex-start;
+}
+
+.b-table .table th.sort-inline .sort-icon {
+  position: static;
+  transform: none;
+}
+
+.b-table .table th.sort-inline .sort-icon.icon.is-desc {
+  transform: rotate(180deg) !important;
+}
+
+// In a centered column the arrow would push the heading left of the values
+// below it; an empty space as wide as the arrow and its margin balances it.
+.b-table .table th.sort-inline .th-wrap.is-centered::before {
+  content: '';
+  flex: none;
+  width: 1.5rem;
+}
+
+// Table cells that should size to their content instead of wrapping.
+.b-table .table td.nowrap-cell {
+  white-space: nowrap;
+  width: 1%;
+}
+
+// Error notifications: wide enough that a long server error doesn't wrap
+// into a narrow column, with each step of the error chain on its own line.
+.notices .notification {
+  max-width: min(56rem, calc(100vw - 2rem));
+  overflow-wrap: anywhere;
+}
+
+.notification .error-title {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.notification .error-step {
+  display: block;
+  padding-left: 1.25rem;
+  text-indent: -1.25rem;
+}
+
+.notification .error-step::before {
+  content: '↳ ';
+}
+
+// the VMs and disk images of a start refused for broken disks, and the
+// details of a failed item; the disclosure's summary is underlined as a control
+.notification .broken-disk-list,
+.notification .error-details ul {
+  margin: 0.25rem 0 0.25rem 1.25rem;
+  list-style: disc;
+  columns: auto;
+}
+
+.notification .broken-disk-list ul {
+  margin-left: 1.25rem;
+  list-style: circle;
+  columns: auto;
+}
+
+.notification details > summary {
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.notification details > summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+// A viewer who asks for reduced motion gets still spinners and markers; each
+// one's state is also given in text or by its color.
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

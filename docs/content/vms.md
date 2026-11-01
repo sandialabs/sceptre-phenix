@@ -55,7 +55,7 @@ The `Power` section holds the VM's power operations as labeled buttons:
 `Start`, `Pause`, `Restart` and `Shut down` act as soon as you click them;
 `Kill` asks you to confirm first. A power action runs as a
 [background job](jobs.md), which the
-[jobs menu](jobs.md#web-ui) shows. Actions leave the card open.
+[jobs menu](web-ui.md#background-jobs-menu) shows. Actions leave the card open.
 The button or interface shows a spinner until the server answers, and the card
 then shows the VM as the action left it. A killed VM's card closes.
 

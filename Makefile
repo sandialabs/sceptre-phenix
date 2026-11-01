@@ -1,4 +1,4 @@
-.PHONY: all api-docs build check clean deb docker docs-build docs-serve examples example-go example-python generate generate-go help help-all install-dev update-actions install-wrapper uninstall-wrapper lint prek run-examples test tunneler ui version
+.PHONY: all api-docs build check clean deb docker docs-build docs-screenshots docs-serve examples example-go example-python generate generate-go help help-all install-dev update-actions install-wrapper uninstall-wrapper lint prek run-examples test tunneler ui version
 .DEFAULT_GOAL := help
 
 DOCKER_TAG ?= latest
@@ -38,6 +38,7 @@ help:
 	@echo "Documentation:"
 	@echo "  docs-build     - Build the documentation site with strict checks"
 	@echo "  docs-serve     - Serve the documentation site locally with live reload"
+	@echo "  docs-screenshots - Recapture web UI docs images from a running phenix ui (E2E_BASE_URL)"
 	@echo ""
 	@echo "Installation:"
 	@echo "  install-dev        - Install development and build dependencies"
@@ -151,6 +152,11 @@ $(DOCS_VENV)/bin/mkdocs: docs/requirements.txt
 
 docs-build: $(DOCS_VENV)/bin/mkdocs
 	$(DOCS_VENV)/bin/mkdocs build --strict --config-file docs/mkdocs.yml
+
+# Needs a running `phenix ui` built with VITE_AUTH=disabled, at E2E_BASE_URL,
+# and Playwright's Chromium (see src/js/e2e/docs-screenshots/README.md).
+docs-screenshots:
+	cd src/js/e2e && npm ci && npm run docs-screenshots
 
 docs-serve: $(DOCS_VENV)/bin/mkdocs
 	$(DOCS_VENV)/bin/mkdocs serve --config-file docs/mkdocs.yml --dev-addr 127.0.0.1:$(DOCS_PORT)

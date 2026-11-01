@@ -47,6 +47,10 @@ export default [
       // errors from optional/best-effort requests (e.g. probing whether an
       // endpoint/feature is available). Empty blocks elsewhere still error.
       'no-empty': ['error', { allowEmptyCatch: true }],
+      // The browser console is for problems; diagnostics that only help
+      // while developing go through debug() in src/utils/debug.js, which
+      // production builds drop.
+      'no-console': ['error', { allow: ['warn', 'error'] }],
     },
   },
   {

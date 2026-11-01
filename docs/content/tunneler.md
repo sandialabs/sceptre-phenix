@@ -13,9 +13,10 @@ UI.
 
 ## Downloading the Tunneler
 
-Click on the `Tunneler` tab in the banner near the top of the phēnix UI.
+Click the `Tunneler` button near the right-hand end of the banner at the top
+of the phēnix UI.
 
-![The Tunneler page, with the Tunneler Downloads table above the Quick Start and its Tunneler Documentation button](images/tunneler_page.png)
+![The Tunneler page, opened from the Tunneler button in the banner, with the Tunneler Downloads table above the Quick Start and its Tunneler Documentation button](images/tunneler_page.png)
 
 The page starts with a `Tunneler Downloads` table of the `phenix-tunneler`
 builds installed on the phēnix server, with an `OS` and an `Architecture`
@@ -43,7 +44,7 @@ Download the binary that matches your local machine and make it
 executable (on Linux/macOS, `chmod +x phenix-tunneler-<os>-<arch>`).
 
 !!! note
-    The `Tunneler` tab, and its downloads, are only available if the
+    The `Tunneler` button, and its downloads, are only available if the
     phēnix server has been configured to serve tunneler binaries (a
     `downloads/tunneler` directory must exist in the directory the phēnix
     server runs from when it starts). This will be the case if you have a typical deployment using the Docker image.
@@ -99,10 +100,12 @@ While it runs, it:
 With `phenix-tunneler serve` running locally, create a port forward for a
 VM from the phēnix UI:
 
-1. Open a running experiment and click on a VM tile to open its VM
-   information modal.
-2. Click the `create port forward` button (the arrow icon). This button
-   requires the VM to be running with an active cc agent.
+1. Open a running experiment and click on a VM's name in the VM table to
+   open its details.
+2. Click the `Port forward` button under `More actions`, or the `add` link
+   beside the `Port forwards` section. Either one requires the VM to be
+   running with an active miniccc agent; the button's tooltip says so when
+   it is not.
 3. Fill out the `Create New Port Forward` dialog:
     * `Source Port` -- the port to listen on locally.
     * `Destination Host` -- the host, reachable from the phēnix server,
@@ -121,8 +124,9 @@ Once a local port is listening, connect to it with whatever application
 is appropriate (an RDP client, a database client, `ssh`, etc.) and
 traffic will be forwarded through the phēnix UI server to the VM.
 
-Existing port forwards for a VM are listed in the same VM information
-modal, and can be removed by clicking the trash icon next to a forward.
+Existing port forwards for a VM are listed in the `Port forwards` section
+of the same VM details, each with the user that created it, and can be
+removed by clicking the trash icon next to a forward.
 
 ## Managing Listeners from the Local Web App
 
