@@ -97,6 +97,22 @@ func TestRoleDeniesEverything(t *testing.T) {
 	}
 }
 
+// A resource pattern that is bad only past where a probe name stops matching,
+// such as "v*[", also makes the role allow nothing.
+func TestRoleDeniesEverythingForAPartlyBadPattern(t *testing.T) {
+	t.Parallel()
+
+	spec := &v1.RoleSpec{Name: "r", Policies: []*v1.PolicySpec{
+		{Resources: []string{"v*[", "vms"}, ResourceNames: []string{"*"}, Verbs: []string{"*"}},
+	}}
+
+	for kind, r := range map[string]Role{"indexed": *newRole(spec, nil), "unindexed": {Spec: spec}} {
+		if r.Allowed("vms", "list") || r.Allowed("vms", "get", "vm1") {
+			t.Errorf("Allowed(vms, ...) of the %s role with resources [v*[ vms] = true, want false", kind)
+		}
+	}
+}
+
 // A policy added to a role takes effect at once. Copies made before keep
 // their own index, so AddPolicy does not change what they allow.
 func TestAddPolicy(t *testing.T) {

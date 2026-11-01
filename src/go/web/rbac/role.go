@@ -107,9 +107,7 @@ func (r *Role) SetResourceNames(names ...string) error {
 	}
 
 	for _, name := range names {
-		// Checking to make sure pattern given in 'name' is valid. Thus, the
-		// string provided to match it against is useless.
-		if _, err := filepath.Match(name, "useless"); err != nil {
+		if !validPattern(name) {
 			return fmt.Errorf("%w: %s", ErrResourceNameInvalid, name)
 		}
 	}
@@ -130,9 +128,7 @@ func (r *Role) AddResourceName(name string) error {
 				return fmt.Errorf("%w: %s", ErrResourceNameExists, name)
 			}
 
-			// Checking to make sure pattern given in 'name' is valid. Thus, the
-			// string provided to match it against is useless.
-			if _, err := filepath.Match(name, "useless"); err != nil {
+			if !validPattern(name) {
 				return fmt.Errorf("%w: %s", ErrResourceNameInvalid, name)
 			}
 
@@ -204,9 +200,7 @@ func mapPolicies(spec *v1.RoleSpec) map[string][]Policy {
 
 	for _, policy := range spec.Policies {
 		for _, resource := range policy.Resources {
-			// Checking to make sure pattern given in 'resource' is valid. Thus, the
-			// string provided to match it against is useless.
-			if _, err := filepath.Match(resource, "useless"); err != nil {
+			if !validPattern(resource) {
 				return map[string][]Policy{}
 			}
 
