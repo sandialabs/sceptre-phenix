@@ -3391,7 +3391,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
   "/experiments/{exp_name}/vms/{vm_name}/restart":
-    get:
+    post:
       tags:
         - Virtual Machines
       summary: Restart a VM
@@ -3399,7 +3399,7 @@ paths:
         Resets the running VM, as its reset button would, or starts it if it
         has quit, and answers with it. Needs the `vms/restart` `update`
         permission.
-      operationId: getExperimentsNameVmsNameRestart
+      operationId: postExperimentsNameVmsNameRestart
       parameters:
         - $ref: "#/components/parameters/ExpName"
         - $ref: "#/components/parameters/VMName"
@@ -3435,7 +3435,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
   "/experiments/{exp_name}/vms/{vm_name}/shutdown":
-    get:
+    post:
       tags:
         - Virtual Machines
       summary: Shut a VM down
@@ -3443,7 +3443,7 @@ paths:
         Stops the VM's packet captures and asks it to power off, killing it
         if it has not within 30 seconds, and answers with it. Needs the
         `vms/shutdown` `update` permission.
-      operationId: getExperimentsNameVmsNameShutdown
+      operationId: postExperimentsNameVmsNameShutdown
       parameters:
         - $ref: "#/components/parameters/ExpName"
         - $ref: "#/components/parameters/VMName"
@@ -3479,7 +3479,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
   "/experiments/{exp_name}/vms/{vm_name}/reset":
-    get:
+    post:
       tags:
         - Virtual Machines
       summary: Reset a VM's disk
@@ -3489,7 +3489,7 @@ paths:
         are lost. Then it starts the VM again and answers with it. The VM must
         run from
         a snapshot. Needs the `vms/reset` `update` permission.
-      operationId: getExperimentsNameVmsNameReset
+      operationId: postExperimentsNameVmsNameReset
       parameters:
         - $ref: "#/components/parameters/ExpName"
         - $ref: "#/components/parameters/VMName"
@@ -5227,13 +5227,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
   "/logout":
-    get:
+    post:
       tags:
         - Users
       summary: Logout a user
       description: >-
         Signs the session's token out, so it is refused from then on.
-      operationId: getLogout
+      operationId: postLogout
       responses:
         "204":
           description: successful operation

@@ -362,15 +362,21 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 
 // configAndRouteErrorCases are TestContractErrors' user and routing cases.
 func configAndRouteErrorCases() map[string]contractErrorCase {
+	const exp = contractExpPath
+
 	return map[string]contractErrorCase{
 		"user with unknown role": {
 			method: "POST", path: "/api/v1/users", body: createUserBody("carol", "No Such Role"), want: http.StatusBadRequest,
 		},
-		"unknown API path": {method: "GET", path: "/api/v1/no-such-route", want: http.StatusNotFound},
+		"unknown API path":     {method: "GET", path: "/api/v1/no-such-route", want: http.StatusNotFound},
+		"VM restart by GET":    {method: "GET", path: exp + "/vms/" + contractVM + "/restart", want: http.StatusMethodNotAllowed},
+		"VM shutdown by GET":   {method: "GET", path: exp + "/vms/" + contractVM + "/shutdown", want: http.StatusMethodNotAllowed},
+		"VM disk reset by GET": {method: "GET", path: exp + "/vms/" + contractVM + "/reset", want: http.StatusMethodNotAllowed},
+		"logout by GET":        {method: "GET", path: "/api/v1/logout", want: http.StatusMethodNotAllowed},
 	}
 }
 
-// Refusals get openapi.yml's status for the route (unknown paths' 404 in its errors text) and the JSON Error body:
+// Refusals get openapi.yml's status for the route (405 and unknown paths' 404 in its errors text) and the JSON Error body:
 // unknown things 404, bad input 400.
 func TestContractErrors(t *testing.T) {
 	spec := loadOpenAPI(t)

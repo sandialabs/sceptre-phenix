@@ -57,6 +57,7 @@ All notable changes to this project will be documented in this file.
 - **Config Store (breaking)**: The BoltDB store opens read-only for reads, writes each config change in one transaction, and gives each config a `metadata.revision`, so `phenix config edit` refuses edits to a config that changed after it opened. On the first write, the store file changes to the format that keeps the free page list in the file.
 - **Settings (breaking)**: A `PHENIX_*` environment variable now overrides the config file, and `phenix settings set` and `unset` change the YAML config file that phēnix read. A running `phenix ui` logs a warning that names each changed setting that takes effect only after a restart.
 - **VM Lists**: phēnix reads the VMs of an experiment with three minimega commands, and requests for the same data at the same time share one minimega answer. phēnix keeps cluster host and experiment file lists for 5 seconds, and VM list and experiment responses of a running experiment have an `X-Phenix-Observed-At` header.
+- **API Conventions (breaking)**: `/api/v1/logout` and the VM `reset`, `restart` and `shutdown` routes accept only `POST`. The experiment, VM and disk lists accept `pageNum` and `perPage`, and the paged lists return `400` for a page that is not a whole number of at least 1.
 
 ### Removed
 

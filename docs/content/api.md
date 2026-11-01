@@ -81,6 +81,17 @@ for details.
 An `OPTIONS` request to an `/api/v1` route answers `204` before
 authentication, without running the route.
 
+## Paging
+
+The experiment, VM, disk, experiment VM, and experiment file lists
+(`GET /experiments`, `/vms`, `/disks`, `/experiments/{name}/vms` and
+`/experiments/{name}/files`) take `pageNum` (from 1) and `perPage` together
+and return only that page. `GET /vms`, `/disks` and `/experiments/{name}/vms`
+also return a `total` that counts the whole list. Without both, they return
+everything; a value that is not a whole number of at least 1 answers `400`. A
+page of experiments asks minimega only about the experiments on it, and a page
+of `GET /vms?screenshot=` takes screenshots only of its own VMs.
+
 ## Integrations
 
 The phēnix API can be used to integrate phēnix with external systems. Known

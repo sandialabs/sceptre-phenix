@@ -57,11 +57,17 @@ lack it). Points that are easy to miss:
   a real `404`, not `200 text/html`.
 - `OPTIONS` on an `/api/v1` route answers `204` before auth, without running
   the route.
+- VM power changes are `POST`: `.../vms/{name}/start`, `/stop`, `/restart`,
+  `/shutdown`, `/reset` and `/redeploy`. Sign out with `POST /logout`.
 - Paths use camelCase (`captureSubnet`, `memorySnapshot`).
 - `GET /schemas/{version}` returns the whole schema file (`v0` Workflow, `v1`
   Topology/Experiment/Image/User/Role, `v2` Scenario).
   `GET /schemas/{kind}/{version}` returns one kind, only at the version it is
   stored at; any other kind or version answers `404`.
+- `GET /experiments`, `/vms`, `/disks` and the experiment VM and file lists
+  page with `pageNum` and `perPage` (both, from 1; `400` otherwise); without
+  them they return everything. `/vms`, `/disks` and `/experiments/{name}/vms`
+  also report the unpaged `total`.
 - Workflow routes are covered in [`workflow.md`](workflow.md#rest-endpoints).
 
 When a config fails its schema, the config routes (`POST /configs`,

@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
 
 	"phenix/api/experiment"
 	"phenix/api/vm"
+	ifaces "phenix/types/interfaces"
 	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/plog"
@@ -53,6 +53,11 @@ func GetVMs(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
+	page, pageSize, err := util.ParsePage(pageNum, perPage)
+	if err != nil {
+		return weberror.New(http.StatusBadRequest, err.Error())
+	}
+
 	exp, err := experiment.Get(expName)
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, err.Error())
@@ -79,19 +84,15 @@ func GetVMs(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	if sortCol != "" && sortDir != "" {
-		allowed.SortBy(sortCol, sortDir == "asc")
+	if col := sortColumn(sortCol, sortDir); col != "" {
+		allowed.SortBy(col, sortDir == sortAsc)
 	}
 
-	if pageNum != "" && perPage != "" {
-		n, _ := strconv.Atoi(pageNum)
-		s, _ := strconv.Atoi(perPage)
-
-		allowed = allowed.Paginate(n, s)
-	}
+	total := len(allowed)
+	allowed = util.Page(allowed, page, pageSize)
 
 	resp := &proto.VMList{
-		Total: uint32(len(allowed)), //nolint:gosec // integer overflow conversion int -> uint32
+		Total: uint32(total), //nolint:gosec // G115 counts fit in a uint32
 		Vms:   make([]*proto.VM, len(allowed)),
 	}
 	for i, v := range allowed {
@@ -658,6 +659,9 @@ func GetScreenshot(w http.ResponseWriter, r *http.Request) error {
 }
 
 // GetAllVMs - GET /vms.
+//
+// Lists the running VMs of every running experiment that the role may list;
+// with pageNum and perPage, only those on that page get screenshots.
 func GetAllVMs(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx   = r.Context()
@@ -678,13 +682,24 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
+	page, pageSize, err := util.ParsePage(query.Get("pageNum"), query.Get("perPage"))
+	if err != nil {
+		return weberror.New(http.StatusBadRequest, err.Error())
+	}
+
 	exps, err := experiment.List()
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting experiments", "err", err)
 	}
 
+	type runningVM struct {
+		exp  string
+		vm   mm.VM
+		topo ifaces.TopologySpec
+	}
+
 	var (
-		allowed  = []*proto.VM{}
+		running  []runningVM
 		observed = freshness.Unobserved()
 	)
 
@@ -710,22 +725,28 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) error {
 				continue
 			}
 
-			if size != "" {
-				screenshot, err := util.GetScreenshot(exp.Metadata.Name, vm.Name, size)
-				if err != nil {
-					plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
-				} else {
-					vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
-						screenshot,
-					)
-				}
-			}
-
-			allowed = append(allowed, util.VMToProtobuf(exp.Metadata.Name, vm, exp.Spec.Topology()))
+			running = append(running, runningVM{exp: exp.Metadata.Name, vm: vm, topo: exp.Spec.Topology()})
 		}
 	}
 
-	resp := &proto.VMList{Total: uint32(len(allowed)), Vms: allowed} //nolint:gosec // integer overflow conversion int -> uint32
+	total := len(running)
+	running = util.Page(running, page, pageSize)
+	allowed := make([]*proto.VM, 0, len(running))
+
+	for _, v := range running {
+		if size != "" {
+			screenshot, err := util.GetScreenshot(v.exp, v.vm.Name, size)
+			if err != nil {
+				plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+			} else {
+				v.vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
+			}
+		}
+
+		allowed = append(allowed, util.VMToProtobuf(v.exp, v.vm, v.topo))
+	}
+
+	resp := &proto.VMList{Total: uint32(total), Vms: allowed} //nolint:gosec // G115 counts fit in a uint32
 
 	body, err := marshaler.Marshal(resp)
 	if err != nil {
