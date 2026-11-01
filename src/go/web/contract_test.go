@@ -25,13 +25,14 @@ import (
 // The API contract drives each contractRoutes route through phenix ui's router in each auth mode, with and without
 // its permissions, behind a base path and with refused inputs; a new route adds a row there and its openapi.yml path.
 
-// The experiment, VM and disk image of the contract fixture, and an
-// experiment it does not have.
+// The experiment, VM, disk image and netflow capture of the contract fixture,
+// and an experiment it does not have.
 const (
-	contractExp   = "test-experiment"
-	contractVM    = "test-vm"
-	contractDisk  = "test-disk.qc2"
-	contractOther = "other-experiment"
+	contractExp     = "test-experiment"
+	contractVM      = "test-vm"
+	contractDisk    = "test-disk.qc2"
+	contractOther   = "other-experiment"
+	contractNetflow = "20261028T153012.345Z"
 )
 
 // serveContractAs is serveContract with every request taken as one from alice
@@ -44,7 +45,8 @@ func serveContractAs(t *testing.T, role rbac.Role) *httptest.Server {
 	return serveContract(t, func(o *serverOptions) { o.jwtKey = key })
 }
 
-// contractFixture: running test-experiment with test-vm mounted (etc/hostname), the user bob, and on-demand consoles.
+// contractFixture: running test-experiment with test-vm mounted (etc/hostname), a netflow capture, the user bob, and
+// on-demand consoles.
 type contractFixture struct {
 	consoles *consoleRegistry
 }
@@ -53,7 +55,9 @@ type contractFixture struct {
 func useContractFixture(t *testing.T) contractFixture {
 	t.Helper()
 
-	useExperimentFilesDir(t, nil)
+	useExperimentFilesDir(t, map[string]string{
+		"netflow/" + contractNetflow + ".txt": "2026-10-28T15:30:12Z\t1s\t6\t10.0.0.1:1\t<->\t10.0.0.2:2\t1\t1\n",
+	})
 	useTestExperiment(t)
 	useContractMount(t)
 
@@ -202,14 +206,20 @@ func contractRoutes() []contractRoute {
 	)
 
 	var (
-		diskGet = testRole("disks", "get", contractDisk)
-		mount   = testRole("vms/mount", "get", contractExp+"/"+contractVM)
-		one     = func(r rbac.Role) []rbac.Role { return []rbac.Role{r} }
-		ok      = []int{http.StatusOK}
-		done    = []int{http.StatusNoContent}
+		netflowGet = testRole("experiments/netflow", "get", contractExp)
+		diskGet    = testRole("disks", "get", contractDisk)
+		mount      = testRole("vms/mount", "get", contractExp+"/"+contractVM)
+		one        = func(r rbac.Role) []rbac.Role { return []rbac.Role{r} }
+		ok         = []int{http.StatusOK}
+		done       = []int{http.StatusNoContent}
 	)
 
 	return []contractRoute{
+		// recorded netflow captures
+		{method: "GET", path: exp + "/netflow/captures", need: one(netflowGet), want: ok},
+		{method: "GET", path: exp + "/netflow/captures/" + contractNetflow + "?format=csv", need: one(netflowGet), want: ok},
+		{method: "HEAD", path: exp + "/netflow/captures/" + contractNetflow, need: one(netflowGet), want: ok},
+
 		// VMs
 		{method: "GET", path: vm + "/vnc/ws", need: one(testRole("vms/vnc", "get", contractExp+"/"+contractVM))},
 		{method: "GET", path: vm + "/files/download?path=etc/hostname", need: one(mount), want: ok},
@@ -405,7 +415,7 @@ type contractErrorCase struct {
 
 const contractExpPath = "/api/v1/experiments/" + contractExp
 
-// fileAndVMErrorCases are TestContractErrors' file, VM and console cases.
+// fileAndVMErrorCases are TestContractErrors' file, VM, netflow and console cases.
 func fileAndVMErrorCases() map[string]contractErrorCase {
 	const exp = contractExpPath
 
@@ -424,6 +434,19 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 		},
 		"mount download of directory": {
 			method: "GET", path: exp + "/vms/" + contractVM + "/files/download?path=etc", want: http.StatusBadRequest,
+		},
+		"netflow that is not running": {method: "GET", path: exp + "/netflow", want: http.StatusNotFound},
+		"netflow captures of unknown experiment": {
+			method: "GET", path: "/api/v1/experiments/" + contractOther + "/netflow/captures", want: http.StatusNotFound,
+		},
+		"netflow capture in unknown format": {
+			method: "GET", path: exp + "/netflow/captures/" + contractNetflow + "?format=pcap", want: http.StatusBadRequest,
+		},
+		"netflow capture with invalid id": {
+			method: "GET", path: exp + "/netflow/captures/latest", want: http.StatusBadRequest,
+		},
+		"netflow capture that is missing": {
+			method: "GET", path: exp + "/netflow/captures/20200101T000000.000Z?format=jsonl", want: http.StatusNotFound,
 		},
 	}
 }

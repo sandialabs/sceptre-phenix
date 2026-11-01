@@ -178,10 +178,10 @@ missing, expired or otherwise refused token; created, changed or deleted a
 user, config or experiment; applied a workflow or changed the settings;
 started or stopped an experiment, an app or a netflow capture, or canceled a
 SCORCH run; changed a VM's settings or optical disc, or powered it on or off;
-started or stopped a packet capture; opened a console, VNC session or port
-forward; changed a disk image; or uploaded or downloaded a file. Signing in
-and out, and refused tokens, are logged only as these events, not as
-`SECURITY` records. Its fields follow the
+started or stopped a packet capture; downloaded a netflow capture; opened a
+console, VNC session or port forward; changed a disk image; or uploaded or
+downloaded a file. Signing in and out, and refused tokens, are logged only as
+these events, not as `SECURITY` records. Its fields follow the
 [Elastic Common Schema](https://www.elastic.co/guide/en/ecs/current/index.html)
 (ECS) as flat dotted keys, so the system log file can be shipped to
 Elasticsearch as it is.
@@ -252,7 +252,7 @@ user it named, and a token's event names only its user and expiry.
 | `capture-token-create` | `iam` | `creation` | none: no route records this action yet |
 | `capture-token-revoke` | `iam` | `deletion` | none: no route records this action yet |
 | `netflow-start`, `netflow-stop` | `network` | `start`, `end` | `POST /experiments/{exp}/netflow`, `DELETE /experiments/{exp}/netflow` |
-| `netflow-download` | `file` | `access` | none: no route records this action yet |
+| `netflow-download` | `file` | `access` | `GET /experiments/{exp}/netflow/captures/{id}` (once per download, not per resumed range or `HEAD`), naming the capture and format in `phenix.netflow.capture` and `phenix.netflow.format`, and for CSV and JSONL the flows written and lines skipped in `phenix.netflow.flows` and `phenix.netflow.skipped` |
 | `file-download` | `file` | `access` | `GET /experiments/{name}/files/{filename}` (downloads and the Files tab's viewer), `GET .../vms/{name}/files/download` |
 | `file-upload` | `file` | `creation` | the file server's upload page (one event per file) |
 | `file-delete` | `file` | `deletion` | none: no route records this action yet |
@@ -322,6 +322,8 @@ naming it.
 | `file.size` | the bytes an upload wrote |
 | `process.pid` | a console's or SCORCH terminal's process |
 | `phenix.file.preview` | whether a downloaded file was shown in the Files tab's viewer |
+| `phenix.netflow.capture`, `phenix.netflow.format` | the netflow capture downloaded, by its ID, and the format it was downloaded as: `text`, `csv` or `jsonl` |
+| `phenix.netflow.flows`, `phenix.netflow.skipped` | the flows a CSV or JSONL netflow download wrote, and the lines it left out because they do not parse |
 | `phenix.capture.subnet` | a subnet capture's subnet |
 | `phenix.console.end_reason` | why a console ended: `user` (ended from the UI), `idle` (no websocket attached for 15 seconds), `shutdown` (the server stopped) or `exited` (its process exited) |
 | `phenix.disk.size`, `phenix.disk.unsafe` | a resize's size and a rebase's `unsafe` |
@@ -376,8 +378,8 @@ Actions taken with the `phenix` CLI, such as `phenix vm capture` or
 `phenix image`, have no web user and are not audited, other than those
 `phenix workflow apply` sends through the Unix socket. Neither are the
 console's resize requests and status checks, other than their refusals, nor
-reads that change nothing, such as `GET` requests for configs or the running
-netflow capture.
+reads that change nothing, such as `GET` requests for configs, the running
+netflow capture or the list of recorded netflow captures.
 
 ### Shipping Audit Events with Filebeat
 

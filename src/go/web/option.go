@@ -18,6 +18,8 @@ const (
 	defaultJWTLifetime = 24 * time.Hour
 	// DefaultShutdownGracePeriod is how long shutting the server down may take.
 	DefaultShutdownGracePeriod = 5 * time.Second
+	// DefaultNetflowMaxSize is the most bytes of each netflow capture recorded.
+	DefaultNetflowMaxSize = 100 << 20
 
 	// TunnelerDownloadDir holds the phenix-tunneler builds the server offers,
 	// relative to the directory it starts in.
@@ -59,6 +61,8 @@ type serverOptions struct {
 	unixSocketGID int
 
 	shutdownGrace time.Duration
+
+	netflowMaxSize int64
 }
 
 func newServerOptions(opts ...ServerOption) serverOptions {
@@ -69,7 +73,8 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 		jwtLifetime: defaultJWTLifetime,
 		features:    make(map[string]bool),
 
-		shutdownGrace: DefaultShutdownGracePeriod,
+		shutdownGrace:  DefaultShutdownGracePeriod,
+		netflowMaxSize: DefaultNetflowMaxSize,
 	}
 
 	for _, opt := range opts {
@@ -212,6 +217,14 @@ func ServeWithUnixSocketGID(g int) ServerOption {
 func ServeWithShutdownGracePeriod(d time.Duration) ServerOption {
 	return func(o *serverOptions) {
 		o.shutdownGrace = d
+	}
+}
+
+// ServeWithNetflowMaxSize sets the most bytes of each netflow capture
+// recorded; 0 does not record captures.
+func ServeWithNetflowMaxSize(n int64) ServerOption {
+	return func(o *serverOptions) {
+		o.netflowMaxSize = n
 	}
 }
 
