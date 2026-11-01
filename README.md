@@ -241,6 +241,7 @@ Logging settings are managed via the `phenix settings` command, which modifies t
 
 | Setting Key | Environment Variable | Default | Description |
 | :--- | :--- | :--- | :--- |
+| `experiment.disk-check` | `PHENIX_EXPERIMENT_DISK_CHECK` | `error` | What a start does when a VM disk image or CD-ROM image is missing, or its backing chain is broken: `error` refuses the start, `warn` starts with a warning, and `off` does not check. |
 | `log.level` | `PHENIX_LOG_LEVEL` | `info` | Global log verbosity (`debug`, `info`, `warn`, `error`). |
 | `color` | `PHENIX_COLOR` | `auto` | When phēnix colors its output: statuses in tables, warnings and errors. `auto` colors only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`. `on` and `off` ignore both variables. JSON and YAML output never have color. phēnix refuses another value. |
 | `log.console` | `PHENIX_LOG_CONSOLE` | `stderr` | Destination for console logs (`stderr`, `stdout`, or a file path). Uses **Text/Human-Readable** format. Note: Setting this to a file path will prevent console logs from appearing in `docker logs`. |

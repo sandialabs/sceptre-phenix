@@ -212,9 +212,17 @@ func startExperiment(name string) error {
 	}
 }
 
-// startWebError is the 400 error of a start that failed with err.
+// startWebError is the 400 error of a start that failed with err. For broken disk images it has the code
+// broken_disks and lists each VM, disk and missing file in details.disks.
 func startWebError(err error, format string, args ...any) *weberror.WebError {
-	return weberror.NewWebError(err, format, args...).SetStatus(http.StatusBadRequest)
+	werr := weberror.NewWebError(err, format, args...).SetStatus(http.StatusBadRequest)
+
+	var broken *experiment.BrokenDisksError
+	if errors.As(err, &broken) {
+		werr = werr.WithCode(weberror.CodeBrokenDisks).WithDetail("disks", broken.Problems)
+	}
+
+	return werr
 }
 
 // followStart logs the notes of the experiment's start as it goes on in the

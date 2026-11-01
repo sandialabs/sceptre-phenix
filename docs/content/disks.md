@@ -388,6 +388,11 @@ watches that one instead, and open `Disks` pages reload.
 
 ## Broken Backing Chains
 
+A VM cannot start from an image whose backing file is missing. Before each
+start, phēnix checks the backing chain of each VM disk and refuses the start
+when a file is missing. See
+[Disk Check Before a Start](experiments.md#disk-check-before-a-start).
+
 The table shows a `Broken chain` tag beside the name of an image that qemu
 cannot open. These are the causes:
 
@@ -437,32 +442,34 @@ To repair the image, do one of these steps:
 
 ## Image Format Versions
 
-phēnix reads the format and version in the header of each image. The list
-gives them as `format` and `formatVersion`, and gives a `formatIssue` with a
-level and a fix for an image that needs care:
+Before a start, phēnix also reads the format and version in the header of each
+image in a backing chain. qemu refuses some images, and some old formats can
+cause problems. This table shows what phēnix does for each format:
 
-| Image | `formatIssue` level |
+| Image | What phēnix does |
 | :--- | :--- |
-| qcow2 version 3 (`compat=1.1`), raw | None. |
-| qcow2 version 2 (`compat=0.10`) | `warning` |
-| qcow version 1 | `warning`. Some qemu builds, such as the `qemu-kvm` of RHEL, cannot open this format. |
-| qcow2 or qcow version 1 with the old AES encryption | `error`. qemu does not open these images for VMs. |
-| qcow2 with LUKS encryption | `error`. phēnix cannot give qemu the key. |
-| qcow2 of a version later than 3, or with feature bits that qemu does not know | `error`. A newer qemu made the image. |
-| qcow2 that qemu marked as corrupt | `error` |
-| qcow2 that qemu did not close cleanly | `warning` |
-| vmdk or qed | `warning`. phēnix does not check past this image. |
-| An image whose header phēnix cannot read | `warning` |
+| qcow2 version 3 (`compat=1.1`), raw | Starts the VM. |
+| qcow2 version 2 (`compat=0.10`) | Starts the VM. |
+| qcow version 1 | Starts the VM with a warning. Some qemu builds, such as the `qemu-kvm` of RHEL, cannot open this format. |
+| qcow2 or qcow version 1 with the old AES encryption | Refuses the start. qemu does not open these images for VMs. |
+| qcow2 with LUKS encryption | Refuses the start. phēnix cannot give qemu the key. |
+| qcow2 of a version later than 3, or with feature bits that qemu does not know | Refuses the start. A newer qemu made the image. |
+| qcow2 that qemu marked as corrupt | Refuses the start when qemu must write to the image: a disk of a VM with `snapshot: false`. Otherwise, starts the VM with a warning. |
+| qcow2 that qemu did not close cleanly | Starts the VM with a warning. |
+| qcow2 with zstd compression or extended L2 entries | Starts the VM. |
+| vmdk, qed, or qcow2 with an external data file | Starts the VM with a warning. phēnix does not check past this image. |
 
-An image whose backing chain holds an image with an `error` level gets the
-issue of that image, unless it has an `error` of its own. On this page, the
-`Type` column of the [Disks table](#the-disks-table) marks these images, and the
-details card of an image gives its fix command, with a button that copies it.
+With `experiment.disk-check: warn`, or in a dry run, a refused start is a
+warning. On this page, the `Type` column of the [Disks table](#the-disks-table)
+marks these images, and the details card of an image gives its fix command,
+with a button that copies it. The
+table also lists an image that `qemu-img` cannot open for its version or
+feature bits.
 
-The list also gives an image that `qemu-img` cannot open for its version or
-feature bits. It finds a qcow version 1 image in the files directory only when
-its name has a known extension, such as `.qcow`. It also gives an image with a
-different name when a topology uses it, or when it backs a listed image.
+The table finds a qcow version 1 image in the files
+directory only when its name has a known extension, such as `.qcow`. The table
+also lists an image with a different name when a topology uses it, or when it
+backs a listed image.
 
 Before you change an image, stop each VM that uses it. To fix an image, use
 the command for its problem:

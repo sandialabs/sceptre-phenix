@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 )
 
 type (
@@ -123,6 +124,58 @@ func SetDeployMode(mode string) error {
 	DeployMode = parsed
 
 	return nil
+}
+
+// DiskCheck is what starting an experiment does when a VM's disk image or CD-ROM image is missing, or its backing
+// chain is broken: the experiment.disk-check setting.
+type DiskCheck string
+
+// The values of the experiment.disk-check setting.
+const (
+	// DiskCheckError refuses the start; it is the default.
+	DiskCheckError DiskCheck = "error"
+	// DiskCheckWarn starts anyway and reports each problem as a warning.
+	DiskCheckWarn DiskCheck = "warn"
+	// DiskCheckOff does not check the images.
+	DiskCheckOff DiskCheck = "off"
+)
+
+// diskCheck holds the current DiskCheck; the config watcher of phenix ui changes it while starts read it.
+var diskCheck atomic.Value //nolint:gochecknoglobals // global config
+
+// ParseDiskCheck returns the DiskCheck mode names, ignoring case; "" is DiskCheckError.
+func ParseDiskCheck(mode string) (DiskCheck, error) {
+	switch DiskCheck(strings.ToLower(mode)) {
+	case DiskCheckError, "":
+		return DiskCheckError, nil
+	case DiskCheckWarn:
+		return DiskCheckWarn, nil
+	case DiskCheckOff:
+		return DiskCheckOff, nil
+	}
+
+	return DiskCheckError, fmt.Errorf("unknown disk check mode provided: %s", mode)
+}
+
+// SetDiskCheck sets the current DiskCheck to the mode names, leaving it unchanged when ParseDiskCheck refuses it.
+func SetDiskCheck(mode string) error {
+	parsed, err := ParseDiskCheck(mode)
+	if err != nil {
+		return fmt.Errorf("setting disk check mode: %w", err)
+	}
+
+	diskCheck.Store(parsed)
+
+	return nil
+}
+
+// CurrentDiskCheck returns the current DiskCheck: DiskCheckError until SetDiskCheck sets another.
+func CurrentDiskCheck() DiskCheck {
+	if mode, ok := diskCheck.Load().(DiskCheck); ok {
+		return mode
+	}
+
+	return DiskCheckError
 }
 
 // EnvPlaceholder matches the ${VAR} and ${VAR:default} placeholders that

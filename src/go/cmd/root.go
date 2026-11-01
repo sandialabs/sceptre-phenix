@@ -122,6 +122,10 @@ var rootCmd = &cobra.Command{
 			return fmt.Errorf("setting user-specified deploy mode: %w", err)
 		}
 
+		if err := common.SetDiskCheck(viper.GetString("experiment.disk-check")); err != nil {
+			return fmt.Errorf("%w (options: error | warn | off)", err)
+		}
+
 		if _, err := colorMode(); err != nil {
 			return err
 		}
@@ -343,6 +347,12 @@ func init() {
 	rootCmd.PersistentFlags().
 		Bool("use-gre-mesh", false, "use GRE tunnels between mesh nodes for VLAN trunking")
 	rootCmd.PersistentFlags().
+		String(
+			"experiment.disk-check", string(common.DiskCheckError),
+			"what a start does when a VM disk image or CD-ROM image is missing or its backing chain is broken "+
+				"('error' refuses the start, 'warn' starts with a warning, 'off' does not check) (options: error | warn | off)",
+		)
+	rootCmd.PersistentFlags().
 		String("unix-socket", "/tmp/phenix.sock", "phēnix unix socket to listen on (ui subcommand) or connect to")
 	rootCmd.PersistentFlags().
 		String(
@@ -385,6 +395,10 @@ func applyConfigChange(e fsnotify.Event) {
 	plog.ChangeMaxLogFileSize(viper.GetInt("log.system.max-size"))
 	plog.ChangeMaxLogFileBackups(viper.GetInt("log.system.max-backups"))
 	plog.ChangeMaxLogFileAge(viper.GetInt("log.system.max-age"))
+
+	if err := common.SetDiskCheck(viper.GetString("experiment.disk-check")); err != nil {
+		plog.Warn(plog.TypeSystem, "keeping the current experiment.disk-check", "mode", common.CurrentDiskCheck(), "err", err)
+	}
 
 	// Hot-swap console logger
 	var logOutput io.Writer = os.Stderr
