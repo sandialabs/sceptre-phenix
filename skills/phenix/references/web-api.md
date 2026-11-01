@@ -38,24 +38,31 @@ curl -H "X-Phenix-Auth-Token: $TOKEN" http://localhost:3000/api/v1/experiments
 
 ## Routes
 
-| Resource | Routes |
-|---|---|
-| Configs | `GET/POST /configs`, `GET/PUT/DELETE /configs/{kind}/{name}`, `POST /configs/download` |
-| Schemas | `GET /schemas/{version}` (the whole schema file: `v0` Workflow, `v1` Topology/Experiment/Image/User/Role, `v2` Scenario), `GET /schemas/{kind}/{version}` (one kind, only at the version it is stored at; any other kind or version answers 404) |
-| Experiments | `GET/POST /experiments`, `GET /experiments/{name}`, `PATCH /experiments/{name}`, `DELETE /experiments/{name}`, `POST /experiments/{name}/start`, `POST /experiments/{name}/stop`, `GET /experiments/{name}/apps` |
-| Experiment detail | `GET /experiments/{name}/topology`, `GET /experiments/{name}/topology/search`, `POST/DELETE /experiments/{name}/trigger`, `GET/POST /experiments/{name}/schedule`, `GET /experiments/{name}/soh` (state of health), `GET /experiments/{name}/captures`, `GET /experiments/{name}/files`, `GET /experiments/{name}/files/{filename}` |
-| Netflow | `GET/POST/DELETE /experiments/{exp}/netflow`, `GET /experiments/{exp}/netflow/ws` |
-| Subnet captures | `POST /experiments/{exp}/captureSubnet`, `POST /experiments/{exp}/stopCaptureSubnet` |
-| VMs | `GET/PATCH /experiments/{exp}/vms`, `GET/PATCH/DELETE /experiments/{exp}/vms/{name}`, plus `/start`, `/stop`, `/restart`, `/redeploy`, `/shutdown`, `/reset`, `/cdrom`, `/vnc`, `/vnc/ws`, `/screenshot.png`, `/captures`, `/snapshots`, `/snapshots/{snapshot}`, `/commit`, `/memorySnapshot`, `/forwards`, `/forwards/{host}/{port}/ws` |
-| VM mount (only with the `vm-mount` feature enabled) | `POST /experiments/{exp}/vms/{name}/mount`, `DELETE .../unmount`, `GET .../files?path=`, `GET .../files/download?path=`, `PUT .../files/upload?path=`, `POST .../files/copy` |
-| Disks | `GET/POST/DELETE /disks`, `/disks/snapshot`, `/disks/rebase`, `/disks/resize`, `/disks/commit`, `/disks/clone`, `/disks/rename`, `/disks/download` |
-| Misc lookups | `GET /vms` (all experiments), `GET /applications`, `GET /topologies`, `GET /topologies/{topo}/scenarios`, `GET /hosts` |
-| Users/Roles/Auth | `GET/POST /users`, `GET/PATCH/DELETE /users/{username}`, `POST /users/{username}/tokens`, `GET /roles`, `POST /signup`, `GET/POST /login`, `GET /logout` |
-| Realtime | `GET /ws` (websocket broker for UI events/logs), `GET /logs`, `POST /console`, `GET /console/{pid}/ws`, `POST /console/{pid}/size` |
-| SCORCH | `GET /experiments/{name}/scorch/pipelines`, `GET /experiments/{name}/scorch/pipelines/{run}/{loop}`, `POST/DELETE /experiments/{name}/scorch/pipelines/{run}`, `GET /experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}[/ws]`, `/experiments/{name}/scorch/terminals*` |
-| Settings | `GET/POST /settings`, `GET /settings/password`, `GET /settings/timeout` |
-| Workflow | `POST /workflow/apply/{branch}` (`?dryRun=true`, `pending`, `expect`, `tag`), `POST /workflow/configs/{branch}` (`?dryRun=true`). Parameters and answers are in [`workflow.md`](workflow.md#rest-endpoints) |
-| Options | `GET /options` (server-side CLI defaults like bridge-mode/deploy-mode, plus `base-dir.injects` and `workflow-dry-run`) |
+`src/go/web/public/docs/openapi.yml`, served rendered at `/docs/`, is the route
+reference: every route `src/go/web/server.go` serves, websockets and routes
+outside `/api/v1` included, with parameters, bodies, permissions and status
+codes. `TestRouterMatchesOpenAPI` keeps the two in step, so read the spec
+rather than guessing a path. The server also serves the raw spec at
+`/docs/openapi.yml`, with `info.version` set to its build, and every `/api/v1`
+response past authentication names that build in `X-Phenix-Version` (an
+authentication refusal, and a `404` or `405` for an unserved path or method,
+lack it). Points that are easy to miss:
+
+- Outside `/api/v1`, at the server root: `/version`, `/features` and
+  `/downloads/tunneler/{name}` (with the `tunneler-download` feature).
+- Feature-gated routes: the VM mount routes need the `vm-mount` feature, and
+  the `/console` routes `phenix ui --minimega-console`.
+- Unmatched `/api/v1/*` requests return a JSON `404`; only non-API routes fall
+  through to the SPA index. A route behind a disabled feature flag is therefore
+  a real `404`, not `200 text/html`.
+- `OPTIONS` on an `/api/v1` route answers `204` before auth, without running
+  the route.
+- Paths use camelCase (`captureSubnet`, `memorySnapshot`).
+- `GET /schemas/{version}` returns the whole schema file (`v0` Workflow, `v1`
+  Topology/Experiment/Image/User/Role, `v2` Scenario).
+  `GET /schemas/{kind}/{version}` returns one kind, only at the version it is
+  stored at; any other kind or version answers `404`.
+- Workflow routes are covered in [`workflow.md`](workflow.md#rest-endpoints).
 
 When a config fails its schema, the config routes (`POST /configs`,
 `PUT /configs/{kind}/{name}`) and the workflow routes answer 400 with the
@@ -66,9 +73,3 @@ text in `metadata.validation-raw`; see [`workflow.md`](workflow.md).
 a name another user has, and `500` `error creating user` for other failures.
 `POST /users` answers `400` `role not found` for an unknown role before it
 creates anything.
-
-Unmatched `/api/v1/*` requests return a JSON `404`; only non-API routes fall
-through to the SPA index. A route behind a disabled feature flag is therefore a
-real `404`, not `200 text/html`.
-
-`src/go/web/server.go` is the authoritative route list.

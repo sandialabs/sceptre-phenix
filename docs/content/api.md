@@ -35,17 +35,34 @@ available in two places:
     running, whereas [swagger.html](/swagger.html) reflects the spec as of
     the latest docs release.
 
+    The server also serves the spec itself at `/docs/openapi.yml`, with
+    `info.version` set to its build: a release's version without its `v`
+    (such as `1.0.0`), or `0.0.0-dev+<commit>` for any other build. Every
+    `/api/v1` response past authentication names the same build in its
+    `X-Phenix-Version` header, so a client generated from the spec can tell
+    when the server runs a different version. A request that authentication
+    refuses, and a `404` or `405` for a path or method the server does not
+    serve, get no such header.
+
 The API docs are organized by tag (`Configs`, `Experiments`, `Virtual
 Machines`, `Hosts`, `Applications`, `Topologies`, `Disks`, `Users`,
-`Workflow`, etc.) and document every available endpoint, including request
-parameters and response schemas.
+`Workflow`, `Events`, etc.) and document every route, including request
+parameters, response schemas and status codes. That includes the websockets
+(`/ws` and the netflow, VNC, console, port forward and SCORCH streams), each
+described as a `GET` that answers `101` with its message protocol, and the
+routes outside `/api/v1`: the features, version and tunneler download routes.
+Only the web UI's own files (scripts, styles, images and the documentation
+site) are left out.
 
 !!! info
     The underlying OpenAPI spec is maintained at
     [`src/go/web/public/docs/openapi.yml`](https://github.com/sandialabs/sceptre-phenix/blob/main/src/go/web/public/docs/openapi.yml)
     in the [sceptre-phenix](https://github.com/sandialabs/sceptre-phenix)
     repository, and is rendered to static HTML with
-    [Redoc](https://github.com/Redocly/redoc) as part of the phēnix build.
+    [Redoc](https://github.com/Redocly/redoc) as part of the phēnix build:
+    container images, Debian packages, and binaries built with `make build`
+    all use the Redocly CLI version pinned in `scripts/api-docs.sh`. Run
+    `make api-docs` to render it locally.
 
 ## Authentication
 
@@ -60,6 +77,9 @@ X-phenix-auth-token: ******
 
 See [Generating User Authentication Tokens](user-administration.md#generating-user-authentication-tokens)
 for details.
+
+An `OPTIONS` request to an `/api/v1` route answers `204` before
+authentication, without running the route.
 
 ## Integrations
 
