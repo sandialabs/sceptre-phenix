@@ -15,6 +15,7 @@ import (
 	"phenix/api/vm"
 	"phenix/util/mm"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
 	"phenix/web/cache"
@@ -167,6 +168,44 @@ func GetVM(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// vmUpdateFields name the VM name of exp a PATCH request updates and, in
+// phenix.vm.changed, the settings it changes, without their values. Only a
+// single-VM PATCH (single) changes the inject partition and tags.
+func vmUpdateFields(exp, name string, req *proto.UpdateVMRequest, single bool) audit.Fields {
+	var (
+		f       = audit.Fields{Experiment: exp, VM: name}
+		changed = []string{}
+	)
+
+	for _, c := range []struct {
+		name string
+		set  bool
+	}{
+		{"cpus", req.GetCpus() != 0},
+		{"memory", req.GetRam() != 0},
+		{"disk", req.GetDisk() != ""},
+		{"inject_partition", single && req.GetInjectPartition() != 0},
+		{"interface", req.GetInterface() != nil},
+		{"tags", single && req.GetTagUpdateMode() != proto.TagUpdateMode_NONE},
+		{"do_not_boot", req.GetBoot() != nil},
+		{"host", req.GetClusterHost() != nil},
+		{"snapshot", req.GetSnapshotOption() != nil},
+	} {
+		if c.set {
+			changed = append(changed, c.name)
+		}
+	}
+
+	if req.GetInterface() != nil {
+		iface := int(req.GetInterface().GetIndex())
+		f.Interface = &iface
+	}
+
+	f.Extra = []any{"phenix.vm.changed", changed}
+
+	return f
+}
+
 // UpdateVM - PATCH /experiments/{exp}/vms/{name}.
 //
 //nolint:funlen // handler
@@ -180,16 +219,7 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("vms", "patch", fmt.Sprintf("%s/%s", expName, name)) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"updating vm not allowed",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			expName,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMUpdate, "updating vm not allowed", audit.Fields{Experiment: expName, VM: name})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -244,11 +274,16 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 		opts = append(opts, vm.UpdateWithSnapshot(req.GetSnapshot()))
 	}
 
+	updated := vmUpdateFields(expName, name, &req, true)
+
 	if err := vm.Update(opts...); err != nil {
+		audit.Failure(r, audit.VMUpdate, "updating vm failed", updated, err)
 		plog.Error(plog.TypeSystem, "updating VM", "err", err)
 
 		return weberror.New(http.StatusInternalServerError, "unable to update VM")
 	}
+
+	audit.Success(r, audit.VMUpdate, "vm updated", updated)
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
@@ -280,16 +315,6 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	plog.Info(
-		plog.TypeAction,
-		"vm updated",
-		"user",
-		middleware.UserFromContext(ctx),
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
@@ -297,8 +322,6 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 }
 
 // UpdateVMs - PATCH /experiments/{exp}/vms.
-//
-//nolint:funlen // handler
 func UpdateVMs(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
@@ -321,18 +344,11 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) error {
 	resp.Vms = make([]*proto.VM, int(req.GetTotal()))
 
 	for index, vmRequest := range req.GetVms() {
+		updated := vmUpdateFields(expName, vmRequest.GetName(), vmRequest, false)
+
 		// Skip any vms that are not allowed to be updated
 		if !role.Allowed("vms", "patch", fmt.Sprintf("%s/%s", expName, vmRequest.GetName())) {
-			plog.Warn(
-				plog.TypeSecurity,
-				"updating vm is not allowed",
-				"user",
-				middleware.UserFromContext(ctx),
-				"exp",
-				expName,
-				"vm",
-				vmRequest.GetName(),
-			)
+			audit.Denied(r, audit.VMUpdate, "updating vm not allowed", updated)
 
 			continue
 		}
@@ -368,10 +384,13 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		if err := vm.Update(opts...); err != nil {
+			audit.Failure(r, audit.VMUpdate, "updating vm failed", updated, err)
 			plog.Error(plog.TypeSystem, "updating VM", "err", err)
 
 			return weberror.New(http.StatusInternalServerError, "unable to update VM")
 		}
+
+		audit.Success(r, audit.VMUpdate, "vm updated", updated)
 
 		exp, err := experiment.Get(expName)
 		if err != nil {
@@ -395,16 +414,6 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		resp.Vms[index] = util.VMToProtobuf(expName, *vm, exp.Spec.Topology())
-		plog.Info(
-			plog.TypeAction,
-			"vm updated",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			expName,
-			"vm",
-			vmRequest.GetName(),
-		)
 	}
 
 	body, err = marshaler.Marshal(resp)
@@ -433,22 +442,16 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) error {
 		inject   = query.Get("replicate-injects") != ""
 	)
 
+	audited := audit.Fields{Experiment: expName, VM: name}
+
 	if !role.Allowed("vms/redeploy", "update", fullName) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"redeploying vm not allowed",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			expName,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMRedeploy, "redeploying vm not allowed", audited)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	if err := cache.LockVMForRedeploying(expName, name); err != nil {
+		audit.Failure(r, audit.VMRedeploy, "redeploying vm failed", audited, err)
 		plog.Error(
 			plog.TypeSystem,
 			"locking VM",
@@ -469,11 +472,15 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) error {
 
 	exp, err := experiment.Get(expName)
 	if err != nil {
+		audit.Failure(r, audit.VMRedeploy, "redeploying vm failed", audited, err)
+
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
 	v, err := vm.Get(expName, name)
 	if err != nil {
+		audit.Failure(r, audit.VMRedeploy, "redeploying vm failed", audited, err)
+
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
@@ -545,6 +552,7 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) error {
 	err = <-redeployed
 	if err != nil {
 		plog.Error(plog.TypeSystem, "redeploying VM", "exp", expName, "vm", name, "err", err)
+		audit.Failure(r, audit.VMRedeploy, "redeploying vm failed", audited, err)
 
 		broker.Broadcast(
 			bt.NewRequestPolicy("vms/redeploy", "update", fullName),
@@ -554,6 +562,8 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) error {
 
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
+
+	audit.Success(r, audit.VMRedeploy, "vm redeployed", audited)
 
 	// Get the VM details again since redeploying may have changed them.
 	v, err = vm.Get(expName, name)
@@ -576,16 +586,6 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	plog.Info(
-		plog.TypeAction,
-		"vm redeployed",
-		"user",
-		middleware.UserFromContext(ctx),
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
@@ -743,25 +743,17 @@ func ChangeOpticalDisc(w http.ResponseWriter, r *http.Request) error {
 		fullName = exp + "/" + name
 	)
 
+	changed := audit.Fields{Experiment: exp, VM: name, File: isoPath}
+
 	if !role.Allowed("vms/cdrom", "update", fullName) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"changing optical disk not allowed",
-			user,
-			"exp",
-			exp,
-			"vm",
-			name,
-			"iso",
-			isoPath,
-		)
+		audit.Denied(r, audit.VMDiscChange, "changing optical disc not allowed", changed)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := vm.ChangeOpticalDisc(exp, name, isoPath)
 	if err != nil {
+		audit.Failure(r, audit.VMDiscChange, "changing optical disc failed", changed, err)
 		plog.Error(plog.TypeSystem, "changing disc for VM", "exp", exp, "vm", name, "err", err)
 
 		return weberror.New(http.StatusInternalServerError, err.Error())
@@ -773,18 +765,7 @@ func ChangeOpticalDisc(w http.ResponseWriter, r *http.Request) error {
 		nil,
 	)
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"optical disk changed",
-		user,
-		"exp",
-		exp,
-		"vm",
-		name,
-		"iso",
-		isoPath,
-	)
+	audit.Success(r, audit.VMDiscChange, "optical disc changed", changed)
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil
@@ -801,23 +782,17 @@ func EjectOpticalDisc(w http.ResponseWriter, r *http.Request) error {
 		fullName = exp + "/" + name
 	)
 
+	ejected := audit.Fields{Experiment: exp, VM: name}
+
 	if !role.Allowed("vms/cdrom", "delete", fullName) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"ejecting optical disk not allowed",
-			user,
-			"exp",
-			exp,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMDiscEject, "ejecting optical disc not allowed", ejected)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := vm.EjectOpticalDisc(exp, name)
 	if err != nil {
+		audit.Failure(r, audit.VMDiscEject, "ejecting optical disc failed", ejected, err)
 		plog.Error(plog.TypeSystem, "ejecting disc for VM", "exp", exp, "vm", name, "err", err)
 
 		return weberror.New(http.StatusInternalServerError, err.Error())
@@ -829,16 +804,7 @@ func EjectOpticalDisc(w http.ResponseWriter, r *http.Request) error {
 		nil,
 	)
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"optical disk ejected",
-		user,
-		"exp",
-		exp,
-		"vm",
-		name,
-	)
+	audit.Success(r, audit.VMDiscEject, "optical disc ejected", ejected)
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil

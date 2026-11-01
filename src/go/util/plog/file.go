@@ -30,7 +30,8 @@ const (
 	MaxJSONErrorCount        = 3
 	MaxMissingFileIterations = 3
 
-	// fileHandlerName names the system log file's handler.
+	// fileHandlerName names the system log file's handler, which audit
+	// records reach whatever the log level.
 	fileHandlerName = "filelogger"
 )
 
@@ -265,6 +266,8 @@ func (log *LogEntry) UnmarshalJSON(data []byte) error { //nolint:funlen // compl
 			}
 
 			log.Message = msg
+		case auditTimestampKey:
+			// the file's own time says when; keep the entry's text short
 		case "traceback":
 			if tb, ok := value.(string); ok {
 				traceback = tb

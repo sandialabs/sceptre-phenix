@@ -106,6 +106,25 @@ func fixedRole(name string) (rbac.Role, error) {
 	return *role, nil
 }
 
+// unixSocketKey is the context key marking a request that came over the Unix
+// socket.
+type unixSocketKey struct{}
+
+// UnixSocket marks each request as having come over the Unix socket, which
+// has no web user or client address.
+func UnixSocket(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), unixSocketKey{}, true)))
+	})
+}
+
+// FromUnixSocket reports whether UnixSocket marked the request of ctx.
+func FromUnixSocket(ctx context.Context) bool {
+	socket, _ := ctx.Value(unixSocketKey{}).(bool)
+
+	return socket
+}
+
 // Why Auth refused a request, as a RefusalFunc is told.
 const (
 	RefusedMissing     = "missing"             // no token
@@ -216,7 +235,6 @@ func Auth(jwtKey, proxyAuthHeader string, opts ...AuthOption) mux.MiddlewareFunc
 			},
 			SigningMethod: jwt.SigningMethodHS256,
 			ErrorHandler: func(w http.ResponseWriter, r *http.Request, e string) {
-				plog.Error(plog.TypeSecurity, "validating auth token", "err", e)
 				refused(r, refusal(e), "")
 
 				weberror.Error(w, e, http.StatusUnauthorized)
@@ -228,12 +246,6 @@ func Auth(jwtKey, proxyAuthHeader string, opts ...AuthOption) mux.MiddlewareFunc
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			raw, err := fromPhenixAuthTokenHeader(r)
 			if err != nil {
-				plog.Error(
-					plog.TypeSecurity,
-					"getting raw JWT from X-phenix-auth-token header",
-					"err",
-					err,
-				)
 				refused(r, RefusedMalformed, "")
 
 				weberror.Error(w, "missing phenix auth token header", http.StatusBadRequest)
@@ -248,7 +260,6 @@ func Auth(jwtKey, proxyAuthHeader string, opts ...AuthOption) mux.MiddlewareFunc
 					reason = RefusedMissing
 				}
 
-				plog.Error(plog.TypeSecurity, "parsing valid JWT", "err", err)
 				refused(r, reason, "")
 
 				weberror.Error(w, "parsing auth token", http.StatusBadRequest)
@@ -275,12 +286,6 @@ func Auth(jwtKey, proxyAuthHeader string, opts ...AuthOption) mux.MiddlewareFunc
 
 			userToken := userTokenFromContext(ctx)
 			if userToken == nil {
-				plog.Warn(
-					plog.TypeSecurity,
-					"rejecting unauthorized request - missing user token",
-					"path",
-					r.URL.Path,
-				)
 				refused(r, RefusedMissing, "")
 				weberror.Error(w, "Forbidden", http.StatusForbidden)
 
@@ -294,14 +299,6 @@ func Auth(jwtKey, proxyAuthHeader string, opts ...AuthOption) mux.MiddlewareFunc
 
 			jwtUser, err := jwtutil.UsernameFromClaims(claims)
 			if err != nil {
-				plog.Warn(
-					plog.TypeSecurity,
-					"rejecting unauthorized request",
-					"path",
-					r.URL.Path,
-					"err",
-					err,
-				)
 				refused(r, RefusedInvalid, "")
 				weberror.Error(w, "invalid token", http.StatusUnauthorized)
 
@@ -310,14 +307,6 @@ func Auth(jwtKey, proxyAuthHeader string, opts ...AuthOption) mux.MiddlewareFunc
 
 			if proxyAuthHeader != "" {
 				if user := r.Header.Get(proxyAuthHeader); user != jwtUser {
-					plog.Error(
-						plog.TypeSecurity,
-						"proxy user mismatch",
-						"user",
-						user,
-						"token",
-						jwtUser,
-					)
 					refused(r, RefusedProxyUser, jwtUser)
 					weberror.Error(w, "proxy user mismatch", http.StatusUnauthorized)
 

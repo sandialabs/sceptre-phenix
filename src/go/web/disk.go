@@ -18,6 +18,7 @@ import (
 	"phenix/api/disk"
 	"phenix/util/mm"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -105,54 +106,28 @@ func CommitDisk(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, fmt.Sprintf("image %s has no backing image to commit to", path))
 	}
 
+	committed := audit.Fields{File: path, Target: info.BackingImages[0]}
+
 	if !role.Allowed("disks", "update", info.BackingImages[0]) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"committing disk not allowed",
-			"user",
-			user,
-			"from_disk",
-			path,
-			"to_disk",
-			info.BackingImages[0],
-		)
+		audit.Denied(r, audit.DiskCommit, "committing disk not allowed", committed)
 
 		return weberror.New(http.StatusForbidden, "forbidden for "+info.BackingImages[0])
 	}
 
 	if !role.Allowed("disks", "update", filepath.Base(path)) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"committing disk not allowed",
-			"user",
-			user,
-			"from_disk",
-			path,
-			"to_disk",
-			info.BackingImages[0],
-		)
+		audit.Denied(r, audit.DiskCommit, "committing disk not allowed", committed)
 
 		return weberror.New(http.StatusForbidden, "forbidden for "+path)
 	}
 
 	err = disk.CommitDisk(path)
 	if err != nil {
+		audit.Failure(r, audit.DiskCommit, "committing disk failed", committed, err)
+
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"committed disk",
-		"user",
-		user,
-		"from_disk",
-		path,
-		"to_disk",
-		info.BackingImages[0],
-	)
+	audit.Success(r, audit.DiskCommit, "committed disk", committed)
 	w.WriteHeader(http.StatusOK)
 
 	return nil
@@ -169,37 +144,19 @@ func SnapshotDisk(w http.ResponseWriter, r *http.Request) error {
 	newPath := normalizeDstDisk(path, mux.Vars(r)["new"])
 
 	if !role.Allowed("disks", "create", filepath.Base(newPath)) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"snapshotting disk not allowed",
-			"user",
-			user,
-			"from_disk",
-			path,
-			"to_disk",
-			newPath,
-		)
+		audit.Denied(r, audit.DiskSnapshot, "snapshotting disk not allowed", audit.Fields{File: path, Target: newPath})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := disk.SnapshotDisk(path, newPath)
 	if err != nil {
+		audit.Failure(r, audit.DiskSnapshot, "snapshotting disk failed", audit.Fields{File: path, Target: newPath}, err)
+
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"snapshotted disk",
-		"user",
-		user,
-		"from_disk",
-		path,
-		"to_disk",
-		newPath,
-	)
+	audit.Success(r, audit.DiskSnapshot, "snapshotted disk", audit.Fields{File: path, Target: newPath})
 	w.WriteHeader(http.StatusOK)
 
 	return nil
@@ -217,38 +174,22 @@ func RebaseDisk(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
+	rebased := audit.Fields{File: path, Target: backing, Extra: []any{"phenix.disk.unsafe", unsafe}}
+
 	if !role.Allowed("disks", "update", filepath.Base(path)) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"rebasing disk not allowed",
-			"user",
-			user,
-			"disk",
-			path,
-		)
+		audit.Denied(r, audit.DiskRebase, "rebasing disk not allowed", rebased)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err = disk.RebaseDisk(path, backing, unsafe)
 	if err != nil {
+		audit.Failure(r, audit.DiskRebase, "rebasing disk failed", rebased, err)
+
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"rebased disk",
-		"user",
-		user,
-		"disk",
-		path,
-		"onto",
-		backing,
-		"unsafe",
-		unsafe,
-	)
+	audit.Success(r, audit.DiskRebase, "rebased disk", rebased)
 	w.WriteHeader(http.StatusOK)
 
 	return nil
@@ -261,36 +202,22 @@ func ResizeDisk(w http.ResponseWriter, r *http.Request) error {
 	path := mux.Vars(r)["disk"]
 	size := mux.Vars(r)["size"]
 
+	resized := audit.Fields{File: path, Extra: []any{"phenix.disk.size", size}}
+
 	if !role.Allowed("disks", "update", filepath.Base(path)) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"resizing disk not allowed",
-			"user",
-			user,
-			"disk",
-			path,
-		)
+		audit.Denied(r, audit.DiskResize, "resizing disk not allowed", resized)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := disk.ResizeDisk(path, size)
 	if err != nil {
+		audit.Failure(r, audit.DiskResize, "resizing disk failed", resized, err)
+
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"resized disk",
-		"user",
-		user,
-		"disk",
-		path,
-		"size",
-		size,
-	)
+	audit.Success(r, audit.DiskResize, "resized disk", resized)
 	w.WriteHeader(http.StatusOK)
 
 	return nil
@@ -305,37 +232,19 @@ func CloneDisk(w http.ResponseWriter, r *http.Request) error {
 	newPath := normalizeDstDisk(path, mux.Vars(r)["new"])
 
 	if !role.Allowed("disks", "create") {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"cloning disk not allowed",
-			"user",
-			user,
-			"from_disk",
-			path,
-			"to_disk",
-			newPath,
-		)
+		audit.Denied(r, audit.DiskClone, "cloning disk not allowed", audit.Fields{File: path, Target: newPath})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := disk.CloneDisk(path, newPath)
 	if err != nil {
+		audit.Failure(r, audit.DiskClone, "cloning disk failed", audit.Fields{File: path, Target: newPath}, err)
+
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"cloned disk",
-		"user",
-		user,
-		"from_disk",
-		path,
-		"to_disk",
-		newPath,
-	)
+	audit.Success(r, audit.DiskClone, "cloned disk", audit.Fields{File: path, Target: newPath})
 	w.WriteHeader(http.StatusOK)
 
 	return nil
@@ -352,37 +261,19 @@ func RenameDisk(w http.ResponseWriter, r *http.Request) error {
 	newPath := normalizeDstDisk(path, mux.Vars(r)["new"])
 
 	if !role.Allowed("disks", "update", filepath.Base(path)) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"renaming disk not allowed",
-			"user",
-			user,
-			"from_disk",
-			path,
-			"to_disk",
-			newPath,
-		)
+		audit.Denied(r, audit.DiskRename, "renaming disk not allowed", audit.Fields{File: path, Target: newPath})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := disk.RenameDisk(path, newPath)
 	if err != nil {
+		audit.Failure(r, audit.DiskRename, "renaming disk failed", audit.Fields{File: path, Target: newPath}, err)
+
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"renamed disk",
-		"user",
-		user,
-		"from_disk",
-		path,
-		"to_disk",
-		newPath,
-	)
+	audit.Success(r, audit.DiskRename, "renamed disk", audit.Fields{File: path, Target: newPath})
 	w.WriteHeader(http.StatusOK)
 
 	return nil
@@ -395,33 +286,19 @@ func DeleteDisk(w http.ResponseWriter, r *http.Request) error {
 	path := mux.Vars(r)["disk"]
 
 	if !role.Allowed("disks", "delete", filepath.Base(path)) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"deleting disk not allowed",
-			"user",
-			user,
-			"disk",
-			path,
-		)
+		audit.Denied(r, audit.DiskDelete, "deleting disk not allowed", audit.Fields{File: path})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	err := disk.DeleteDisk(path)
 	if err != nil {
+		audit.Failure(r, audit.DiskDelete, "deleting disk failed", audit.Fields{File: path}, err)
+
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"deleted disk",
-		"user",
-		user,
-		"disk",
-		path,
-	)
+	audit.Success(r, audit.DiskDelete, "deleted disk", audit.Fields{File: path})
 	w.WriteHeader(http.StatusOK)
 
 	return nil
@@ -433,48 +310,47 @@ func UploadDisk(w http.ResponseWriter, r *http.Request) error {
 	clientFile, handler, err := r.FormFile("file")
 
 	if !role.Allowed("disks", "upload") {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"uploading disk not allowed",
-			"user",
-			user,
-		)
+		audit.Denied(r, audit.DiskUpload, "uploading disk not allowed", audit.Fields{})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	if err != nil {
 		plog.Error(plog.TypeSystem, err.Error())
+		audit.Failure(r, audit.DiskUpload, "uploading disk failed", audit.Fields{}, err)
 
 		return weberror.New(http.StatusInternalServerError, "Error uploading: "+err.Error())
 	}
 
 	defer func() { _ = clientFile.Close() }()
 
+	target := mm.GetMMFullPath(handler.Filename)
+
 	localFile, err := os.OpenFile( //nolint:gosec // Path traversal via taint analysis
-		mm.GetMMFullPath(handler.Filename),
+		target,
 		os.O_WRONLY|os.O_CREATE,
 		0o600,
 	)
 	if err != nil {
 		plog.Error(plog.TypeSystem, err.Error())
+		audit.Failure(r, audit.DiskUpload, "uploading disk failed", audit.Fields{Target: target}, err)
 
 		return weberror.New(http.StatusInternalServerError, "Error uploading: "+err.Error())
 	}
 
 	defer func() { _ = localFile.Close() }()
 
-	_, _ = io.Copy(localFile, clientFile)
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"uploaded disk",
-		"user",
-		user,
-		"disk",
-		localFile.Name(),
-	)
+	written, err := io.Copy(localFile, clientFile)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "uploading disk", "disk", localFile.Name(), "err", err)
+		audit.Failure(r, audit.DiskUpload, "uploading disk failed", audit.Fields{Target: localFile.Name()}, err)
+
+		return weberror.New(http.StatusInternalServerError, "Error uploading: "+err.Error())
+	}
+
+	audit.Success(r, audit.DiskUpload, "uploaded disk", audit.Fields{
+		Target: localFile.Name(), Extra: []any{"file.size", written},
+	})
 
 	return nil
 }
@@ -496,16 +372,10 @@ func DownloadDisk(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, errString)
 	}
 
+	downloaded := audit.Fields{File: path}
+
 	if !role.Allowed("disks", "get", filepath.Base(path)) {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"downloading disk not allowed",
-			"user",
-			user,
-			"disk",
-			path,
-		)
+		audit.Denied(r, audit.DiskDownload, "downloading disk not allowed", downloaded)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -517,6 +387,8 @@ func DownloadDisk(w http.ResponseWriter, r *http.Request) error {
 		MaxSize:     0,
 	})
 	if err != nil {
+		audit.Failure(r, audit.DiskDownload, "downloading disk failed", downloaded, err)
+
 		if errors.Is(err, util.ErrNotRegular) {
 			return weberror.New(http.StatusBadRequest, "Cannot download directory: "+path)
 		}
@@ -533,7 +405,11 @@ func DownloadDisk(w http.ResponseWriter, r *http.Request) error {
 
 	// once per download, not per resumed range or HEAD
 	if served.Started {
-		plog.Info(plog.TypeSystem, "download for file", "file", filepath.Base(path))
+		if rng := r.Header.Get("Range"); rng != "" {
+			downloaded.Extra = []any{"http.request.range", rng}
+		}
+
+		audit.Success(r, audit.DiskDownload, "downloaded disk", downloaded)
 	}
 
 	return nil

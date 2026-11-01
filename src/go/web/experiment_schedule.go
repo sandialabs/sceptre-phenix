@@ -9,6 +9,7 @@ import (
 
 	"phenix/api/experiment"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
 	"phenix/web/cache"
@@ -77,15 +78,7 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("experiments/schedule", "create", name) {
-		user := middleware.UserFromContext(ctx)
-		plog.Warn(
-			plog.TypeSecurity,
-			"creating experiment schedule not allowed",
-			"user",
-			user,
-			"exp",
-			name,
-		)
+		audit.Denied(r, audit.ExperimentSchedule, "creating experiment schedule not allowed", audit.Fields{Experiment: name})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -112,11 +105,14 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
+	scheduled := audit.Fields{Experiment: name, Extra: []any{"phenix.schedule.algorithm", req.GetAlgorithm()}}
+
 	err = experiment.Schedule(
 		experiment.ScheduleForName(name),
 		experiment.ScheduleWithAlgorithm(req.GetAlgorithm()),
 	)
 	if err != nil {
+		audit.Failure(r, audit.ExperimentSchedule, "scheduling experiment failed", scheduled, err)
 		plog.Error(
 			plog.TypeSystem,
 			"scheduling experiment",
@@ -130,6 +126,8 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
+
+	audit.Success(r, audit.ExperimentSchedule, "experiment scheduled", scheduled)
 
 	exp, err := experiment.Get(name)
 	if err != nil {
@@ -149,17 +147,6 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 		bt.NewRequestPolicy("experiments/schedule", "create", name),
 		bt.NewResource("experiment", name, "schedule"),
 		body,
-	)
-	user := middleware.UserFromContext(ctx)
-	plog.Info(
-		plog.TypeAction,
-		"experiment schedule created",
-		"user",
-		user,
-		"exp",
-		name,
-		"algorithm",
-		req.GetAlgorithm(),
 	)
 
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis

@@ -11,6 +11,7 @@ import (
 	"phenix/api/config"
 	"phenix/api/settings"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
 	"phenix/web/middleware"
@@ -79,8 +80,6 @@ func GetUsers(w http.ResponseWriter, r *http.Request) error {
 }
 
 // CreateUser - POST /users.
-//
-//nolint:funlen // handler
 func CreateUser(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "CreateUser")
 
@@ -90,13 +89,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed(resourceUsers, "create") {
-		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"creating users not allowed",
-			"requester",
-			user,
-		)
+		audit.Denied(r, audit.UserCreate, "creating users not allowed", audit.Fields{})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -147,8 +140,12 @@ func CreateUser(w http.ResponseWriter, r *http.Request) error {
 		[]string{verbGet, verbPatch},
 	)
 
+	created := audit.Fields{TargetUser: req.Username, Extra: []any{"user.target.roles", []string{req.RoleName}}}
+
 	user, err := rbac.NewUser(req.Username, req.Password, req.FirstName, req.LastName)
 	if err != nil {
+		audit.Failure(r, audit.UserCreate, "creating user failed", created, err)
+
 		return createUserError(req.Username, err)
 	}
 
@@ -157,6 +154,8 @@ func CreateUser(w http.ResponseWriter, r *http.Request) error {
 
 		// do not leave a user without a role behind
 		_ = config.Delete("user/" + req.Username)
+
+		audit.Failure(r, audit.UserCreate, "creating user failed", created, err)
 
 		return weberror.New(http.StatusInternalServerError, "error setting user role")
 	}
@@ -176,15 +175,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	requester, _ := ctx.Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeSecurity,
-		"user created",
-		"requested",
-		requester,
-		"user",
-		req.Username,
-	)
+	audit.Success(r, audit.UserCreate, "user created", created)
 
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
@@ -253,16 +244,10 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) error {
 		uname   = vars["username"]
 	)
 
+	target := audit.Fields{TargetUser: uname}
+
 	if !role.Allowed(resourceUsers, verbPatch, uname) {
-		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"updating users not allowed",
-			"requester",
-			user,
-			"user",
-			uname,
-		)
+		audit.Denied(r, audit.UserUpdate, "updating user not allowed", target)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -279,49 +264,20 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) error {
 
 	u, err := rbac.GetUser(uname)
 	if err != nil {
+		audit.Failure(r, audit.UserUpdate, "updating user failed", target, err)
+
 		return weberror.New(http.StatusInternalServerError, "unable to get user")
 	}
 
-	if req.FirstName != "" {
-		err := u.UpdateFirstName(req.FirstName)
-		if err != nil {
-			plog.Error(plog.TypeSystem, "updating first name for user", "user", uname, "err", err)
-
-			return weberror.New(http.StatusInternalServerError, "unable to update user")
+	if req.FirstName != "" || req.LastName != "" {
+		if err := updateUserNames(r, u, req); err != nil {
+			return err
 		}
-
-		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Info(
-			plog.TypeSecurity,
-			"user's first name updated",
-			"requester",
-			user,
-			"user",
-			uname,
-			"firstname",
-			req.FirstName,
-		)
 	}
 
-	if req.LastName != "" {
-		err := u.UpdateLastName(req.LastName)
-		if err != nil {
-			plog.Error(plog.TypeSystem, "updating last name for user", "user", uname, "err", err)
-
-			return weberror.New(http.StatusInternalServerError, "unable to update user")
-		}
-
-		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Info(
-			plog.TypeSecurity,
-			"user's last name updated",
-			"requester",
-			user,
-			"user",
-			uname,
-			"lastname",
-			req.LastName,
-		)
+	if req.RoleName != "" && req.RoleName != u.RoleName() && !role.Allowed("users/roles", verbPatch, uname) {
+		// the role is left as it is; the UI sends the current role with every edit
+		audit.Denied(r, audit.UserRoleChange, "changing user's role not allowed", target)
 	}
 
 	if req.RoleName != "" && role.Allowed("users/roles", verbPatch, uname) {
@@ -341,19 +297,13 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) error {
 			[]string{verbGet, verbPatch},
 		)
 
-		_ = u.SetRole(uRole)
+		roleChanged := audit.Fields{TargetUser: uname, Extra: []any{"user.target.roles", []string{req.RoleName}}}
 
-		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Info(
-			plog.TypeSecurity,
-			"user's role updated",
-			"requester",
-			user,
-			"user",
-			uname,
-			"role",
-			req.RoleName,
-		)
+		if err := u.SetRole(uRole); err != nil {
+			audit.Failure(r, audit.UserRoleChange, "changing user's role failed", roleChanged, err)
+		} else {
+			audit.Success(r, audit.UserRoleChange, "user's role changed", roleChanged)
+		}
 	}
 
 	if req.NewPassword != "" {
@@ -384,20 +334,12 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) error {
 
 		err := u.UpdatePassword(req.Password, req.NewPassword)
 		if err != nil {
-			plog.Error(plog.TypeSecurity, "updating password for user", "user", uname, "err", err)
+			audit.Failure(r, audit.UserPasswordChange, "changing user's password failed", target, err)
 
 			return weberror.New(http.StatusBadRequest, "unable to update password")
 		}
 
-		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Info(
-			plog.TypeSecurity,
-			"user's password updated",
-			"requester",
-			user,
-			"user",
-			uname,
-		)
+		audit.Success(r, audit.UserPasswordChange, "user's password changed", target)
 	}
 
 	resp := userFromRBAC(*u)
@@ -421,6 +363,43 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// updateUserNames sets the first and last names req gives the user, or returns
+// the error to answer when that fails.
+func updateUserNames(r *http.Request, u *rbac.User, req UpdateUserRequest) error {
+	var (
+		uname   = u.Username()
+		updated = audit.Fields{TargetUser: uname}
+		changed []string
+	)
+
+	if req.FirstName != "" {
+		if err := u.UpdateFirstName(req.FirstName); err != nil {
+			plog.Error(plog.TypeSystem, "updating first name for user", "user", uname, "err", err)
+			audit.Failure(r, audit.UserUpdate, "updating user failed", updated, err)
+
+			return weberror.New(http.StatusInternalServerError, "unable to update user")
+		}
+
+		changed = append(changed, "first_name")
+	}
+
+	if req.LastName != "" {
+		if err := u.UpdateLastName(req.LastName); err != nil {
+			plog.Error(plog.TypeSystem, "updating last name for user", "user", uname, "err", err)
+			audit.Failure(r, audit.UserUpdate, "updating user failed", updated, err)
+
+			return weberror.New(http.StatusInternalServerError, "unable to update user")
+		}
+
+		changed = append(changed, "last_name")
+	}
+
+	updated.Extra = []any{"phenix.user.changed", changed}
+	audit.Success(r, audit.UserUpdate, "user updated", updated)
+
+	return nil
+}
+
 // DeleteUser - DELETE /users/{username}.
 func DeleteUser(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "DeleteUser")
@@ -433,20 +412,17 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) error {
 		uname   = vars["username"]
 	)
 
+	deleted := audit.Fields{TargetUser: uname}
+
 	if user == uname {
+		deleted.Reason = "own user"
+		audit.Denied(r, audit.UserDelete, "deleting own user not allowed", deleted)
+
 		return weberror.New(http.StatusForbidden, "you cannot delete your own user")
 	}
 
 	if !role.Allowed(resourceUsers, "delete", uname) {
-		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"deleting users not allowed",
-			"requester",
-			user,
-			"user",
-			uname,
-		)
+		audit.Denied(r, audit.UserDelete, "deleting user not allowed", deleted)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -454,6 +430,7 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) error {
 	err := config.Delete("user/" + uname)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "deleting user", "user", uname, "err", err)
+		audit.Failure(r, audit.UserDelete, "deleting user failed", deleted, err)
 
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
@@ -463,14 +440,7 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) error {
 		bt.NewResource("user", uname, "delete"),
 		nil,
 	)
-	plog.Info(
-		plog.TypeSecurity,
-		"user deleted",
-		"user",
-		uname,
-		"requester",
-		user,
-	)
+	audit.Success(r, audit.UserDelete, "user deleted", deleted)
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil

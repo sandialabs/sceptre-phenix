@@ -13,6 +13,7 @@ import (
 
 	"phenix/util/common"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/broker"
 	"phenix/web/forward"
 	"phenix/web/middleware"
@@ -190,6 +191,7 @@ func Start(opts ...ServerOption) error {
 
 		api.MethodNotAllowedHandler = http.HandlerFunc(methodNotAllowed)
 
+		api.Use(middleware.UnixSocket)
 		api.Use(middleware.NoAuth)
 		api.Use(middleware.Freshness)
 
@@ -517,7 +519,7 @@ func newRouter(assets http.FileSystem) *mux.Router { //nolint:funlen,maintidx //
 	// uncompressed response
 	api.Use(CompressResponses)
 
-	api.Use(middleware.Auth(o.jwtKey, o.proxyAuthHeader))
+	api.Use(middleware.Auth(o.jwtKey, o.proxyAuthHeader, middleware.OnRefusal(audit.TokenRefused)))
 	// after Auth, so a refused request takes no sequence number
 	api.Use(middleware.Freshness)
 

@@ -11,6 +11,7 @@ import (
 	"phenix/api/vm"
 	"phenix/util/mm"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
 	"phenix/web/cache"
@@ -29,17 +30,10 @@ func DeleteVM(w http.ResponseWriter, r *http.Request) error {
 		name    = vars["name"]
 	)
 
+	audited := audit.Fields{Experiment: expName, VM: name}
+
 	if !role.Allowed("vms", "delete", fmt.Sprintf("%s/%s", expName, name)) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"deleting vm not allowed",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			expName,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMKill, "deleting vm not allowed", audited)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -54,6 +48,8 @@ func DeleteVM(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if err := mm.KillVM(mm.NS(expName), mm.VMName(name)); err != nil {
+		audit.Failure(r, audit.VMKill, "killing vm failed", audited, err)
+
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
@@ -63,24 +59,13 @@ func DeleteVM(w http.ResponseWriter, r *http.Request) error {
 		nil,
 	)
 
-	plog.Info(
-		plog.TypeAction,
-		"vm deleted",
-		"user",
-		middleware.UserFromContext(ctx),
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
+	audit.Success(r, audit.VMKill, "vm killed", audited)
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil
 }
 
 // StartVM - POST /experiments/{exp}/vms/{name}/start.
-//
-//nolint:funlen // handler
 func StartVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
@@ -91,17 +76,10 @@ func StartVM(w http.ResponseWriter, r *http.Request) error {
 		fullName = expName + "/" + name
 	)
 
+	audited := audit.Fields{Experiment: expName, VM: name}
+
 	if !role.Allowed("vms/start", "update", fullName) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"starting vm not allowed",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			expName,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMStart, "starting vm not allowed", audited)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -132,6 +110,8 @@ func StartVM(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if err := mm.StartVM(mm.NS(expName), mm.VMName(name)); err != nil {
+		audit.Failure(r, audit.VMStart, "starting vm failed", audited, err)
+
 		broker.Broadcast(
 			bt.NewRequestPolicy("vms/start", "update", fullName),
 			bt.NewResource("experiment/vm", name, "errorStarting"),
@@ -181,24 +161,13 @@ func StartVM(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	plog.Info(
-		plog.TypeAction,
-		"vm started",
-		"user",
-		middleware.UserFromContext(ctx),
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
+	audit.Success(r, audit.VMStart, "vm started", audited)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 
 	return nil
 }
 
 // StopVM - POST /experiments/{exp}/vms/{name}/stop.
-//
-//nolint:funlen // handler
 func StopVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
@@ -209,17 +178,10 @@ func StopVM(w http.ResponseWriter, r *http.Request) error {
 		fullName = expName + "/" + name
 	)
 
+	audited := audit.Fields{Experiment: expName, VM: name}
+
 	if !role.Allowed("vms/stop", "update", fullName) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"stopping vm not allowed",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			expName,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMStop, "stopping vm not allowed", audited)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -250,6 +212,8 @@ func StopVM(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if err := mm.StopVM(mm.NS(expName), mm.VMName(name)); err != nil {
+		audit.Failure(r, audit.VMStop, "stopping vm failed", audited, err)
+
 		broker.Broadcast(
 			bt.NewRequestPolicy("vms/stop", "update", fullName),
 			bt.NewResource("experiment/vm", name, "errorStopping"),
@@ -292,16 +256,7 @@ func StopVM(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	plog.Info(
-		plog.TypeAction,
-		"vm stopped",
-		"user",
-		middleware.UserFromContext(ctx),
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
+	audit.Success(r, audit.VMStop, "vm stopped", audited)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 
 	return nil
@@ -318,17 +273,10 @@ func RestartVM(w http.ResponseWriter, r *http.Request) error {
 		fullName = expName + "/" + name
 	)
 
+	audited := audit.Fields{Experiment: expName, VM: name}
+
 	if !role.Allowed("vms/restart", "update", fullName) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"restarting vm not allowed",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			expName,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMRestart, "restarting vm not allowed", audited)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -359,6 +307,8 @@ func RestartVM(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if err := vm.Restart(expName, name); err != nil {
+		audit.Failure(r, audit.VMRestart, "restarting vm failed", audited, err)
+
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
@@ -390,16 +340,7 @@ func RestartVM(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	plog.Info(
-		plog.TypeAction,
-		"vm restarted",
-		"user",
-		middleware.UserFromContext(ctx),
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
+	audit.Success(r, audit.VMRestart, "vm restarted", audited)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 
 	return nil
@@ -416,17 +357,10 @@ func ShutdownVM(w http.ResponseWriter, r *http.Request) error {
 		fullName = expName + "/" + name
 	)
 
+	audited := audit.Fields{Experiment: expName, VM: name}
+
 	if !role.Allowed("vms/shutdown", "update", fullName) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"shutting down vm not allowed",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			expName,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMShutdown, "shutting down vm not allowed", audited)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -451,6 +385,8 @@ func ShutdownVM(w http.ResponseWriter, r *http.Request) error {
 	defer cache.UnlockVM(expName, name)
 
 	if err := vm.Shutdown(expName, name); err != nil {
+		audit.Failure(r, audit.VMShutdown, "shutting down vm failed", audited, err)
+
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
@@ -477,16 +413,7 @@ func ShutdownVM(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	plog.Info(
-		plog.TypeAction,
-		"vm shutdown",
-		"user",
-		middleware.UserFromContext(ctx),
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
+	audit.Success(r, audit.VMShutdown, "vm shut down", audited)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 
 	return nil
@@ -503,17 +430,10 @@ func ResetVM(w http.ResponseWriter, r *http.Request) error {
 		fullName = expName + "/" + name
 	)
 
+	audited := audit.Fields{Experiment: expName, VM: name}
+
 	if !role.Allowed("vms/reset", "update", fullName) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"resetting vm not allowed",
-			"user",
-			middleware.UserFromContext(ctx),
-			"exp",
-			expName,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VMResetDisk, "resetting vm not allowed", audited)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -538,6 +458,8 @@ func ResetVM(w http.ResponseWriter, r *http.Request) error {
 	defer cache.UnlockVM(expName, name)
 
 	if err := vm.ResetDiskState(expName, name); err != nil {
+		audit.Failure(r, audit.VMResetDisk, "resetting vm disk failed", audited, err)
+
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
@@ -562,16 +484,7 @@ func ResetVM(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
-	plog.Info(
-		plog.TypeAction,
-		"vm reset",
-		"user",
-		middleware.UserFromContext(ctx),
-		"exp",
-		expName,
-		"vm",
-		name,
-	)
+	audit.Success(r, audit.VMResetDisk, "vm disk reset", audited)
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 
 	return nil

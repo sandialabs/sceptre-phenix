@@ -17,6 +17,11 @@ import (
 	"phenix/web/weberror"
 )
 
+// revisionTestTopology is a valid topology, as the UI config editor sends it.
+const revisionTestTopology = `{"apiVersion":"phenix.sandia.gov/v1","kind":"Topology","metadata":{"name":"demo"},` +
+	`"spec":{"nodes":[{"type":"VirtualMachine","general":{"hostname":"host-00"},` +
+	`"hardware":{"os_type":"linux","drives":[{"image":"ubuntu.qc2"}]}}]}}`
+
 // topologyConfigJSON returns a valid Topology config with the given name,
 // as JSON.
 func topologyConfigJSON(name string) string {

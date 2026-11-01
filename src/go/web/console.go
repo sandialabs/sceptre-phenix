@@ -19,6 +19,7 @@ import (
 	"golang.org/x/net/websocket"
 
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -42,12 +43,7 @@ func CreateConsole(w http.ResponseWriter, r *http.Request) error {
 
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 	if !role.Allowed("miniconsole", "post") {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"creating miniconsole not allowed",
-			user,
-		)
+		audit.Denied(r, audit.ConsoleCreate, "creating miniconsole not allowed", audit.Fields{})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -71,6 +67,8 @@ func CreateConsole(w http.ResponseWriter, r *http.Request) error {
 
 	tty, err := pty.Start(cmd)
 	if err != nil {
+		audit.Failure(r, audit.ConsoleCreate, "starting miniconsole failed", audit.Fields{}, err)
+
 		return weberror.New(http.StatusInternalServerError, fmt.Sprintf("could not start terminal: %v", err))
 	}
 
@@ -98,13 +96,8 @@ func CreateConsole(w http.ResponseWriter, r *http.Request) error {
 
 	body, _ := json.Marshal(util.WithRoot("pid", pid))
 
-	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"miniconsole created",
-		"user",
-		user,
-	)
+	audit.Success(r, audit.ConsoleCreate, "miniconsole created", audit.Fields{PID: pid})
+
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 
 	return nil
@@ -115,12 +108,7 @@ func ResizeConsole(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 
 	if !role.Allowed("miniconsole", "post") {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"resizing miniconsole not allowed",
-			user,
-		)
+		audit.Denied(r, audit.ConsoleAttach, "resizing miniconsole not allowed", audit.Fields{})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -188,12 +176,7 @@ func WsConsole(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 
 	if !role.Allowed("miniconsole", "get") {
-		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"getting miniconsole not allowed",
-			user,
-		)
+		audit.Denied(r, audit.ConsoleAttach, "attaching to miniconsole not allowed", audit.Fields{})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -222,10 +205,12 @@ func WsConsole(w http.ResponseWriter, r *http.Request) error {
 
 		proc, err := os.FindProcess(pid)
 		if err != nil {
-			plog.Warn(plog.TypeSystem, "unable to find process", "pid", pid)
+			audit.Failure(r, audit.ConsoleAttach, "attaching to miniconsole failed", audit.Fields{PID: pid}, err)
 
 			return
 		}
+
+		audit.Success(r, audit.ConsoleAttach, "attached to miniconsole", audit.Fields{PID: pid})
 
 		go func() { _, _ = io.Copy(ws, tty) }()
 

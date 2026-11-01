@@ -17,6 +17,7 @@ import (
 	ifaces "phenix/types/interfaces"
 	"phenix/util/mm"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/util"
@@ -59,16 +60,7 @@ func GetVNC(w http.ResponseWriter, r *http.Request) error {
 	)
 
 	if !role.Allowed("vms/vnc", "get", exp+"/"+name) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"vnc access not allowed",
-			"user",
-			ctx.Value(middleware.ContextKeyUser),
-			"exp",
-			exp,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VNCAttach, "vnc access not allowed", audit.Fields{Experiment: exp, VM: name})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
@@ -138,30 +130,29 @@ func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) error {
 		name = vars["name"]
 	)
 
+	fields := audit.Fields{Experiment: exp, VM: name}
+
 	// the same permission as the page that opens it
 	if !role.Allowed("vms/vnc", "get", exp+"/"+name) {
-		plog.Warn(
-			plog.TypeSecurity,
-			"vnc access not allowed",
-			"user",
-			middleware.UserFromContext(r.Context()),
-			"exp",
-			exp,
-			"vm",
-			name,
-		)
+		audit.Denied(r, audit.VNCAttach, "vnc access not allowed", fields)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
 	endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(name), mm.Context(r.Context()))
 	if err != nil {
+		audit.Failure(r, audit.VNCAttach, "vnc attach failed", fields, err)
 		plog.Error(plog.TypeSystem, "getting VNC endpoint", "err", err)
 
 		return weberror.New(http.StatusBadRequest, "unable to get VNC endpoint")
 	}
 
-	websocket.Handler(util.ConnectWSHandler(endpoint)).ServeHTTP(w, r)
+	proxy := util.ConnectWSHandler(endpoint)
+
+	websocket.Handler(func(ws *websocket.Conn) {
+		audit.Success(r, audit.VNCAttach, "vnc attached", fields)
+		proxy(ws)
+	}).ServeHTTP(w, r)
 
 	return nil
 }

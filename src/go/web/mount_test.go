@@ -7,9 +7,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"phenix/util/common"
 	"phenix/util/mm"
@@ -64,6 +66,127 @@ func mountRole() rbac.Role {
 		testRole("vms/mount", "*", "test-experiment/test-vm"),
 		testRole("experiments/files", "get", "test-experiment"),
 	)
+}
+
+// requestMount sends a request for test-vm's mounted files, at route with
+// query, as a user with mountRole.
+func requestMount(t *testing.T, method, route string, query url.Values) *http.Response {
+	t.Helper()
+
+	server := serveAs(t, "alice", mountRole()).URL
+
+	return do(t, method, server+"/api/v1/experiments/test-experiment/vms/test-vm/files"+route+"?"+query.Encode(), "")
+}
+
+// A sibling mount whose path starts with this one's is outside it; a name
+// that only starts with ".." is inside.
+func TestMountFileRequestsStayWithinTheMount(t *testing.T) {
+	useTestMount(t)
+
+	tests := map[string]struct {
+		route, path string
+		want        int
+	}{
+		"download a file":                      {"/download", "etc/hostname", http.StatusOK},
+		"download from a .. named directory":   {"/download", "..foo/readme", http.StatusOK},
+		"download from a sibling mount":        {"/download", "../test-vm2/secret", http.StatusBadRequest},
+		"download from outside the mounts":     {"/download", "../../../images", http.StatusBadRequest},
+		"list a directory":                     {"", "etc", http.StatusOK},
+		"list a .. named directory":            {"", "..foo", http.StatusOK},
+		"list the directory holding the mount": {"", "..", http.StatusBadRequest},
+		"list a sibling mount":                 {"", "../test-vm2", http.StatusBadRequest},
+		"list a missing sibling":               {"", "../no-such-vm", http.StatusBadRequest},
+		"list outside the mounts":              {"", "../../..", http.StatusBadRequest},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			events := captureAudit(t)
+
+			resp := requestMount(t, http.MethodGet, tc.route, url.Values{"path": {tc.path}})
+			if resp.StatusCode != tc.want {
+				t.Fatalf("GET files%s?path=%s = %d, want %d: %s", tc.route, tc.path, resp.StatusCode, tc.want, readBody(t, resp))
+			}
+
+			if tc.route != "/download" {
+				return
+			}
+
+			if _ = readBody(t, resp); tc.want == http.StatusOK {
+				wantAudit(t, events(), "file-download", "success", map[string]any{
+					"user.name": "alice", "phenix.vm.name": "test-vm", "file.name": filepath.Base(tc.path),
+				})
+			} else {
+				wantAudit(t, events(), "file-download", "failure", map[string]any{"event.reason": "outside mount"})
+			}
+		})
+	}
+}
+
+func TestCopyExperimentFileToMount(t *testing.T) {
+	useTestExperiment(t)
+	useTestMM(t, &testMM{captures: []mm.Capture{
+		{VM: "test-vm", Interface: 0, Filepath: "/phenix/images/test-experiment/files/live.pcap"},
+	}})
+
+	base := useTestMount(t)
+
+	tests := map[string]struct {
+		query url.Values
+		want  int
+	}{
+		"experiment file":       {url.Values{"source": {"a.txt"}, "path": {"etc"}}, http.StatusOK},
+		"unclean source":        {url.Values{"source": {"./a.txt"}, "path": {"etc"}}, http.StatusBadRequest},
+		"source outside files":  {url.Values{"source": {"../files/a.txt"}, "path": {"etc"}}, http.StatusBadRequest},
+		"sibling mount":         {url.Values{"source": {"a.txt"}, "path": {"../test-vm2"}}, http.StatusBadRequest},
+		"above the mount":       {url.Values{"source": {"a.txt"}, "path": {".."}}, http.StatusBadRequest},
+		".. named directory":    {url.Values{"source": {"a.txt"}, "path": {"..foo"}}, http.StatusOK},
+		"no source":             {url.Values{"path": {"etc"}}, http.StatusBadRequest},
+		"missing file":          {url.Values{"source": {"gone.txt"}, "path": {"etc"}}, http.StatusBadRequest},
+		"destination not a dir": {url.Values{"source": {"a.txt"}, "path": {"etc/hostname"}}, http.StatusBadRequest},
+	}
+
+	useTestFiles(t, "a.txt", "live.pcap")
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			events := captureAudit(t)
+
+			resp := requestMount(t, http.MethodPost, "/copy", tc.query)
+			if resp.StatusCode != tc.want {
+				t.Fatalf("POST files/copy?%s = %d, want %d: %s", tc.query.Encode(), resp.StatusCode, tc.want, readBody(t, resp))
+			}
+
+			outcome := "failure"
+			if tc.want == http.StatusOK {
+				outcome = "success"
+			}
+
+			wantAudit(t, events(), "vm-file-copy", outcome, map[string]any{
+				"user.name": "alice", "phenix.vm.name": "test-vm", "phenix.experiment.name": "test-experiment",
+			})
+		})
+	}
+
+	refused := serveAs(t, "alice", testRole("vms/mount", "*", "test-experiment/test-vm")).URL
+	events := captureAudit(t)
+
+	resp := do(t, http.MethodPost, refused+"/api/v1/experiments/test-experiment/vms/test-vm/files/copy?source=a.txt&path=etc", "")
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("POST files/copy without experiments/files get = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+
+	wantDenied(t, events(), "vm-file-copy")
+
+	if b, err := os.ReadFile(filepath.Join(base, "etc", "a.txt")); err != nil {
+		t.Errorf("reading the copied etc/a.txt: %v", err)
+	} else if got, want := string(b), "alpha"; got != want {
+		t.Errorf("copied etc/a.txt = %q, want %q", got, want)
+	}
+
+	if _, err := os.Stat(filepath.Join(base, "..", "test-vm2", "a.txt")); !os.IsNotExist(err) {
+		t.Errorf("os.Stat(test-vm2/a.txt) error = %v, want it not to exist", err)
+	}
 }
 
 // gatedMount makes mounting wait on a gate, telling entered when one starts,
@@ -142,8 +265,6 @@ func mountStatus(method, url string) int {
 }
 
 // mountStateOf returns the state of the mount at key, and whether there is one.
-//
-//nolint:unparam // tests can read the users count
 func mountStateOf(key string) (mountState, int, bool) {
 	activeMountsMu.RLock()
 	defer activeMountsMu.RUnlock()
@@ -154,6 +275,67 @@ func mountStateOf(key string) (mountState, int, bool) {
 	}
 
 	return info.state, info.users, true
+}
+
+// While one VM is being mounted, another VM's mounted files can be listed,
+// and a second request to mount the first waits for the same mount.
+func TestMountingOneVMDoesNotBlockOthers(t *testing.T) {
+	useTestMount(t)
+
+	g := useGatedMount(t)
+	api := mountServer(t)
+
+	first, second := make(chan int, 1), make(chan int, 1)
+
+	go func() { first <- mountStatus(http.MethodPost, api+"test-vm2/mount") }()
+
+	polltest.Within(t, "the mount starting", func() { <-g.entered })
+
+	go func() { second <- mountStatus(http.MethodPost, api+"test-vm2/mount") }()
+
+	polltest.Within(t, "listing another VM's mounted files", func() {
+		if code := mountStatus(http.MethodGet, api+"test-vm/files?path=etc"); code != http.StatusOK {
+			t.Errorf("GET test-vm/files?path=etc while test-vm2 mounts = %d, want %d", code, http.StatusOK)
+		}
+	})
+
+	key := mm.GetLocalMountPath("test-experiment", "test-vm2")
+
+	polltest.Until(t, "the second request joining the mount", func() bool {
+		_, users, _ := mountStateOf(key)
+
+		return users == 2
+	})
+
+	events := captureAudit(t)
+
+	g.release()
+
+	polltest.Within(t, "the mounts answering", func() {
+		for name, ch := range map[string]chan int{"first": first, "second": second} {
+			if code := <-ch; code != http.StatusOK {
+				t.Errorf("%s POST test-vm2/mount = %d, want %d", name, code, http.StatusOK)
+			}
+		}
+	})
+
+	// each user's mount, the one that waited for it included
+	if n := countAudit(events(), "vm-mount", "success", map[string]any{"phenix.vm.name": "test-vm2"}); n != 2 {
+		t.Errorf("vm-mount success audit events of test-vm2 = %d, want 2", n)
+	}
+
+	if n := len(g.entered); n != 0 {
+		t.Errorf("test-vm2 mounted %d more times, want once", n)
+	}
+
+	state, users, _ := mountStateOf(key)
+	if state != mountMounted {
+		t.Errorf("test-vm2 mount state = %d, want %d (mounted)", state, mountMounted)
+	}
+
+	if users != 2 {
+		t.Errorf("test-vm2 mount users = %d, want 2", users)
+	}
 }
 
 // An unmount waits for its own mount's downloads, not other mounts' requests,
@@ -212,6 +394,162 @@ func TestUnmountWaitsOnlyForItsOwnDownloads(t *testing.T) {
 	if n := g.unmounts.Load(); n != 1 {
 		t.Errorf("DELETE test-vm/unmount unmounted %d times, want 1", n)
 	}
+}
+
+// An unmount whose mount stays busy gives up with 409 and leaves the mount
+// as it was.
+func TestUnmountGivesUpOnABusyMount(t *testing.T) {
+	base := useTestMount(t)
+
+	g := useGatedMount(t)
+
+	original := unmountWaitTimeout
+	unmountWaitTimeout = 100 * time.Millisecond
+
+	t.Cleanup(func() { unmountWaitTimeout = original })
+
+	activeMountsMu.RLock()
+	download := activeMounts[base].lock
+	activeMountsMu.RUnlock()
+
+	download.RLock()
+	defer download.RUnlock()
+
+	api := mountServer(t)
+	events := captureAudit(t)
+
+	polltest.Within(t, "the unmount giving up", func() {
+		if code := mountStatus(http.MethodDelete, api+"test-vm/unmount"); code != http.StatusConflict {
+			t.Errorf("DELETE test-vm/unmount of a busy mount = %d, want %d", code, http.StatusConflict)
+		}
+	})
+
+	wantAudit(t, events(), "vm-unmount", "failure", map[string]any{"error.message": "mount busy"})
+
+	state, users, ok := mountStateOf(base)
+	if !ok {
+		t.Fatal("test-vm mount is not listed after a refused unmount, want it kept")
+	}
+
+	if state != mountMounted {
+		t.Errorf("test-vm mount state after a refused unmount = %d, want %d (mounted)", state, mountMounted)
+	}
+
+	if users != 1 {
+		t.Errorf("test-vm mount users after a refused unmount = %d, want 1", users)
+	}
+
+	if n := g.unmounts.Load(); n != 0 {
+		t.Errorf("DELETE test-vm/unmount of a busy mount unmounted %d times, want 0", n)
+	}
+}
+
+// Mounting and unmounting a VM are audited, refusals included.
+func TestMountAndUnmountAreAudited(t *testing.T) {
+	useTestMount(t)
+
+	g := useGatedMount(t)
+	g.release()
+
+	api := mountServer(t)
+	events := captureAudit(t)
+
+	for _, req := range []struct{ method, route string }{
+		{http.MethodPost, "test-vm2/mount"},
+		{http.MethodDelete, "test-vm2/unmount"},
+	} {
+		if code := mountStatus(req.method, api+req.route); code != http.StatusOK {
+			t.Errorf("%s %s = %d, want %d", req.method, req.route, code, http.StatusOK)
+		}
+	}
+
+	if n := len(g.entered); n != 1 {
+		t.Errorf("test-vm2 mounted %d times, want 1", n)
+	}
+
+	if n := g.unmounts.Load(); n != 1 {
+		t.Errorf("test-vm2 unmounted %d times, want 1", n)
+	}
+
+	for _, action := range []string{"vm-mount", "vm-unmount"} {
+		wantAudit(t, events(), action, "success", map[string]any{
+			"user.name": "alice", "phenix.vm.name": "test-vm2", "phenix.experiment.name": "test-experiment",
+		})
+	}
+
+	refused := serveAs(t, "alice", testRole("vms/mount", "get", "test-experiment/*")).URL +
+		"/api/v1/experiments/test-experiment/vms/test-vm2/"
+
+	for _, req := range []struct{ method, route, action string }{
+		{http.MethodPost, "mount", "vm-mount"},
+		{http.MethodDelete, "unmount", "vm-unmount"},
+	} {
+		if code := mountStatus(req.method, refused+req.route); code != http.StatusForbidden {
+			t.Errorf("%s %s without vms/mount %s = %d, want %d", req.method, req.route, req.method, code, http.StatusForbidden)
+		}
+
+		wantDenied(t, events(), req.action)
+	}
+}
+
+// An upload without a file, or into a path that is not a folder, is answered
+// with the error rather than crashing the request, and an upload is audited.
+func TestUploadMountFile(t *testing.T) {
+	base := useTestMount(t)
+	server := serveAs(t, "alice", mountRole()).URL + "/api/v1/experiments/test-experiment/vms/test-vm/files/upload?path="
+
+	upload := func(t *testing.T, path, field string) *http.Response {
+		t.Helper()
+
+		body, contentType := formUpload(t, field, "notes.txt", "uploaded")
+
+		return do(t, http.MethodPut, server+url.QueryEscape(path), string(body), "Content-Type", contentType)
+	}
+
+	for name, tc := range map[string]struct{ path, field string }{
+		"no file":      {path: "etc", field: "other"},
+		"not a folder": {path: "etc/hostname", field: "file"},
+		"missing":      {path: "gone", field: "file"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			events := captureAudit(t)
+
+			resp := upload(t, tc.path, tc.field)
+			body := readBody(t, resp)
+
+			if resp.StatusCode != http.StatusInternalServerError {
+				t.Errorf("PUT files/upload?path=%s with field %s = %d, want %d",
+					tc.path, tc.field, resp.StatusCode, http.StatusInternalServerError)
+			}
+
+			if !strings.HasPrefix(errorMessage(t, resp.StatusCode, body), "Error") {
+				t.Errorf("PUT files/upload?path=%s with field %s = %q, want the error", tc.path, tc.field, body)
+			}
+
+			wantAudit(t, events(), "vm-file-upload", "failure", map[string]any{"user.name": "alice"})
+		})
+	}
+
+	// an upload replaces a longer file of the same name whole
+	if err := os.WriteFile(filepath.Join(base, "etc", "notes.txt"), []byte("an older, longer file"), 0o600); err != nil {
+		t.Fatalf("writing etc/notes.txt: %v", err)
+	}
+
+	events := captureAudit(t)
+
+	if resp := upload(t, "etc", "file"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT files/upload?path=etc = %d, want %d: %s", resp.StatusCode, http.StatusOK, readBody(t, resp))
+	}
+
+	if b, err := os.ReadFile(filepath.Join(base, "etc", "notes.txt")); err != nil {
+		t.Errorf("reading the uploaded etc/notes.txt: %v", err)
+	} else if got, want := string(b), "uploaded"; got != want {
+		t.Errorf("uploaded etc/notes.txt = %q, want %q", got, want)
+	}
+
+	wantAudit(t, events(), "vm-file-upload", "success", map[string]any{
+		"user.name": "alice", "phenix.file.target_path": filepath.Join(base, "etc", "notes.txt"), "file.size": 8,
+	})
 }
 
 // An upload outside the mount is refused the same way whether or not the path

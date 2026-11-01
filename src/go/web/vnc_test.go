@@ -2,6 +2,8 @@ package web
 
 import (
 	"html"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -9,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/net/websocket"
 	"pgregory.net/rapid"
 
 	"phenix/web/util"
@@ -201,6 +204,71 @@ func TestVNCPageContentSecurityPolicy(t *testing.T) {
 	if len(nonces) != 2 {
 		t.Errorf("two GET vms/test-vm/vnc nonces = %v, want two different ones", nonces)
 	}
+}
+
+// A VNC websocket refused for want of vms/vnc is audited (the contract tests
+// cover which roles are refused).
+func TestVNCWebSocketDenialIsAudited(t *testing.T) {
+	server := serveAs(t, "alice", testRole("vms/vnc", "get", "test-experiment/other-vm")).URL
+	events := captureAudit(t)
+
+	resp := do(t, http.MethodGet, server+"/api/v1/experiments/test-experiment/vms/test-vm/vnc/ws", "")
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("GET vms/test-vm/vnc/ws without vms/vnc get = %d, want %d: %s", resp.StatusCode, http.StatusForbidden, readBody(t, resp))
+	}
+
+	wantDenied(t, events(), "vnc-attach")
+}
+
+// Opening a VM's VNC websocket is audited once it is attached.
+func TestVNCWebSocketAttachIsAudited(t *testing.T) {
+	// the VM's VNC server: echoes what it is sent
+	l, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listening for the VM's VNC server: %v", err)
+	}
+
+	t.Cleanup(func() { _ = l.Close() })
+
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+
+		defer conn.Close()
+
+		_, _ = io.Copy(conn, conn)
+	}()
+
+	useTestMM(t, &testMM{vnc: l.Addr().String()})
+
+	api := serveAs(t, "alice", testRole("vms/vnc", "get", "test-experiment/test-vm")).URL + "/api/v1"
+	events := captureAudit(t)
+
+	ws, err := websocket.Dial(
+		"ws"+strings.TrimPrefix(api, "http")+"/experiments/test-experiment/vms/test-vm/vnc/ws", "", api,
+	)
+	if err != nil {
+		t.Fatalf("websocket.Dial(vms/test-vm/vnc/ws) error = %v", err)
+	}
+
+	defer ws.Close()
+
+	if _, err := ws.Write([]byte("RFB")); err != nil {
+		t.Fatalf("writing to vms/test-vm/vnc/ws: %v", err)
+	}
+
+	buf := make([]byte, 3)
+	if _, err := io.ReadFull(ws, buf); err != nil {
+		t.Errorf("reading the echo from vms/test-vm/vnc/ws: %v", err)
+	} else if got := string(buf); got != "RFB" {
+		t.Errorf("vms/test-vm/vnc/ws echoed %q, want RFB", got)
+	}
+
+	wantAudit(t, events(), "vnc-attach", "success", map[string]any{
+		"user.name": "alice", "phenix.experiment.name": "test-experiment", "phenix.vm.name": "test-vm",
+	})
 }
 
 // vncBannerCSS finds a banner rule's color in the VNC page's styles.
