@@ -58,15 +58,15 @@ func newUICmd() *cobra.Command {
 				opts = append(opts, web.ServeMinimegaConsole(true))
 			}
 
-			if MustGetBool(cmd.Flags(), "log-requests") {
+			if mustGet(cmd.Flags().GetBool, "log-requests") {
 				opts = append(opts, web.ServeWithMiddlewareLogging("requests"))
 			}
 
-			if MustGetBool(cmd.Flags(), "log-full") {
+			if mustGet(cmd.Flags().GetBool, "log-full") {
 				opts = append(opts, web.ServeWithMiddlewareLogging("full"))
 			}
 
-			if MustGetBool(cmd.Flags(), "unbundled") {
+			if mustGet(cmd.Flags().GetBool, "unbundled") {
 				opts = append(opts, web.ServeUnbundled())
 			}
 
