@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
+	"pgregory.net/rapid"
 
 	"phenix/api/vm"
 	"phenix/store"
@@ -18,7 +19,10 @@ import (
 	"phenix/web/proto"
 )
 
-const testStartTime = "2026-07-31T12:00:00Z"
+const (
+	testStartTime   = "2026-07-31T12:00:00Z"
+	testInterrupted = "VMs were waiting to start when phenix stopped tracking them"
+)
 
 // testExperiment has a VM of each kind the VM counts treat differently. It is
 // running when given a start time.
@@ -57,6 +61,8 @@ func testExperiment(t *testing.T, startTime string) types.Experiment {
 
 	exp.Status.SetVLANs(map[string]int{"EXP": 105, "MGMT": 107})
 	exp.Status.SetStartTime(startTime)
+	// left from a start a restarted phenix could not resume; only a running one reports it
+	exp.Status.SetInterrupted(testInterrupted)
 
 	return *exp
 }
@@ -90,7 +96,8 @@ func TestExperimentToProtobuf(t *testing.T) {
 		VMs                      []vmFields
 		Name, Topology, Scenario string
 		StartTime, Status        string
-		Apps                     []string
+		Apps, Scenarios          []string
+		Interrupted              string
 	}
 
 	withVMs := func(exp types.Experiment) *proto.Experiment {
@@ -155,11 +162,13 @@ func TestExperimentToProtobuf(t *testing.T) {
 				StartTime: tc.startTime,
 				Status:    string(cache.StatusStarted),
 				Apps:      []string{"ntp", "soh", "x"},
+				Scenarios: []string{"scn", "base"},
 			}
 
 			if running {
 				want.VLANMin, want.VLANMax = 105, 107
 				want.VLANs = map[string]uint32{"EXP": 105, "MGMT": 107}
+				want.Interrupted = testInterrupted
 			}
 
 			pb := tc.convert(testExperiment(t, tc.startTime))
@@ -187,6 +196,9 @@ func TestExperimentToProtobuf(t *testing.T) {
 				StartTime:  pb.GetStartTime(),
 				Status:     pb.GetStatus(),
 				Apps:       pb.GetApps(),
+				Scenarios:  pb.GetScenarios(),
+
+				Interrupted: pb.GetInterrupted(),
 			}
 
 			if diff := cmp.Diff(want, got); diff != "" {
@@ -194,6 +206,84 @@ func TestExperimentToProtobuf(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExperimentScenarios(t *testing.T) {
+	apps := func(from ...string) []ifaces.ScenarioApp {
+		out := make([]ifaces.ScenarioApp, len(from))
+		for i, f := range from {
+			out[i] = &v2.ScenarioApp{NameF: "app", FromScenarioF: f}
+		}
+
+		return out
+	}
+
+	tests := []struct {
+		name     string
+		scenario string
+		apps     []ifaces.ScenarioApp
+		want     []string
+	}{
+		{"no scenario", "", nil, nil},
+		{"one scenario", "scn", apps("", ""), []string{"scn"}},
+		{"its own scenario named again", "scn", apps("scn"), []string{"scn"}},
+		{"others once each, in app order", "scn", apps("b", "", "a", "b"), []string{"scn", "b", "a"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, experimentScenarios(tc.scenario, tc.apps)); diff != "" {
+				t.Errorf("experimentScenarios(%q, ...) mismatch (-want +got):\n%s", tc.scenario, diff)
+			}
+		})
+	}
+}
+
+// The scenarios start with the experiment's own, name each scenario the apps
+// take configuration from, and name none twice.
+func TestExperimentScenariosListsEachOnce(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		name := rapid.SampledFrom([]string{"", "a", "b", "c"})
+		scenario := name.Draw(t, "scenario")
+		from := rapid.SliceOf(name).Draw(t, "from")
+
+		apps := make([]ifaces.ScenarioApp, len(from))
+		for i, f := range from {
+			apps[i] = &v2.ScenarioApp{NameF: "app", FromScenarioF: f}
+		}
+
+		got := experimentScenarios(scenario, apps)
+
+		if scenario != "" && (len(got) == 0 || got[0] != scenario) {
+			t.Fatalf("experimentScenarios(%q, %v) = %v, want %q first", scenario, from, got, scenario)
+		}
+
+		want := map[string]bool{}
+		if scenario != "" {
+			want[scenario] = true
+		}
+
+		for _, f := range from {
+			if f != "" {
+				want[f] = true
+			}
+		}
+
+		seen := map[string]bool{}
+		for _, g := range got {
+			if seen[g] || !want[g] {
+				t.Fatalf("experimentScenarios(%q, %v) = %v: %q is repeated or unexpected", scenario, from, got, g)
+			}
+
+			seen[g] = true
+		}
+
+		if len(seen) != len(want) {
+			t.Fatalf("experimentScenarios(%q, %v) = %v, want each of %v", scenario, from, got, want)
+		}
+	})
 }
 
 func TestVMToProtobuf(t *testing.T) {

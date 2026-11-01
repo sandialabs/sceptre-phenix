@@ -352,6 +352,10 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 		return fmt.Errorf("default bridge name must be %d characters or less", MaxBridgeNameLength)
 	}
 
+	if err := validateCreateAnnotations(o.annotations, o.nodeAnnotations); err != nil {
+		return err
+	}
+
 	var (
 		kind       = "Experiment"
 		apiVersion = version.StoredVersion[kind]
@@ -368,6 +372,9 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 	if err2 != nil {
 		return fmt.Errorf("decoding topology from config: %w", err2)
 	}
+
+	// topo is the experiment's own copy; the topology config is not saved
+	applyNodeAnnotations(topo, o.nodeAnnotations)
 
 	meta := store.ConfigMetadata{ //nolint:exhaustruct // partial initialization
 		Name: o.name,

@@ -15,6 +15,7 @@ import (
 	"phenix/api/experiment"
 	"phenix/api/job"
 	"phenix/api/vm"
+	ifaces "phenix/types/interfaces"
 	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/plog"
@@ -157,7 +158,7 @@ func GetVM(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	body, err := marshaler.Marshal(util.VMToProtobuf(expName, *vm, exp.Spec.Topology()))
+	body, err := marshaler.Marshal(vmWithAnnotations(expName, *vm, exp.Spec.Topology()))
 	if err != nil {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
@@ -168,9 +169,26 @@ func GetVM(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// vmWithAnnotations converts a VM for a response about that one VM, which,
+// unlike VM lists and broadcasts, carries its node's annotations.
+func vmWithAnnotations(expName string, v mm.VM, topo ifaces.TopologySpec) *proto.VM {
+	pb := util.VMToProtobuf(expName, v, topo)
+
+	annotations, err := util.AnnotationsToProtobuf(v.Annotations)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "converting VM annotations", "exp", expName, "vm", v.Name, "err", err)
+
+		return pb
+	}
+
+	pb.Annotations = annotations
+
+	return pb
+}
+
 // vmUpdateFields name the VM name of exp a PATCH request updates and, in
 // phenix.vm.changed, the settings it changes, without their values. Only a
-// single-VM PATCH (single) changes the inject partition and tags.
+// single-VM PATCH (single) changes the inject partition, tags and annotations.
 func vmUpdateFields(exp, name string, req *proto.UpdateVMRequest, single bool) audit.Fields {
 	var (
 		f       = audit.Fields{Experiment: exp, VM: name}
@@ -190,6 +208,7 @@ func vmUpdateFields(exp, name string, req *proto.UpdateVMRequest, single bool) a
 		{"do_not_boot", req.GetBoot() != nil},
 		{"host", req.GetClusterHost() != nil},
 		{"snapshot", req.GetSnapshotOption() != nil},
+		{"annotations", single && req.GetAnnotations() != nil},
 	} {
 		if c.set {
 			changed = append(changed, c.name)
@@ -276,6 +295,20 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 
 	updated := vmUpdateFields(expName, name, &req, true)
 
+	if req.GetAnnotations() != nil {
+		annotations := req.GetAnnotations().AsMap()
+
+		if changesAutotunnel(expName, name, annotations) && forwardDeniedVM(role, expName, []string{name}) != "" {
+			denied := updated
+			denied.Reason = "port forwards not allowed"
+			audit.Denied(r, audit.VMUpdate, "creating port forwards not allowed", denied)
+
+			return weberror.New(http.StatusForbidden, "forbidden")
+		}
+
+		opts = append(opts, vm.UpdateWithAnnotations(annotations))
+	}
+
 	change, cancel := changeContext(r, vmChangeTimeout)
 	defer cancel()
 
@@ -287,7 +320,7 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 
 		audit.Failure(r, audit.VMUpdate, "updating vm failed", updated, err)
 
-		if errors.Is(err, vm.ErrInvalidDisk) || errors.Is(err, mm.ErrUnsafeArg) {
+		if errors.Is(err, vm.ErrInvalidAnnotations) || errors.Is(err, vm.ErrInvalidDisk) || errors.Is(err, mm.ErrUnsafeArg) {
 			return weberror.New(http.StatusBadRequest, err.Error())
 		}
 
@@ -323,6 +356,14 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 		bt.NewResource("experiment/vm", fmt.Sprintf("%s/%s", expName, name), "update"),
 		body,
 	)
+
+	// a caller who may also read the VM gets its annotations
+	if role.Allowed("vms", "get", fmt.Sprintf("%s/%s", expName, name)) {
+		body, err = marshaler.Marshal(vmWithAnnotations(expName, *vm, exp.Spec.Topology()))
+		if err != nil {
+			return weberror.New(http.StatusInternalServerError, err.Error())
+		}
+	}
 
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)

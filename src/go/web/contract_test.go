@@ -49,7 +49,7 @@ func serveContractAs(t *testing.T, role rbac.Role) *httptest.Server {
 }
 
 // contractFixture: running test-experiment with test-vm mounted (etc/hostname), test-disk.qc2, the user bob, bob's
-// finished job (3-byte artifact), and on-demand consoles.
+// finished job (3-byte artifact) and on-demand consoles.
 type contractFixture struct {
 	jobs     *job.Registry
 	bobsJob  job.Job
@@ -497,11 +497,14 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 	}
 
 	return map[string]contractErrorCase{
-		"checksum of missing disk": {method: "GET", path: "/api/v1/disks/checksum?disk=none.qc2", want: http.StatusNotFound},
-		"checksum of disk outside": {method: "GET", path: "/api/v1/disks/checksum?disk=../none.qc2", want: http.StatusBadRequest},
-		"details of missing disk":  {method: "GET", path: "/api/v1/disks/details?disk=none.qc2", want: http.StatusNotFound},
-		"details of disk outside":  {method: "GET", path: "/api/v1/disks/details?disk=../none.qc2", want: http.StatusBadRequest},
-		"details of no disk":       {method: "GET", path: "/api/v1/disks/details?disk=", want: http.StatusBadRequest},
+		"unknown console":            {method: "GET", path: "/api/v1/console/1", want: http.StatusNotFound},
+		"another user's console":     {method: "GET", prepare: bobsConsole, want: http.StatusNotFound},
+		"end another user's console": {method: "DELETE", prepare: bobsConsole, want: http.StatusNotFound},
+		"checksum of missing disk":   {method: "GET", path: "/api/v1/disks/checksum?disk=none.qc2", want: http.StatusNotFound},
+		"checksum of disk outside":   {method: "GET", path: "/api/v1/disks/checksum?disk=../none.qc2", want: http.StatusBadRequest},
+		"details of missing disk":    {method: "GET", path: "/api/v1/disks/details?disk=none.qc2", want: http.StatusNotFound},
+		"details of disk outside":    {method: "GET", path: "/api/v1/disks/details?disk=../none.qc2", want: http.StatusBadRequest},
+		"details of no disk":         {method: "GET", path: "/api/v1/disks/details?disk=", want: http.StatusBadRequest},
 		"clone onto existing disk": {
 			method: "POST", path: "/api/v1/disks/clone/jobs?disk=" + contractDisk + "&new=" + contractDisk,
 			want: http.StatusConflict,
@@ -510,9 +513,6 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 			method: "POST", path: "/api/v1/disks/clone/jobs?disk=" + contractDisk + "&new=copy.iso",
 			want: http.StatusBadRequest,
 		},
-		"unknown console":            {method: "GET", path: "/api/v1/console/1", want: http.StatusNotFound},
-		"another user's console":     {method: "GET", prepare: bobsConsole, want: http.StatusNotFound},
-		"end another user's console": {method: "DELETE", prepare: bobsConsole, want: http.StatusNotFound},
 		"mount download of missing file": {
 			method: "GET", path: exp + "/vms/" + contractVM + "/files/download?path=etc/none", want: http.StatusNotFound,
 		},

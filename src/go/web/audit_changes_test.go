@@ -256,6 +256,60 @@ func TestUnixSocketWorkflowIsAudited(t *testing.T) {
 	}
 }
 
+// A VM update, alone or in a bulk PATCH, audits each VM with the changed setting
+// names but no values; a refusal before the body is read names none.
+func TestVMUpdateIsAudited(t *testing.T) {
+	useVMExperiment(t, false, "a", "b")
+
+	var (
+		events  = captureAudit(t)
+		records = captureRecords(t)
+		alice   = serveAs(t, "alice", testRole("vms", "patch", "exp/a", "exp/missing")).URL + "/api/v1/experiments/exp/vms"
+	)
+
+	do(t, http.MethodPatch, alice+"/a", `{"cpus":4,"annotations":{"note":"a long value"},"interface":{"index":1,"vlan":"EXP"}}`)
+	do(t, http.MethodPatch, alice+"/b", `{"ram":2048}`)
+	do(t, http.MethodPatch, alice, `{"vms":[{"name":"a","ram":1024},{"name":"b","cpus":2}]}`)
+	do(t, http.MethodPatch, alice+"/missing", `{"disk":"other.qc2"}`)
+
+	got := events()
+
+	wantAudit(t, got, "vm-update", "success", map[string]any{
+		"user.name": "alice", "phenix.experiment.name": "exp", "phenix.vm.name": "a", "event.category": "configuration",
+		"phenix.vm.changed": []string{"cpus", "interface", "annotations"}, "phenix.vm.interface": 1,
+		"url.path": "/api/v1/experiments/exp/vms/a",
+	})
+	wantAudit(t, got, "vm-update", "failure", map[string]any{
+		"phenix.vm.name": "b", "event.reason": "forbidden", "url.path": "/api/v1/experiments/exp/vms/b",
+	})
+	wantAudit(t, got, "vm-update", "success", map[string]any{
+		"phenix.vm.name": "a", "phenix.vm.changed": []string{"memory"}, "url.path": "/api/v1/experiments/exp/vms",
+	})
+	wantAudit(t, got, "vm-update", "failure", map[string]any{
+		"phenix.vm.name": "b", "event.reason": "forbidden", "phenix.vm.changed": []string{"cpus"},
+		"url.path": "/api/v1/experiments/exp/vms",
+	})
+
+	failed := wantAudit(t, got, "vm-update", "failure", map[string]any{
+		"phenix.vm.name": "missing", "event.reason": nil, "phenix.vm.changed": []string{"disk"},
+	})
+	if failed != nil {
+		wantErrorMessage(t, failed, "unable to find VM missing")
+	}
+
+	for _, e := range got {
+		if strings.Contains(eventText(t, e), "a long value") {
+			t.Errorf("vm-update event %v holds an annotation's value", e)
+		}
+	}
+
+	for _, line := range records() {
+		if strings.Contains(line, "a long value") {
+			t.Errorf("logged record %s, want none holding an annotation's value", line)
+		}
+	}
+}
+
 // eventText is the event as JSON.
 func eventText(t *testing.T, e auditEvent) string {
 	t.Helper()

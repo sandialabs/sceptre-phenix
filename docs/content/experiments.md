@@ -11,6 +11,34 @@ the physical network MTU requirements.
 Click on the `Experiments` tab. This will display all available experiments that
 the user has access to view or edit.
 
+The box at the top left counts the listed experiments, how many of them are
+running, the `VMs in running experiments`, and the VLANs of all of them. The
+VM count comes from the running experiments' topologies: it leaves out VMs
+marked do not boot and external nodes, and counts a VM that was shut down or
+has not started yet. The counts cover every listed experiment, not only those
+the search shows.
+
+Click a column heading to sort the table by it: `Name`, `Status`, `Topology`,
+`Scenario`, `Start Time`, `VMs`, and `VLANs` can all be sorted on. `VLANs` sorts
+by how many VLANs each experiment has, and experiments with the same number by
+name. Experiments created or started somewhere else, such as from the command
+line binary or a [workflow](workflow.md), appear in the list as they are
+created or start, without reloading the page.
+
+`Start Time` shows when the experiment started as phēnix recorded it, an
+ISO 8601 timestamp with the server's UTC offset, followed by how long ago that
+was, for example `2026-10-28T14:03:22-06:00 (3 hours ago)`. The column sorts
+by the actual time.
+
+Click a name in the `Topology` or `Scenario` column to open that config in the
+viewer on the [Configs](configuration.md#view-a-config) page, if your role may
+view it.
+
+Each row's `Actions` column holds the experiment's start and stop buttons, its
+trash can, and, if your role may view the experiment, a heartbeat button that
+opens its [State of Health](state-of-health.md) and a fire button that opens
+its [SCORCH runs](scorch.md).
+
 ### From the Command Line Binary
 
 This will display a list of all available experiments: it is run as a `root`
@@ -26,10 +54,27 @@ phenix exp list
 
 ### From the Web-UI
 
-Clicking the `stopped` button will start the experiment; similarly the `started`
-button will stop the experiment. A progress bar is used to update the progress
-of starting an experiment. During the update to the experiment -- starting or
-stopping -- it will not be accessible or available to delete.
+Clicking the `stopped` button, or the green play button in the `Actions`
+column, starts the experiment at once; clicking the `started` button, or the red
+stop button, stops it after you confirm. The play or stop button spins while the
+experiment starts or stops, and a progress bar shows the progress of starting
+it. During the update to the experiment -- starting or stopping -- it will not
+be accessible, and its status button, play, stop and trash can buttons are
+disabled, with the reason in their tooltips. The play and stop buttons are also
+gray and disabled when the experiment is already running or stopped, or when
+your role may not start or stop it.
+
+To start, stop or delete several experiments at once, check them in the
+table's first column, or check its heading to check every experiment the search
+shows. The toolbar that appears beside the search box has `Start`, `Stop` and
+`Delete` buttons, each counting the checked experiments it can act on. One
+confirmation names those it acts on and those it skips, such as a running
+experiment for `Start` or one your role may not change, and one message sums up
+how it went once they are done, offering to retry those that failed.
+
+The bar's percentage counts every one of the experiment's VMs: those minimega
+has queued to launch, or, once nothing is queued any more, those still
+building, out of the VMs in the topology.
 
 ### From the Command Line Binary
 
@@ -72,9 +117,11 @@ again once minimega answers. To mark it stopped anyway, use `--force` or its
 phenix exp stop --force <experiment name>
 ```
 
-The API offers the same as
-`POST /api/v1/experiments/{name}/stop?force=true`. Until then, the experiment's
-periodic apps keep running and its delayed VMs keep waiting to start.
+The Web-UI offers the same as a `Force Stop` confirmation after such a failed
+stop from the Experiments table, for one experiment or a selection, and the API
+as `POST /api/v1/experiments/{name}/stop?force=true`. Until then, the
+experiment's periodic apps keep running and its delayed VMs keep waiting to
+start.
 
 The `phenix exp --help` command will output:
 
@@ -229,15 +276,38 @@ does not do this check.
 
 ### From the Web-UI
 
-![screenshot](images/create_exp.png){: width=800 .center}
+![Experiments page with its totals strip and the add experiment plus button circled in red beside the Find an Experiment search box.](images/create_exp.png){: width=800 .center}
 
 Click the `+` button to the right of the filter field.
 
-![screenshot](images/create_exp_dia.png){: width=400 .center}
+![Create a New Experiment dialog with Experiment Name, Experiment Topology and Experiment Scenario fields and a collapsed Advanced Options section.](images/create_exp_dia.png){: width=600 .center}
 
 Enter `Experiment Name` and `Experiment Topology`, the remaining selection are
 optional. In this example, `bennu` is an example topology and is not included
 by default. You will need to [create](configuration.md) your own topology(ies).
+
+Click `Create Experiment`, or `Create and Start` to start the experiment as
+soon as it is created. The card stays open, its button spinning, until the
+experiment is created; if that fails, the card shows why above its buttons and
+keeps what you entered, so you can correct it and try again.
+
+Each field's label is followed by a help icon: hover over or focus it to see
+what the field does. The book button in the card's header opens this section of
+the documentation.
+
+Expand `Advanced Options` for the remaining settings:
+
+* `Deployment Mode`: which cluster hosts run the experiment's VMs
+  (`no-headnode`, `only-headnode`, or `all`), which defaults to the server's
+  `--deploy-mode` setting.
+* `Default Bridge Name`: see [Bridge Mode](bridge-mode.md).
+* `VLAN Range`: the VLAN IDs minimega may give the experiment's VLANs.
+* `Git Workflow Branch Name`: links the experiment to a
+  [workflow](workflow.md#branch-name) branch.
+* `Annotations for Every VM` and `Experiment Annotations`: see
+  [Adding Annotations](#adding-annotations).
+
+![Expanded Advanced Options with Deployment Mode, Default Bridge Name, VLAN Range, Git Workflow Branch Name, and annotations for every VM and for the experiment.](images/create_exp_options.png){: width=500 .center}
 
 #### Purely via the Web-UI (Uploading Topo/Scenario Files)
 
@@ -255,7 +325,7 @@ You can create an experiment entirely through the Web-UI using custom topology a
     * Enter an **Experiment Name**.
     * Select your uploaded topology from the **Experiment Topology** dropdown.
     * (Optional) Select your uploaded scenario from the **Experiment Scenario** dropdown.
-    * Click **Save** to create the experiment.
+    * Click **Create Experiment** to create the experiment.
 
 ### From the Command Line Binary
 
@@ -272,6 +342,9 @@ phenix experiment create <experiment name> -t /path/to/topology.yaml -s /path/to
 
 # Specifying a base directory and disabled apps
 phenix experiment create <experiment name> -t /path/to/topology.yaml -s /path/to/scenario.yaml -d </path/to/dir/> --disabled-apps "app1,app2"
+
+# Adding annotations to every VM and to the experiment (see Adding Annotations below)
+phenix experiment create <experiment name> -t <topology name> --node-annotation phenix/startup-via-cc=true --annotation phenix.workflow/tags=team=red
 ```
 
 The `phenix exp create --help` command will output:
@@ -293,24 +366,101 @@ Examples:
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> -d </path/to/dir/>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> --disabled-apps "app1,app2"
+  phenix experiment create <experiment name> -t <topology name> --node-annotation phenix/default-apps=false --annotation phenix.workflow/tags=nightly
 
 Flags:
-  -d, --base-dir string         Base directory to use for experiment (optional)
-  -b, --default-bridge string   Default bridge name to use for experiment (optional) (default "phenix")
-      --disabled-apps strings   Comma separated ist of apps to disable
-  -h, --help                    help for create
-  -s, --scenario string         Name of an existing scenario to use (optional)
-  -t, --topology string         Name of an existing topology to use
-      --vlan-max int            VLAN pool maximum
-      --vlan-min int            VLAN pool minimum
+      --annotation stringArray        Experiment annotation as key=value; may be repeated
+  -d, --base-dir string               Base directory to use for experiment (optional)
+  -b, --default-bridge string         Default bridge name to use for experiment (optional) (default "phenix")
+      --disabled-apps strings         Comma separated list of apps to disable
+  -h, --help                          help for create
+      --node-annotation stringArray   Annotation for every VM as key=value; true, false and JSON lists or objects keep their type; may be repeated
+  -s, --scenario string               Name of an existing scenario to use (optional)
+  -t, --topology string               Name of an existing topology to use
+      --vlan-max int                  VLAN pool maximum
+      --vlan-min int                  VLAN pool minimum
+```
+
+### Adding Annotations
+
+An experiment can be given annotations when it is created, without editing its
+topology or scenario:
+
+| Annotations | Web-UI (`Advanced Options`) | Command line (repeatable) | API (`POST /experiments`) |
+| :--- | :--- | :--- | :--- |
+| On every VM | `Annotations for Every VM` | `--node-annotation key=value` | `node_annotations` |
+| On the experiment | `Experiment Annotations` | `--annotation key=value` | `annotations` |
+
+**Annotations for every VM** are node annotations, which apps read from the
+topology's nodes, such as
+[`phenix/default-apps`](apps.md#disable-default-apps-for-a-vm) and
+[`phenix/startup-via-cc`](apps.md#c2-startup-script-delivery). phēnix adds them
+to every VM in the experiment's own copy of the topology, so the topology config
+itself is unchanged. A VM that already has an annotation keeps its own value,
+and [external nodes](configuration.md#external-nodes) are skipped.
+
+**Experiment annotations** are added to the experiment's metadata annotations,
+where apps can read them; for example, SCORCH records the `key=value` pairs of
+`phenix.workflow/tags` in the info file it writes for each run. phēnix sets the
+`topology` and `scenario` annotations itself and rejects them. In the Web-UI, the
+`phenix.workflow/branch` annotation comes from the `Git Workflow Branch Name`
+field, and an API request cannot give it both as an annotation and as
+`workflow_branch`.
+
+In the Web-UI, the `Add annotation` button under each list offers the
+annotations phēnix's own apps read, each with a value input suited to it and a
+description, or a `Custom annotation` with any key and value. On the command
+line, and for a custom annotation in the Web-UI, a VM annotation's value `true`
+or `false` becomes a boolean and a JSON list or object keeps that type; anything
+else, numbers included, stays a string. Experiment annotations are always
+strings. The API takes `node_annotations` as JSON values, keeping their types.
+To change one VM's annotations after the experiment is created, send
+`PATCH /api/v1/experiments/{exp}/vms/{name}` with an `annotations` object. It
+replaces all of the VM's annotations, also while the experiment runs.
+
+![Annotation rows for every VM (phenix/startup-via-cc and phenix/startup-autotunnel) and for the experiment (phenix.workflow/tags), each with its help text and a delete button.](images/create_exp_annotations.png){: width=600 .center}
+
+A value of the wrong type for an annotation the default apps read is rejected,
+naming the annotation: `phenix/default-apps` must be `true` or `false`,
+`phenix/startup-autotunnel` a list of port forwards, `phenix/startup-via-cc`
+not blank, and `vrouter/vyos-password` and `vrouter/enable-ssh` strings.
+Because `phenix/startup-autotunnel` creates port forwards, giving it in the
+Web-UI or API requires a role that may create port forwards to every VM the
+experiment deploys (external nodes excluded).
+
+```bash
+# For every VM, deliver startup scripts over C2 and create a port forward from 8080 to its port 80
+phenix experiment create my-experiment -t my-topology \
+  --node-annotation phenix/startup-via-cc=true \
+  --node-annotation 'phenix/startup-autotunnel=["8080:80"]' \
+  --annotation phenix.workflow/tags=team=red
+```
+
+The same request through the API:
+
+```json
+{
+  "name": "my-experiment",
+  "topology": "my-topology",
+  "node_annotations": {
+    "phenix/startup-via-cc": true,
+    "phenix/startup-autotunnel": ["8080:80"]
+  },
+  "annotations": {
+    "phenix.workflow/tags": "team=red"
+  }
+}
 ```
 
 ## Deleting Experiments
 
 ### From the Web-UI
 
-The experiment must be stopped before it can be deleted; click the trash can
-icon next to the experiment to delete it.
+The experiment must be stopped before it can be deleted; its trash can icon is
+disabled while it runs. Click the trash can icon next to the experiment to
+delete it. phēnix asks you to confirm first, and
+only that experiment's own button spins while it is deleted, so the rest of the
+table stays usable.
 
 ### From the Command Line Binary
 

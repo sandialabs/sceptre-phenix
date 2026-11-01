@@ -331,8 +331,13 @@ func GetFor(ctx context.Context, exp *types.Experiment, vmName string) (*mm.VM, 
 	return vm, nil
 }
 
-// ErrInvalidDisk wraps why Update or Redeploy rejected a VM's new disk.
-var ErrInvalidDisk = errors.New("invalid disk")
+var (
+	// ErrInvalidAnnotations wraps why Update rejected a VM's new annotations.
+	ErrInvalidAnnotations = errors.New("invalid annotations")
+
+	// ErrInvalidDisk wraps why Update or Redeploy rejected a VM's new disk.
+	ErrInvalidDisk = errors.New("invalid disk")
+)
 
 func Update(opts ...UpdateOption) error { //nolint:funlen,gocyclo,cyclop  // complex logic
 	o := newUpdateOptions(opts...)
@@ -367,6 +372,12 @@ func Update(opts ...UpdateOption) error { //nolint:funlen,gocyclo,cyclop  // com
 		return fmt.Errorf("unable to find VM %s in experiment %s", o.vm, o.exp)
 	}
 
+	if o.annotations != nil {
+		if err := experiment.ValidateNodeAnnotations(o.annotations); err != nil {
+			return fmt.Errorf("%w: %w", ErrInvalidAnnotations, err)
+		}
+	}
+
 	if o.tags != nil && o.appendTags {
 		if err := appendLabels(*o.tags, vm.Labels()); err != nil {
 			return err
@@ -375,8 +386,8 @@ func Update(opts ...UpdateOption) error { //nolint:funlen,gocyclo,cyclop  // com
 
 	running := experiment.Running(o.exp)
 
-	// The only settings that can be updated while an experiment is running are
-	// the VLAN an interface is connected to and the VM's tags
+	// While an experiment runs, only interface VLANs, tags and annotations can
+	// change; apps read the annotations when the experiment next starts
 	if running {
 		unsupported := o.cpu != 0 ||
 			o.mem != 0 ||
@@ -386,9 +397,9 @@ func Update(opts ...UpdateOption) error { //nolint:funlen,gocyclo,cyclop  // com
 			o.host != nil ||
 			o.snapshot != nil
 
-		if unsupported || (o.iface == nil && o.tags == nil) {
+		if unsupported || (o.iface == nil && o.tags == nil && o.annotations == nil) {
 			return errors.New(
-				"only interface connections and tags can be updated while experiment is running",
+				"while the experiment is running, you can update only interface connections, tags and annotations",
 			)
 		}
 
@@ -419,7 +430,13 @@ func Update(opts ...UpdateOption) error { //nolint:funlen,gocyclo,cyclop  // com
 			}
 
 			vm.SetLabels(*o.tags)
+		}
 
+		if o.annotations != nil {
+			vm.SetAnnotations(o.annotations)
+		}
+
+		if o.tags != nil || o.annotations != nil {
 			err = experiment.Save(
 				experiment.SaveWithName(o.exp),
 				experiment.SaveWithSpec(exp.Spec),
@@ -454,6 +471,10 @@ func Update(opts ...UpdateOption) error { //nolint:funlen,gocyclo,cyclop  // com
 
 	if o.tags != nil {
 		vm.SetLabels(*o.tags)
+	}
+
+	if o.annotations != nil {
+		vm.SetAnnotations(o.annotations)
 	}
 
 	if o.host != nil {
