@@ -2,8 +2,8 @@ import { createRouter, createWebHistory } from 'vue-router';
 
 import { ToastProgrammatic as Toast } from 'buefy';
 
+import * as authApi from '@/api/auth.js';
 import { tokenExpired, usePhenixStore } from '@/store.js';
-import axiosInstance from '@/utils/axios.js';
 import { roleAllowed, usersPageAllowed } from '@/utils/rbac.js';
 
 /** A page's title (WCAG 2.4.2): the most specific part first, then the app. */
@@ -270,11 +270,9 @@ router.beforeEach(async (to, _, next) => {
     store.next = to;
 
     if (import.meta.env.VITE_AUTH === 'proxy') {
-      // next(); //TODO
-      // return;
-
-      axiosInstance
-        .get('login')
+      // awaited, so the router waits for the next() it calls
+      await authApi
+        .getProxyLogin()
         .then((response) => {
           store.login(response.data, false);
           next();

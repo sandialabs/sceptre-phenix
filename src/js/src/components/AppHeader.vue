@@ -76,6 +76,9 @@ what their role allows.
 
     <template #end>
       <b-navbar-item v-if="auth" tag="div">
+        <refresh-status></refresh-status>
+      </b-navbar-item>
+      <b-navbar-item v-if="auth" tag="div">
         <jobs-menu></jobs-menu>
       </b-navbar-item>
       <!-- Buttons, so the keyboard reaches them too. While a logout waits
@@ -106,12 +109,14 @@ what their role allows.
 <script>
   import { usePhenixStore } from '@/store.js';
   import { roleAllowed, usersPageAllowed } from '@/utils/rbac.js';
-  import axiosInstance from '@/utils/axios.js';
-  import JobsMenu from '@/components/jobs/JobsMenu.vue';
+  import * as authApi from '@/api/auth.js';
+  import { showError } from '@/utils/errorNotif.js';
   import { endConsole } from '@/utils/consoleSession.js';
+  import RefreshStatus from '@/components/RefreshStatus.vue';
+  import JobsMenu from '@/components/jobs/JobsMenu.vue';
 
   export default {
-    components: { JobsMenu },
+    components: { RefreshStatus, JobsMenu },
     setup() {
       return { roleAllowed, usersPageAllowed };
     },
@@ -152,8 +157,8 @@ what their role allows.
         // end the console first, while the token still allows it
         await endConsole();
 
-        axiosInstance
-          .post('logout')
+        authApi
+          .logOut()
           .then(
             (response) => response.status,
             (error) => error.response?.status,
@@ -177,13 +182,10 @@ what their role allows.
             }
 
             // When the server does not answer the logout, the session stays
-            // as it was and a toast says so. Focus goes back to Logout.
-            this.$buefy.toast.open({
-              message:
-                'Could not log out. Check your connection and try again.',
-              type: 'is-danger',
-              duration: 8000,
-            });
+            // as it was and an error says so. Focus goes back to Logout.
+            showError(
+              'Could not log out. Check your connection and try again.',
+            );
             button?.focus();
 
             // In a narrow window, the menu that held Logout closes on a
