@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/go-cmp/cmp"
@@ -187,7 +188,8 @@ func TestGetPasswordSettingsFromListParseErrors(t *testing.T) {
 }
 
 // FuzzUpdatePasswordSettings checks that valid settings read back exactly,
-// and that a minimum length out of range is rejected and not stored.
+// and that settings with a minimum length out of range are rejected and none
+// of them are stored.
 func FuzzUpdatePasswordSettings(f *testing.F) {
 	f.Add(true, true, true, true, int32(settings.MinPasswordMinLen))
 	f.Add(false, false, false, false, int32(settings.MaxPasswordMinLen))
@@ -218,8 +220,8 @@ func FuzzUpdatePasswordSettings(f *testing.F) {
 				t.Errorf("UpdatePasswordSettings(%+v) error = nil, want an error", in)
 			}
 
-			if got.MinLength != before.MinLength {
-				t.Errorf("MinLength after rejected update = %d, want %d", got.MinLength, before.MinLength)
+			if diff := cmp.Diff(before, got); diff != "" {
+				t.Errorf("GetPasswordSettings() after rejected update mismatch (-want +got):\n%s", diff)
 			}
 
 			return
@@ -235,9 +237,9 @@ func FuzzUpdatePasswordSettings(f *testing.F) {
 	})
 }
 
-// FuzzIsPasswordValid checks IsPasswordValid against the password rules: a
-// length in bytes from the minimum to MaxPasswordBytes, and each required
-// character class.
+// FuzzIsPasswordValid checks IsPasswordValid against the password rules: at
+// least the minimum number of characters, at most MaxPasswordBytes bytes, and
+// each required character class.
 func FuzzIsPasswordValid(f *testing.F) {
 	atLimit := strings.Repeat("aA1!", settings.MaxPasswordBytes/4)
 
@@ -250,6 +252,7 @@ func FuzzIsPasswordValid(f *testing.F) {
 	f.Add("NoNumbers!!", true, true, true, true, uint8(3))
 	f.Add("NoSymbols123", true, true, true, true, uint8(4))
 	f.Add("ÄÖÜäöü١٢٣€€", true, true, true, true, uint8(0))
+	f.Add("Äö١€", true, true, true, true, uint8(0))
 	f.Add("", false, false, false, false, uint8(0))
 	f.Add("\xff\xfe\xfd\xfc\xfb\xfa\xf9\xf8", false, false, false, false, uint8(0))
 
@@ -266,7 +269,7 @@ func FuzzIsPasswordValid(f *testing.F) {
 			t.Fatalf("UpdatePasswordSettings(%+v) error = %v", ps, err)
 		}
 
-		want := len(password) >= int(minLen) && len(password) <= settings.MaxPasswordBytes &&
+		want := utf8.RuneCountInString(password) >= int(minLen) && len(password) <= settings.MaxPasswordBytes &&
 			(!lower || strings.ContainsFunc(password, unicode.IsLower)) &&
 			(!upper || strings.ContainsFunc(password, unicode.IsUpper)) &&
 			(!number || strings.ContainsFunc(password, unicode.IsNumber)) &&
