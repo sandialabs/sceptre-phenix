@@ -251,6 +251,148 @@ func TestResourceNamesRefuseAPartlyBadPattern(t *testing.T) {
 	}
 }
 
+// AddResourceName adds a name once to each named policy and never to a
+// nameless one, so repeated calls do not grow a role.
+func TestAddResourceName(t *testing.T) {
+	t.Parallel()
+
+	named := func(names ...string) *v1.PolicySpec { return policy("vms", names, "get") }
+	empty := func() *v1.PolicySpec { return policy("hosts", []string{}, "list") }
+
+	tests := map[string]struct {
+		policies []*v1.PolicySpec
+		name     string
+		wantErrs []error // one per call
+		want     []*v1.PolicySpec
+	}{
+		"policy with many names gets the name once": {
+			policies: []*v1.PolicySpec{named("a", "b", "c")},
+			name:     "d",
+			wantErrs: []error{nil},
+			want:     []*v1.PolicySpec{named("a", "b", "c", "d")},
+		},
+		"policy that has the name is unchanged": {
+			policies: []*v1.PolicySpec{named("a", "d", "c")},
+			name:     "d",
+			wantErrs: []error{ErrResourceNameExists},
+			want:     []*v1.PolicySpec{named("a", "d", "c")},
+		},
+		"policy that lacks the name gets it when another has it": {
+			policies: []*v1.PolicySpec{named("d"), named("a", "b")},
+			name:     "d",
+			wantErrs: []error{nil},
+			want:     []*v1.PolicySpec{named("d"), named("a", "b", "d")},
+		},
+		"every named policy has the name": {
+			policies: []*v1.PolicySpec{named("a", "d"), named("d"), named()},
+			name:     "d",
+			wantErrs: []error{ErrResourceNameExists},
+			want:     []*v1.PolicySpec{named("a", "d"), named("d"), named()},
+		},
+		"policies with no names stay unchanged": {
+			policies: []*v1.PolicySpec{named(), named("a"), empty()},
+			name:     "d",
+			wantErrs: []error{nil},
+			want:     []*v1.PolicySpec{named(), named("a", "d"), empty()},
+		},
+		"role of only nameless policies is unchanged": {
+			policies: []*v1.PolicySpec{named()},
+			name:     "d",
+			wantErrs: []error{nil},
+			want:     []*v1.PolicySpec{named()},
+		},
+		"bad pattern in a role of only nameless policies": {
+			policies: []*v1.PolicySpec{named()},
+			name:     "x*[",
+			wantErrs: []error{ErrResourceNameInvalid},
+			want:     []*v1.PolicySpec{named()},
+		},
+		"global-admin shape never grows": {
+			policies: []*v1.PolicySpec{named("*", "*/*"), named("*", "*/*")},
+			name:     "*/*",
+			wantErrs: []error{ErrResourceNameExists, ErrResourceNameExists, ErrResourceNameExists},
+			want:     []*v1.PolicySpec{named("*", "*/*"), named("*", "*/*")},
+		},
+		"name added once, then exists": {
+			policies: []*v1.PolicySpec{named("*")},
+			name:     "*/*",
+			wantErrs: []error{nil, ErrResourceNameExists, ErrResourceNameExists},
+			want:     []*v1.PolicySpec{named("*", "*/*")},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			r := newRole(&v1.RoleSpec{Name: "r", Policies: tc.policies}, nil)
+
+			for i, wantErr := range tc.wantErrs {
+				if err := r.AddResourceName(tc.name); !errors.Is(err, wantErr) {
+					t.Errorf("call %d: AddResourceName(%s) error = %v, want %v", i+1, tc.name, err, wantErr)
+				}
+			}
+
+			if diff := cmp.Diff(tc.want, r.Spec.Policies); diff != "" {
+				t.Errorf("AddResourceName(%s) policies mismatch (-want +got):\n%s", tc.name, diff)
+			}
+		})
+	}
+}
+
+// For any role, AddResourceName gives each named policy the name once, leaves
+// nameless policies alone, and changes nothing on a second call.
+func TestAddResourceNameIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		spec := &v1.RoleSpec{Name: "r", Policies: rapid.SliceOfN(genRolePolicy(), 0, 4).Draw(t, "policies")}
+		name := rapid.SampledFrom([]string{"*", "*/*", "a", "c", "!a"}).Draw(t, "name")
+		before := cloneFuzzSpec(spec)
+		r := newRole(spec, nil)
+
+		var changed, named bool
+
+		for _, p := range before.Policies {
+			named = named || len(p.ResourceNames) > 0
+			changed = changed || len(p.ResourceNames) > 0 && !slices.Contains(p.ResourceNames, name)
+		}
+
+		var wantErr error
+		if named && !changed {
+			wantErr = ErrResourceNameExists
+		}
+
+		if err := r.AddResourceName(name); !errors.Is(err, wantErr) {
+			t.Fatalf("AddResourceName(%s) of %v error = %v, want %v", name, rolePolicies(before), err, wantErr)
+		}
+
+		for i, p := range r.Spec.Policies {
+			want := cloneFuzzSpec(before).Policies[i]
+			if len(want.ResourceNames) > 0 && !slices.Contains(want.ResourceNames, name) {
+				want.ResourceNames = append(want.ResourceNames, name)
+			}
+
+			if diff := cmp.Diff(want, p); diff != "" {
+				t.Fatalf("AddResourceName(%s) of %v policy %d mismatch (-want +got):\n%s", name, rolePolicies(before), i, diff)
+			}
+		}
+
+		if named {
+			wantErr = ErrResourceNameExists
+		}
+
+		after := cloneFuzzSpec(r.Spec)
+		if err := r.AddResourceName(name); !errors.Is(err, wantErr) {
+			t.Fatalf("second AddResourceName(%s) error = %v, want %v", name, err, wantErr)
+		}
+
+		if diff := cmp.Diff(after, r.Spec); diff != "" {
+			t.Fatalf("second AddResourceName(%s) changed the spec (-want +got):\n%s", name, diff)
+		}
+	})
+}
+
 // A saved policy that names no resources leaves resourceNames out rather than
 // storing null, which the role schema rejects on the next edit.
 //
