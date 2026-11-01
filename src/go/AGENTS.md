@@ -54,6 +54,15 @@ the root target does.
   silently recover.
 - Use `phenix/util/plog` for core logs with the correct `LogType` and structured
   key/value fields.
+- Keep `phenix doctor` current. When a change adds a feature or significantly
+  changes behavior, add or update a doctor check for it when relevant: a new
+  setting, external program, file or directory, service or port, or feature
+  flag. Register the check in `cmd/doctor_registry.go` with an id, a group
+  and a hint. Add its row to the doctor table in `docs/content/settings.md`
+  (`TestDoctorChecksMatchDocs` fails without it). Also update the `--skip`
+  list and flags in `skills/phenix/references/cli.md`. A check warns unless
+  the problem stops phenix. A check that cannot get its data gives `skip`
+  with the reason, and never blocks on minimega, the server or the store lock.
 - Consult [minimega API docs](https://sandia-minimega.github.io/minimega/reference/minimega/) and
   [source](https://github.com/sandia-minimega/minimega) before changing code
   that constructs commands or depends on minimega behavior.

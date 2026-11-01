@@ -41,6 +41,8 @@ To build the phēnix container image from source (does not require installing lo
 make docker
 ```
 
+`docker exec phenix phenix doctor` checks the configuration without the server: it prints the phēnix version and the environment, each setting with where its value came from (secrets redacted), then the checks of config file syntax and keys, environment variables, the settings every command reads, the store, log and base directories, what `phenix ui` reads at startup (sign-in, users, TLS, listen endpoints and the unix socket), and the stored configs, and a summary with a hint per failure. `--skip` leaves out a check or group, `--strict` fails on warnings, `-x` leaves out the settings, and `--report` prints it all in a block to paste into a bug report. `-p` shows only the checks that warn or fail. `--report` replaces host names, addresses, user names and secrets with tokens. See [Checking the Configuration](https://phenix.sceptre.dev/latest/settings/#checking-the-configuration).
+
 ### Native Installation (.deb)
 
 As an alternative to running phēnix using Docker, you can build a native Debian package (`.deb`) which installs the binaries and dependencies directly onto your system.

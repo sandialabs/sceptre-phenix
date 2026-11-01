@@ -141,7 +141,7 @@ through `PATCH /api/v1/experiments/{name}` on a stopped experiment.
 Command groups: `config` (stored configs), `experiment` (lifecycle), `vm`
 (running VMs), `image` (vmdb2 disk images), `vlan` (per-experiment VLAN
 aliases/ranges), `workflow` (topology directory deployment), `job`
-(background jobs), plus `mm`,
+(background jobs), `doctor` (offline configuration checks), plus `mm`,
 `settings`, `ui`, `util`, `completion`, and `version`. Every subcommand
 accepts the persistent flags documented in
 [`references/cli.md`](references/cli.md), which also lists each subcommand's
@@ -173,6 +173,7 @@ are run with `docker exec` rather than a host-installed binary:
 
 ```bash
 docker exec phenix phenix experiment list   # no -it for scripted/agentic use
+docker exec phenix phenix doctor  # no server needed: versions/env header, each setting's source, config/env/settings checks, store and log files, base dirs, phenix ui startup checks (auth, tls, socket), stored-config checks, summary with hints; --report for bug reports (host names, addresses, users and secrets replaced with tokens); -p shows only warn/fail rows
 ```
 
 For interactive human use, `make install-wrapper` installs
@@ -247,7 +248,8 @@ The other gotchas of `phenix workflow apply` are in
 | `unable to start the <exp> experiment: qemu cannot open N disks on M VMs` | A VM disk image, a file in its qcow2 backing chain, or its CD-ROM image (`advanced.cdrom`) is missing on the head node, the chain loops, or qemu cannot open an image of the chain (old AES or LUKS encryption, an unknown qcow2 version or feature bit, a corrupt mark on an image a `snapshot: false` VM writes). phenix checks this before minimega launches anything, so the experiment stays stopped (a restart refuses before it stops). Restore the file the error names, point the image at a copy of it (`Rebase` with `Change reference only` on the Disks page, or minimega `disk set-backing`; a normal rebase must read the missing file and fails), or change the topology; for a file only on compute nodes, set `experiment.disk-check: warn` (`off` skips the check). REST answers 400 with code `broken_disks` and `details.disks`. A qcow version 1 image or a dirty qcow2 image only warns; qcow2 version 2 passes. Fixes per format: [Image Format Versions](https://phenix.sceptre.dev/latest/disks/#image-format-versions). See [Disk Check Before a Start](https://phenix.sceptre.dev/latest/experiments/#disk-check-before-a-start). |
 | Web API calls return 401 | That server has a JWT signing key configured, so auth is on: send a current token in `X-Phenix-Auth-Token` (or `?token=`), not in `Authorization` — standard bearer-token tooling silently 401s. Re-login if the token expired. A server started without a signing key never returns 401. |
 | `configuration not updated` after `phenix config edit` | No changes were saved in the editor — this is expected, not an error. |
-| Settings changes via `phenix settings set` don't seem to apply | Command-line flags always win over the config file; unset the flag or use `phenix settings unset <key>` to fall back to the file/env value. |
+| `phenix ui` exits at startup, serves HTTP despite a TLS setting, or lacks an initial user | Run `phenix doctor` with the same settings and user: the `auth`, `tls` and `socket` checks catch a half-set TLS pair, a malformed `ui.users` entry (skipped silently), a unitless `ui.jwt-lifetime`, a bad `dev\|<user>\|<role>` key, and a socket directory or `unix-socket-gid` phenix ui cannot use. |
+| Settings changes via `phenix settings set` don't seem to apply | Command-line flags and `PHENIX_*` environment variables win over the config file; drop the flag or unset the variable (`phenix doctor` warns about each variable that overrides the file). |
 
 Errors of `phenix workflow apply` and their fixes are in the troubleshooting
 table of [`references/workflow.md`](references/workflow.md#troubleshooting).
