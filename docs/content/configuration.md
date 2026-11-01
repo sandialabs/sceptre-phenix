@@ -694,13 +694,24 @@ The `Configs` component will initially load with a table presenting all the
 available configuration files. It is possible to filter in two ways:
 
 1. There is a pull-down selector, which will allow filtering on a specific
-   `Kind` of config.
-  ![screenshot](images/filter_kind.png){: width=350 .center}
-2. A filter field will allow filtering on `Name` (if you have filtered on
-   `Kind`, it will be limited to that kind of config).
-  ![screenshot](images/filter.png){: width=600 .center}
+   `Kind` of config. Choosing `All kinds` puts every kind back in the table.
+  ![Filter on Kind drop-down beside the Find a Config search box.](images/filter_kind.png){: width=350 .center}
+2. A separate `Find a Config` field will allow filtering on `Name` (if you have
+   filtered on `Kind`, it will be limited to that kind of config).
+  ![Find a Config search box with a magnifying-glass icon.](images/filter.png){: width=600 .center}
 
 Clicking on the `X` next to the `Find a Config` field will reset both filters.
+
+At the top left, level with the filters, the page counts the configs:
+`Configs` and the total, then one count for each kind that has any, in the
+order the kind filter lists them (`Topology`, `Scenario`, `Experiment`,
+`Image`, `User`, `Role`). The counts cover every config, whatever the filters
+and the table's page.
+
+The table can also be sorted by `Name`, `Kind`, or `Last Updated` by clicking
+the column heading. `Last Updated` shows when the config last changed,
+followed by how long ago that was, for example
+`2026-10-28T14:03:22Z (3 hours ago)`.
 
 ### View a Config
 
@@ -712,12 +723,12 @@ There are two ways to view a specific config:
    `Edit Config` button, which will open an editor. It is also possible to
    download a copy of the config. From the keyboard, Tab to the name and press
    Enter.
-  ![screenshot](images/view.png){: width=800 .center}
+  ![Config viewer dialog showing the YAML of Role/vm-viewer, with Edit Config, download and Exit buttons.](images/view.png){: width=800 .center}
 2. Selecting the `Edit` button for a given config will open the editor window.
    It is possible to edit the config in this window and save the update to the
    phēnix store. The config will be validated against the schema, and if
    invalid, an error will be presented.
-  ![screenshot](images/view_edit.png){: width=800 .center}
+  ![Config editor with the name mirror, the kind Scenario and the YAML format selected, beside the scenario's YAML and Save and Exit buttons.](images/view_edit.png){: width=800 .center}
 
 ### Create a Config
 
@@ -726,7 +737,7 @@ There are two ways to create a new config:
 1. Selecting the `Upload` button located to the far right of the search field
    will allow you to upload a file from disk. It is possible to drag and drop in
    the upload modal or click the upload icon to open a file browser.
-  ![screenshot](images/upload.png){: width=350 .center}
+  ![Upload a Config dialog with a drop zone that accepts .yaml, .yml and .json files.](images/upload.png){: width=350 .center}
 
     !!! note
         Only files with the extensions `.yml`, `.yaml`, and `.json` will be allowed.
@@ -740,7 +751,7 @@ There are two ways to create a new config:
    completed, clicking the `Create` button will post it server-side where it
    will be validated, similar to file upload. If invalid, an error will be
    presented.
-  ![screenshot](images/new_edit.png){: width=800 .center}
+  ![New config editor with the placeholder name TODO, no kind selected, the YAML format, and a template config beside Create and Exit buttons.](images/new_edit.png){: width=800 .center}
 
 ### Editor Window
 
@@ -753,8 +764,26 @@ The editor window allows direct editing of an existing or new config file.
   button under `File Format`.
 
 - It is also possible to set keybindings to the Vim editor by enabling them with
-  the sliding selector under `Vim Keybindings`.
-  ![screenshot](images/edit_settings.png){: width=150 .center}
+  the sliding selector under `Vim Mode`.
+  ![Editor settings with the File Format radio buttons set to YAML and the Vim Mode toggle disabled.](images/edit_settings.png){: width=150 .center}
+
+Leaving the editor asks whether to discard your edits only when you have changed
+something. An unchanged config closes straight away, as does a new config you
+have not yet typed into.
+
+When a save fails, phēnix says why. A config the server rejects as invalid opens
+the editor's `Validation Error` dialog, which keeps the config open so you can
+correct it. Any other failure, such as a missing permission or a network
+problem, is reported in the usual error notification instead. An invalid upload
+reports its error the same way.
+
+A save only overwrites the config if nobody saved it since you opened it (see
+[Revisions](#revisions)). Otherwise the `Config Changed` dialog names the
+revision you opened and the current one, and offers to `Reload it (your edits
+are lost)`, to `Overwrite anyway`, which saves your version over the newer one,
+or to `Cancel` and keep editing.
+
+  ![The Config Changed dialog naming the revision opened and the current one, with Reload it (your edits are lost), Overwrite anyway and Cancel buttons](images/config_conflict.png){: width=500 .center}
 
 #### New Config
 
@@ -763,7 +792,7 @@ text field to the left or within the config editor directly. Similarly, use the
 pull-down selector to the left to select the kind of config or within the config
 editor.
 
-  ![screenshot](images/name_kind.png){: width=200 .center}
+  ![Config Kind drop-down open below the Config Name field, listing Topology, Scenario, Experiment, Image, User and Role.](images/name_kind.png){: width=200 .center}
 
 Selecting the `Create` button will post the new config server-side for
 validation and addition to the store. Choosing the `Exit` button will leave the
@@ -774,7 +803,7 @@ editor window; nothing will be saved.
 Changing the name in an existing config is only available through the editor
 window.
 
-  ![screenshot](images/disabled.png){: width=600 .center}
+  ![Editor for an existing Experiment config, with the Config Name and Config Kind fields grayed out beside its YAML.](images/disabled.png){: width=600 .center}
 
 Selecting the `Save` button will post any updates server-side for validation and
 addition to the store. Selecting the `Exit` button will leave the editor window;
@@ -787,7 +816,7 @@ presented to confirm the selection. Once the config is deleted, it cannot be
 restored to the store. If an experiment config is deleted, the corresponding
 experiment will not longer be presented in the `Experiments` tab.
 
-  ![screenshot](images/actions.png){: width=150 .center}
+  ![Edit, download and delete icon buttons from a config row.](images/actions.png){: width=150 .center}
 
 ## Environment Variables
 

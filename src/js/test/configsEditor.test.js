@@ -134,11 +134,8 @@ function newConfigsEditor() {
   return vm;
 }
 
-// updateConfigTemplate does not return its request promise, so wait for it to
-// settle.
 async function updateTemplate(vm, config) {
-  vm.updateConfigTemplate(config);
-  await new Promise((resolve) => setTimeout(resolve));
+  await vm.updateConfigTemplate(config);
 }
 
 describe('ConfigsEditor config templates', () => {
@@ -208,7 +205,8 @@ describe('ConfigsEditor config templates', () => {
 
     await updateTemplate(vm, config);
 
-    expect(axiosInstance.get).toHaveBeenCalledTimes(1);
+    // the full schema and the kind's schema are asked for together
+    expect(axiosInstance.get).toHaveBeenCalledTimes(2);
     expect(useErrorNotification).toHaveBeenCalledTimes(1);
     expect(vm.editor.isLoading).toBe(false);
   });
