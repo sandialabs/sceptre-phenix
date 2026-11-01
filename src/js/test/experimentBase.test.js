@@ -88,6 +88,17 @@ describe("an experiment's page", () => {
       { 'experiment/exp1/stopped': { name: 'exp1' } },
       'stopped view',
     ],
+    [
+      'the experiment list shows it running',
+      {},
+      {
+        experiments: [
+          { name: 'exp2', running: false },
+          { name: 'exp1', running: true },
+        ],
+      },
+      'running view',
+    ],
   ])(
     'opens its view at once when %s',
     async (_, historyState, cached, shown) => {
@@ -98,7 +109,7 @@ describe("an experiment's page", () => {
     },
   );
 
-  it('trusts the link, then the running page and the stopped page, asking only when none says', async () => {
+  it('trusts the link, then the running page, the stopped page and the experiment list, asking only when none says', async () => {
     const said = fc.constantFrom({ running: true }, { running: false });
     const sources = fc.record({
       // a link with no running says nothing, as does none
@@ -106,32 +117,41 @@ describe("an experiment's page", () => {
       // a running page entry with no running still decides: the page asks
       running: fc.option(fc.oneof(said, fc.constant({ name: 'exp1' }))),
       stopped: fc.boolean(),
+      listed: fc.option(fc.boolean()),
       viewer: fc.boolean(),
     });
     await fc.assert(
-      fc.asyncProperty(sources, async ({ link, running, stopped, viewer }) => {
-        clearPageCache();
-        axios.get.mockReset().mockImplementation(never);
-        store.role = { name: viewer ? 'VM Viewer' : 'Experiment Admin' };
-        if (running) cachePage('experiment/exp1', running);
-        if (stopped) cachePage('experiment/exp1/stopped', { name: 'exp1' });
+      fc.asyncProperty(
+        sources,
+        async ({ link, running, stopped, listed, viewer }) => {
+          clearPageCache();
+          axios.get.mockReset().mockImplementation(never);
+          store.role = { name: viewer ? 'VM Viewer' : 'Experiment Admin' };
+          if (running) cachePage('experiment/exp1', running);
+          if (stopped) cachePage('experiment/exp1/stopped', { name: 'exp1' });
+          cachePage('experiments', [
+            { name: 'exp2', running: !listed },
+            ...(listed === null ? [] : [{ name: 'exp1', running: listed }]),
+          ]);
 
-        let known = link?.running;
-        if (known === undefined) {
-          if (running) known = running.running;
-          else if (stopped) known = false;
-        }
-        const page = await open(link);
-        if (known === undefined) {
-          expect(page.text()).toBe('Loading experiment…');
-          expect(axios.get).toHaveBeenCalledTimes(1);
-        } else {
-          const view = viewer ? 'VM tiles' : 'running view';
-          expect(page.text()).toBe(known ? view : 'stopped view');
-          expect(axios.get).not.toHaveBeenCalled();
-        }
-        page.unmount();
-      }),
+          let known = link?.running;
+          if (known === undefined) {
+            if (running) known = running.running;
+            else if (stopped) known = false;
+            else known = listed ?? undefined;
+          }
+          const page = await open(link);
+          if (known === undefined) {
+            expect(page.text()).toBe('Loading experiment…');
+            expect(axios.get).toHaveBeenCalledTimes(1);
+          } else {
+            const view = viewer ? 'VM tiles' : 'running view';
+            expect(page.text()).toBe(known ? view : 'stopped view');
+            expect(axios.get).not.toHaveBeenCalled();
+          }
+          page.unmount();
+        },
+      ),
       { numRuns: 40 },
     );
   });
@@ -145,6 +165,7 @@ describe("an experiment's page", () => {
   it('asks the server when nothing says whether it runs, for the running view to reuse', async () => {
     const answer = Promise.withResolvers();
     axios.get.mockReturnValue(answer.promise);
+    cachePage('experiments', [{ name: 'exp2', running: true }]);
 
     const page = await open();
     expect(page.text()).toBe('Loading experiment…');

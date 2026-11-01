@@ -22,6 +22,7 @@ import ExperimentFilesTab from '@/components/experiment/ExperimentFilesTab.vue';
 import FileSelectionActions from '@/components/experiment/FileSelectionActions.vue';
 import { keepListed } from '@/utils/experimentFiles.js';
 import { useJobStore } from '@/utils/jobs.js';
+import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
 import StoppedExperiment from '@/views/experiment/StoppedExperiment.vue';
 import { pathSegment } from './helpers/arbitraries.js';
 import { deferredGets, never } from './helpers/async.js';
@@ -957,6 +958,12 @@ describe('the experiment pages', () => {
       StoppedExperiment,
       'stopped-files',
       { searchName: 'web-server' },
+    ],
+    [
+      'RunningExperiment',
+      RunningExperiment,
+      'running-files',
+      { search: { filter: 'web-server' } },
     ],
   ];
 

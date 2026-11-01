@@ -56,7 +56,12 @@ this will only show a list of VMs that a user can view.
 
     const cached = cachedPage(experimentKey(name))?.data;
     if (cached) return cached.running;
-    return cachedPage(stoppedExperimentKey(name)) ? false : undefined;
+    if (cachedPage(stoppedExperimentKey(name))) return false;
+
+    const listed = cachedPage('experiments')?.data?.find(
+      (exp) => exp.name === name,
+    );
+    return listed?.running;
   }
 
   const name = route.params.id;

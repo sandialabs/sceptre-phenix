@@ -118,10 +118,10 @@ phenix exp stop --force <experiment name>
 ```
 
 The Web-UI offers the same as a `Force Stop` confirmation after such a failed
-stop from the Experiments table, for one experiment or a selection, and the API
-as `POST /api/v1/experiments/{name}/stop?force=true`. Until then, the
-experiment's periodic apps keep running and its delayed VMs keep waiting to
-start.
+stop, whether from the Experiments table (one experiment or a selection) or the
+experiment's page, and the API as
+`POST /api/v1/experiments/{name}/stop?force=true`. Until then, the experiment's
+periodic apps keep running and its delayed VMs keep waiting to start.
 
 The `phenix exp --help` command will output:
 
@@ -271,6 +271,31 @@ state phēnix cannot get. A VM that is paused or running already has its images
 open, so phēnix does not check it. A VM with a broken image fails at once, and
 the job starts the other VMs. A start or restart of one VM from its own route
 does not do this check.
+
+## The Running Experiment Page
+
+Click a running experiment's name to open its page. The card at the top left
+names the experiment and shows, as labeled tiles, the scenario it was created
+from (`Scenarios` when its apps also take configuration from other scenarios
+through `fromScenario`, listed after its own), its topology, how many VMs and
+VLANs it has (the `VMs` tile also says how many of them are running, such as
+`18 running of 25`, once the VM table has loaded, and keeps that count current
+as VMs start and stop), and when it started, as the `Start Time` column shows
+it. When your role may read a scenario or topology config, its name opens it in
+the Configs page's viewer. Beside the card's `Running` status, the heartbeat
+button opens the experiment's [State of Health](state-of-health.md) and the fire
+button its [SCORCH runs](scorch.md); both need `get` on the experiment.
+
+The `Apps` box at the top right shows each of the experiment's apps as a tile,
+laid out in as few even rows as fit; the tiles of a shorter last row widen to
+fill it. Each tile says, in words
+and with a colored edge, what the page last heard the app doing: `Running`,
+`Last run succeeded`, `Last run failed`, or `Last run canceled`, or else
+whether it is `Built-in` (`ntp`, `serial`, `startup`, `vrouter` and `scorch`,
+which phēnix runs at each stage itself) or a `User app`. Click a user app's tile to open the trigger
+dialog with that app checked, or `Trigger` to pick the apps yourself. `Trigger`
+is grayed out, with the reason in its tooltip, when your role may not trigger
+apps or the experiment has only built-in apps.
 
 ## Create a New Experiment
 

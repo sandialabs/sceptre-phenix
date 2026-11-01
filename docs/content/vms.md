@@ -8,7 +8,8 @@ The experiment must be started; click on the experiment name to enter the
 Running Experiment component. Within that component, click on the VM name (its
 tooltip reads `details and actions`) and you will be presented with the VM's
 details card. The card gathers everything phēnix knows about the VM together
-with every action you can take on it.
+with every action you can take on it. The URL `/experiment/<name>?vm=<vm>`
+opens the details card of that VM.
 
 ![VM details for the running hmi-01, with its Windows OS box, power buttons, its screen, resource tiles, storage, a capturing interface, labels, annotations, snapshots and port forwards.](images/vm_details_card.png){: width=800 .center}
 
@@ -159,6 +160,15 @@ requires a role that may create port forwards to the VM. Annotations are saved
 to the experiment, not to the Topology config, and can be changed while the
 experiment runs, but apps read most of them when the experiment starts, so most
 changes take effect the next time it starts.
+
+#### VM State Unknown
+
+When minimega does not answer for every VM of a running experiment (for
+example, a cluster node is down), the experiment's VMs tab says
+`minimega did not answer. Showing the VMs as configured` above the table. The
+VMs minimega did not report are then listed as the topology configures them,
+with no state, rather than left out. The next list replaces them once minimega
+answers.
 
 #### Busy VMs
 
