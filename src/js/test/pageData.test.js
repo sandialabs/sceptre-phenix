@@ -68,6 +68,7 @@ describe('the list pages', () => {
   it.each([
     ['experiments', 'experiments?vms=false', { experiments: [1] }],
     ['configs', 'configs', { configs: [1] }],
+    ['disks', 'disks', { disks: [1] }],
     ['hosts', 'hosts', { hosts: [1] }],
     ['vmtiles', 'vms', { vms: [1] }],
   ])('%s lists what GET %s answers, or nothing', async (page, url, body) => {
@@ -78,6 +79,14 @@ describe('the list pages', () => {
 
     axiosInstance.get.mockResolvedValue({ data: {} });
     expect(await pageFetchers[page](signal)).toEqual([]);
+  });
+
+  it('asks the server to inspect every disk again on a rescan', async () => {
+    serve({ disks: { disks: [] } });
+    await pageFetchers.disks(undefined, undefined, { rescan: true });
+    expect(axiosInstance.get.mock.calls).toEqual([
+      ['disks', { params: { refresh: true } }],
+    ]);
   });
 
   it('shows the settings as the server sends them', async () => {
