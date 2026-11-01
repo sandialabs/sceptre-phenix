@@ -50,6 +50,10 @@ func (roundRobin) Schedule(spec ifaces.ExperimentSpec) error {
 		}
 
 		if _, ok := spec.Schedules()[node.General().Hostname()]; !ok {
+			if len(cluster) == 0 {
+				return fmt.Errorf("scheduling VM %s: %w", node.General().Hostname(), ErrNoSchedulableHosts)
+			}
+
 			spec.Schedules()[node.General().Hostname()] = cluster[0].Name
 
 			cluster[0].VMs += 1
