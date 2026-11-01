@@ -744,6 +744,18 @@ const requests = [
     ['experiments/exp/scorch/pipelines/1'],
   ],
   [
+    'clearScorchRun',
+    () => scorchApi.clearScorchRun('exp', 1),
+    'post',
+    ['experiments/exp/scorch/pipelines/1/clear'],
+  ],
+  [
+    'cleanupScorchRun',
+    () => scorchApi.cleanupScorchRun('exp', 1),
+    'post',
+    ['experiments/exp/scorch/pipelines/1/cleanup'],
+  ],
+  [
     'getScorchLoop',
     () => scorchApi.getScorchLoop('exp', 1, 2),
     'get',

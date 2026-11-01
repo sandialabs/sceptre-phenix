@@ -74,7 +74,7 @@ func (d *DistributionSpec) Generate() (any, error) {
 			stddev = d.Gaussian.StdDev
 		}
 
-		val = rand.NormFloat64()*stddev + mean //nolint:gosec // weak random number generator
+		val = rand.NormFloat64()*stddev + mean //nolint:gosec // G404 sample values, not secrets
 	case d.Exponential != nil:
 		mean := 10.0
 		if d.Exponential.Mean != 0 {
@@ -99,7 +99,7 @@ func (d *DistributionSpec) Generate() (any, error) {
 			)
 		}
 
-		val = minVal + rand.Float64()*(maxVal-minVal) //nolint:gosec // weak random number generator
+		val = minVal + rand.Float64()*(maxVal-minVal) //nolint:gosec // G404 sample values, not secrets
 	}
 
 	if d.Type == "int" {
@@ -121,7 +121,7 @@ func ResolveReplacements(replace map[string]any) (ResolvedReplacements, error) {
 				return nil, fmt.Errorf("replacement key %q has empty list", key)
 			}
 
-			resolved[key] = v[rand.IntN(len(v))] //nolint:gosec // weak random number generator
+			resolved[key] = v[rand.IntN(len(v))] //nolint:gosec // G404 sample values, not secrets
 
 		// Random distribution
 		case map[string]any:

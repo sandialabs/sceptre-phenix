@@ -118,8 +118,8 @@ phenix exp stop --force <experiment name>
 ```
 
 The Web-UI offers the same as a `Force Stop` confirmation after such a failed
-stop, whether from the Experiments table (one experiment or a selection) or the
-experiment's page, and the API as
+stop, whether from the Experiments table (one experiment or a selection), the
+experiment's page, or the SCORCH page, and the API as
 `POST /api/v1/experiments/{name}/stop?force=true`. Until then, the experiment's
 periodic apps keep running and its delayed VMs keep waiting to start.
 
