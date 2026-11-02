@@ -133,6 +133,11 @@ health checks are run, and can also be configured to fail if any of the health
 checks fail. The log level can also be configured, which will limit what logs
 get sent to the component's UI modal while the component is running.
 
+Each stage of the component writes the results of the checks to
+`scorch/run-<run>/<component>/loop-<loop>-count-<count>/soh-<stage>.json` in the
+experiment's files, for example `soh-start.json`. Thus a later stage of the same
+loop and count does not replace the results.
+
 ```yaml
 spec:
   apps:
@@ -299,11 +304,13 @@ The same resolved values are used across all stages (`configure`, `start`, `stop
 
 The Scorch table, accessible as one of the tab selections within the phēnix UI, lists all possible Scorch apps available based on the experiments established in phēnix. The following columns or functions are available:
 
-- Experiment name
-- Experiment status: this reports on the status of the experiment &mdash; an experiment must be running for a Scorch app to start
-- Scorch app status: this will report the running or stopped status of the Scorch app itself
-- Terminal: if the Scorch app has reached a break point, a terminal will be available &mdash; if clicked, a terminal dialog will be opened and is running on the phēnix host system
-- Find an Experiment: similar to the search fields in other tables within the phēnix UI, it is possible to filter experiment names based on terms entered here
+- `Experiment`: the experiment name, which links to that experiment's Scorch runs
+- `Experiment Status`: this reports on the status of the experiment &mdash; an experiment must be running for a Scorch app to start. Beside it are a button that starts or stops the experiment, after you confirm, and a `Go to experiment` button with a flask icon. The start opens the start dialog with its options (see [Starting / Stopping Experiments](experiments.md#starting-stopping-experiments)).
+- `SCORCH Status`: this will report the running or stopped status of the Scorch app itself. Beside it are a button that starts or stops a run and a `Go to SCORCH runs` button that opens the experiment's runs.
+- `Terminal`: if the Scorch app has reached a break point, a terminal will be available &mdash; if clicked, a terminal dialog will be opened and is running on the phēnix host system.
+- `Find an Experiment`: similar to the search fields in other tables within the phēnix UI, it is possible to filter experiment names based on terms entered here
+
+Level with the search box, the page counts the experiments it lists, their `Runs`, and those `Running`.
 
 Each button is only shown if your role permits the action it takes.
 
@@ -317,12 +324,31 @@ The Scorch pipeline provides a graphical representation of the Scorch app, inclu
 
 A user can access the terminal if a break point is reached by clicking on the component. As with the terminal access described above, a dialog will be presented with a terminal running on the phēnix host system.
 
-![Scorch Pipeline](images/pipeline.png)
+![The baseline run's header, with its stopped tag and its Clear, Download and start buttons, above a pipeline whose components are all uninitialized.](images/pipeline.png)
 
-The following functions are also available in the Scorch pipeline UI:
+### Runs Page
 
-- Return to the table: the `Back to SCORCH` button will return to the Scorch table
-- Scorch run status: a button on each run that will allow the Scorch run to be stopped or started depending on the current status
+An experiment's runs page is reached from the `Experiment` link or the `Go to SCORCH runs` button in the [Scorch table](#scorch-table), and from the fire button (tooltip `view SCORCH runs`) on the Experiments table, on a running experiment's summary card, and on a VM's details card.
+
+At its top left, the page counts the experiment's `Runs` and how the last run of each went: `Running`, `Succeeded` or `Failed`. Across the top of the page are:
+
+- `Back to SCORCH`: returns to the Scorch table
+- `Go to experiment`: opens the experiment the runs belong to
+- `Experiment:` and the experiment's name, in a box colored by the experiment's state: green while it is running, red while it is stopped, and yellow while it is starting or stopping
+- `Start all`: starts every run that is not already running or waiting to start, one after another
+- `Stop all`: stops the run that is executing and drops the runs still waiting to start
+- `Clear all`: clears the status of every run that is not running
+
+Each run is shown below that with its own header: `Run:` and the run's name (or its number), a `running` or `stopped` tag, and the run's own buttons:
+
+- `Clear`: forgets the statuses of the run's components, so its pipeline reads as never run. It is enabled once the run is idle and has a status to clear.
+- `Cleanup`: executes only this run's `cleanup` stage, for example to tear down what a canceled run left behind. It is shown only for runs that define cleanup components.
+- `Download`: a menu of the archives of the run's artifacts, newest first. Each time a run finishes, Scorch archives what the run wrote to `scorch-run-<run>_<start>.tgz` in the experiment's files. The button needs `get` on `experiments/files`.
+- a button that starts or stops the run
+
+When you are viewing one of a run's loops, a button to the left of the run's title returns the display one level up in the loop chain, as described under [Stages](#stages).
+
+![SCORCH runs page of ics-water-plant with its run totals, the Start all, Stop all and Clear all buttons, and the baseline run's Clear, Cleanup and Download buttons above its pipeline.](images/scorch_runs_page.png)
 
 ### Stages
 
@@ -340,7 +366,9 @@ A Scorch component may implement any or all of the various stages, and Scorch wi
 
 It's completely up to the component developer if and how an execution stage is implemented and handled by the component. If a component is configured in the Scorch app to be executed as part of a stage, but the component does not implement said stage, then the Scorch app will happily continue on to the next component in the stage (unless the component errors out if the current stage is not implemented, in which case the Scorch run will fail).
 
-![Pipeline Stages](images/stages.png)
+![The baseline run stopped at the break point in its stop stage: the components before it succeeded, and cleanup and done are not reached yet.](images/stages.png)
+
+The `cleanup` stage can also be executed on its own, and a run's status can be cleared, with the `Cleanup`, `Clear` and `Clear all` buttons on the [runs page](#runs-page) or through the [API](api.md). Both need permission to create `experiments/trigger`.
 
 The following indicators are presented for each component of the Scorch app:
 
@@ -351,27 +379,56 @@ The following indicators are presented for each component of the Scorch app:
 - Backgrounded: a component is running in the background
 - Failure: a component has failed for some reason &mdash; reporting on the failure may be accessible by click on the component
 
-![Legend](images/legend.png)
+![Legend of the component indicators: Uninitialized, Running, Success, Break Point, Backgrounded and Failure.](images/legend.png)
 
 Loops are also available within a Scorch app and are included in the configuration file. A loop supports _looping_ within a given component through additional components. Once a loop is completed, the next component is executed. There is no limit on the number of loops or depth of them. The Scorch pipeline UI supports access to each loop and will report the depth in the pipeline's title. The first loop in the `scorch-demo` app is presented in the following example; clicking the return button will return the display one level up in the loop chain (or ending at the parent Scorch app).
 
-![Example Loop within Scorch app](images/loop.png)
+![The baseline run's first loop, titled Run: baseline (loop 1), with every component of its start and stop stages succeeded and the return button at its top left.](images/loop.png)
 
 In addition to loops, multi-run is supported within a Scorch app. Unlike loops, multi-run allows for individual Scorch runs containing four separate stages. They are not nested in each other but are independent runs. A use case for multi-run could be executing multiple independent portions of an experiment against a topology, in any order or executing a run multiple times. There are two runs depicted in the [configuration](#example-configuration) below.
 
-As described above, each component will provide a modal for output reporting. The output could either be a fairly straight forward report, nothing at all, or it include logging output for a given component in the stage. The result will be streamed as it is received if the component is currently in a running component. If the component has finished running, the output will be static. If a component has no output at all, the window closes again and says so.
+As described above, each component will provide a modal for output reporting. The output could either be a fairly straight forward report, nothing at all, or it include logging output for a given component in the stage. The result will be streamed as it is received if the component is currently in a running component. If the component has finished running, the output will be static. If a component has no output at all, the window closes again and says so. A window that falls too far behind a running component, for example on a slow connection, stops streaming. Reopen it to see the full output.
 
-![Output of Snort component](images/output.png)
+The output window names the component, and shows the `Experiment`, the `Run`, the `Stage` and the component's `Status`, which keeps up with the component while the window is open.
+
+![Output window of the snort component, showing the scorch-demo experiment, the baseline run, the configure stage, a completed status and the component's output.](images/output.png)
 
 A terminal modal is available from the Scorch table when a break point component is reached; it is also available in the Scorch pipeline. There are two types of terminal modals: read-write and read-only. If another user opens a terminal modal for a given component, it will be read-only the next time a terminal is open. The following are examples of each. In the first example, a read-only terminal, the user viewing this modal is only observing what another using is executing. In the second example, a read-write terminal, the user ran two simple commands on the phenix host system.
 
-![Read-only Terminal](images/read-only.png){: width=300 .center}
+![Terminal (scorch-demo) (read-only) showing the ls and pwd commands that another user ran.](images/read-only.png){: width=600 .center}
 
-![Read-write Terminal](images/read-write.png){: width=300 .center}
+![Terminal (scorch-demo) after the ls and pwd commands, with the cursor at the prompt.](images/read-write.png){: width=600 .center}
 
 If a component fails, the Scorch app will skip the remaining components involved in the current execution stage and jump to the next appropriate stage to complete the Scorch run. For example, if a component fails in the `Configure` stage the Scorch app will jump to the `Cleanup` stage, and if a component fails in the `Start` stage Scorch will jump to the `Stop` stage (skipping execution of any configured loops in either case).
 
-![Failed component &mdash; `trafficgen` in the Configure stage](images/failed.png){: width=300 .center}
+![A failed run: the configure stage and its trafficgen component show failure, and snort and the start stage are not reached.](images/failed.png){: width=300 .center}
+
+### From the Command Line Binary
+
+`phenix exp scorch` starts a Scorch run and waits until it ends. It prints the
+progress of the run, and exits with an error when the run fails. `--run`
+selects the run, 0 by default.
+
+```bash
+phenix exp scorch <experiment name> --run 1
+```
+
+When `phenix ui` runs, the server executes the run, so the web UI shows it
+and can cancel it. Ctrl+C then cancels the run on the server. When
+`phenix ui` does not run, the command executes the run in its own process,
+and the web UI does not show that run.
+
+These flags act on the run that `--run` selects and need a running
+`phenix ui`. Give only one of them:
+
+| Flag | What it does |
+| :--- | :--- |
+| `--status` | Shows the status of each stage and component of the run. `-o json` and `-o yaml` set the format. |
+| `--cancel` | Cancels the run on the server. |
+| `--cleanup` | Runs only the `cleanup` stage of the run, and waits for it. |
+| `--clear` | Clears the status of a run that is not executing. |
+
+With `--cancel` or `--clear`, `--dry-run` shows the request and sends none.
 
 ## Example Configuration
 

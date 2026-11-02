@@ -993,5 +993,341 @@
         "failing_checks": []
       }
     ]
+  },
+  "GET /logs": [
+    {
+      "time": 1790674264000000,
+      "timestamp": "2026-09-29 09:31:04.000",
+      "level": "INFO",
+      "msg": "starting experiment exp=bennu",
+      "type": "SYSTEM"
+    },
+    {
+      "time": 1790674266000000,
+      "timestamp": "2026-09-29 09:31:06.000",
+      "level": "DEBUG",
+      "msg": "running command cmd=\"vm launch kvm historian\" namespace=bennu",
+      "type": "MINIMEGA"
+    },
+    {
+      "time": 1790674281000000,
+      "timestamp": "2026-09-29 09:31:21.000",
+      "level": "INFO",
+      "msg": "experiment started exp=bennu vms=11 vlans=5",
+      "type": "ACTION"
+    },
+    {
+      "time": 1790674282000000,
+      "timestamp": "2026-09-29 09:31:22.000",
+      "level": "INFO",
+      "msg": "experiment-start event.action=experiment-start event.outcome=success user.name=admin@example.com phenix.experiment.name=bennu",
+      "type": "AUDIT"
+    },
+    {
+      "time": 1790674360000000,
+      "timestamp": "2026-09-29 09:32:40.000",
+      "level": "WARN",
+      "msg": "host unreachable, retrying app=soh host=hmi-01 attempt=2",
+      "type": "PHENIX-APP"
+    },
+    {
+      "time": 1790674395000000,
+      "timestamp": "2026-09-29 09:33:15.000",
+      "level": "INFO",
+      "msg": "state of health run complete exp=bennu checks=42 failing=1",
+      "type": "SOH"
+    },
+    {
+      "time": 1790674502000000,
+      "timestamp": "2026-09-29 09:35:02.000",
+      "level": "ERROR",
+      "msg": "unable to read minimega log file path=/var/log/minimega/minimega.log error=\"open: no such file or directory\"",
+      "type": "SYSTEM"
+    },
+    {
+      "time": 1790674668000000,
+      "timestamp": "2026-09-29 09:37:48.000",
+      "level": "WARN",
+      "msg": "disk-delete event.action=disk-delete event.outcome=failure event.reason=forbidden user.name=analyst@example.com file.path=/phenix/images/bennu-historian.qc2",
+      "type": "AUDIT"
+    },
+    {
+      "time": 1790674750000000,
+      "timestamp": "2026-09-29 09:39:10.000",
+      "level": "INFO",
+      "msg": "run started exp=ics-water-plant run=baseline",
+      "type": "SCORCH"
+    }
+  ],
+  "GET /logs/files": {
+    "files": [
+      {
+        "name": "phenix",
+        "available": true,
+        "size": 5242880,
+        "modified": "2026-09-29T09:39:10Z"
+      },
+      {
+        "name": "minimega",
+        "available": true,
+        "size": 1048576,
+        "modified": "2026-09-29T09:39:08Z"
+      }
+    ]
+  },
+  "GET /configs": {
+    "configs": [
+      {
+        "apiVersion": "phenix.sandia.gov/v1",
+        "kind": "Topology",
+        "metadata": {
+          "name": "bennu",
+          "created": "2026-09-01T10:00:00Z",
+          "updated": "2026-09-20T08:12:44Z",
+          "revision": 5
+        },
+        "spec": {}
+      },
+      {
+        "apiVersion": "phenix.sandia.gov/v1",
+        "kind": "Topology",
+        "metadata": {
+          "name": "cyber-range",
+          "created": "2026-09-01T10:05:00Z",
+          "updated": "2026-09-01T10:05:00Z",
+          "revision": 1
+        },
+        "spec": {}
+      },
+      {
+        "apiVersion": "phenix.sandia.gov/v1",
+        "kind": "Topology",
+        "metadata": {
+          "name": "grid-training",
+          "created": "2026-09-02T13:40:00Z",
+          "updated": "2026-09-25T11:02:19Z",
+          "revision": 4
+        },
+        "spec": {}
+      },
+      {
+        "apiVersion": "phenix.sandia.gov/v2",
+        "kind": "Scenario",
+        "metadata": {
+          "name": "bennu-soh",
+          "created": "2026-09-01T10:10:00Z",
+          "updated": "2026-09-20T08:14:03Z",
+          "revision": 6
+        },
+        "spec": {}
+      },
+      {
+        "apiVersion": "phenix.sandia.gov/v2",
+        "kind": "Scenario",
+        "metadata": {
+          "name": "grid-soh",
+          "created": "2026-09-02T13:42:00Z",
+          "updated": "2026-09-02T13:42:00Z",
+          "revision": 1
+        },
+        "spec": {}
+      },
+      {
+        "apiVersion": "phenix.sandia.gov/v2",
+        "kind": "Scenario",
+        "metadata": {
+          "name": "mirror",
+          "created": "2026-09-03T14:24:36Z",
+          "updated": "2026-09-28T16:10:02Z",
+          "revision": 7
+        },
+        "spec": {
+          "apps": [
+            {
+              "name": "mirror",
+              "hosts": [
+                {
+                  "hostname": "sniffer",
+                  "metadata": {
+                    "interface": "IF0",
+                    "setupOVS": true,
+                    "vlans": ["isp0", "site1", "site2"]
+                  }
+                }
+              ],
+              "metadata": {
+                "directGRE": {
+                  "enabled": true,
+                  "mirrorBridge": "phenix",
+                  "mirrorVLAN": "mirror"
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "apiVersion": "phenix.sandia.gov/v1",
+        "kind": "Experiment",
+        "metadata": {
+          "name": "bennu",
+          "created": "2026-09-29T09:30:12Z",
+          "updated": "2026-09-29T09:31:00Z",
+          "revision": 12
+        },
+        "spec": {
+          "baseDir": "/phenix/experiments/bennu",
+          "experimentName": "bennu",
+          "topology": {
+            "apiVersion": "phenix.sandia.gov/v1",
+            "kind": "Topology",
+            "metadata": {
+              "name": "bennu"
+            },
+            "spec": {
+              "nodes": []
+            }
+          },
+          "vlans": {
+            "min": 100,
+            "max": 200
+          }
+        }
+      },
+      {
+        "apiVersion": "phenix.sandia.gov/v1",
+        "kind": "Experiment",
+        "metadata": {
+          "name": "grid-training",
+          "created": "2026-09-26T15:00:00Z",
+          "updated": "2026-09-26T15:00:00Z",
+          "revision": 2
+        },
+        "spec": {}
+      },
+      {
+        "apiVersion": "phenix.sandia.gov/v1",
+        "kind": "Role",
+        "metadata": {
+          "name": "vm-viewer",
+          "created": "2026-09-15T22:06:23Z",
+          "updated": "2026-09-15T22:06:23Z",
+          "revision": 3
+        },
+        "spec": {
+          "roleName": "VM Viewer",
+          "policies": [
+            {
+              "resources": ["vms"],
+              "verbs": ["list"]
+            },
+            {
+              "resources": ["vms/screenshot", "vms/vnc"],
+              "verbs": ["get"]
+            },
+            {
+              "resources": ["vms/mount"],
+              "verbs": ["post", "list", "delete", "get"]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "GET /configs/Role/vm-viewer": {
+    "apiVersion": "phenix.sandia.gov/v1",
+    "kind": "Role",
+    "metadata": {
+      "name": "vm-viewer",
+      "created": "2026-09-15T22:06:23Z",
+      "updated": "2026-09-15T22:06:23Z",
+      "revision": 3
+    },
+    "spec": {
+      "roleName": "VM Viewer",
+      "policies": [
+        {
+          "resources": ["vms"],
+          "verbs": ["list"]
+        },
+        {
+          "resources": ["vms/screenshot", "vms/vnc"],
+          "verbs": ["get"]
+        },
+        {
+          "resources": ["vms/mount"],
+          "verbs": ["post", "list", "delete", "get"]
+        }
+      ]
+    }
+  },
+  "GET /configs/Scenario/mirror": {
+    "apiVersion": "phenix.sandia.gov/v2",
+    "kind": "Scenario",
+    "metadata": {
+      "name": "mirror",
+      "created": "2026-09-03T14:24:36Z",
+      "updated": "2026-09-28T16:10:02Z",
+      "revision": 7,
+      "annotations": {
+        "topology": "wind-topology"
+      }
+    },
+    "spec": {
+      "apps": [
+        {
+          "name": "mirror",
+          "hosts": [
+            {
+              "hostname": "sniffer",
+              "metadata": {
+                "interface": "IF0",
+                "setupOVS": true,
+                "vlans": ["isp0", "site1", "site2"]
+              }
+            }
+          ],
+          "metadata": {
+            "directGRE": {
+              "enabled": true,
+              "mirrorBridge": "phenix",
+              "mirrorVLAN": "mirror"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "GET /configs/Experiment/bennu": {
+    "apiVersion": "phenix.sandia.gov/v1",
+    "kind": "Experiment",
+    "metadata": {
+      "name": "bennu",
+      "created": "2026-09-29T09:30:12Z",
+      "updated": "2026-09-29T09:31:00Z",
+      "revision": 12,
+      "annotations": {
+        "topology": "bennu",
+        "scenario": "bennu-soh"
+      }
+    },
+    "spec": {
+      "baseDir": "/phenix/experiments/bennu",
+      "experimentName": "bennu",
+      "topology": {
+        "apiVersion": "phenix.sandia.gov/v1",
+        "kind": "Topology",
+        "metadata": {
+          "name": "bennu"
+        },
+        "spec": {
+          "nodes": []
+        }
+      },
+      "vlans": {
+        "min": 100,
+        "max": 200
+      }
+    }
   }
 }

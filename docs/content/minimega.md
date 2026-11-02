@@ -94,9 +94,20 @@ To exit the attached console session, type `disconnect` or press `Ctrl+D`.
 !!! warning
     Typing `quit` in the console stops the minimega daemon itself, not just the console session. minimega asks you to enter `quit` a second time to confirm.
 
-### The Console Page
+### From the Web-UI
 
-When `phenix ui` runs with `--minimega-console`, the **Console** page of the web UI shows the same console. The toolbar above the terminal has these controls:
+When the phēnix server is started with `phenix ui --minimega-console` (or
+`PHENIX_UI_MINIMEGA_CONSOLE=true`), the `Console` tab in the banner opens a
+minimega console in the browser. The tab is shown to roles with `post` on
+`miniconsole`.
+
+The console belongs to the user who started it, and keeps running while you
+use other pages or reload. It ends when you press `Ctrl+D` or type
+`disconnect` in it, when you log out, or shortly after the last tab that has
+it open closes. `Start a new console` then starts another one, and
+`Reconnect` attaches to a console whose connection was lost.
+
+The toolbar above the terminal has these controls:
 
 * **State**: The connection state: Connecting, Connected, Ended, or Connection lost.
 * **Namespace**: The experiment whose minimega namespace the console uses. "All (no namespace)" uses no namespace. Running experiments are first in the list. A change starts a new console in the namespace that you select, and then ends the old console. The page asks you to confirm first. If the new console does not start, the old console stays.
@@ -122,6 +133,8 @@ Keyboard shortcuts:
 When you enter `quit`, the page shows a warning. The page does not stop the command, and minimega asks for a second `quit`. `quit` with a delay, such as `quit 10`, stops minimega with no second request.
 
 If the connection to the console stops, the page tries to connect again after 1, 2, 4, 8, and 15 seconds. Select **Reconnect now** to try immediately, or **Cancel** to stop.
+
+![minimega console in the bennu namespace showing the output of vm info with each VM's host, name, state and IP addresses.](images/console_tab.png){: width=800 .center}
 
 ## minimega Command and Control (`miniccc`)
 

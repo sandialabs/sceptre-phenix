@@ -11,10 +11,73 @@ select all the VMs; its tooltip reads `Select/Unselect All`. Alternatively,
 the checkbox at the start of a VM's row can be used to select the
 VM. Once one or more VMs are selected, a toolbar will appear to the
 left of the `Hosts` and `Labels` filters, before the search text box.
-The buttons on the toolbar are essentially the same as described in
-[VMs](vms.md).
 
 ![Running experiment page with two VMs checked and the bulk start, pause, memory snapshot, backing image, VM snapshot and modify state buttons beside the Hosts, Labels and Paginate controls above the VM table.](images/vms_multi_select.png)
+
+Every button on the toolbar acts on all of the selected VMs at once. A button
+is grayed out if your role does not allow its action on every one of them.
+Its tooltip then names the permission, for example
+`Your role does not permit this action (vms delete)`. The buttons, named by
+their tooltips, are:
+
+* `start` - starts the selected VMs, and resumes the paused ones
+* `pause` - pauses the selected VMs
+* `create memory snapshot` - dumps each VM's memory to the file named for it
+  in the dialog
+* `create backing image` - creates a new backing image from each VM's disk
+* `create VM snapshot` - saves each VM's disk and memory as a snapshot
+* `modify state` - replaces these buttons with the modify state toolbar
+  described below
+
+A button skips the selected VMs its action cannot be applied to, by the same
+rules that disable the action in a VM's details card (see [VMs](vms.md)). For
+example, `start` skips VMs that are already running, and every button skips a
+VM that is busy with another action. One dialog asks before anything happens.
+It lists the VMs the action will act on, and names the skipped VMs with the
+reason, such as `The VMs web and db are not running.`
+
+`start`, `pause`, `restart`, `shutdown`, `kill` and `reset disk state` run as
+one [background job](jobs.md) for all the VMs, which the
+[jobs menu](web-ui.md#background-jobs-menu) shows and can cancel. The page
+stays usable while the job runs. When it ends, one message sums up the
+outcome, names the VMs that failed or were skipped, and offers `Retry failed`
+for the VMs that may work if tried again.
+
+#### Modify State Toolbar
+
+The `modify state` button replaces the toolbar with the actions that change
+a VM's state. These buttons, again named by their tooltips, are:
+
+* `redeploy` - sets `CPUs`, `Memory`, `Disk` and
+  `Replicate Original Injection(s)` for each VM, then kills and deploys it
+  again
+* `reset disk state` - resets each selected VM's disk to how it was when the
+  experiment started
+* `restart` - restarts the selected VMs that are running
+* `shutdown` - powers off the selected VMs that are running
+* `kill` - kills the selected VMs and removes them from the running
+  experiment
+* `close toolbar` - returns to the toolbar above
+
+Per-VM actions, including the ones this toolbar has no equivalent for, are
+described in [VMs](vms.md).
+
+### From the API
+
+`POST /api/v1/experiments/<name>/vms/actions` runs one power action (`start`,
+`pause`, `restart`, `shutdown`, `kill` or `resetDisk`) on several VMs as a
+[background job](jobs.md):
+
+```bash
+curl -X POST -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
+  -d '{"action": "restart", "vms": ["web", "db", "fw"]}' \
+  http://localhost:3000/api/v1/experiments/exp1/vms/actions
+```
+
+The job records each VM's outcome. A VM your role may not act on is skipped,
+and a VM busy with another action fails and is marked retryable.
+`PATCH /api/v1/experiments/<name>/vms` changes the settings of several VMs at
+once in the same way. See the [API](api.md) documentation for both.
 
 ### From the Command Line Binary
 
@@ -91,7 +154,8 @@ textbox to find VMs by:
 A search that the Web-UI cannot parse finds no VMs. For example, `(web`,
 `web and`, and `"web` find no VMs.
 
-The `Hosts` and `Labels` filters beside the search box narrow the list further.
+The `Hosts` and `Labels` filters beside the search box narrow the list further;
+see [Filtering and Sorting the VM Table](vms.md#filtering-and-sorting-the-vm-table).
 
 #### Example
 
@@ -167,6 +231,11 @@ address in a VM's `IP` column, or a tap in its `Taps` column, to start a
 capture on that interface (see [Packet Capture](vms.md#packet-capture)).
 
 ![VM table filtered to 10.1.5.20/30 with the start packet capture tooltip shown over a VM's address.](images/vms_multi_capture_start.png)
+
+The `Capture all interfaces` button in a VM's `Actions` column starts a capture
+on every connected interface of that VM. While the VM is capturing, the button
+becomes `Stop all packet captures`, which stops them all (see
+[Capture All Interfaces](vms.md#capture-all-interfaces)).
 
 ![VM table filtered to 10.1.5.20/30 with both VMs capturing, their captured IPs and taps in green and stop capture buttons in red.](images/vms_multi_capture_stop.png)
 

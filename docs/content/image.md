@@ -1,9 +1,10 @@
 # Virtual Disk Images Management
 
 Disk images are built only with the command line binary. The
-Disks page of the web UI lists the images the phēnix server has,
-and can snapshot, clone, rename, download, upload and delete the ones in the
-minimega files directory.
+[Disks](disks.md) page of the web UI lists the images the phēnix server has, in the minimega files directory and its folders and
+wherever a topology names them, and can snapshot, clone, rename, download,
+upload and delete the ones in the files directory; images outside it are listed
+but not changed.
 
 Click the `In use` count above the table to show only the images in use.
 Click it again, or click the `X` beside the search box, to show all images.
@@ -59,7 +60,7 @@ Flags:
   -c, --compress             Compress image after creation (does not apply to raw image)
   -f, --format string        Format of disk image (default "qcow2")
   -h, --help                 help for create
-  -k, --kernel-args string   List of parameters which grub will pass to the Linux kernel (e.g. 'net.ifnames=0','consoleblank=0'); separated by comma)
+  -k, --kernel-args string   List of parameters which grub will pass to the Linux kernel (e.g. 'net.ifnames=0','consoleblank=0'); separated by comma). Warning: each comma starts a new parameter, so a value with a comma, such as console=ttyS0,115200n8, is split, which can make the build fail.
   -m, --mirror string        Debootstrap mirror (must match release) (default "http://us.archive.ubuntu.com/ubuntu")
       --no-virtuals          Don't add virtual filesystem mounts to chroot before executing scripts when running vmdb2 (default is 'false')
   -O, --overlays string      List of overlay names (include full path; separated by comma)
@@ -138,8 +139,12 @@ the new configuration.
 ### delete
 
 ```shell
-phenix image delete <image name>
+phenix image delete <image name>...
 ```
+
+The command takes one or more names. When it cannot delete one, it continues
+with the others, and then exits with an error that names each failure. Add
+`--dry-run` to show the configurations that it would delete.
 
 A name can contain the wildcard `*`, which matches zero or more characters.
 Other characters, such as `?` and `[`, match only themselves. Put quotation
@@ -183,6 +188,9 @@ configuration alone.
 ```shell
 phenix image update <configuration name>
 ```
+
+The scripts keep their order. The command does not add or remove scripts,
+and does not change packages or overlays. Use `append` or `remove` for them.
 
 ## Kali Image
 

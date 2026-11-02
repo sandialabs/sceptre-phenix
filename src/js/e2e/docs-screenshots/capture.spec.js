@@ -328,3 +328,155 @@ test('vnc_tiles', async ({ page }) => {
     0,
   );
 });
+
+// The Experiments table, with its totals strip and the Actions column.
+test('experiments_table', async ({ page }) => {
+  await open(page, '/experiments');
+  await shootRegion(
+    page,
+    [page.locator('.exp-toolbar'), firstTable(page)],
+    'experiments_table',
+    0,
+  );
+});
+
+// Two experiments checked, so the Start, Stop and Delete buttons show.
+test('experiments_selected', async ({ page }) => {
+  await open(page, '/experiments');
+  for (const name of ['bennu', 'grid-training']) {
+    await page
+      .locator('label.b-checkbox', { hasText: `Select experiment ${name}` })
+      .click();
+  }
+  await expect(page.locator('.exp-selection-actions')).toBeVisible();
+  await shootRegion(
+    page,
+    [page.locator('.exp-toolbar'), firstTable(page)],
+    'experiments_selected',
+    0,
+  );
+});
+
+// A minute after the newest sample log entry, so the default time window
+// holds every entry.
+const logsNow =
+  Math.max(...fixtures['GET /logs'].map((entry) => entry.time)) / 1000 + 60_000;
+
+test('logs_page', async ({ page }) => {
+  await page.clock.setFixedTime(logsNow);
+  await open(page, '/log');
+  const lastRow = page.getByRole('button', {
+    name: /run started exp=ics-water-plant/,
+  });
+  await expect(lastRow).toBeVisible();
+  await shootRegion(
+    page,
+    [page.locator('.logs-toolbar'), lastRow],
+    'logs_page',
+    0,
+  );
+});
+
+// The Settings page with the server's default settings.
+test('settings_page', async ({ page }) => {
+  await open(page, '/settings');
+  await expect(page.getByText('Password Settings')).toBeVisible();
+  await shoot(page.locator('.form-section'), 'settings_page');
+});
+
+// The navbar, with every tab the Global Admin role sees.
+test('navbar', async ({ page }) => {
+  await open(page, '/experiments');
+  await shoot(page.locator('nav.navbar'), 'navbar');
+});
+
+// The Create a New User dialog.
+test('create_a_new_user', async ({ page }) => {
+  await open(page, '/users');
+  await page.getByRole('button', { name: 'Create a new user' }).click();
+  const dialog = page
+    .locator('.modal-card')
+    .filter({ hasText: 'Create a New User' });
+  await expect(dialog).toBeVisible();
+  await shoot(dialog, 'create_a_new_user');
+});
+
+test('upload', async ({ page }) => {
+  await open(page, '/configs');
+  await page.getByRole('button', { name: 'Upload a new config' }).click();
+  const dialog = page
+    .locator('.modal-card')
+    .filter({ hasText: 'Upload a Config' });
+  await expect(dialog).toBeVisible();
+  await shoot(dialog, 'upload');
+});
+
+// The config viewer, on the vm-viewer Role.
+test('view', async ({ page }) => {
+  await open(page, '/configs');
+  await page.getByRole('button', { name: 'View Role vm-viewer' }).click();
+  const dialog = page.locator('.modal-card').filter({ hasText: 'vm-viewer' });
+  await expect(dialog.getByLabel('Config, as YAML')).toHaveValue(/VM Viewer/);
+  await shoot(dialog, 'view');
+});
+
+// Waits for the Ace editor to draw the config.
+async function editorShown(page, text) {
+  const editor = page.locator('section.hero').first();
+  await expect(editor.locator('.ace_editor')).toBeVisible();
+  await expect(editor.getByText(text).first()).toBeVisible();
+  return editor;
+}
+
+// The editor on an existing Scenario.
+test('view_edit', async ({ page }) => {
+  await open(page, '/configs');
+  await page.getByRole('button', { name: 'Edit Scenario mirror' }).click();
+  await shoot(await editorShown(page, 'mirrorBridge'), 'view_edit');
+});
+
+// The editor on a new config, with its template.
+test('new_edit', async ({ page }) => {
+  await open(page, '/configs');
+  await page.getByRole('button', { name: 'Create a new config' }).click();
+  await shoot(await editorShown(page, 'apiVersion'), 'new_edit');
+});
+
+// The editor on an existing Experiment, whose name and kind cannot change.
+test('disabled', async ({ page }) => {
+  await open(page, '/configs');
+  await page.getByRole('button', { name: 'Edit Experiment bennu' }).click();
+  const editor = await editorShown(page, 'baseDir');
+  await expect(page.locator('#config-editor-name')).toBeDisabled();
+  await shoot(editor, 'disabled');
+});
+
+// The two sign-in images need a server whose UI was built with
+// VITE_AUTH=enabled and that runs with --jwt-signing-key; the others skip
+// them. Run them alone with -g "login_create|create_new_account" and
+// E2E_BASE_URL pointing at that server.
+async function signInPage(page) {
+  await standIn(page);
+  await page.goto('/signin');
+  const form = page.locator('form').first();
+  await expect(form.getByRole('button', { name: 'Submit' })).toBeVisible();
+  // the username field takes focus on its own; its focus ring is not the point
+  await page.evaluate(() => document.activeElement?.blur());
+  return form;
+}
+
+test('login_create', async ({ page }) => {
+  const form = await signInPage(page);
+  await ring(page.getByRole('button', { name: 'Create Account' }));
+  await shootRegion(page, [form], 'login_create', 16);
+});
+
+test('create_new_account', async ({ page }) => {
+  await signInPage(page);
+  await page.getByRole('button', { name: 'Create Account' }).click();
+  const dialog = page
+    .locator('.modal-card')
+    .filter({ hasText: 'Create a New Account' });
+  await expect(dialog).toBeVisible();
+  await shoot(dialog, 'create_new_account');
+});

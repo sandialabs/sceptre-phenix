@@ -51,3 +51,6 @@ format. phēnix refuses that command line.
 
 `phenix config get -p/--pretty` is not an alias. JSON output is always
 indented, so the flag has no effect. It stays so that existing scripts work.
+
+`phenix workflow apply --name` is the same flag as `-b/--branch-name`. It is
+not deprecated. Give only one of them, or give them the same value.

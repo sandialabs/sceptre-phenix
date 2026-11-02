@@ -32,6 +32,12 @@ experiment creation form because it would have no effect.
     return an error if you attempt to create or update an experiment with a
     longer name while `auto` mode is active.
 
+When an experiment stops in `auto` mode, phēnix deletes the bridge of the
+experiment on each host of the experiment. phēnix deletes only a bridge that
+has the experiment name and that no other running experiment uses. minimega
+keeps an OVS bridge that it did not create. In `manual` mode, phēnix does not
+delete bridges.
+
 ## Bridge Names and Topologies
 
 The experiment's default bridge is applied to every node interface in the
