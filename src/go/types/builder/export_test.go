@@ -3,7 +3,11 @@ package builder
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
+	"reflect"
 	"slices"
+
+	"gopkg.in/yaml.v3"
 )
 
 // IconKeyForSpec exposes iconKeyForSpec to the external tests.
@@ -111,4 +115,64 @@ func NestedRepeat(pattern string) bool {
 // UnboundedRepeats exposes unboundedRepeats to the external tests.
 func UnboundedRepeats(pattern string) int {
 	return unboundedRepeats(pattern)
+}
+
+// Truncate exposes truncate to the external tests.
+func Truncate(value string) string {
+	return truncate(value)
+}
+
+// YAMLValue exposes yamlValue to the external tests.
+func YAMLValue(node *yaml.Node) (any, error) {
+	return yamlValue(node)
+}
+
+// YAMLKey exposes yamlKey to the external tests.
+func YAMLKey(node *yaml.Node) (string, error) {
+	return yamlKey(node)
+}
+
+// DecodeProblem is a decodeProblem with exported fields.
+type DecodeProblem struct {
+	Path    string
+	Key     string
+	Unknown bool
+}
+
+// WalkDecode decodes data as JSON and returns the problems decodeWalker finds
+// in it for the Go type target.
+func WalkDecode(target reflect.Type, data []byte) ([]DecodeProblem, error) {
+	var value any
+
+	if err := json.Unmarshal(data, &value); err != nil {
+		return nil, fmt.Errorf("decoding the walked JSON: %w", err)
+	}
+
+	var walker decodeWalker
+
+	walker.walk(target, value, "", "", "")
+
+	problems := make([]DecodeProblem, 0, len(walker.problems))
+
+	for _, problem := range walker.problems {
+		problems = append(problems, DecodeProblem{Path: problem.path, Key: problem.key, Unknown: problem.unknown})
+	}
+
+	return problems, nil
+}
+
+// SpecSetString exposes specSetString to the external tests.
+func SpecSetString(spec map[string]any, value string, keys ...string) bool {
+	return specSetString(spec, value, keys...)
+}
+
+// ShapeFieldNames returns the sorted keys of the fields that shapeOf finds in
+// the struct type typ.
+func ShapeFieldNames(typ reflect.Type) []string {
+	return slices.Sorted(maps.Keys(shapeOf(typ, reflect.Value{}).fields))
+}
+
+// AddReferencedDefs exposes addReferencedDefs to the external tests.
+func AddReferencedDefs(defs, pool map[string]any, value any) error {
+	return addReferencedDefs(defs, pool, value)
 }

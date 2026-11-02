@@ -112,9 +112,22 @@ func stampedDocument(t *testing.T, data []byte, provenance builder.Provenance) [
 func contentDiff(t *testing.T, want, got []byte) string {
 	t.Helper()
 
-	var none builder.Provenance
+	return cmp.Diff(unstampedDocument(t, want), unstampedDocument(t, got))
+}
 
-	return cmp.Diff(string(stampedDocument(t, want, none)), string(stampedDocument(t, got, none)))
+// unstampedDocument decodes an encoded document and clears its creator,
+// creation time, last editor and last edit time.
+func unstampedDocument(t *testing.T, data []byte) *builder.Document {
+	t.Helper()
+
+	doc, err := builder.Decode(data)
+	if err != nil {
+		t.Fatalf("decoding a document returned error: %v", err)
+	}
+
+	doc.SetProvenance(builder.Provenance{})
+
+	return doc
 }
 
 // stampAt is what a save by actor leaves in a document at the test clock's

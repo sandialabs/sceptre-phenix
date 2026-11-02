@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -296,5 +298,148 @@ func TestRecordUnknownFormatFailsTheRead(t *testing.T) {
 				t.Errorf("decodeBoltRecord(%q) error = %v, want errBoltRecordFormat", value, err)
 			}
 		})
+	}
+}
+
+// writeRawBoltRecords writes each value to the BoltDB file at path as it is,
+// by key, in the namespace bucket. A nil value writes a nested bucket.
+func writeRawBoltRecords(t *testing.T, path, namespace string, values map[string][]byte) {
+	t.Helper()
+
+	db, err := bbolt.Open(path, boltFileMode, nil)
+	if err != nil {
+		t.Fatalf("opening BoltDB file %s: %v", path, err)
+	}
+
+	defer func() { _ = db.Close() }()
+
+	err = db.Update(func(tx *bbolt.Tx) error {
+		bucket, err := boltEnsureNamespaceBucket(tx, namespace)
+		if err != nil {
+			return err
+		}
+
+		for key, value := range values {
+			if value == nil {
+				_, err = bucket.CreateBucket([]byte(key))
+			} else {
+				err = bucket.Put([]byte(key), value)
+			}
+
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("writing records to %s/%s in BoltDB: %v", path, namespace, err)
+	}
+}
+
+// TestBoltRecordReadsRefuseUnknownFormat checks that each read and write of a
+// record in an unknown format fails, and that record reads skip a nested bucket.
+func TestBoltRecordReadsRefuseUnknownFormat(t *testing.T) {
+	s, path := newTestBoltDB(t)
+
+	good, err := s.CreateRecord("corrupt", "a-good", []byte("v1"))
+	if err != nil {
+		t.Fatalf("CreateRecord returned error: %v", err)
+	}
+
+	writeRawBoltRecords(t, path, "corrupt", map[string][]byte{"b-bad": []byte(`{"value":"djE="}`)})
+
+	for name, err := range map[string]error{
+		"GetRecord":    func() error { _, err := s.GetRecord("corrupt", "b-bad"); return err }(),
+		"ListRecords":  func() error { _, err := s.ListRecords("corrupt", ""); return err }(),
+		"UpdateRecord": func() error { _, err := s.UpdateRecord("corrupt", "b-bad", []byte("v2"), AnyRevision); return err }(),
+		"DeleteRecord": s.DeleteRecord("corrupt", "b-bad", AnyRevision),
+		"DeleteRecordPrefix": func() error {
+			_, err := s.DeleteRecordPrefix("corrupt", "b")
+			return err
+		}(),
+	} {
+		if !errors.Is(err, errBoltRecordFormat) {
+			t.Errorf("%s(corrupt, b-bad) error = %v, want errBoltRecordFormat", name, err)
+		}
+	}
+
+	if keys, err := s.ListRecordKeys("corrupt", ""); err != nil {
+		t.Errorf("ListRecordKeys(corrupt) error = %v", err)
+	} else if diff := cmp.Diff([]string{"a-good", "b-bad"}, keys); diff != "" {
+		t.Errorf("ListRecordKeys(corrupt), which decodes no value, mismatch (-want +got):\n%s", diff)
+	}
+
+	if got, err := s.GetRecord("corrupt", "a-good"); err != nil {
+		t.Errorf("GetRecord(corrupt, a-good) error = %v", err)
+	} else if diff := cmp.Diff(good, got); diff != "" {
+		t.Errorf("GetRecord(corrupt, a-good) after the failed writes mismatch (-want +got):\n%s", diff)
+	}
+
+	if _, err := s.CreateRecord("nested", "n-record", []byte("v1")); err != nil {
+		t.Fatalf("CreateRecord returned error: %v", err)
+	}
+
+	writeRawBoltRecords(t, path, "nested", map[string][]byte{"n-bucket": nil})
+
+	if records, err := s.ListRecords("nested", "n"); err != nil {
+		t.Errorf("ListRecords(nested, n) error = %v", err)
+	} else if diff := cmp.Diff([]string{"n-record"}, keysOfBoltTestRecords(records)); diff != "" {
+		t.Errorf("ListRecords(nested, n) keys mismatch, want the nested bucket skipped (-want +got):\n%s", diff)
+	}
+
+	if deleted, err := s.DeleteRecordPrefix("nested", "n"); err != nil || deleted != 1 {
+		t.Errorf("DeleteRecordPrefix(nested, n) = %d, %v, want only the record deleted", deleted, err)
+	}
+}
+
+// keysOfBoltTestRecords returns the key of each record.
+func keysOfBoltTestRecords(records Records) []string {
+	keys := make([]string, 0, len(records))
+	for _, record := range records {
+		keys = append(keys, record.Key)
+	}
+
+	return keys
+}
+
+// TestBoltRecordStoreFailsToOpen checks that each record call reports a file
+// that does not open, and that a failed open leaves the store usable.
+func TestBoltRecordStoreFailsToOpen(t *testing.T) {
+	s, path := newTestBoltDB(t)
+
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("removing %s: %v", path, err)
+	}
+
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatalf("creating directory %s: %v", path, err)
+	}
+
+	ran := false
+
+	for name, err := range map[string]error{
+		"ListRecords":    func() error { _, err := s.ListRecords("drafts", ""); return err }(),
+		"ListRecordKeys": func() error { _, err := s.ListRecordKeys("drafts", ""); return err }(),
+		"GetRecord":      func() error { _, err := s.GetRecord("drafts", "draft-1"); return err }(),
+		"CreateRecord":   func() error { _, err := s.CreateRecord("drafts", "draft-1", nil); return err }(),
+		"RecordTxn":      s.RecordTxn(func(RecordTx) error { ran = true; return nil }),
+	} {
+		if err == nil || !strings.Contains(err.Error(), "opening BoltDB file "+path) {
+			t.Errorf("%s error = %v, want the failure to open %s", name, err, path)
+		}
+	}
+
+	if ran {
+		t.Error("RecordTxn ran its function on a store that does not open")
+	}
+
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("removing directory %s: %v", path, err)
+	}
+
+	if _, err := s.CreateRecord("drafts", "draft-1", []byte("v1")); err != nil {
+		t.Errorf("CreateRecord after the file is back error = %v, want nil", err)
 	}
 }

@@ -580,3 +580,100 @@ func TestBuilderDraftAnswersNameExperiment(t *testing.T) {
 		t.Errorf("GET the draft when the experiments cannot be listed: %v", err)
 	}
 }
+
+// TestBuilderListExperimentLinks lists the Experiment configs once, and gives
+// no links when the listing fails.
+func TestBuilderListExperimentLinks(t *testing.T) {
+	t.Parallel()
+
+	configs := store.Configs{linkedExperiment(t, "exp", "lab", "d1", "doc1")}
+
+	for _, tt := range []struct {
+		name string
+		err  error
+		want []builderExperimentLink
+	}{
+		{name: "listed", want: []builderExperimentLink{{name: "exp", topology: "lab", draftID: "d1", documentID: "doc1"}}},
+		{name: "the listing fails", err: errors.New("injected listing failure"), want: nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var kinds []string
+
+			links := builderListExperimentLinks(func(kind string) (store.Configs, error) {
+				kinds = append(kinds, kind)
+
+				if tt.err != nil {
+					return nil, tt.err
+				}
+
+				return configs, nil
+			})
+
+			if diff := cmp.Diff(tt.want, links, cmp.AllowUnexported(builderExperimentLink{})); diff != "" {
+				t.Errorf("builderListExperimentLinks() mismatch (-want +got):\n%s", diff)
+			}
+
+			if diff := cmp.Diff([]string{kindExperiment}, kinds); diff != "" {
+				t.Errorf("listed kinds mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestBuilderDraftExperimentListsOnlyWhenItCan lists the experiments only
+// for a draft that published, forks a publication, or opened a document.
+func TestBuilderDraftExperimentListsOnlyWhenItCan(t *testing.T) {
+	t.Parallel()
+
+	configs := store.Configs{linkedExperiment(t, "exp", "lab", "other", "doc1")}
+
+	for _, tt := range []struct {
+		name   string
+		meta   *bapi.DraftMetadata
+		want   string
+		listed bool
+	}{
+		{name: "never published", meta: &bapi.DraftMetadata{ID: "d1"}, want: "", listed: false},
+		{
+			name: "published",
+			meta: &bapi.DraftMetadata{ID: "d1", Publication: &bapi.PublicationState{TopologyTarget: "lab", DocumentID: "doc1"}},
+			want: "exp", listed: true,
+		},
+		{
+			name: "a fork",
+			meta: &bapi.DraftMetadata{ID: "d1", Forked: &bapi.ForkedPublication{DocumentID: "doc1"}},
+			want: "exp", listed: true,
+		},
+		{
+			name: "opened from the document",
+			meta: &bapi.DraftMetadata{ID: "d1", SourceToken: builderDocTokenPrefix + "doc1"},
+			want: "exp", listed: true,
+		},
+		{
+			name: "opened from another document",
+			meta: &bapi.DraftMetadata{ID: "d1", SourceToken: builderDocTokenPrefix + "doc2"},
+			want: "", listed: true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			listed := false
+			api := &builderAPI{listConfigs: func(string) (store.Configs, error) {
+				listed = true
+
+				return configs, nil
+			}}
+
+			if got := api.draftExperiment(builderActor{user: builderAlice, role: *experimentRole()}, tt.meta); got != tt.want {
+				t.Errorf("draftExperiment() = %q, want %q", got, tt.want)
+			}
+
+			if listed != tt.listed {
+				t.Errorf("draftExperiment() listed the experiments = %t, want %t", listed, tt.listed)
+			}
+		})
+	}
+}

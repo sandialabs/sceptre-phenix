@@ -119,12 +119,22 @@ func TestPublicationTargetValidation(t *testing.T) {
 		},
 		"missing topology target": func(req *MarkPublishedRequest) { req.TopologyTarget = "" },
 		"unknown topology action": func(req *MarkPublishedRequest) { req.TopologyAction = "replace" },
+		"unknown mode":            func(req *MarkPublishedRequest) { req.Mode = "everything" },
 		"oversized topology target": func(req *MarkPublishedRequest) {
-			req.TopologyTarget = string(make([]byte, 0, MaxTargetLength+1))
-			for range MaxTargetLength + 1 {
-				req.TopologyTarget += "t"
-			}
+			req.TopologyTarget = strings.Repeat("t", MaxTargetLength+1)
 		},
+		"oversized experiment target": func(req *MarkPublishedRequest) {
+			req.Mode = PublishModeTopologyExperiment
+			req.ExperimentTarget = strings.Repeat("e", MaxTargetLength+1)
+		},
+		"oversized scenario target": func(req *MarkPublishedRequest) {
+			req.Mode = PublishModeTopologyExperiment
+			req.ExperimentTarget = "exp-1"
+			req.ScenarioTarget = strings.Repeat("s", MaxTargetLength+1)
+		},
+		"no actor":                   func(req *MarkPublishedRequest) { req.Actor = "" },
+		"a snapshot ID that is none": func(req *MarkPublishedRequest) { req.SnapshotID = "a/b" },
+		"a document ID that is none": func(req *MarkPublishedRequest) { req.DocumentID = "a/b" },
 	}
 
 	for name, mutate := range tests {

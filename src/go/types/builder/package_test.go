@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -411,6 +414,20 @@ func TestPackageValidateFindsIssues(t *testing.T) {
 			code: builder.CodePackageRequirementsTooMany,
 		},
 		{
+			name: "more images than a package lists",
+			change: func(value map[string]any) {
+				images := make([]any, 0, builder.MaxPackageRequirements+1)
+				for _, name := range numbered("img-%d.qc2", builder.MaxPackageRequirements+1) {
+					images = append(images, map[string]any{"name": name, "usedBy": []any{}})
+				}
+
+				requirements(value)["images"] = images
+			},
+			want: fmt.Sprintf("requirements.images: the list holds at most %d entries, not %d",
+				builder.MaxPackageRequirements, builder.MaxPackageRequirements+1),
+			code: builder.CodePackageRequirementsTooMany,
+		},
+		{
 			name: "an entry longer than a package lists",
 			change: func(value map[string]any) {
 				requirements(value)["apps"] = []any{strings.Repeat("a", builder.MaxRequirementBytes+1)}
@@ -498,22 +515,224 @@ func TestPackageValidateRefusesBuilderAnnotations(t *testing.T) {
 // TestDecodePackageGivesDocumentIssuesTheirCodes checks that a refused document makes a
 // PackageError whose issues keep their codes, at paths below "document".
 func TestDecodePackageGivesDocumentIssuesTheirCodes(t *testing.T) {
-	value := packageValue(t, samplePackage(t))
-	value["document"].(map[string]any)["extra"] = true
+	for _, tt := range []struct {
+		name     string
+		document any
+		code     builder.Code
+		path     string
+	}{
+		{
+			name:     "an unknown field",
+			document: map[string]any{"extra": true},
+			code:     builder.CodeDocumentFieldUnknown,
+			path:     "document.extra",
+		},
+		// An error that lists no issue of a document is one issue of the whole document.
+		{name: "a number", document: 5, code: builder.CodePackageDocumentInvalid, path: "document"},
+		{
+			name:     "another schema",
+			document: map[string]any{"$schema": "https://example.com/other"},
+			code:     builder.CodePackageDocumentInvalid,
+			path:     "document",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			value := packageValue(t, samplePackage(t))
 
-	_, err := builder.DecodePackage(packageText(t, value))
+			if fields, ok := tt.document.(map[string]any); ok {
+				maps.Copy(value["document"].(map[string]any), fields)
+			} else {
+				value["document"] = tt.document
+			}
 
-	var invalid *builder.PackageError
-	if !errors.As(err, &invalid) || !errors.Is(err, builder.ErrInvalidPackage) {
-		t.Errorf("DecodePackage() error = %v, want a PackageError wrapping ErrInvalidPackage", err)
+			_, err := builder.DecodePackage(packageText(t, value))
+
+			var invalid *builder.PackageError
+			if !errors.As(err, &invalid) || !errors.Is(err, builder.ErrInvalidPackage) {
+				t.Errorf("DecodePackage() error = %v, want a PackageError wrapping ErrInvalidPackage", err)
+			}
+
+			issues := builder.ErrorIssues(err)
+			if !slices.ContainsFunc(issues, func(issue builder.Issue) bool {
+				return issue.Code == tt.code && issue.Path == tt.path
+			}) {
+				t.Errorf("ErrorIssues(DecodePackage()) = %+v, want %s at %s", issues, tt.code, tt.path)
+			}
+		})
+	}
+}
+
+func TestPackageErrorMessage(t *testing.T) {
+	err := &builder.PackageError{Issues: []builder.Issue{
+		builder.NewIssue(builder.CodePackageDocumentMissing, "document", "a package holds a Builder document"),
+		builder.NewIssue(builder.CodePackageDocumentInvalid, "", "not a document"),
+	}}
+
+	if got, want := err.Error(), "invalid Builder package: document: a package holds a Builder document. not a document"; got != want {
+		t.Errorf("PackageError.Error() = %q, want %q", got, want)
 	}
 
-	issues := builder.ErrorIssues(err)
-	if !slices.ContainsFunc(issues, func(issue builder.Issue) bool {
-		return issue.Code == builder.CodeDocumentFieldUnknown && issue.Path == "document.extra"
-	}) {
-		t.Errorf("ErrorIssues(DecodePackage()) = %+v, want %s at document.extra", issues, builder.CodeDocumentFieldUnknown)
+	if !errors.Is(err, builder.ErrInvalidPackage) {
+		t.Errorf("errors.Is(%v, ErrInvalidPackage) = false, want true", err)
 	}
+}
+
+// TestNewPackageListsTemplatesAndEmptyLists checks that the templates are listed by name, in order,
+// and that a document without scenarios or included topologies lists empty lists.
+func TestNewPackageListsTemplatesAndEmptyLists(t *testing.T) {
+	document := packageDocument(t)
+	document.Scenarios = nil
+	document.Source.IncludeTopologies = nil
+
+	plc, hmi := sampleTemplate(), sampleTemplate()
+	plc.Device.Icon = ""
+	hmi.ID, hmi.Name, hmi.Device.Icon = idTemplate2, "HMI", ""
+	document.Templates = []builder.Template{plc, hmi}
+
+	pkg := builder.NewPackage(document, builder.PackageContents{})
+
+	if err := pkg.Validate(); err != nil {
+		t.Errorf("Validate() = %v, want nil", err)
+	}
+
+	requirements := packageValue(t, pkg)["requirements"].(map[string]any)
+
+	for key, want := range map[string][]any{
+		"templates":  {"PLC", "HMI"},
+		"scenarios":  {},
+		"topologies": {},
+		"apps":       {},
+	} {
+		if diff := cmp.Diff(want, requirements[key]); diff != "" {
+			t.Errorf("encoded package requirements.%s mismatch (-want +got):\n%s", key, diff)
+		}
+	}
+}
+
+// TestNewPackageReadsScenarioApps checks the apps and asset directories read from each form of
+// the apps of a Scenario spec.
+func TestNewPackageReadsScenarioApps(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		apps      any
+		wantApps  []string
+		wantFiles []string
+	}{
+		{
+			name: "a v2 list",
+			apps: []any{
+				map[string]any{"name": "ntp", "assetDir": " /phenix/assets/ntp "},
+				"not an app",
+				map[string]any{"name": " "},
+			},
+			wantApps:  []string{"ntp"},
+			wantFiles: []string{"/phenix/assets/ntp"},
+		},
+		{
+			name: "v1 experiment and host lists",
+			apps: map[string]any{
+				"experiment": []any{map[string]any{"name": "vrouter"}},
+				"host":       []any{map[string]any{"name": "protonuke", "assetDir": "/phenix/assets/pn"}, 7},
+			},
+			wantApps:  []string{"protonuke", "vrouter"},
+			wantFiles: []string{"/phenix/assets/pn"},
+		},
+		{name: "v1 lists that are not lists", apps: map[string]any{"experiment": "vrouter", "host": nil}},
+		{name: "text", apps: "ntp"},
+		{name: "no apps", apps: nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			scenario := packageScenario("pkg-scenario")
+			scenario.Spec = map[string]any{"apps": tt.apps}
+
+			pkg := builder.NewPackage(builder.NewDocument("apps"), builder.PackageContents{
+				Scenarios:      map[string]builder.PackageConfig{"pkg-scenario": scenario},
+				CarryScenarios: true,
+			})
+
+			got := struct{ Apps, Files []string }{pkg.Requirements.Apps, pkg.Requirements.Files}
+			want := struct{ Apps, Files []string }{tt.wantApps, tt.wantFiles}
+
+			if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("NewPackage() apps and files mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestPackageTrimRequirementsTruncatesImages(t *testing.T) {
+	pkg := samplePackage(t)
+	pkg.Requirements.Images = make([]builder.PackageImage, 0, builder.MaxPackageRequirements+2)
+
+	for i := range builder.MaxPackageRequirements + 2 {
+		pkg.Requirements.Images = append(pkg.Requirements.Images,
+			builder.PackageImage{Name: fmt.Sprintf("img-%04d.qc2", i), UsedBy: []string{"host"}})
+	}
+
+	want := []builder.Issue{{
+		Code: builder.CodePackageRequirementsTruncated, Severity: builder.SeverityWarning, Path: "requirements.images",
+		Message: fmt.Sprintf(`The package lists at most %d disk images. Thus it does not list 2 more: `+
+			`"img-1000.qc2", "img-1001.qc2".`, builder.MaxPackageRequirements),
+	}}
+	located := cmpopts.IgnoreFields(builder.Issue{}, "NodeID", "EdgeID", "NetworkID", "Field")
+
+	if diff := cmp.Diff(want, pkg.TrimRequirements(), located); diff != "" {
+		t.Errorf("TrimRequirements() mismatch (-want +got):\n%s", diff)
+	}
+
+	if got := len(pkg.Requirements.Images); got != builder.MaxPackageRequirements {
+		t.Errorf("requirements.images after TrimRequirements() = %d entries, want %d", got, builder.MaxPackageRequirements)
+	}
+
+	if err := pkg.Validate(); err != nil {
+		t.Errorf("Validate() after TrimRequirements() = %v, want nil", err)
+	}
+}
+
+// FuzzDecodePackage checks that every refusal matches ErrInvalidPackage, and that a valid package,
+// written as JSON, decodes again to the same valid package.
+func FuzzDecodePackage(f *testing.F) {
+	text, err := os.ReadFile(filepath.Join("testdata", "examples", "pump-station.package.yaml"))
+	if err != nil {
+		f.Fatalf("reading the example package: %v", err)
+	}
+
+	seed, err := builder.JSONFromText(text)
+	if err != nil {
+		f.Fatalf("reading the example package as JSON: %v", err)
+	}
+
+	f.Add(seed)
+	f.Add([]byte(`{"$schema": "` + builder.PackageSchemaURI + `", "document": 5}`))
+	f.Add([]byte(`{"document": null, "requirements": {"images": [{"name": "a"}]}}`))
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		pkg, err := builder.DecodePackage(data)
+		if err != nil {
+			if !errors.Is(err, builder.ErrInvalidPackage) {
+				t.Fatalf("DecodePackage() error = %v, want one matching ErrInvalidPackage", err)
+			}
+
+			return
+		}
+
+		if pkg.Validate() != nil {
+			return
+		}
+
+		again, err := builder.DecodePackage(packageText(t, pkg))
+		if err != nil {
+			t.Fatalf("DecodePackage(the valid package as JSON) error = %v, want nil", err)
+		}
+
+		if err := again.Validate(); err != nil {
+			t.Errorf("Validate() of the valid package decoded again = %v, want nil", err)
+		}
+
+		if diff := cmp.Diff(packageValue(t, pkg), packageValue(t, again)); diff != "" {
+			t.Errorf("DecodePackage(the valid package as JSON) mismatch (-first +again):\n%s", diff)
+		}
+	})
 }
 
 func TestPackageTrimRequirementsNamesWhatItLeavesOut(t *testing.T) {

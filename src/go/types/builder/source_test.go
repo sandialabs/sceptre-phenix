@@ -506,3 +506,21 @@ func TestFromTopologyListsNoScenario(t *testing.T) {
 		t.Errorf("FromConfig(topology.json) asked about %q and listed %q, want neither", asked, doc.Scenarios)
 	}
 }
+
+// TestSourceDigestOfMapsOfAnyKeys checks that a YAML map of text keys has the
+// digest of the same map with string keys.
+func TestSourceDigestOfMapsOfAnyKeys(t *testing.T) {
+	config := loadConfig(t, "topology.json")
+	config.Spec["extra"] = map[string]any{"outer": []any{map[string]any{"inner": "x"}}}
+
+	want, err := builder.SourceDigest(config)
+	if err != nil {
+		t.Fatalf("SourceDigest(string keys): %v", err)
+	}
+
+	config.Spec["extra"] = map[any]any{"outer": []any{map[any]any{"inner": "x"}}}
+
+	if got, err := builder.SourceDigest(config); err != nil || got != want {
+		t.Errorf("SourceDigest(any keys) = %q, %v, want %q", got, err, want)
+	}
+}

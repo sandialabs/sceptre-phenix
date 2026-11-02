@@ -20,7 +20,7 @@ import (
 )
 
 func TestValidateRejects(t *testing.T) {
-	tests := []struct {
+	for _, test := range []struct {
 		name    string
 		mutate  func(*builder.Document)
 		wantMsg string
@@ -127,6 +127,55 @@ func TestValidateRejects(t *testing.T) {
 			wantMsg: "unknown network",
 		},
 		{
+			name:    "duplicate network id",
+			mutate:  func(d *builder.Document) { d.Networks[1].ID = strings.ToUpper(idNetExp) },
+			wantMsg: "duplicate network ID",
+		},
+		{
+			name:    "non finite position",
+			mutate:  func(d *builder.Document) { d.Nodes[1].Position.X = math.NaN() },
+			wantMsg: "position values must be finite",
+		},
+		{
+			name:    "non finite viewport",
+			mutate:  func(d *builder.Document) { d.Viewport.Y = math.Inf(-1) },
+			wantMsg: "viewport: viewport values must be finite numbers",
+		},
+		{
+			name:    "blank hostname",
+			mutate:  func(d *builder.Document) { nodeWithHostname(d, "host-a").Device.Hostname = " " },
+			wantMsg: "device.hostname: a device needs a hostname",
+		},
+		{
+			name:    "interface without a name",
+			mutate:  func(d *builder.Document) { nodeWithHostname(d, "router").Device.Interfaces[1].Name = "\t" },
+			wantMsg: "device.interfaces[1].name: an interface needs a name",
+		},
+		{
+			name: "non finite line point",
+			mutate: func(d *builder.Document) {
+				d.Nodes = append(d.Nodes, builder.Node{
+					ID: idLineUplink, Kind: builder.NodeKindLine,
+					Line: &builder.Line{Points: []builder.Position{{X: 0, Y: 0}, {X: 1, Y: math.Inf(1)}}},
+				})
+			},
+			wantMsg: "line.points: line points must be finite numbers",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			checkValidateRejection(t, test.mutate, test.wantMsg)
+		})
+	}
+}
+
+// TestValidateRejectsConnections checks what Validate refuses in the edges of a document.
+func TestValidateRejectsConnections(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		mutate  func(*builder.Document)
+		wantMsg string
+	}{
+		{
 			name:    "edge with dangling node",
 			mutate:  func(d *builder.Document) { d.Edges[0].SourceNodeID = "nope" },
 			wantMsg: "unknown node",
@@ -179,36 +228,58 @@ func TestValidateRejects(t *testing.T) {
 			wantMsg: "duplicate connection ID",
 		},
 		{
-			name:    "duplicate network id",
-			mutate:  func(d *builder.Document) { d.Networks[1].ID = strings.ToUpper(idNetExp) },
-			wantMsg: "duplicate network ID",
+			name:    "edge to its own source",
+			mutate:  func(d *builder.Document) { d.Edges[0].TargetNodeID = idDevRouter },
+			wantMsg: "edges[0]: connection endpoints must differ",
 		},
 		{
-			name:    "non finite position",
-			mutate:  func(d *builder.Document) { d.Nodes[1].Position.X = math.NaN() },
-			wantMsg: "position values must be finite",
+			name:    "edge without network",
+			mutate:  func(d *builder.Document) { d.Edges[0].NetworkID = "" },
+			wantMsg: "edges[0].networkId: connection must reference a network",
 		},
+		{
+			name:    "edge to a switch without its payload",
+			mutate:  func(d *builder.Document) { switchNode(d).Switch = nil },
+			wantMsg: `node of kind "switch" has no "switch" payload`,
+		},
+		{
+			name:    "route of one point",
+			mutate:  func(d *builder.Document) { d.Edges[0].Route = []builder.Position{{X: 0, Y: 0}} },
+			wantMsg: "edges[0].route: a route must have at least 2 points",
+		},
+		{
+			name: "non finite route point",
+			mutate: func(d *builder.Document) {
+				d.Edges[1].Route = []builder.Position{{X: 0, Y: 0}, {X: math.NaN(), Y: 1}, {X: 2, Y: 2}}
+			},
+			wantMsg: "edges[1].route: route points must be finite numbers",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			checkValidateRejection(t, test.mutate, test.wantMsg)
+		})
+	}
+}
+
+// checkValidateRejection validates the document.json fixture after mutate, and reports an error
+// unless Validate refuses it with an error that wraps ErrInvalidDocument and says want.
+func checkValidateRejection(t *testing.T, mutate func(*builder.Document), want string) {
+	t.Helper()
+
+	doc := loadDocumentFixture(t, "document.json")
+	mutate(doc)
+
+	err := doc.Validate()
+	if err == nil {
+		t.Fatal("Validate() = nil, want an error")
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			doc := loadDocumentFixture(t, "document.json")
+	if !errors.Is(err, builder.ErrInvalidDocument) {
+		t.Errorf("Validate() = %v, want an error wrapping ErrInvalidDocument", err)
+	}
 
-			test.mutate(doc)
-
-			err := doc.Validate()
-			if err == nil {
-				t.Fatal("Validate() = nil, want an error")
-			}
-
-			if !errors.Is(err, builder.ErrInvalidDocument) {
-				t.Errorf("Validate() = %v, want an error wrapping ErrInvalidDocument", err)
-			}
-
-			if !strings.Contains(err.Error(), test.wantMsg) {
-				t.Errorf("Validate() = %q, want it to contain %q", err.Error(), test.wantMsg)
-			}
-		})
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("Validate() = %q, want it to contain %q", err.Error(), want)
 	}
 }
 
@@ -641,5 +712,169 @@ func TestNameSpaceCorpus(t *testing.T) {
 
 	if diff := cmp.Diff(corpus.CodePoints, got); diff != "" {
 		t.Errorf("IsNameSpace() code points mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestIssueString(t *testing.T) {
+	located := builder.NewIssue(builder.CodeNetworkNameRequired, "networks[0].name", "a network needs a name")
+	unlocated := builder.NewIssue(builder.CodeDocumentListMissing, "", "nodes must be an array")
+
+	for _, test := range []struct {
+		desc  string
+		issue builder.Issue
+		want  string
+	}{
+		{desc: "with a path", issue: located, want: "networks[0].name: a network needs a name"},
+		{desc: "without a path", issue: unlocated, want: "nodes must be an array"},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			if got := test.issue.String(); got != test.want {
+				t.Errorf("Issue.String() = %q, want %q", got, test.want)
+			}
+		})
+	}
+
+	err := &builder.ValidationError{Issues: []builder.Issue{located, unlocated}}
+	want := builder.ErrInvalidDocument.Error() + ": networks[0].name: a network needs a name. nodes must be an array"
+
+	if got := err.Error(); got != want {
+		t.Errorf("ValidationError.Error() = %q, want %q", got, want)
+	}
+
+	if got := err.Unwrap(); !errors.Is(got, builder.ErrInvalidDocument) {
+		t.Errorf("ValidationError.Unwrap() = %v, want ErrInvalidDocument", got)
+	}
+}
+
+// TestLocateIssues locates issues in the document.json fixture, whose edges[1] has a blank ID.
+func TestLocateIssues(t *testing.T) {
+	for _, test := range []struct {
+		desc  string
+		issue builder.Issue
+		want  builder.Issue
+	}{
+		{
+			desc:  "a node",
+			issue: builder.Issue{Path: "nodes[1].device.hostname"},
+			want:  builder.Issue{Path: "nodes[1].device.hostname", NodeID: idDevRouter},
+		},
+		{
+			desc:  "an edge",
+			issue: builder.Issue{Path: "edges[0].networkId"},
+			want:  builder.Issue{Path: "edges[0].networkId", EdgeID: idERouterEth0},
+		},
+		{
+			desc:  "a network",
+			issue: builder.Issue{Path: "networks[0]"},
+			want:  builder.Issue{Path: "networks[0]", NetworkID: idNetExp},
+		},
+		{
+			desc:  "an issue that names its node",
+			issue: builder.Issue{Path: "nodes[1]", NodeID: idDevHost},
+			want:  builder.Issue{Path: "nodes[1]", NodeID: idDevHost},
+		},
+		{desc: "an element with a blank ID", issue: builder.Issue{Path: "edges[1]"}, want: builder.Issue{Path: "edges[1]"}},
+		{desc: "an index past the list", issue: builder.Issue{Path: "networks[2]"}, want: builder.Issue{Path: "networks[2]"}},
+		{
+			desc:  "an index too large for an int",
+			issue: builder.Issue{Path: "nodes[99999999999999999999].id"},
+			want:  builder.Issue{Path: "nodes[99999999999999999999].id"},
+		},
+		{desc: "no element", issue: builder.Issue{Path: "metadata.name"}, want: builder.Issue{Path: "metadata.name"}},
+		{desc: "an element not first", issue: builder.Issue{Path: "source.nodes[1]"}, want: builder.Issue{Path: "source.nodes[1]"}},
+		{desc: "no path", issue: builder.Issue{}, want: builder.Issue{}},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			doc := loadDocumentFixture(t, "document.json")
+			doc.Edges[1].ID = " "
+
+			issues := []builder.Issue{test.issue}
+			doc.LocateIssues(issues)
+
+			if diff := cmp.Diff(test.want, issues[0]); diff != "" {
+				t.Errorf("LocateIssues(%+v) mismatch (-want +got):\n%s", test.issue, diff)
+			}
+		})
+	}
+}
+
+func TestIsTime(t *testing.T) {
+	for _, test := range []struct {
+		desc, value string
+		want        bool
+	}{
+		{desc: "UTC in whole seconds", value: "2024-02-29T23:59:59Z", want: true},
+		{desc: "empty", value: "", want: false},
+		{desc: "a fraction of a second", value: "2024-02-29T23:59:59.5Z", want: false},
+		{desc: "an offset", value: "2024-02-29T23:59:59+00:00", want: false},
+		{desc: "a day the month does not have", value: "2023-02-29T00:00:00Z", want: false},
+		{desc: "a space for the T", value: "2024-01-02 03:04:05Z", want: false},
+		{desc: "a one digit month", value: "2024-1-02T03:04:05Z", want: false},
+		{desc: "hour 24", value: "2024-01-02T24:00:00Z", want: false},
+		{desc: "a leading space", value: " 2024-01-02T03:04:05Z", want: false},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			if got := builder.IsTime(test.value); got != test.want {
+				t.Errorf("IsTime(%q) = %t, want %t", test.value, got, test.want)
+			}
+		})
+	}
+}
+
+// A chain of parents that reaches an unknown node ends there: the group that names it is refused,
+// and the nodes in the group are not in a cycle.
+func TestValidateParentChainEndsAtUnknownNode(t *testing.T) {
+	doc := loadDocumentFixture(t, "document.json")
+	doc.Nodes = append(doc.Nodes, builder.Node{
+		ID: idGrpInner, Kind: builder.NodeKindGroup, ParentID: idNetNope, Group: &builder.Group{Title: "inner"},
+	})
+	nodeWithHostname(doc, "host-a").ParentID = idGrpInner
+	nodeWithHostname(doc, "router").ParentID = idGrpInner
+
+	var invalid *builder.ValidationError
+	if err := doc.Validate(); !errors.As(err, &invalid) {
+		t.Fatalf("Validate() = %v, want a *ValidationError", err)
+	}
+
+	want := []string{fmt.Sprintf(`%s nodes[%d].parentId: unknown parent node %q`,
+		builder.CodeNodeParentUnknown, len(doc.Nodes)-1, idNetNope)}
+
+	if diff := cmp.Diff(want, issueLines(invalid.Issues)); diff != "" {
+		t.Errorf("Validate() issues mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// The lookups of a document return nil for an ID that names nothing.
+func TestDocumentLookupsOfUnknownIDs(t *testing.T) {
+	doc := loadDocumentFixture(t, "document.json")
+
+	if got := doc.NodeByID(idDevRouter); got == nil || got.Label != "router" {
+		t.Errorf("NodeByID(router) = %+v, want the router", got)
+	}
+
+	if got := doc.NodeByID("missing"); got != nil {
+		t.Errorf("NodeByID(missing) = %+v, want nil", got)
+	}
+
+	if got := doc.NetworkByID(idNetExp); got == nil || got.Name != "EXP" {
+		t.Errorf("NetworkByID(EXP) = %+v, want EXP", got)
+	}
+
+	if got := doc.NetworkByID("missing"); got != nil {
+		t.Errorf("NetworkByID(missing) = %+v, want nil", got)
+	}
+
+	router := nodeByHostname(t, doc, "router").Device
+	if got := router.InterfaceHandle(idHRouterEth1); got == nil || got.Name != "eth1" {
+		t.Errorf("InterfaceHandle(eth1) = %+v, want eth1", got)
+	}
+
+	if got := router.InterfaceHandle(idHHostEth0); got != nil {
+		t.Errorf("InterfaceHandle(a handle of host-a) = %+v, want nil", got)
+	}
+
+	var none *builder.Device
+	if got := none.InterfaceHandle(idHRouterEth1); got != nil {
+		t.Errorf("InterfaceHandle() of a nil device = %+v, want nil", got)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 
@@ -220,6 +221,13 @@ func TestDocumentsAreCanonicalizedBeforeStorage(t *testing.T) {
 		t.Errorf("second Snapshot.Decode mismatch with the first (-want +got):\n%s", diff)
 	}
 
+	// A snapshot that a caller made of bytes that are no document does not
+	// decode.
+	made := &Snapshot{Manifest: SnapshotManifest{ID: "snap-x"}, Data: []byte("{")}
+	if doc, err := made.Decode(); err == nil || doc != nil || !strings.Contains(err.Error(), "decoding snapshot snap-x") {
+		t.Errorf("Decode of a snapshot of no document = %v, %v; want nil and an error that names snap-x", doc, err)
+	}
+
 	// Publishing canonicalizes too, so the same content is content addressed the
 	// same way however it was encoded.
 	fromCompact, err := h.service.PutPublishedDocument(ctx, PutPublishedDocumentRequest{
@@ -321,6 +329,27 @@ func TestEncodeDocumentValidates(t *testing.T) {
 	}
 }
 
+// TestEncodeDocumentOfAnUnencodableSpec encodes a valid document whose device
+// spec holds a value JSON has no encoding for: EncodeDocument says why.
+func TestEncodeDocumentOfAnUnencodableSpec(t *testing.T) {
+	doc := builder.NewDocument("topo")
+	doc.Nodes = append(doc.Nodes, builder.Node{
+		ID: builder.DeviceNodeID("plc"), Kind: builder.NodeKindDevice,
+		Device: &builder.Device{Hostname: "plc", Spec: map[string]any{
+			"general": map[string]any{"hostname": "plc"}, "weight": math.NaN(),
+		}},
+	})
+
+	if err := doc.Validate(); err != nil {
+		t.Fatalf("Validate() returned error: %v", err)
+	}
+
+	data, err := EncodeDocument(doc)
+	if data != nil || err == nil || !strings.Contains(err.Error(), "unsupported value: NaN") {
+		t.Errorf("EncodeDocument(spec with NaN) = %q, %v; want nil and an unsupported value error", data, err)
+	}
+}
+
 func TestStoredContentIsParsedAfterIntegrityChecks(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -356,5 +385,32 @@ func TestStoredContentIsParsedAfterIntegrityChecks(t *testing.T) {
 	} else if !strings.Contains(corrupt.Reason, "not a valid builder document") {
 		t.Errorf("GetCurrentDocument(draft of a non-builder payload) error reason = %q, want it to report an unparsable stored document",
 			corrupt.Reason)
+	}
+
+	// The same holds for a published document.
+	id := PublishedDocumentID("topo", manifest.Digest)
+	stored := storePayload(t, h, publishedKey(id), []byte(`{"not":"a builder document"}`))
+
+	value, err = encodePublished(&PublishedDocument{
+		ID: id, Digest: stored.Digest, Size: stored.Size, CompressedSize: stored.CompressedSize,
+		Target: "topo", Kind: "Topology", CreatedAt: memrecord.Time(1), CreatedBy: testActor, Schema: builder.SchemaURI,
+	})
+	if err != nil {
+		t.Fatalf("encoding published metadata returned error: %v", err)
+	}
+
+	if _, err := h.store.CreateRecord(NamespacePublished, id, value); err != nil {
+		t.Fatalf("CreateRecord returned error: %v", err)
+	}
+
+	if _, err := h.service.GetPublishedDocument(ctx, id); err != nil {
+		t.Fatalf("GetPublishedDocument(%s) returned error: %s", id, fmtErr(err))
+	}
+
+	if _, _, err := h.service.GetPublishedDocumentData(ctx, id); !errors.As(err, &corrupt) {
+		t.Errorf("GetPublishedDocumentData(document of a non-builder payload) error = %s, want a *CorruptError", fmtErr(err))
+	} else if !strings.Contains(corrupt.Reason, "not a valid builder document") {
+		t.Errorf("GetPublishedDocumentData(document of a non-builder payload) error reason = %q, want %q in it",
+			corrupt.Reason, "not a valid builder document")
 	}
 }

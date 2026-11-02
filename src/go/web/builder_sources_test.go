@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -75,7 +76,7 @@ func ignoreBuilderSourceStamps() cmp.Options {
 }
 
 // TestBuilderListSources asserts a source is listed only with configs list
-// and, for a kind that has one, the kind's own list permission.
+// for its name and, for a kind that has one, the kind's own list permission.
 func TestBuilderListSources(t *testing.T) {
 	harness := newBuilderHarness(t,
 		builderConfig(t, "Topology", "visible"),
@@ -86,28 +87,52 @@ func TestBuilderListSources(t *testing.T) {
 		builderConfig(t, "Image", "image"),
 	)
 
-	role := builderRole(
-		builderPolicy([]string{"configs"}, []string{"*", "*/*"}, []string{"list", "get"}),
-		builderPolicy([]string{"topologies"}, []string{"visible"}, []string{"list"}),
-		builderPolicy([]string{"scenarios"}, []string{"allowed"}, []string{"list"}),
-	)
-
-	groups, body := builderListSourcesBody(t, harness, role)
-	got := [][]string{
-		builderSourceNames(groups.Topologies), builderSourceNames(groups.Experiments),
-		builderSourceNames(groups.Scenarios), builderSourceNames(groups.Images),
+	tests := []struct {
+		name     string
+		role     *rbac.Role
+		want     [][]string
+		unlisted []string
+	}{
+		{
+			name: "kind permissions",
+			role: builderRole(
+				builderPolicy([]string{"configs"}, []string{"*", "*/*"}, []string{"list", "get"}),
+				builderPolicy([]string{"topologies"}, []string{"visible"}, []string{"list"}),
+				builderPolicy([]string{"scenarios"}, []string{"allowed"}, []string{"list"}),
+			),
+			// Image configs have no kind specific permission, so configs list alone admits them.
+			want:     [][]string{{"Topology/visible"}, {}, {"Scenario/allowed"}, {"Image/image"}},
+			unlisted: []string{"hidden", "denied"},
+		},
+		{
+			name: "config permissions by name",
+			role: builderRole(
+				builderPolicy([]string{"configs"}, []string{"Topology/visible", "Scenario/*"}, []string{"list"}),
+				builderPolicy([]string{"topologies", "experiments", "scenarios"}, []string{"*"}, []string{"list"}),
+			),
+			want:     [][]string{{"Topology/visible"}, {}, {"Scenario/allowed", "Scenario/denied"}, {}},
+			unlisted: []string{"hidden", "Experiment/exp", "Image/image"},
+		},
 	}
 
-	// Image configs have no kind specific permission, so configs list alone admits them.
-	want := [][]string{{"Topology/visible"}, {}, {"Scenario/allowed"}, {"Image/image"}}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("GET /builder/sources mismatch (-want +got):\n%s", diff)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			groups, body := builderListSourcesBody(t, harness, tt.role)
+			got := [][]string{
+				builderSourceNames(groups.Topologies), builderSourceNames(groups.Experiments),
+				builderSourceNames(groups.Scenarios), builderSourceNames(groups.Images),
+			}
 
-	for _, unlisted := range []string{"hidden", "denied"} {
-		if strings.Contains(body, unlisted) {
-			t.Errorf("GET /builder/sources names %q: %s", unlisted, body)
-		}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("GET /builder/sources mismatch (-want +got):\n%s", diff)
+			}
+
+			for _, unlisted := range tt.unlisted {
+				if strings.Contains(body, unlisted) {
+					t.Errorf("GET /builder/sources names %q: %s", unlisted, body)
+				}
+			}
+		})
 	}
 }
 
@@ -1709,4 +1734,293 @@ func TestBuilderDeleteDocumentRefusals(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBuilderSourceKindFor finds each kind a document can name as a source,
+// and no other kind.
+func TestBuilderSourceKindFor(t *testing.T) {
+	type found struct {
+		Key         string
+		Generatable bool
+		OK          bool
+	}
+
+	tests := []struct {
+		kind string
+		want found
+	}{
+		{kind: builderKindTopology, want: found{Key: builderTopologies, Generatable: true, OK: true}},
+		{kind: kindExperiment, want: found{Key: builderExperiments, Generatable: true, OK: true}},
+		{kind: builderKindScenario, want: found{Key: builderScenarios, OK: true}},
+		{kind: "Image", want: found{Key: "images", OK: true}},
+		{kind: "User"},
+		{kind: "topology"},
+		{kind: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.kind, func(t *testing.T) {
+			entry, ok := builderSourceKindFor(tt.kind)
+
+			if diff := cmp.Diff(tt.want, found{Key: entry.key, Generatable: entry.generatable, OK: ok}); diff != "" {
+				t.Errorf("builderSourceKindFor(%q) mismatch (-want +got):\n%s", tt.kind, diff)
+			}
+		})
+	}
+}
+
+// TestBuilderKindAllowed checks the kind specific list permission of each
+// source resource, and refuses a resource it does not know.
+func TestBuilderKindAllowed(t *testing.T) {
+	role := *nonBuilderRole(
+		builderPolicy([]string{"topologies"}, []string{"topo"}, []string{"list"}),
+		builderPolicy([]string{"experiments", "scenarios"}, []string{"*"}, []string{"list"}),
+	)
+
+	tests := []struct {
+		name, resource string
+		names          []string
+		want           bool
+	}{
+		{name: "a listed topology", resource: builderTopologies, names: []string{"topo"}, want: true},
+		{name: "another topology", resource: builderTopologies, names: []string{"other"}},
+		{name: "an experiment", resource: builderExperiments, names: []string{"exp"}, want: true},
+		{name: "a scenario", resource: builderScenarios, names: []string{"sc"}, want: true},
+		{name: "a kind with no permission of its own", resource: "", names: []string{"img"}, want: true},
+		{name: "an unknown resource", resource: "images", names: []string{"img"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := builderKindAllowed(role, tt.resource, tt.names...); got != tt.want {
+				t.Errorf("builderKindAllowed(%q, %q) = %t, want %t", tt.resource, tt.names, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestNewBuilderSourceResponse describes a config as a source: its digest
+// when a document can be generated from it, and the diagram it carries.
+func TestNewBuilderSourceResponse(t *testing.T) {
+	plain := builderConfig(t, builderKindTopology, "plain")
+	published := builderConfig(t, builderKindTopology, "published")
+	published.Metadata.Annotations = store.Annotations{bapi.DocumentAnnotation: "ref"}
+	legacy := builderConfig(t, builderKindTopology, "legacy")
+	legacy.Metadata.Annotations = store.Annotations{bdoc.LegacyXMLAnnotation: "<mxfile/>"}
+	scenario := builderConfig(t, builderKindScenario, "sc")
+
+	digest := func(config store.Config) string {
+		t.Helper()
+
+		value, err := bdoc.ImportDigest(config)
+		if err != nil {
+			t.Fatalf("ImportDigest(%s) returned error: %v", config.FullName(), err)
+		}
+
+		return value
+	}
+
+	source := func(config store.Config, stored bool, builder string, digest string) builderSourceResponse {
+		return builderSourceResponse{
+			Kind: config.Kind, Name: config.Metadata.Name, FullName: config.FullName(), APIVersion: config.Version,
+			Digest: digest, Stored: stored, Builder: builder, Generatable: digest != "",
+		}
+	}
+
+	tests := []struct {
+		name   string
+		config store.Config
+		stored bool
+		want   builderSourceResponse
+	}{
+		{name: "a topology", config: plain, stored: true, want: source(plain, true, "", digest(plain))},
+		{
+			name: "a published topology", config: published, stored: true,
+			want: source(published, true, bapi.DocumentAnnotation, digest(published)),
+		},
+		{
+			name: "an uploaded legacy topology", config: legacy,
+			want: source(legacy, false, bdoc.LegacyXMLAnnotation, digest(legacy)),
+		},
+		{name: "a scenario", config: scenario, stored: true, want: source(scenario, true, "", "")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := newBuilderSourceResponse(&tt.config, tt.stored)
+			if err != nil {
+				t.Fatalf("newBuilderSourceResponse(%s) returned error: %v", tt.config.FullName(), err)
+			}
+
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("newBuilderSourceResponse(%s) mismatch (-want +got):\n%s", tt.config.FullName(), diff)
+			}
+		})
+	}
+
+	undigestable := builderConfig(t, builderKindTopology, "nan")
+	undigestable.Spec["weight"] = math.NaN()
+
+	if _, err := newBuilderSourceResponse(&undigestable, true); err == nil {
+		t.Errorf("newBuilderSourceResponse(Topology/nan) = nil error, want one for a spec with no digest")
+	}
+}
+
+// TestBuilderSourcesStoreFailures answers 500 when the store cannot list or
+// read a source, or a stored source has no digest.
+func TestBuilderSourcesStoreFailures(t *testing.T) {
+	undigestable := builderConfig(t, builderKindTopology, "nan")
+	undigestable.Spec["weight"] = math.NaN()
+
+	offline := errors.New("store offline")
+
+	tests := []struct {
+		name    string
+		configs []store.Config
+		list    string
+		get     string
+		request builderRequest
+		want    string
+	}{
+		{
+			name: "a listing", list: "experiment",
+			request: builderRequest{method: http.MethodGet, path: "/builder/sources"},
+			want:    "unable to list Experiment configs",
+		},
+		{
+			name: "a source with no digest", configs: []store.Config{undigestable},
+			request: builderRequest{method: http.MethodGet, path: "/builder/sources"},
+			want:    "unable to describe Topology/nan config",
+		},
+		{
+			name: "a read of the source", get: "Topology/broken",
+			request: builderRequest{method: http.MethodPost, path: "/builder/generate", body: `{"source":"Topology/broken"}`},
+			want:    "unable to get config Topology/broken",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			harness := newBuilderHarness(t, tt.configs...)
+			harness.reroute(withBuilderConfigs(
+				func(kind string) (store.Configs, error) {
+					if kind == tt.list {
+						return nil, offline
+					}
+
+					return harness.listConfigs(kind)
+				},
+				func(name string) (*store.Config, error) {
+					if name == tt.get {
+						return nil, offline
+					}
+
+					return harness.getConfig(name)
+				},
+			))
+
+			request := tt.request
+			request.user = builderAlice
+
+			recorder := harness.do(request)
+			if err := builderStatusError(recorder, http.StatusInternalServerError); err != nil {
+				t.Fatalf("%s %s: %v", request.method, request.path, err)
+			}
+
+			if got := builderRefusal(t, recorder).Message; got != tt.want {
+				t.Errorf("%s %s: message = %q, want %q", request.method, request.path, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestIncludedTopologyLoader reads an included topology from the config
+// store only, and only one the caller may read.
+func TestIncludedTopologyLoader(t *testing.T) {
+	shared := builderConfig(t, builderKindTopology, "shared")
+	offline := errors.New("store offline")
+
+	api := &builderAPI{getConfig: func(name string) (*store.Config, error) {
+		switch name {
+		case shared.FullName():
+			return &shared, nil
+		case "Topology/broken":
+			return nil, offline
+		}
+
+		return nil, store.ErrNotExist
+	}}
+
+	limited := nonBuilderRole(
+		builderPolicy([]string{"configs"}, []string{"*", "*/*"}, []string{"get"}),
+		builderPolicy([]string{"topologies"}, []string{"other"}, []string{"list"}),
+	)
+
+	tests := []struct {
+		name, include string
+		role          *rbac.Role
+		want          string
+		is            error
+	}{
+		{name: "a stored topology", include: "shared", want: "Topology/shared"},
+		{name: "a file path", include: "dir/shared.yml"},
+		{name: "a Windows file path", include: `dir\shared.yml`},
+		{name: "a topology the caller may not list", include: "shared", role: limited, is: errBuilderIncludeForbidden},
+		{name: "a missing topology", include: "absent"},
+		{name: "a store failure", include: "broken", is: offline},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			role := builderFullRole()
+			if tt.role != nil {
+				role = tt.role
+			}
+
+			config, err := api.includedTopologyLoader(builderActor{user: builderAlice, role: *role})(tt.include)
+
+			switch {
+			case tt.want != "":
+				if err != nil || config == nil || config.FullName() != tt.want {
+					t.Errorf("loading %q = %v, %v, want %s", tt.include, config, err, tt.want)
+				}
+			case err == nil:
+				t.Errorf("loading %q = %v, want an error", tt.include, config)
+			case tt.is != nil && !errors.Is(err, tt.is):
+				t.Errorf("loading %q = %v, want %v", tt.include, err, tt.is)
+			case tt.is == nil && errors.Is(err, errBuilderIncludeForbidden):
+				t.Errorf("loading %q = %v, want an error other than a refusal of permission", tt.include, err)
+			}
+		})
+	}
+}
+
+// FuzzBuilderUploadedSource asserts an uploaded config file is either a
+// config of a known kind with a name, or refused with 413 or 422.
+func FuzzBuilderUploadedSource(f *testing.F) {
+	f.Add(`{"apiVersion":"phenix.sandia.gov/v1","kind":"Topology","metadata":{"name":"lab"},"spec":{"nodes":[]}}`)
+	f.Add("apiVersion: phenix.sandia.gov/v1\nkind: Experiment\nmetadata:\n  name: lab\n")
+	f.Add("kind: Nope\nmetadata:\n  name: lab\n")
+	f.Add("\tnot: [valid")
+	f.Add("  {")
+
+	f.Fuzz(func(t *testing.T, content string) {
+		config, err := builderUploadedSource(content)
+		if err == nil {
+			if config.Metadata.Name == "" || store.ConfigFullName(config.Kind, config.Metadata.Name) == "" {
+				t.Errorf("builderUploadedSource(%q) = %s, want a known kind and a name", content, config.FullName())
+			}
+
+			return
+		}
+
+		var werr *weberror.WebError
+		if !errors.As(err, &werr) {
+			t.Fatalf("builderUploadedSource(%q) = %v, want a *weberror.WebError", content, err)
+		}
+
+		if werr.Status != http.StatusUnprocessableEntity && werr.Status != http.StatusRequestEntityTooLarge {
+			t.Errorf("builderUploadedSource(%q): status = %d, want 422 or 413", content, werr.Status)
+		}
+	})
 }

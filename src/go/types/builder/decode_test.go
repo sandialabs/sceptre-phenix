@@ -3,14 +3,19 @@ package builder_test
 import (
 	"encoding/json"
 	"errors"
+	"io"
+	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/types/builder"
 	"phenix/util"
@@ -37,16 +42,49 @@ func TestDecodeFixture(t *testing.T) {
 	}
 }
 
-func TestDecodeReaderRejectsTrailingContent(t *testing.T) {
+// TestDecodeReaderRejects checks that DecodeReader keeps the decoder's own
+// error, where Decode lists issues for some of them.
+func TestDecodeReaderRejects(t *testing.T) {
 	valid, err := os.ReadFile(filepath.Join("testdata", "document.json"))
 	if err != nil {
 		t.Fatalf("reading document.json: %v", err)
 	}
 
-	reader := strings.NewReader(string(valid) + "\n" + string(valid))
+	unknown := strings.Replace(string(valid), `"name": "hand-authored"`, `"nickname": "nope"`, 1)
 
-	if _, err := builder.DecodeReader(reader); !errors.Is(err, util.ErrTrailingJSON) {
-		t.Errorf("DecodeReader(two documents) error = %v, want %v", err, util.ErrTrailingJSON)
+	for _, test := range []struct {
+		name    string
+		reader  io.Reader
+		wantErr error
+		wantMsg string
+	}{
+		{name: "two documents", reader: strings.NewReader(string(valid) + "\n" + string(valid)), wantErr: util.ErrTrailingJSON},
+		{name: "no input", reader: strings.NewReader(""), wantErr: io.EOF},
+		{name: "a reader that fails", reader: iotest.ErrReader(iotest.ErrTimeout), wantErr: iotest.ErrTimeout},
+		{name: "a reader that fails after a part", reader: io.MultiReader(
+			strings.NewReader(string(valid[:len(valid)/2])), iotest.ErrReader(iotest.ErrTimeout),
+		), wantErr: iotest.ErrTimeout},
+		{name: "an unknown field", reader: strings.NewReader(unknown), wantMsg: `unknown field "nickname"`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			doc, err := builder.DecodeReader(test.reader)
+			if err == nil {
+				t.Fatalf("DecodeReader() = %+v, nil, want an error", doc)
+			}
+
+			if test.wantErr != nil && !errors.Is(err, test.wantErr) {
+				t.Errorf("DecodeReader() error = %v, want %v", err, test.wantErr)
+			}
+
+			if test.wantMsg != "" && !strings.Contains(err.Error(), test.wantMsg) {
+				t.Errorf("DecodeReader() error = %q, want one containing %q", err.Error(), test.wantMsg)
+			}
+
+			var invalid *builder.ValidationError
+			if errors.As(err, &invalid) {
+				t.Errorf("DecodeReader() error = %v, want the decoder's own, not a *ValidationError", err)
+			}
+		})
 	}
 }
 
@@ -409,4 +447,159 @@ func TestContentDigestIsStable(t *testing.T) {
 	if !strings.HasPrefix(first, "sha256:") {
 		t.Errorf("ContentDigest() = %q, want one prefixed with sha256:", first)
 	}
+
+	if got, err := builder.ContentDigest(nil); got != "" || err != nil {
+		t.Errorf(`ContentDigest(nil) = %q, %v, want "", nil`, got, err)
+	}
+}
+
+// walkedBase is embedded by value in walkedTarget.
+type walkedBase struct {
+	Base string `json:"base"`
+}
+
+// WalkedLink is embedded through a pointer in walkedTarget. encoding/json
+// sets such a field only when its type is exported.
+type WalkedLink struct {
+	Link bool `json:"link"`
+}
+
+// walkedTarget has each kind of field that encoding/json treats in its own way.
+type walkedTarget struct {
+	walkedBase
+	*WalkedLink
+
+	hidden  string //nolint:unused // the walker must leave it out
+	Skipped string `json:"-"`
+	Plain   string
+	Count   uint    `json:"count"`
+	Ratio   float32 `json:"ratio"`
+}
+
+// TestDecodeWalkerFields checks that the decode walker names the keys and
+// values that encoding/json refuses for a struct, and no other.
+func TestDecodeWalkerFields(t *testing.T) {
+	for name, test := range map[string]struct {
+		data string
+		want []builder.DecodeProblem
+	}{
+		"fields of embedded structs":     {data: `{"base": "a", "link": true}`, want: []builder.DecodeProblem{}},
+		"a mistyped embedded field":      {data: `{"link": "yes"}`, want: []builder.DecodeProblem{{Path: "link", Key: "link"}}},
+		"an untagged field in any case":  {data: `{"plain": "a", "PLAIN": "b"}`, want: []builder.DecodeProblem{}},
+		"an unexported field":            {data: `{"hidden": "a"}`, want: []builder.DecodeProblem{{Path: "hidden", Key: "hidden", Unknown: true}}},
+		"a field tagged -":               {data: `{"Skipped": "a"}`, want: []builder.DecodeProblem{{Path: "Skipped", Key: "Skipped", Unknown: true}}},
+		"null values":                    {data: `{"count": null, "Plain": null}`, want: []builder.DecodeProblem{}},
+		"numbers that fit":               {data: `{"count": 3, "ratio": -0.5}`, want: []builder.DecodeProblem{}},
+		"a negative unsigned number":     {data: `{"count": -3}`, want: []builder.DecodeProblem{{Path: "count", Key: "count"}}},
+		"a fraction for unsigned number": {data: `{"count": 1.5}`, want: []builder.DecodeProblem{{Path: "count", Key: "count"}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := builder.WalkDecode(reflect.TypeFor[walkedTarget](), []byte(test.data))
+			if err != nil {
+				t.Fatalf("WalkDecode(%s) error = %v", test.data, err)
+			}
+
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("WalkDecode(%s) mismatch (-want +got):\n%s", test.data, diff)
+			}
+
+			// encoding/json agrees: it refuses exactly the text with a problem.
+			var target walkedTarget
+
+			decodeErr := util.DecodeJSONStrict(strings.NewReader(test.data), &target)
+			if (decodeErr != nil) != (len(test.want) > 0) {
+				t.Errorf("DecodeJSONStrict(%s) error = %v, want an error only when there is a problem", test.data, decodeErr)
+			}
+
+			if decodeErr == nil && strings.Contains(test.data, `"base"`) && target.Base != "a" {
+				t.Errorf("DecodeJSONStrict(%s) base = %q, want a", test.data, target.Base)
+			}
+		})
+	}
+}
+
+func TestEncodeRefusesUnencodableSpec(t *testing.T) {
+	for name, value := range map[string]any{"NaN": math.NaN(), "infinity": math.Inf(1), "a channel": make(chan int)} {
+		t.Run(name, func(t *testing.T) {
+			doc := loadDocumentFixture(t, "document.json")
+			nodeByHostname(t, doc, "router").Device.Spec["load"] = value
+
+			data, err := builder.Encode(doc)
+			if err == nil {
+				t.Fatalf("Encode(spec with %s) = %s, nil, want an error", name, data)
+			}
+
+			if want := "encoding builder document"; !strings.Contains(err.Error(), want) {
+				t.Errorf("Encode(spec with %s) error = %q, want one containing %q", name, err.Error(), want)
+			}
+		})
+	}
+}
+
+func TestTruncate(t *testing.T) {
+	a63 := strings.Repeat("a", 63)
+
+	for _, test := range []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "empty", value: "", want: ""},
+		{name: "the longest kept", value: strings.Repeat("a", 64), want: strings.Repeat("a", 64)},
+		{name: "one byte too long", value: strings.Repeat("a", 65), want: strings.Repeat("a", 64) + "..."},
+		{name: "two-byte character at the limit", value: strings.Repeat("a", 62) + "é", want: strings.Repeat("a", 62) + "é"},
+		{name: "two-byte character across the limit", value: a63 + "é", want: a63 + "..."},
+		{name: "four-byte character across the limit", value: strings.Repeat("a", 62) + "🦊🦊", want: strings.Repeat("a", 62) + "..."},
+		{name: "only multibyte characters", value: strings.Repeat("ñ", 40), want: strings.Repeat("ñ", 32) + "..."},
+		{name: "no start of a character", value: strings.Repeat("\x80", 70), want: "..."},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := builder.Truncate(test.value); got != test.want {
+				t.Errorf("Truncate(%q) = %q, want %q", test.value, got, test.want)
+			}
+		})
+	}
+}
+
+// FuzzDecodeRoundTrip checks that a decoded document encodes to one that
+// decodes the same, and that a parsed document parses again.
+// Run it longer with "go test -fuzz=FuzzDecodeRoundTrip -fuzztime=30s ./types/builder/".
+func FuzzDecodeRoundTrip(f *testing.F) {
+	valid, err := os.ReadFile(filepath.Join("testdata", "document.json"))
+	if err != nil {
+		f.Fatalf("reading document.json: %v", err)
+	}
+
+	f.Add(valid)
+	f.Add([]byte(`{"$schema": "` + builder.SchemaURI + `", "revision": 1, "metadata": {"id": "x", "name": "x"}}`))
+	f.Add([]byte(`{"revision": "one"}`))
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		doc, err := builder.Decode(data)
+		if err != nil {
+			return
+		}
+
+		encoded, err := builder.Encode(doc)
+		if err != nil {
+			t.Fatalf("Encode(Decode(%q)) error = %v, want nil", data, err)
+		}
+
+		again, err := builder.Decode(encoded)
+		if err != nil {
+			t.Fatalf("Decode(Encode(Decode(%q))) error = %v, want nil", data, err)
+		}
+
+		if diff := cmp.Diff(doc, again, cmpopts.EquateEmpty()); diff != "" {
+			t.Errorf("Decode(Encode(Decode(%q))) mismatch (-want +got):\n%s", data, diff)
+		}
+
+		if doc.Validate() != nil {
+			return
+		}
+
+		if _, err := builder.Parse(encoded); err != nil {
+			t.Errorf("Parse(Encode()) of a valid document %q error = %v, want nil", data, err)
+		}
+	})
 }

@@ -402,3 +402,199 @@ func TestDesignWarningsLeaveDevicesWithoutDefaultApps(t *testing.T) {
 		t.Errorf("PublishBlockers(lab) = %v, %v, want no device setup blocker", blockers, err)
 	}
 }
+
+// Only an IPv4 address can be outside an IPv4 subnet, and a spec interface that is not an object is
+// on no network.
+func TestDesignWarningsSkipInterfacesWithoutIPv4(t *testing.T) {
+	for name, test := range map[string]struct {
+		address string
+		want    []builder.Code
+	}{
+		"IPv4 outside the subnet": {address: "10.1.0.5", want: []builder.Code{builder.CodeInterfaceIPOutside}},
+		"IPv6":                    {address: "2001:db8::5", want: []builder.Code{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := loadDocumentFixture(t, "document.json")
+			doc.Networks[0].Subnet = "10.0.0.0/24"
+			doc.Networks[0].Gateway = "10.0.0.1"
+
+			router := nodeByHostname(t, doc, "router")
+			network, _ := router.Device.Spec["network"].(map[string]any)
+			ifaces, _ := network["interfaces"].([]any)
+			network["interfaces"] = append(ifaces, "eth2")
+			ifaces[0].(map[string]any)["ruleset_in"] = "in"
+			network["rulesets"] = []any{map[string]any{"name": "in"}}
+			router.Device.Spec["type"] = "Router"
+			router.Device.Spec["hardware"].(map[string]any)["os_type"] = "vyatta"
+
+			host := nodeByHostname(t, doc, "host-a")
+			host.Device.Spec["network"].(map[string]any)["interfaces"].([]any)[0].(map[string]any)["address"] = test.address
+
+			warnings := doc.DesignWarnings()
+			got := make([]builder.Code, 0, len(warnings))
+
+			for _, warning := range warnings {
+				got = append(got, warning.Code)
+			}
+
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("DesignWarnings() codes mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// warningFields returns the field of each design warning of doc with the code.
+func warningFields(doc *builder.Document, code builder.Code) []string {
+	fields := []string{}
+
+	for _, warning := range doc.DesignWarnings() {
+		if warning.Code == code {
+			fields = append(fields, warning.Field)
+		}
+	}
+
+	return fields
+}
+
+// A device with file injections gets a warning about its drives only when its first drive has
+// inject_partition 0, as an int or as a float.
+func TestDesignWarningsInjectionsReadTheFirstDrive(t *testing.T) {
+	const partition = "spec.hardware.drives.0.inject_partition"
+
+	for name, test := range map[string]struct {
+		drives any
+		want   []string
+	}{
+		"no drives":                {drives: []any{}, want: []string{}},
+		"partition 0":              {drives: []any{map[string]any{"image": "a.qc2", "inject_partition": 0}}, want: []string{partition}},
+		"partition 0 as a float":   {drives: []any{map[string]any{"image": "a.qc2", "inject_partition": 0.0}}, want: []string{partition}},
+		"partition 1 as a float":   {drives: []any{map[string]any{"image": "a.qc2", "inject_partition": 1.0}}, want: []string{}},
+		"partition that is unset":  {drives: []any{map[string]any{"image": "a.qc2"}}, want: []string{}},
+		"partition that is text 0": {drives: []any{map[string]any{"image": "a.qc2", "inject_partition": "0"}}, want: []string{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := loadDocumentFixture(t, "document.json")
+			host := nodeByHostname(t, doc, "host-a")
+			host.Device.Spec["injections"] = []any{map[string]any{"src": "a", "dst": "/b"}}
+			host.Device.Spec["hardware"].(map[string]any)["drives"] = test.drives
+
+			got := warningFields(doc, builder.CodeDeviceInjectionsUnapplied)
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("DesignWarnings() %s fields mismatch (-want +got):\n%s", builder.CodeDeviceInjectionsUnapplied, diff)
+			}
+		})
+	}
+}
+
+// An ospf interface of a minirouter without an IPv4 address is in no area network, and gets no
+// warning that it is outside one.
+func TestDesignWarningsOSPFSkipInterfacesWithoutAddress(t *testing.T) {
+	for name, test := range map[string]struct {
+		address any
+		want    []string
+	}{
+		"no address":           {address: nil, want: []string{}},
+		"an IPv6 address":      {address: "2001:db8::1", want: []string{}},
+		"an address elsewhere": {address: "192.168.1.1", want: []string{"spec.network.interfaces.1.address"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := loadDocumentFixture(t, "document.json")
+			router := nodeByHostname(t, doc, "router")
+			router.Device.Spec["type"] = "Router"
+			router.Device.Spec["hardware"].(map[string]any)["os_type"] = "minirouter"
+
+			network, _ := router.Device.Spec["network"].(map[string]any)
+			network["ospf"] = map[string]any{"areas": []any{map[string]any{
+				"area_id": 0, "area_networks": []any{map[string]any{"network": "10.0.0.0/24"}},
+			}}}
+
+			ifaces, _ := network["interfaces"].([]any)
+			ifaces[0].(map[string]any)["proto"] = "ospf"
+
+			eth1, _ := ifaces[1].(map[string]any)
+			eth1["proto"] = "ospf"
+
+			if test.address != nil {
+				eth1["address"] = test.address
+			}
+
+			got := warningFields(doc, builder.CodeInterfaceOSPFOutside)
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("DesignWarnings() %s fields mismatch (-want +got):\n%s", builder.CodeInterfaceOSPFOutside, diff)
+			}
+
+			if unused := warningFields(doc, builder.CodeDeviceOSPFNetworkUnused); len(unused) != 0 {
+				t.Errorf("DesignWarnings() %s fields = %q, want none: eth0 is in the area network",
+					builder.CodeDeviceOSPFNetworkUnused, unused)
+			}
+		})
+	}
+}
+
+// The ntp-server device publishes an interface on the VLAN of its connection to a switch. A
+// connection that does not join it to a switch is ignored, and the interface keeps its spec VLAN.
+func TestDesignWarningsNTPServerReadsPublishedVLANs(t *testing.T) {
+	connection := func(target, handle string) builder.Edge {
+		return builder.Edge{
+			ID: "c5e3f1a2-6b4d-5c8e-9f0a-1b2c3d4e5f60", SourceNodeID: idDevRouter, SourceHandleID: idHRouterEth1,
+			TargetNodeID: target, TargetHandleID: handle, NetworkID: idNetExp,
+		}
+	}
+
+	for name, test := range map[string]struct {
+		edit func(doc *builder.Document, ifaces []any) []any
+		want []string
+	}{
+		"an unconnected interface": {
+			edit: func(_ *builder.Document, ifaces []any) []any { return ifaces },
+			want: []string{},
+		},
+		"a connection to a node that is not there": {
+			edit: func(doc *builder.Document, ifaces []any) []any {
+				doc.Edges = append(doc.Edges, connection("missing", ""))
+
+				return ifaces
+			},
+			want: []string{},
+		},
+		"a connection to another device": {
+			edit: func(doc *builder.Document, ifaces []any) []any {
+				doc.Edges = append(doc.Edges, connection(idDevHost, idHHostEth0))
+
+				return ifaces
+			},
+			want: []string{},
+		},
+		"a connection to a switch": {
+			edit: func(doc *builder.Document, ifaces []any) []any {
+				doc.Edges = append(doc.Edges, connection(idSwExp, ""))
+
+				return ifaces
+			},
+			want: []string{"spec.labels.ntp-server"},
+		},
+		"an interface that is not an object": {
+			edit: func(_ *builder.Document, ifaces []any) []any { return []any{ifaces[0], "mgmt"} },
+			want: []string{"spec.labels.ntp-server"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := loadDocumentFixture(t, "document.json")
+			router := nodeByHostname(t, doc, "router")
+			router.Device.Spec["type"] = "Router"
+			router.Device.Spec["hardware"].(map[string]any)["os_type"] = "vyatta"
+			router.Device.Spec["labels"] = map[string]any{"ntp-server": "eth0"}
+
+			network, _ := router.Device.Spec["network"].(map[string]any)
+			ifaces, _ := network["interfaces"].([]any)
+			ifaces[1].(map[string]any)["vlan"] = "mgmt"
+			network["interfaces"] = test.edit(doc, ifaces)
+
+			got := warningFields(doc, builder.CodeDeviceNTPServerNoMgmt)
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("DesignWarnings() %s fields mismatch (-want +got):\n%s", builder.CodeDeviceNTPServerNoMgmt, diff)
+			}
+		})
+	}
+}

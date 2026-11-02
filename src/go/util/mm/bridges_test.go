@@ -36,30 +36,53 @@ func bridgeOutput(host string, bridges ...string) *minicli.Response {
 }
 
 func TestBridgeNames(t *testing.T) {
-	names, err := bridgeNames(bridgeResponses(bridgeOutput("h1", "phenix", "lab", "phenix")))
-	if err != nil {
-		t.Errorf("bridgeNames(phenix, lab, phenix) returned error: %v", err)
-	} else if want := []string{"lab", "phenix"}; !slices.Equal(names, want) {
-		t.Errorf("bridgeNames(phenix, lab, phenix) = %q, want %q", names, want)
-	}
+	// Two answers, each in a response of its own, as a mesh send gives them.
+	twoResponses := make(chan *miniclient.Response, 2)
+	twoResponses <- &miniclient.Response{Resp: minicli.Responses{bridgeOutput("h1", "phenix")}}
+	twoResponses <- &miniclient.Response{Resp: minicli.Responses{bridgeOutput("h2", "lab", "phenix")}}
 
-	names, err = bridgeNames(bridgeResponses(bridgeOutput("h1")))
-	if err != nil {
-		t.Errorf("bridgeNames(no bridges) returned error: %v", err)
-	} else if len(names) != 0 {
-		t.Errorf("bridgeNames(no bridges) = %q, want none", names)
-	}
-
-	_, err = bridgeNames(bridgeResponses(&minicli.Response{Host: "h2", Error: "exec: \"ovs-vsctl\": not found\n"}))
-	if want := `exec: "ovs-vsctl": not found`; err == nil || err.Error() != want {
-		t.Errorf("bridgeNames(ovs-vsctl not found) error = %v, want %q", err, want)
-	}
+	close(twoResponses)
 
 	empty := make(chan *miniclient.Response)
 	close(empty)
 
-	if _, err = bridgeNames(empty); !errors.Is(err, errNoBridgeList) {
-		t.Errorf("bridgeNames(no answer) error = %v, want %v", err, errNoBridgeList)
+	notFound := &minicli.Response{Host: "h2", Error: "exec: \"ovs-vsctl\": not found\n"}
+
+	for _, tt := range []struct {
+		name      string
+		responses chan *miniclient.Response
+		want      []string
+		err       string
+		is        error
+	}{
+		{name: "sorted and unique", responses: bridgeResponses(bridgeOutput("h1", "phenix", "lab", "phenix")), want: []string{"lab", "phenix"}},
+		{name: "no bridges", responses: bridgeResponses(bridgeOutput("h1")), want: nil},
+		{name: "spaces and tabs", responses: bridgeResponses(&minicli.Response{Response: " lab\tphenix \r\n"}), want: []string{"lab", "phenix"}},
+		{name: "two responses", responses: twoResponses, want: []string{"lab", "phenix"}},
+		{name: "an error", responses: bridgeResponses(notFound), err: `exec: "ovs-vsctl": not found`},
+		{name: "an error and an answer", responses: bridgeResponses(bridgeOutput("h1", "phenix"), notFound), err: `exec: "ovs-vsctl": not found`},
+		{
+			name: "two errors", responses: bridgeResponses(notFound, &minicli.Response{Host: "h3", Error: "h3 not found in mesh"}),
+			err: "exec: \"ovs-vsctl\": not found\nh3 not found in mesh",
+		},
+		{name: "no answer", responses: empty, err: errNoBridgeList.Error(), is: errNoBridgeList},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			names, err := bridgeNames(tt.responses)
+
+			switch {
+			case tt.err == "" && err != nil:
+				t.Errorf("bridgeNames() error = %v, want nil", err)
+			case tt.err != "" && (err == nil || err.Error() != tt.err):
+				t.Errorf("bridgeNames() error = %v, want %q", err, tt.err)
+			case tt.is != nil && !errors.Is(err, tt.is):
+				t.Errorf("bridgeNames() error = %v, want %v", err, tt.is)
+			}
+
+			if diff := cmp.Diff(tt.want, names); diff != "" {
+				t.Errorf("bridgeNames() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -116,5 +139,18 @@ func TestListBridgesFailsOnAnyHost(t *testing.T) {
 
 	if want := []string{".record false mesh send h1 shell ovs-vsctl --timeout=5 list-br"}; !slices.Equal(sent, want) {
 		t.Errorf("listBridges(h1, h2) sent %q, want only %q", sent, want)
+	}
+}
+
+// TestGetBridges asserts GetBridges of no host lists nothing and sends no
+// command. [listBridges] tests check the listing of hosts.
+func TestGetBridges(t *testing.T) {
+	bridges, err := (Minimega{}).GetBridges()
+	if err != nil {
+		t.Fatalf("GetBridges() error = %v, want nil", err)
+	}
+
+	if diff := cmp.Diff(map[string][]string{}, bridges); diff != "" {
+		t.Errorf("GetBridges() mismatch (-want +got):\n%s", diff)
 	}
 }

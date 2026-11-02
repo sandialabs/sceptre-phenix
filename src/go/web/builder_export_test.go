@@ -2,6 +2,8 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -706,5 +708,51 @@ func TestBuilderExportTopologyRequests(t *testing.T) {
 
 	if exported.Metadata.Name != "topology" {
 		t.Errorf("POST /builder/export/topology of document !!!: config name = %q, want topology", exported.Metadata.Name)
+	}
+}
+
+// TestExportBlocker names a blocker that lists problems as the Publish
+// refusal does, and any other blocker by its error alone.
+func TestExportBlocker(t *testing.T) {
+	tests := []struct {
+		name    string
+		blocker error
+		want    issueSummary
+	}{
+		{
+			name:    "an error that lists no problems",
+			blocker: errors.New("phenix refuses the topology"),
+			want:    issueSummary{Code: bdoc.CodePublishTopologyInvalid, Message: "phenix refuses the topology"},
+		},
+		{
+			name:    "a named error without problems",
+			blocker: &bdoc.InterfaceVLANError{Problems: nil},
+			want:    issueSummary{Code: bdoc.CodePublishTopologyInvalid, Message: ""},
+		},
+		{
+			name:    "one problem",
+			blocker: fmt.Errorf("publishing: %w", &bdoc.InterfaceVLANError{Problems: []string{"aa eth0 has no VLAN."}}),
+			want:    issueSummary{Code: bdoc.CodeInterfaceVLANMissing, Message: "Aa eth0 has no VLAN"},
+		},
+		{
+			name:    "more problems than the refusal lists",
+			blocker: &bdoc.InterfaceVLANError{Problems: []string{"a", "b", "c", "d", "e"}},
+			want:    issueSummary{Code: bdoc.CodeInterfaceVLANMissing, Message: "A. B. C. 2 more interfaces have no VLAN"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			issue := exportBlocker(tt.blocker)
+
+			if diff := cmp.Diff([]issueSummary{tt.want}, issueSummaries([]bdoc.Issue{issue})); diff != "" {
+				t.Errorf("exportBlocker(%v) mismatch (-want +got):\n%s", tt.blocker, diff)
+			}
+
+			// An issue of several problems names no one location.
+			if len(bdoc.ErrorIssues(tt.blocker)) > 1 && (issue.Path != "" || issue.NodeID != "" || issue.Field != "") {
+				t.Errorf("exportBlocker(%v) location = %q %q %q, want none", tt.blocker, issue.Path, issue.NodeID, issue.Field)
+			}
+		})
 	}
 }

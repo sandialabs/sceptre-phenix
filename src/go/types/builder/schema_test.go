@@ -719,6 +719,72 @@ func TestBundleOpenAPIDefsConvertsNullableSchemas(t *testing.T) {
 	}
 }
 
+// TestBundleOpenAPIDefs converts a small OpenAPI document with each form of nullable and of $ref.
+func TestBundleOpenAPIDefs(t *testing.T) {
+	const document = `
+components:
+  schemas:
+    plain: {type: string}
+    nullable_string: {type: string, nullable: true}
+    nullable_types: {type: [string, integer], nullable: true}
+    nullable_types_with_null: {type: [string, "null"], nullable: true}
+    nullable_ref: {$ref: '#/components/schemas/plain', nullable: true}
+    not_nullable:
+      type: object
+      nullable: false
+      properties:
+        list: {type: array, items: {$ref: '#/components/schemas/plain'}}
+        elsewhere: {$ref: 'https://example.com/other.json'}
+        odd: {$ref: 7}
+`
+
+	defs, err := builder.BundleOpenAPIDefs([]byte(document), "x.")
+	if err != nil {
+		t.Fatalf("BundleOpenAPIDefs() error = %v, want nil", err)
+	}
+
+	want := map[string]any{
+		"x.plain":                    map[string]any{"type": "string"},
+		"x.nullable_string":          map[string]any{"type": []any{"string", "null"}},
+		"x.nullable_types":           map[string]any{"type": []any{"string", "integer", "null"}},
+		"x.nullable_types_with_null": map[string]any{"type": []any{"string", "null"}},
+		"x.nullable_ref": map[string]any{"anyOf": []any{
+			map[string]any{"$ref": "#/$defs/x.plain"},
+			map[string]any{"type": "null"},
+		}},
+		"x.not_nullable": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"list":      map[string]any{"type": "array", "items": map[string]any{"$ref": "#/$defs/x.plain"}},
+				"elsewhere": map[string]any{"$ref": "https://example.com/other.json"},
+				"odd":       map[string]any{"$ref": 7},
+			},
+		},
+	}
+	if diff := cmp.Diff(want, defs); diff != "" {
+		t.Errorf("BundleOpenAPIDefs() mismatch (-want +got):\n%s", diff)
+	}
+
+	if defs, err := builder.BundleOpenAPIDefs(nil, "x."); err != nil || len(defs) != 0 {
+		t.Errorf("BundleOpenAPIDefs(nothing) = %v, %v, want no definitions and no error", defs, err)
+	}
+
+	for name, test := range map[string]struct{ document, want string }{
+		"text that is not YAML": {"components: [", "parsing OpenAPI document"},
+		"a key that is not text": {
+			"components:\n  schemas:\n    bad:\n      properties: {1: {type: string}}\n",
+			`reading OpenAPI schema "bad"`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := builder.BundleOpenAPIDefs([]byte(test.document), "x.")
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Errorf("BundleOpenAPIDefs(%q) error = %v, want one containing %q", test.document, err, test.want)
+			}
+		})
+	}
+}
+
 // mustSchema builds the builder schema, failing the test on error.
 func mustSchema(t *testing.T) map[string]any {
 	t.Helper()
@@ -1065,5 +1131,33 @@ func TestSchemaLayers(t *testing.T) {
 	want := fmt.Sprintf("from 0 to %d", builder.MaxLayerID)
 	if issues := builder.ErrorIssues(doc.Validate()); len(issues) != 1 || !strings.Contains(issues[0].Message, want) {
 		t.Errorf("Validate() of layer %d issues = %v, want one that says %q", builder.MaxLayerID+1, issues, want)
+	}
+}
+
+// TestAddReferencedDefs copies each definition a value refers to, through
+// other definitions too, and refuses a reference that names no definition.
+func TestAddReferencedDefs(t *testing.T) {
+	ref := func(name string) map[string]any { return map[string]any{"$ref": "#/$defs/" + name} }
+	pool := map[string]any{
+		"a": map[string]any{"items": []any{ref("b")}},
+		"b": map[string]any{"type": "string"},
+		"c": map[string]any{"type": "number"},
+		"d": ref("missing"),
+	}
+
+	defs := map[string]any{"held": "kept"}
+	value := map[string]any{"properties": map[string]any{"x": ref("a"), "y": ref("held")}}
+
+	if err := builder.AddReferencedDefs(defs, pool, value); err != nil {
+		t.Fatalf("AddReferencedDefs(a) error = %v, want nil", err)
+	}
+
+	if diff := cmp.Diff(map[string]any{"held": "kept", "a": pool["a"], "b": pool["b"]}, defs); diff != "" {
+		t.Errorf("AddReferencedDefs(a) defs mismatch (-want +got):\n%s", diff)
+	}
+
+	err := builder.AddReferencedDefs(map[string]any{}, pool, ref("d"))
+	if want := "a reference names $defs/missing, which no definition has"; err == nil || err.Error() != want {
+		t.Errorf("AddReferencedDefs(d) error = %v, want %q", err, want)
 	}
 }

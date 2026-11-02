@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -47,6 +49,41 @@ func TestTamperedDraftMetadataIsRejected(t *testing.T) {
 		return func(raw map[string]any) { raw[key] = value }
 	}
 
+	// history returns the stored history with n manifests in place of its
+	// first, each with its own ID, and with the size given.
+	history := func(n int, size int64) func(map[string]any) {
+		return func(raw map[string]any) {
+			stored, _ := raw["history"].([]any)
+			first, _ := stored[0].(map[string]any)
+			manifests := make([]any, 0, n)
+
+			for i := range n {
+				manifest := maps.Clone(first)
+				manifest["id"], manifest["size"] = "snap-"+strconv.Itoa(i), size
+				manifests = append(manifests, manifest)
+			}
+
+			raw["history"] = manifests
+		}
+	}
+
+	// publication sets a publication of the current snapshot, with the
+	// fields changed as change says.
+	publication := func(change map[string]any) func(map[string]any) {
+		return func(raw map[string]any) {
+			stored, _ := raw["history"].([]any)
+			current, _ := stored[len(stored)-1].(map[string]any)
+			state := map[string]any{
+				"mode": "topology", "topologyTarget": "topo", "topologyAction": "create",
+				"snapshotId": current["id"], "digest": current["digest"], "revision": 1,
+				"publishedAt": memrecord.Time(1), "publishedBy": testActor,
+			}
+
+			maps.Copy(state, change)
+			raw["publication"] = state
+		}
+	}
+
 	tests := map[string]func(map[string]any){
 		"a creator with a control character":  set("documentCreatedBy", "al\nice"),
 		"a creator that is too long":          set("documentCreatedBy", strings.Repeat("a", MaxOwnerLength+1)),
@@ -59,6 +96,8 @@ func TestTamperedDraftMetadataIsRejected(t *testing.T) {
 		"a source file that is too long":      set("sourceFile", strings.Repeat("f", MaxSourceFileLength+1)),
 		"a source file with a control":        set("sourceFile", "file\x00.json"),
 		"a stored stamp, which is never kept": set("stamp", map[string]any{"createdBy": "alice"}),
+		"a title that is too long":            set("title", strings.Repeat("t", MaxTitleLength+1)),
+		"a title with a control character":    set("title", "ti\ttle"),
 		"claims another draft ID": func(raw map[string]any) {
 			raw["id"] = "someone-elses-draft"
 		},
@@ -95,6 +134,12 @@ func TestTamperedDraftMetadataIsRejected(t *testing.T) {
 			first, _ := history[0].(map[string]any)
 			first["compressedSize"] = MaxCompressedBytes + 1
 		},
+		"holds more snapshots than a draft keeps": history(MaxSnapshots+1, 1),
+		"holds more bytes than a draft keeps":     history(MaxDraftHistoryBytes/MaxDocumentBytes+1, MaxDocumentBytes),
+		"a publication with an unusable scenario target": publication(map[string]any{
+			"mode": "topology-experiment", "experimentTarget": "exp", "scenarioTarget": "sce\nnario",
+		}),
+		"a publication that names an invalid published document": publication(map[string]any{"documentId": "../escape"}),
 		"declares an unknown publication mode": func(raw map[string]any) {
 			raw["publication"] = map[string]any{
 				"mode": "delete-everything", "topologyTarget": "topo", "topologyAction": "create",
@@ -175,6 +220,18 @@ func TestTamperedPublishedMetadataIsRejected(t *testing.T) {
 		"declares no compressed size": func(raw map[string]any) {
 			raw["compressedSize"] = 0
 		},
+		"has no target": func(raw map[string]any) {
+			raw["target"] = ""
+		},
+		"names an invalid draft": func(raw map[string]any) {
+			raw["draftId"] = "../escape"
+		},
+		"names an invalid snapshot": func(raw map[string]any) {
+			raw["snapshotId"] = "../escape"
+		},
+		"has another schema": func(raw map[string]any) {
+			raw["schema"] = "https://example.com/schema"
+		},
 	}
 
 	for name, mutate := range tests {
@@ -216,6 +273,91 @@ func TestTamperedPublishedMetadataIsRejected(t *testing.T) {
 				t.Errorf("GetPublishedDocument(%s) error = %s, want ErrCorrupt", doc.ID, fmtErr(err))
 			}
 		})
+	}
+}
+
+// TestMetadataUnderAnInvalidIDIsDamaged copies a draft and a published
+// document to a key that is no valid ID, with that key as their ID. Each copy
+// is damaged, and each listing leaves it out.
+func TestMetadataUnderAnInvalidIDIsDamaged(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	const key = "_copy"
+
+	meta := createTestDraft(t, h, "topo")
+	doc := publishTestDocument(t, h, "topo", testDocument(t, "topo", 0))
+	copies := make(map[string]store.Record, 2)
+
+	for namespace, id := range map[string]string{NamespaceDrafts: meta.ID, NamespacePublished: doc.ID} {
+		record, err := h.store.GetRecord(namespace, id)
+		if err != nil {
+			t.Fatalf("GetRecord(%s, %s) returned error: %v", namespace, id, err)
+		}
+
+		var raw map[string]any
+
+		if err := json.Unmarshal(record.Value, &raw); err != nil {
+			t.Fatalf("decoding record %s returned error: %v", id, err)
+		}
+
+		raw["id"] = key
+
+		value, err := json.Marshal(raw)
+		if err != nil {
+			t.Fatalf("encoding the copy of %s returned error: %v", id, err)
+		}
+
+		if copies[namespace], err = h.store.CreateRecord(namespace, key, value); err != nil {
+			t.Fatalf("CreateRecord(%s, %s) returned error: %v", namespace, key, err)
+		}
+	}
+
+	for name, tt := range map[string]struct {
+		decode func(store.Record) error
+		record store.Record
+		want   *CorruptError
+	}{
+		"draft": {
+			decode: func(r store.Record) error { _, err := decodeDraft(r); return err },
+			record: copies[NamespaceDrafts],
+			want:   &CorruptError{Kind: kindDraft, ID: key, Reason: "draft ID is not a valid identifier"},
+		},
+		"published document": {
+			decode: func(r store.Record) error { _, err := decodePublished(r); return err },
+			record: copies[NamespacePublished],
+			want:   &CorruptError{Kind: kindPublished, ID: key, Reason: "document ID is not a valid identifier"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var corrupt *CorruptError
+			if err := tt.decode(tt.record); !errors.As(err, &corrupt) {
+				t.Fatalf("decoding the copy = %s, want a *CorruptError", fmtErr(err))
+			}
+
+			if diff := cmp.Diff(tt.want, corrupt); diff != "" {
+				t.Errorf("decoding the copy mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+
+	drafts, damaged, err := h.service.ListDraftsWithDamaged(ctx)
+	if err != nil {
+		t.Fatalf("ListDraftsWithDamaged returned error: %s", fmtErr(err))
+	}
+
+	got := [2]int{len(drafts), len(damaged)}
+	if got != [2]int{1, 1} || drafts[0].ID != meta.ID || damaged[0].ID != key {
+		t.Errorf("ListDraftsWithDamaged = %d drafts and %d damaged, want %s readable and %s damaged", got[0], got[1], meta.ID, key)
+	}
+
+	docs, err := h.service.ListPublishedDocuments(ctx)
+	if err != nil {
+		t.Fatalf("ListPublishedDocuments returned error: %s", fmtErr(err))
+	}
+
+	if len(docs) != 1 || docs[0].ID != doc.ID {
+		t.Errorf("ListPublishedDocuments = %d documents, want only %s", len(docs), doc.ID)
 	}
 }
 
@@ -426,19 +568,4 @@ func TestUntrustedStringsAreBounded(t *testing.T) {
 			t.Errorf("PutPublishedDocument with an oversized kind error = %s, want ErrInvalid", fmtErr(err))
 		}
 	})
-}
-
-func TestGeneratedIdentifiersAreValidated(t *testing.T) {
-	h := newHarness(t)
-	ctx := context.Background()
-
-	h.service.newID = func() (string, error) { return "../escape", nil }
-
-	_, err := h.service.CreateDraft(ctx, CreateDraftRequest{
-		Actor: testActor, Title: "", SourceToken: "",
-		Document: testDocument(t, "topo", 0), Summary: "",
-	})
-	if !errors.Is(err, ErrInvalid) {
-		t.Errorf("CreateDraft with the generated ID ../escape error = %s, want ErrInvalid", fmtErr(err))
-	}
 }

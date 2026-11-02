@@ -266,6 +266,11 @@ func TestParseTemplateFileValidates(t *testing.T) {
 			want: "description: collection description must be at most 1024 bytes",
 		},
 		{
+			name:   "a description on two lines",
+			change: func(file map[string]any) { file["description"] = "Plant\nfloor" },
+			want:   "description: collection description must not contain control characters",
+		},
+		{
 			name:   "no template",
 			change: func(file map[string]any) { file["templates"] = []any{} },
 			want:   "templates: a template file holds at least one template",
@@ -445,10 +450,135 @@ func TestTemplateFileIsNoDocument(t *testing.T) {
 	if got := builder.FileKindOf([]byte(templateFileYAML)); got != builder.FileKindTemplateFile {
 		t.Errorf("FileKindOf(template file) = %q, want %q", got, builder.FileKindTemplateFile)
 	}
+}
 
-	if got := builder.FileKindOf([]byte(`{"$schema": "` + builder.SchemaURI + `"}`)); got != builder.FileKindDocument {
-		t.Errorf("FileKindOf(document schema) = %q, want %q", got, builder.FileKindDocument)
+// TestParseTemplateFileSkipsBlankNamesInDuplicateCheck checks that templates without a name are
+// refused each for itself, not as duplicates of each other.
+func TestParseTemplateFileSkipsBlankNamesInDuplicateCheck(t *testing.T) {
+	value := templateFileValue()
+	delete(value, "icons")
+
+	value["templates"] = []any{
+		map[string]any{"name": "", "device": map[string]any{"spec": map[string]any{"general": map[string]any{"hostname": "a"}}}},
+		map[string]any{"name": " ", "device": map[string]any{"spec": map[string]any{"general": map[string]any{"hostname": "b"}}}},
 	}
+
+	want := []string{"templates[0].name: a template needs a name", "templates[1].name: a template needs a name"}
+	if diff := cmp.Diff(want, templateFileIssues(t, templateFileJSON(t, value))); diff != "" {
+		t.Errorf("ParseTemplateFile(two templates without a name) issues mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestTemplateFileErrorMessage(t *testing.T) {
+	tests := []struct {
+		name   string
+		issues []builder.Issue
+		want   string
+	}{
+		{
+			name:   "one issue",
+			issues: []builder.Issue{builder.NewIssue(builder.CodeTemplateCollectionRequired, "name", "a collection needs a name")},
+			want:   "invalid template file: name: a collection needs a name",
+		},
+		{
+			name: "two issues, one without a path",
+			issues: []builder.Issue{
+				builder.NewIssue(builder.CodeTemplateFileEmpty, "templates", "a template file holds at least one template"),
+				builder.NewIssue(builder.CodeTemplateCollectionRequired, "", "a collection needs a name"),
+			},
+			want: "invalid template file: templates: a template file holds at least one template. a collection needs a name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := &builder.TemplateFileError{Issues: tt.issues}
+
+			if got := err.Error(); got != tt.want {
+				t.Errorf("TemplateFileError.Error() = %q, want %q", got, tt.want)
+			}
+
+			if !errors.Is(err, builder.ErrInvalidTemplateFile) {
+				t.Errorf("errors.Is(%v, ErrInvalidTemplateFile) = false, want true", err)
+			}
+		})
+	}
+}
+
+// TestDecodeTemplateFile checks that DecodeTemplateFile decodes strictly and makes specs canonical,
+// but leaves validation to the caller.
+func TestDecodeTemplateFile(t *testing.T) {
+	const invalid = `{"$schema": "other", "name": "", "templates": ` +
+		`[{"name": "PLC", "device": {"spec": {"hardware": {"vcpus": 2, "load": 0.5}}}}]}`
+
+	file, err := builder.DecodeTemplateFile([]byte(invalid))
+	if err != nil {
+		t.Fatalf("DecodeTemplateFile(a file that does not validate) error = %v, want nil", err)
+	}
+
+	wantHardware := map[string]any{"vcpus": 2, "load": 0.5}
+	if diff := cmp.Diff(wantHardware, file.Templates[0].Device.Spec["hardware"]); diff != "" {
+		t.Errorf("DecodeTemplateFile() hardware mismatch, want integers as int (-want +got):\n%s", diff)
+	}
+
+	var refused *builder.TemplateFileError
+	if err := file.Validate(); !errors.As(err, &refused) {
+		t.Errorf("Validate() of the decoded file = %v, want a TemplateFileError", err)
+	}
+
+	for name, text := range map[string]string{
+		"trailing content": `{"name": "a"} {}`,
+		"an unknown field": `{"name": "a", "owner": "alice"}`,
+		"a list":           `[]`,
+		"YAML":             "name: a\n",
+		"nothing":          "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := builder.DecodeTemplateFile([]byte(text))
+
+			switch {
+			case !errors.Is(err, builder.ErrInvalidTemplateFile):
+				t.Errorf("DecodeTemplateFile(%q) error = %v, want ErrInvalidTemplateFile", text, err)
+			case errors.As(err, &refused):
+				t.Errorf("DecodeTemplateFile(%q) error = %v, a TemplateFileError, want a decoding error", text, err)
+			}
+		})
+	}
+}
+
+// FuzzParseTemplateFile checks that every refusal matches ErrInvalidTemplateFile, and that an
+// accepted file, written as JSON, parses again to the same file.
+func FuzzParseTemplateFile(f *testing.F) {
+	f.Add([]byte(templateFileYAML))
+	f.Add([]byte(`{"$schema": "` + builder.TemplateFileSchemaURI + `", "name": "Lab", "templates": ` +
+		`[{"name": "Host", "device": {"layer": 0, "spec": {"general": {"hostname": "h"}, "n": 1.5e300}}}]}`))
+	f.Add([]byte("name: &n x\n"))
+	f.Add([]byte("{"))
+
+	f.Fuzz(func(t *testing.T, text []byte) {
+		file, err := builder.ParseTemplateFile(text)
+		if err != nil {
+			if !errors.Is(err, builder.ErrInvalidTemplateFile) {
+				t.Fatalf("ParseTemplateFile() error = %v, want one matching ErrInvalidTemplateFile", err)
+			}
+
+			return
+		}
+
+		encoded, err := json.Marshal(file)
+		if err != nil {
+			t.Fatalf("encoding the accepted file: %v", err)
+		}
+
+		again, err := builder.ParseTemplateFile(encoded)
+		if err != nil {
+			t.Fatalf("ParseTemplateFile(the accepted file as JSON) error = %v, want nil", err)
+		}
+
+		if diff := cmp.Diff(jsonValue(t, file), jsonValue(t, again)); diff != "" {
+			t.Errorf("ParseTemplateFile(the accepted file as JSON) mismatch (-first +again):\n%s", diff)
+		}
+	})
 }
 
 func TestParseTemplateFileKeepsIconSize(t *testing.T) {

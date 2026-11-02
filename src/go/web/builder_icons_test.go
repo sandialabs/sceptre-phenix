@@ -21,6 +21,8 @@ import (
 	"github.com/gorilla/mux"
 
 	bapi "phenix/api/builder"
+	"phenix/store"
+	"phenix/store/recordtest/memrecord"
 	bdoc "phenix/types/builder"
 	"phenix/util/plog/plogtest"
 	"phenix/web/rbac"
@@ -552,8 +554,9 @@ func TestBuilderIconRequests(t *testing.T) {
 	}
 }
 
-// TestBuilderIconRename answers a request that is not one, a body above its
-// limit and an unknown icon, and renames to a change of case.
+// TestBuilderIconRename answers a request that is not one and a body above
+// its limit, and renames to a change of case. TestBuilderIconNotFound
+// answers an unknown icon.
 func TestBuilderIconRename(t *testing.T) {
 	harness := newBuilderHarness(t)
 	user := builderUserRole()
@@ -570,7 +573,6 @@ func TestBuilderIconRename(t *testing.T) {
 			name: "a body above its limit", icon: "plc", body: `{"name":"` + strings.Repeat("n", builderIconRenameBytes) + `"}`,
 			status: http.StatusRequestEntityTooLarge, message: "request body is larger than 4096 bytes",
 		},
-		{name: "an icon nobody has", icon: "scada", body: `{"name":"x"}`, status: http.StatusNotFound, message: "phenix cannot find the icon"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := harness.iconRequest(t, http.MethodPut, tt.icon, tt.body, user)
@@ -877,5 +879,179 @@ func TestBuilderRouterAnswerHeaders(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, builderTestHeader(refused.Header(), want)); diff != "" {
 		t.Errorf("GET %s refused before the route headers mismatch (-want +got):\n%s", builderIconsRoute, diff)
+	}
+}
+
+// TestBuilderIconErrorStatus maps each refusal of the icon library to its
+// status and message.
+func TestBuilderIconErrorStatus(t *testing.T) {
+	const fallback = "unable to read the icon"
+
+	tests := []struct {
+		name    string
+		err     error
+		status  int
+		message string
+	}{
+		{
+			name: "a taken name", err: &bapi.IconNameTakenError{Name: "plc", Icon: "PLC", Owner: builderAlice},
+			status: http.StatusConflict, message: `icon name "plc" belongs to an icon alice uploaded. Choose another name`,
+		},
+		{
+			name: "an upload above its limit", err: &bapi.TooLargeError{What: "icon", Size: 9, Limit: 8},
+			status: http.StatusRequestEntityTooLarge, message: "icon is larger than 8 bytes",
+		},
+		{
+			name: "a name that is not valid", err: &bapi.ValidationError{Field: "name", Reason: "must not be empty"},
+			status: http.StatusUnprocessableEntity, message: "name must not be empty",
+		},
+		{
+			name: "an icon nobody has", err: fmt.Errorf("get: %w", bapi.ErrNotFound),
+			status: http.StatusNotFound, message: "phenix cannot find the icon",
+		},
+		{
+			name: "a change during the request", err: fmt.Errorf("rename: %w", bapi.ErrConflict),
+			status: http.StatusConflict, message: "the icon changed while this request ran. Try again",
+		},
+		{
+			name: "any other failure", err: errors.New("disk failure"),
+			status: http.StatusInternalServerError, message: fallback,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := builderIconError(tt.err, fallback)
+			if got.Status != tt.status || got.Message != tt.message {
+				t.Errorf("builderIconError(%v) = %d %q, want %d %q", tt.err, got.Status, got.Message, tt.status, tt.message)
+			}
+		})
+	}
+}
+
+// TestBuilderNoneMatch reads If-None-Match by the weak comparison of RFC
+// 9110.
+func TestBuilderNoneMatch(t *testing.T) {
+	const etag = `"abc"`
+
+	tests := []struct {
+		name   string
+		header string
+		want   bool
+	}{
+		{name: "no header", header: "", want: false},
+		{name: "the tag", header: etag, want: true},
+		{name: "the weak tag", header: "W/" + etag, want: true},
+		{name: "the tag among others", header: `"x" ,  W/"abc"`, want: true},
+		{name: "a wildcard", header: "*", want: true},
+		{name: "another tag", header: `"xyz"`, want: false},
+		{name: "a weak tag of another value", header: `W/"xyz"`, want: false},
+		{name: "the tag without quotes", header: "abc", want: false},
+		{name: "a quoted wildcard", header: `"*"`, want: false},
+		{name: "a lower-case weak prefix", header: `w/"abc"`, want: false},
+		{name: "empty list items", header: ", ,", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, builderIconsRoute, nil)
+			if tt.header != "" {
+				r.Header.Set("If-None-Match", tt.header)
+			}
+
+			if got := builderNoneMatch(r, etag); got != tt.want {
+				t.Errorf("builderNoneMatch(If-None-Match %q, %s) = %t, want %t", tt.header, etag, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestBuilderIconListETag tags a list by its content, never by the tag it
+// carries.
+func TestBuilderIconListETag(t *testing.T) {
+	list := func(revision int64, etag string) builderIconListResponse {
+		return builderIconListResponse{
+			Icons:    []builderIconSummary{{Name: "plc", ID: "id-1", Aliases: []string{}, Revision: revision}},
+			MaxIcons: bapi.MaxIcons,
+			ETag:     etag,
+		}
+	}
+
+	tag, err := builderIconListETag(list(1, ""))
+	if err != nil {
+		t.Fatalf("builderIconListETag(revision 1) error: %v", err)
+	}
+
+	if !regexp.MustCompile(`^"[0-9a-f]{32}"$`).MatchString(tag) {
+		t.Errorf("builderIconListETag(revision 1) = %s, want 32 hex digits in quotes", tag)
+	}
+
+	if again, err := builderIconListETag(list(1, tag)); err != nil || again != tag {
+		t.Errorf("builderIconListETag(revision 1 with its tag) = %s, %v, want %s", again, err, tag)
+	}
+
+	if changed, err := builderIconListETag(list(2, "")); err != nil || changed == tag {
+		t.Errorf("builderIconListETag(revision 2) = %s, %v, want a tag other than %s", changed, err, tag)
+	}
+}
+
+// builderFailingRecords is a record store whose every read fails.
+type builderFailingRecords struct {
+	*memrecord.Store
+}
+
+// errBuilderRecordsDown is why every read of a builderFailingRecords fails.
+var errBuilderRecordsDown = errors.New("the record store is down")
+
+func (builderFailingRecords) ListRecords(string, string) (store.Records, error) {
+	return nil, errBuilderRecordsDown
+}
+
+func (builderFailingRecords) ListRecordKeys(string, string) ([]string, error) {
+	return nil, errBuilderRecordsDown
+}
+
+func (builderFailingRecords) GetRecord(string, string) (store.Record, error) {
+	return store.Record{}, errBuilderRecordsDown
+}
+
+func (builderFailingRecords) RecordTxn(func(store.RecordTx) error) error {
+	return errBuilderRecordsDown
+}
+
+// newBuilderFailingHarness returns a harness whose Builder service reads a
+// record store that fails.
+func newBuilderFailingHarness(t *testing.T) *builderHarness {
+	t.Helper()
+
+	service, err := bapi.New(bapi.WithStore(builderFailingRecords{Store: memrecord.New()}))
+	if err != nil {
+		t.Fatalf("bapi.New(a failing store) error: %v", err)
+	}
+
+	harness := newBuilderHarness(t)
+	harness.reroute(withBuilderService(service))
+
+	return harness
+}
+
+// TestBuilderIconsOfAFailingStore answers 500 with fixed words when the icon
+// library cannot be read.
+func TestBuilderIconsOfAFailingStore(t *testing.T) {
+	harness := newBuilderFailingHarness(t)
+
+	for path, message := range map[string]string{
+		builderIconsRoute:          "unable to list the icons",
+		builderIconsRoute + "/plc": "unable to read the icon",
+	} {
+		recorder := harness.do(builderRequest{method: http.MethodGet, path: path, user: builderAlice, role: builderUserRole()})
+
+		if err := builderStatusError(recorder, http.StatusInternalServerError); err != nil {
+			t.Errorf("GET %s of a failing store: %v", path, err)
+		}
+
+		if got := builderRefusal(t, recorder).Message; got != message {
+			t.Errorf("GET %s of a failing store: message = %q, want %q", path, got, message)
+		}
 	}
 }

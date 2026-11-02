@@ -855,3 +855,168 @@ func TestBuilderPackageConfigLeavesOutTheBuilders(t *testing.T) {
 		t.Errorf("builderPackageConfig(topology pkg) mismatch (-want +got):\n%s", diff)
 	}
 }
+
+// builderPackageIconNode returns a device node of a package test that names
+// a custom icon.
+func builderPackageIconNode(icon string) bdoc.Node {
+	return bdoc.Node{Kind: bdoc.NodeKindDevice, Device: &bdoc.Device{Hostname: "host-" + icon, Icon: icon}}
+}
+
+// TestBuilderPackageIcons copies to the document each icon it names from
+// the library, and warns of each icon that it does not copy.
+func TestBuilderPackageIcons(t *testing.T) {
+	harness := newBuilderHarness(t)
+	library := addBuilderIcon(t, harness, "lib-icon", builderIconPNG(t, 4, 4, 21))
+	api := &builderAPI{drafts: harness.service}
+
+	full := map[string]bdoc.Icon{}
+	for i := range bdoc.MaxDocumentIcons {
+		full["own-"+strconv.Itoa(i)] = bdoc.Icon{Data: "b3du"}
+	}
+
+	missing := builderPackageWarning(bdoc.CodePackageIconMissing,
+		"Custom icon ghost is not in the server's icon library. The package names it but does not carry it.")
+	tooMany := builderPackageWarning(bdoc.CodePackageIconsTooMany, fmt.Sprintf(
+		"A package carries at most %d custom icons. Thus it names custom icon lib-icon but does not carry it.",
+		bdoc.MaxDocumentIcons))
+
+	tests := []struct {
+		name     string
+		carried  map[string]bdoc.Icon
+		nodes    []string
+		want     map[string]bdoc.Icon
+		warnings []bdoc.Issue
+	}{
+		{name: "no icons", warnings: []bdoc.Issue{}},
+		{
+			name: "a carried, a library and an unknown icon", carried: map[string]bdoc.Icon{"own": {Data: "b3du"}},
+			nodes:    []string{"own", "lib-icon", "ghost"},
+			want:     map[string]bdoc.Icon{"own": {Data: "b3du"}, "lib-icon": {Data: library.Data}},
+			warnings: []bdoc.Issue{missing},
+		},
+		{
+			name: "a document that carries the most icons", carried: full,
+			nodes: []string{"own-0", "lib-icon"}, want: full, warnings: []bdoc.Issue{tooMany},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			document := &bdoc.Document{Icons: maps.Clone(tt.carried)}
+			for _, icon := range tt.nodes {
+				document.Nodes = append(document.Nodes, builderPackageIconNode(icon))
+			}
+
+			warnings, err := api.packageIcons(t.Context(), document)
+			if err != nil {
+				t.Fatalf("packageIcons(%s) error: %v", tt.name, err)
+			}
+
+			if diff := cmp.Diff(tt.warnings, warnings); diff != "" {
+				t.Errorf("packageIcons(%s): warnings mismatch (-want +got):\n%s", tt.name, diff)
+			}
+
+			if diff := cmp.Diff(tt.want, document.Icons); diff != "" {
+				t.Errorf("packageIcons(%s): icons mismatch (-want +got):\n%s", tt.name, diff)
+			}
+		})
+	}
+}
+
+// TestBuilderFindDisk finds the image of a drive by its name, its full path
+// or its file name, and tells when it used the file name.
+func TestBuilderFindDisk(t *testing.T) {
+	images := []disk.Details{
+		{Name: "base.qc2", FullPath: "/phenix/images/base.qc2"},
+		{Name: "bare.qc2"},
+		{Name: "copy.qc2", FullPath: "/other/base.qc2"},
+	}
+
+	tests := []struct {
+		name   string
+		drive  string
+		found  string
+		detail string
+	}{
+		{name: "the name", drive: "base.qc2", found: "base.qc2"},
+		{name: "the full path", drive: "/phenix/images/base.qc2", found: "base.qc2"},
+		{name: "a full path before a file name", drive: "/other/base.qc2", found: "copy.qc2"},
+		{
+			name: "the file name of another path", drive: "/mnt/base.qc2", found: "base.qc2",
+			detail: "Builder found it by file name base.qc2. This server's image is /phenix/images/base.qc2.",
+		},
+		{
+			name: "the file name of an image without a path", drive: "/mnt/bare.qc2", found: "bare.qc2",
+			detail: "Builder found it by file name bare.qc2.",
+		},
+		{name: "an image this server does not have", drive: "/mnt/gone.qc2"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			image, ok := builderFindDisk(images, tt.drive)
+			if ok != (tt.found != "") || image.Name != tt.found {
+				t.Fatalf("builderFindDisk(%s) = %q, %t, want %q", tt.drive, image.Name, ok, tt.found)
+			}
+
+			if !ok {
+				return
+			}
+
+			if got := builderDiskMatch(tt.drive, image); got != tt.detail {
+				t.Errorf("builderDiskMatch(%s, %s) = %q, want %q", tt.drive, image.Name, got, tt.detail)
+			}
+		})
+	}
+}
+
+// TestSameBuilderSpec compares specs by their JSON. A spec that JSON cannot
+// encode is never the same as another.
+func TestSameBuilderSpec(t *testing.T) {
+	tests := []struct {
+		name        string
+		left, right map[string]any
+		want        bool
+	}{
+		{name: "no specs", want: true},
+		{
+			name: "the same nested content", want: true,
+			left:  map[string]any{"nodes": []any{map[string]any{"a": "b"}}},
+			right: map[string]any{"nodes": []any{map[string]any{"a": "b"}}},
+		},
+		{name: "a number as YAML and JSON decode it", left: map[string]any{"n": 1}, right: map[string]any{"n": 1.0}, want: true},
+		{name: "another value", left: map[string]any{"n": 1}, right: map[string]any{"n": 2}},
+		{name: "another key", left: map[string]any{"n": 1}, right: map[string]any{"m": 1}},
+		{name: "a value JSON cannot encode", left: map[string]any{"f": func() {}}, right: map[string]any{"f": func() {}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := sameBuilderSpec(tt.left, tt.right); got != tt.want {
+				t.Errorf("sameBuilderSpec(%v, %v) = %t, want %t", tt.left, tt.right, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestBuilderConfigDependencyOfNoConfigName checks no config for a name that
+// cannot be the name of one, and reads nothing.
+func TestBuilderConfigDependencyOfNoConfigName(t *testing.T) {
+	api := &builderAPI{}
+	actor := builderActor{user: builderAlice, role: *builderFullRole()}
+
+	for _, kind := range []string{builderSourceScenario, builderSourceTopology} {
+		got, err := api.configDependency(actor, kind, "two words", nil)
+		if err != nil {
+			t.Errorf("configDependency(%s two words) error: %v", kind, err)
+		}
+
+		want := builderPackageDependency{
+			Kind: kind, Name: "two words", Status: builderDependencyUnknown,
+			Detail: "It is not the name of a config. Thus Builder does not check it.",
+		}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("configDependency(%s two words) mismatch (-want +got):\n%s", kind, diff)
+		}
+	}
+}

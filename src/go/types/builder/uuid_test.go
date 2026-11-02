@@ -62,12 +62,6 @@ func TestDeterministicIDsAreStable(t *testing.T) {
 	if got := builder.DeviceNodeID("router2"); got == builder.DeviceNodeID("router") {
 		t.Errorf("DeviceNodeID(router2) = %q, want an ID distinct from DeviceNodeID(router)", got)
 	}
-
-	namespace := builder.NamespaceUUID()
-
-	if again := builder.NamespaceUUID(); again != namespace {
-		t.Errorf("NamespaceUUID() = %q, then %q, want the same each time", namespace, again)
-	}
 }
 
 // TestIsUUID also holds the schema's identifier pattern to IsUUID.
@@ -142,4 +136,51 @@ func TestUUIDv5KnownIDs(t *testing.T) {
 	if got, want := builder.NamespaceUUID(), "75128dad-cb9e-5d9b-b969-a021ae8f9103"; got != want {
 		t.Errorf("NamespaceUUID() = %q, want %q", got, want)
 	}
+}
+
+// FuzzIsUUID holds IsUUID to the schema's identifier pattern, which the editor checks, and checks
+// that UUIDv5 accepts exactly the namespaces IsUUID accepts, in either case.
+func FuzzIsUUID(f *testing.F) {
+	schema, err := builder.Schema()
+	if err != nil {
+		f.Fatalf("building schema: %v", err)
+	}
+
+	defs, _ := schema["$defs"].(map[string]any)
+	identifier, _ := defs["identifier"].(map[string]any)
+
+	pattern, ok := identifier["pattern"].(string)
+	if !ok {
+		f.Fatalf("schema $defs.identifier.pattern = %v, want a string", identifier["pattern"])
+	}
+
+	matcher := regexp.MustCompile(pattern)
+
+	for _, seed := range []string{
+		builder.NamespaceUUID(), "49D876D1-571A-5B5C-91B7-AADF5BB5209C", "49d876d1-571a-0b5c-91b7-aadf5bb5209c",
+		"49d876d1-571a-5b5c-11b7-aadf5bb5209c", "49d876d1_571a_5b5c_91b7_aadf5bb5209c", "",
+	} {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, value string) {
+		valid := builder.IsUUID(value)
+
+		if matched := matcher.MatchString(value); matched != valid {
+			t.Errorf("IsUUID(%q) = %t, but the schema identifier pattern matches it = %t", value, valid, matched)
+		}
+
+		for _, cased := range []string{strings.ToUpper(value), strings.ToLower(value)} {
+			if len(cased) == len(value) && builder.IsUUID(cased) != valid {
+				t.Errorf("IsUUID(%q) = %t, want IsUUID(%q) = %t", cased, !valid, value, valid)
+			}
+		}
+
+		switch id := builder.UUIDv5(value, "x"); {
+		case !valid && id != "":
+			t.Errorf("UUIDv5(%q, x) = %q, want \"\" for a namespace that is not a UUID", value, id)
+		case valid && !builder.IsUUID(id):
+			t.Errorf("UUIDv5(%q, x) = %q, want a UUID", value, id)
+		}
+	})
 }

@@ -1290,6 +1290,92 @@ func TestDeleteIconRemovesAliases(t *testing.T) {
 	}
 }
 
+// TestDeleteIconKeepsAnAliasThatChanged removes or rewrites an alias of the
+// icon after the delete listed it. The delete removes the icon and leaves the
+// alias as the other writer left it.
+func TestDeleteIconKeepsAnAliasThatChanged(t *testing.T) {
+	ctx := context.Background()
+
+	for _, tt := range []struct {
+		name string
+		// change runs in the transaction of the delete, before the delete of
+		// the record name/plc-2.
+		change   func(t *testing.T, h *testHarness)
+		wantKeys []string
+	}{
+		{
+			name: "removed",
+			change: func(t *testing.T, h *testHarness) {
+				t.Helper()
+
+				if err := h.store.DeleteRecord(NamespaceIcons, "name/plc", store.AnyRevision); err != nil {
+					t.Fatalf("DeleteRecord(name/plc) returned error: %v", err)
+				}
+			},
+			wantKeys: []string{"name/hmi"},
+		},
+		{
+			name: "names another icon",
+			change: func(t *testing.T, h *testHarness) {
+				t.Helper()
+
+				value, err := json.Marshal(aliasRecord("plc", "hmi"))
+				if err != nil {
+					t.Fatalf("encoding the alias returned error: %v", err)
+				}
+
+				if _, err := h.store.UpdateRecord(NamespaceIcons, "name/plc", value, store.AnyRevision); err != nil {
+					t.Fatalf("UpdateRecord(name/plc) returned error: %v", err)
+				}
+			},
+			wantKeys: []string{"name/hmi", "name/plc"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			mustAddIcon(t, h, testActor, "plc", iconPixel(t, 1))
+			mustAddIcon(t, h, testActor, "hmi", iconPixel(t, 2))
+
+			if _, err := h.service.RenameIcon(ctx, testActor, "plc", "plc-2"); err != nil {
+				t.Fatalf("RenameIcon(plc, plc-2) returned error: %v", err)
+			}
+
+			changed := false
+
+			h.store.FailDelete = func(_, key string) error {
+				if key == "name/plc-2" && !changed {
+					changed = true
+					tt.change(t, h)
+				}
+
+				return nil
+			}
+
+			err := h.service.DeleteIcon(ctx, testActor, "plc-2", iconTag(t, h, "plc-2"))
+
+			h.store.FailDelete = nil
+
+			if !changed {
+				t.Fatal("DeleteIcon(plc-2) did not delete the record name/plc-2, want the change to run")
+			}
+
+			if err != nil {
+				t.Errorf("DeleteIcon(plc-2) returned error: %v", err)
+			}
+
+			if diff := cmp.Diff(tt.wantKeys, h.store.Keys(NamespaceIcons)); diff != "" {
+				t.Errorf("icon records after DeleteIcon(plc-2) mismatch (-want +got):\n%s", diff)
+			}
+
+			if slices.Contains(tt.wantKeys, "name/plc") {
+				if diff := cmp.Diff(aliasRecord("plc", "hmi"), storedValue(t, h, "name/plc")); diff != "" {
+					t.Errorf("alias name/plc after DeleteIcon(plc-2) mismatch (-want +got):\n%s", diff)
+				}
+			}
+		})
+	}
+}
+
 // TestDeleteIconChecksETag asserts a delete with the tag of an older version
 // of the icon is refused with the current tag, and deletes nothing.
 func TestDeleteIconChecksETag(t *testing.T) {
@@ -1634,6 +1720,16 @@ func TestListIconsSkipsDamagedRecords(t *testing.T) {
 			value:  record(func(i *LibraryIcon) { i.Owner = "alice\nbob" }),
 			reason: "names no usable owner",
 		},
+		{
+			name:   "an uploader on two lines",
+			value:  record(func(i *LibraryIcon) { i.CreatedBy = "alice\nbob" }),
+			reason: "names an unusable user",
+		},
+		{
+			name:   "a renamer on two lines",
+			value:  record(func(i *LibraryIcon) { i.UpdatedBy = "alice\nbob" }),
+			reason: "names an unusable user",
+		},
 		{name: "an ID that is not one", value: record(func(i *LibraryIcon) { i.ID = "plc" }), reason: "has no image ID"},
 		{
 			name:   "the ID of another image",
@@ -1677,6 +1773,11 @@ func TestListIconsSkipsDamagedRecords(t *testing.T) {
 		},
 		{name: "an alias of a path", value: []byte(`{"kind":"alias","name":"planted","target":"../x"}`), reason: "points at no other name"},
 		{name: "an alias of another name", value: []byte(`{"kind":"alias","name":"other","target":"x"}`), reason: "names another icon"},
+		{
+			name:   "an alias with an unknown field",
+			value:  []byte(`{"kind":"alias","name":"planted","target":"x","html":"x"}`),
+			reason: "not valid JSON",
+		},
 	}
 
 	for _, test := range tests {
@@ -1918,4 +2019,522 @@ func TestIconLibraryStoreFailures(t *testing.T) {
 	if err := h.service.DeleteIcon(canceled, testActor, "plc", `"1"`); !errors.Is(err, context.Canceled) {
 		t.Errorf("DeleteIcon(plc) with a canceled context = %v, want context.Canceled", err)
 	}
+}
+
+// plantedIconValue returns the record value of a valid icon of testActor
+// named name that holds the PNG data.
+func plantedIconValue(t *testing.T, name string, data []byte) []byte {
+	t.Helper()
+
+	return iconRecordValue(t, LibraryIcon{
+		Kind: iconRecordKind, Name: name, ID: builder.IconID(data), Owner: testActor, Width: 1, Height: 1,
+		Bytes: len(data), Created: memrecord.Time(1), Updated: memrecord.Time(1), CreatedBy: testActor,
+		UpdatedBy: testActor, Aliases: []string{}, Data: base64.StdEncoding.EncodeToString(data), Revision: 0,
+	})
+}
+
+func TestIconStaleErrorMessage(t *testing.T) {
+	err := error(&IconStaleError{Name: "plc", ETag: `"3"`})
+
+	if want := "builder: revision conflict: icon plc changed after you last read it"; err.Error() != want {
+		t.Errorf("IconStaleError.Error() = %q, want %q", err, want)
+	}
+
+	if !errors.Is(err, ErrConflict) {
+		t.Errorf("IconStaleError = %q, want it to match ErrConflict", err)
+	}
+}
+
+// TestIconLibraryListingFailures fails the listing of the icon library: each
+// call that reads it returns the error and writes nothing.
+func TestIconLibraryListingFailures(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	service, faults := newCleanupFaultService(t, h)
+	icon := mustAddIcon(t, h, testActor, "plc", iconPixel(t, 1))
+	injected := errors.New("injected listing failure")
+
+	faults.failList = func(namespace string) error {
+		if namespace == NamespaceIcons {
+			return injected
+		}
+
+		return nil
+	}
+
+	if icons, err := service.ListIcons(ctx); !errors.Is(err, injected) || icons != nil {
+		t.Errorf("ListIcons = %v, %v, want no icons and the injected error", icons, err)
+	}
+
+	if added, created, err := service.AddIcon(ctx, testActor, "hmi", iconPixel(t, 2)); !errors.Is(err, injected) ||
+		added != nil || created {
+		t.Errorf("AddIcon(hmi) = %v, %t, %v, want no icon and the injected error", added, created, err)
+	}
+
+	if err := service.DeleteIcon(ctx, testActor, "plc", icon.ETag()); !errors.Is(err, injected) {
+		t.Errorf("DeleteIcon(plc) = %v, want the injected error", err)
+	}
+
+	if keys := h.store.Keys(NamespaceIcons); !slices.Equal(keys, []string{"name/plc"}) {
+		t.Errorf("icon records after the failed listings = %q, want [name/plc]", keys)
+	}
+}
+
+// TestAddIconOverAliasRaces adds an icon while another request writes a
+// record of its name first. The upload then gives up and changes nothing it
+// did not read.
+func TestAddIconOverAliasRaces(t *testing.T) {
+	dangling := []byte(`{"kind":"alias","name":"plc","target":"gone"}`)
+	injected := errors.New("injected store failure")
+	taken := plantedIconValue(t, "plc", iconPixel(t, 2))
+
+	for _, test := range []struct {
+		name string
+		// plant is the record the other request writes at name/plc.
+		plant []byte
+		// afterDangling runs at the read of name/plc that follows the
+		// upload finding that plant names no icon.
+		afterDangling func(h *testHarness) error
+		failUpdate    bool
+		wantErr       error
+		// want is the value of name/plc after the upload.
+		want []byte
+	}{
+		{name: "a record that cannot be read", plant: []byte("not an icon"), wantErr: ErrCorrupt, want: []byte("not an icon")},
+		{
+			name: "an alias whose icon is gone, which the store cannot read again", plant: dangling,
+			afterDangling: func(*testHarness) error { return injected }, wantErr: injected, want: dangling,
+		},
+		{
+			name: "an alias whose icon is gone, which another icon replaces", plant: dangling,
+			afterDangling: func(h *testHarness) error {
+				h.store.SetValue(NamespaceIcons, "name/plc", taken)
+
+				return nil
+			},
+			wantErr: ErrConflict, want: taken,
+		},
+		{
+			name: "an alias whose icon is gone, which the store cannot replace", plant: dangling,
+			failUpdate: true, wantErr: injected, want: dangling,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			service, faults := newCleanupFaultService(t, h)
+
+			h.store.BeforeCreate = func(_, key string) error {
+				if key == "name/plc" {
+					h.store.BeforeCreate = nil
+
+					if _, err := h.store.CreateRecord(NamespaceIcons, key, test.plant); err != nil {
+						t.Errorf("CreateRecord(%s) of the other request returned error: %v", key, err)
+					}
+				}
+
+				return nil
+			}
+
+			var resolved bool
+
+			faults.failGet = func(_, key string) error {
+				switch {
+				case key == "name/gone":
+					resolved = true
+				case key == "name/plc" && resolved && test.afterDangling != nil:
+					resolved = false
+
+					return test.afterDangling(h)
+				}
+
+				return nil
+			}
+
+			if test.failUpdate {
+				h.store.BeforeUpdate = func(string, string) error { return injected }
+			}
+
+			icon, created, err := service.AddIcon(context.Background(), testPeer, "plc", iconPixel(t, 3))
+			if !errors.Is(err, test.wantErr) {
+				t.Errorf("AddIcon(plc) error = %v, want %v", err, test.wantErr)
+			}
+
+			if icon != nil || created {
+				t.Errorf("AddIcon(plc) = %+v, created %t, want no icon", icon, created)
+			}
+
+			record, err := h.store.GetRecord(NamespaceIcons, "name/plc")
+			if err != nil {
+				t.Fatalf("GetRecord(name/plc) returned error: %v", err)
+			}
+
+			if !bytes.Equal(record.Value, test.want) {
+				t.Errorf("record name/plc after AddIcon(plc) = %q, want %q", record.Value, test.want)
+			}
+		})
+	}
+}
+
+// TestRenameIconStoreFailures renames an icon the store does not let it
+// write: the rename fails, and the icon keeps its name.
+func TestRenameIconStoreFailures(t *testing.T) {
+	injected := errors.New("injected store failure")
+
+	for _, test := range []struct {
+		name    string
+		newName string
+		fail    func(h *testHarness, faults *cleanupFaultStore)
+		wantErr error
+	}{
+		{
+			name: "a change of case the store refuses", newName: "PLC",
+			fail: func(h *testHarness, _ *cleanupFaultStore) {
+				h.store.BeforeUpdate = func(string, string) error { return fmt.Errorf("injected: %w", store.ErrRecordConflict) }
+			},
+			wantErr: ErrConflict,
+		},
+		{
+			name: "a new name the store refuses", newName: "plc-2",
+			fail: func(h *testHarness, _ *cleanupFaultStore) {
+				h.store.BeforeCreate = func(string, string) error { return injected }
+			},
+			wantErr: injected,
+		},
+		{
+			name: "a new name the store cannot read", newName: "plc-2",
+			fail: func(_ *testHarness, faults *cleanupFaultStore) {
+				faults.failGet = func(_, key string) error {
+					if key == "name/plc-2" {
+						return injected
+					}
+
+					return nil
+				}
+			},
+			wantErr: injected,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			service, faults := newCleanupFaultService(t, h)
+			icon := mustAddIcon(t, h, testActor, "plc", iconPixel(t, 1))
+
+			test.fail(h, faults)
+
+			renamed, err := service.RenameIcon(context.Background(), testPeer, "plc", test.newName)
+			if !errors.Is(err, test.wantErr) {
+				t.Errorf("RenameIcon(plc, %s) error = %v, want %v", test.newName, err, test.wantErr)
+			}
+
+			if renamed != nil {
+				t.Errorf("RenameIcon(plc, %s) = %+v, want no icon", test.newName, renamed)
+			}
+
+			h.store.BeforeUpdate, h.store.BeforeCreate, faults.failGet = nil, nil, nil
+
+			if diff := iconDiff(*icon, *mustGetIcon(t, h, "plc")); diff != "" {
+				t.Errorf("GetIcon(plc) after the failed rename mismatch (-want +got):\n%s", diff)
+			}
+
+			if keys := h.store.Keys(NamespaceIcons); !slices.Equal(keys, []string{"name/plc"}) {
+				t.Errorf("icon records after the failed rename = %q, want [name/plc]", keys)
+			}
+		})
+	}
+}
+
+// TestRenameIconOntoTakenRecords renames an icon to a name whose record is not
+// another icon. A record that cannot be read keeps the name, and an alias
+// whose icon is gone gives it up.
+func TestRenameIconOntoTakenRecords(t *testing.T) {
+	notAnIcon := []byte("not an icon")
+
+	for _, test := range []struct {
+		name string
+		// records are the records stored, by key, before the rename.
+		records map[string][]byte
+		wantErr error
+	}{
+		{name: "a record that cannot be read", records: map[string][]byte{"name/plc-2": notAnIcon}, wantErr: ErrCorrupt},
+		{
+			name: "an alias of a record that cannot be read",
+			records: map[string][]byte{
+				"name/plc-2":  []byte(`{"kind":"alias","name":"plc-2","target":"broken"}`),
+				"name/broken": notAnIcon,
+			},
+			wantErr: ErrCorrupt,
+		},
+		{
+			name:    "an alias whose icon is gone",
+			records: map[string][]byte{"name/plc-2": []byte(`{"kind":"alias","name":"plc-2","target":"gone"}`)},
+			wantErr: nil,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			icon := mustAddIcon(t, h, testActor, "plc", iconPixel(t, 1))
+
+			for key, value := range test.records {
+				if _, err := h.store.CreateRecord(NamespaceIcons, key, value); err != nil {
+					t.Fatalf("CreateRecord(%s) returned error: %v", key, err)
+				}
+			}
+
+			before := h.store.Keys(NamespaceIcons)
+
+			renamed, err := h.service.RenameIcon(context.Background(), testPeer, "plc", "plc-2")
+			if !errors.Is(err, test.wantErr) {
+				t.Fatalf("RenameIcon(plc, plc-2) error = %v, want %v", err, test.wantErr)
+			}
+
+			if test.wantErr != nil {
+				if keys := h.store.Keys(NamespaceIcons); !slices.Equal(keys, before) {
+					t.Errorf("icon records after the refused rename = %q, want %q", keys, before)
+				}
+
+				if diff := iconDiff(*icon, *mustGetIcon(t, h, "plc")); diff != "" {
+					t.Errorf("GetIcon(plc) after the refused rename mismatch (-want +got):\n%s", diff)
+				}
+
+				return
+			}
+
+			if diff := cmp.Diff(iconNaming{Name: "plc-2", Aliases: []string{"plc"}}, namingOf(renamed)); diff != "" {
+				t.Errorf("RenameIcon(plc, plc-2) mismatch (-want +got):\n%s", diff)
+			}
+
+			if diff := cmp.Diff(aliasRecord("plc", "plc-2"), storedValue(t, h, "name/plc")); diff != "" {
+				t.Errorf("icon record name/plc after the rename mismatch (-want +got):\n%s", diff)
+			}
+
+			if diff := iconDiff(*renamed, *mustGetIcon(t, h, "plc-2")); diff != "" {
+				t.Errorf("GetIcon(plc-2) after the rename mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestRenameIconWithALostAlias renames an icon whose old name lost its record.
+// The rename succeeds, and does not write the lost record again.
+func TestRenameIconWithALostAlias(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	mustAddIcon(t, h, testActor, "plc", iconPixel(t, 1))
+
+	if _, err := h.service.RenameIcon(ctx, testActor, "plc", "plc-2"); err != nil {
+		t.Fatalf("RenameIcon(plc, plc-2) returned error: %v", err)
+	}
+
+	h.store.Drop(NamespaceIcons, "name/plc")
+
+	renamed, err := h.service.RenameIcon(ctx, testActor, "plc-2", "plc-3")
+	if err != nil {
+		t.Fatalf("RenameIcon(plc-2, plc-3) returned error: %v", err)
+	}
+
+	if diff := cmp.Diff(iconNaming{Name: "plc-3", Aliases: []string{"plc", "plc-2"}}, namingOf(renamed)); diff != "" {
+		t.Errorf("RenameIcon(plc-2, plc-3) mismatch (-want +got):\n%s", diff)
+	}
+
+	if keys := h.store.Keys(NamespaceIcons); !slices.Equal(keys, []string{"name/plc-2", "name/plc-3"}) {
+		t.Errorf("icon records after the rename = %q, want [name/plc-2 name/plc-3]", keys)
+	}
+}
+
+// TestDeleteIconOfDamagedRecords deletes by names whose records cannot be
+// read, and deletes an icon beside such a record.
+func TestDeleteIconOfDamagedRecords(t *testing.T) {
+	ctx := context.Background()
+	injected := errors.New("injected store failure")
+
+	for _, test := range []struct {
+		name string
+		// records are the records stored, by key, besides the icon plc.
+		records map[string][]byte
+		// fail sets the hooks of the store before the delete.
+		fail    func(h *testHarness, faults *cleanupFaultStore)
+		delete  string
+		wantErr error
+		want    []string
+	}{
+		{
+			name: "an alias of a record that cannot be read",
+			records: map[string][]byte{
+				"name/old": []byte(`{"kind":"alias","name":"old","target":"broken"}`), "name/broken": []byte("not an icon"),
+			},
+			delete: "old", wantErr: ErrCorrupt, want: []string{"name/broken", "name/old", "name/plc"},
+		},
+		{
+			name:    "a record that cannot be read, which the store cannot remove",
+			records: map[string][]byte{"name/broken": []byte("not an icon")},
+			fail: func(h *testHarness, _ *cleanupFaultStore) {
+				h.store.FailDelete = func(string, string) error { return injected }
+			},
+			delete: "broken", wantErr: injected, want: []string{"name/broken", "name/plc"},
+		},
+		{
+			name:    "a record that cannot be read, which the store cannot read again",
+			records: map[string][]byte{"name/broken": []byte("not an icon")},
+			fail: func(_ *testHarness, faults *cleanupFaultStore) {
+				var reads int
+
+				faults.failGet = func(_, key string) error {
+					if key == "name/broken" {
+						if reads++; reads > 1 {
+							return injected
+						}
+					}
+
+					return nil
+				}
+			},
+			delete: "broken", wantErr: injected, want: []string{"name/broken", "name/plc"},
+		},
+		{
+			name:    "an icon beside a record that cannot be read",
+			records: map[string][]byte{"name/broken": []byte("not an icon")},
+			delete:  "plc", wantErr: nil, want: []string{"name/broken"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t)
+			service, faults := newCleanupFaultService(t, h)
+			mustAddIcon(t, h, testActor, "plc", iconPixel(t, 1))
+
+			for key, value := range test.records {
+				if _, err := h.store.CreateRecord(NamespaceIcons, key, value); err != nil {
+					t.Fatalf("CreateRecord(%s) returned error: %v", key, err)
+				}
+			}
+
+			etag := recordTag(t, h, iconKey(test.delete))
+
+			if test.fail != nil {
+				test.fail(h, faults)
+			}
+
+			if err := service.DeleteIcon(ctx, testActor, test.delete, etag); !errors.Is(err, test.wantErr) {
+				t.Errorf("DeleteIcon(%s) error = %v, want %v", test.delete, err, test.wantErr)
+			}
+
+			if keys := h.store.Keys(NamespaceIcons); !slices.Equal(keys, test.want) {
+				t.Errorf("icon records after DeleteIcon(%s) = %q, want %q", test.delete, keys, test.want)
+			}
+		})
+	}
+}
+
+// TestIconRecordAliasesAreNeverNull writes an icon with no aliases as an
+// empty list, and reads a record whose aliases are null as one.
+func TestIconRecordAliasesAreNeverNull(t *testing.T) {
+	t.Run("encode", func(t *testing.T) {
+		value, err := encodeIconRecord(LibraryIcon{Kind: iconRecordKind, Name: "plc", Aliases: nil})
+		if err != nil {
+			t.Fatalf("encodeIconRecord(plc) returned error: %v", err)
+		}
+
+		var decoded map[string]any
+		if err := json.Unmarshal(value, &decoded); err != nil {
+			t.Fatalf("decoding the record of plc returned error: %v", err)
+		}
+
+		if diff := cmp.Diff([]any{}, decoded["aliases"]); diff != "" {
+			t.Errorf("aliases of encodeIconRecord(plc) mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("read", func(t *testing.T) {
+		h := newHarness(t)
+		icon := mustAddIcon(t, h, testActor, "plc", iconPixel(t, 1))
+
+		null := *icon
+		null.Aliases = nil
+		h.store.SetValue(NamespaceIcons, "name/plc", iconRecordValue(t, null))
+
+		if got := storedValue(t, h, "name/plc")["aliases"]; got != nil {
+			t.Fatalf("aliases of the stored record = %v, want null", got)
+		}
+
+		if diff := cmp.Diff([]string{}, mustGetIcon(t, h, "plc").Aliases); diff != "" {
+			t.Errorf("GetIcon(plc) aliases mismatch (-want +got):\n%s", diff)
+		}
+	})
+}
+
+// TestIconAliasReadFailuresInATransaction fails the read of an alias in the
+// transaction of a rename and of a delete. The rename logs it and keeps the
+// alias as it is. The delete returns it and removes nothing.
+func TestIconAliasReadFailuresInATransaction(t *testing.T) {
+	ctx := context.Background()
+	injected := errors.New("injected read failure")
+
+	setUp := func(t *testing.T) (*testHarness, *Service) {
+		t.Helper()
+
+		h := newHarness(t)
+		service, faults := newCleanupFaultService(t, h)
+		mustAddIcon(t, h, testActor, "plc", iconPixel(t, 1))
+
+		if _, err := h.service.RenameIcon(ctx, testActor, "plc", "plc-2"); err != nil {
+			t.Fatalf("RenameIcon(plc, plc-2) returned error: %v", err)
+		}
+
+		faults.failTxGet = func(_, key string) error {
+			if key == "name/plc" {
+				return injected
+			}
+
+			return nil
+		}
+
+		return h, service
+	}
+
+	t.Run("rename", func(t *testing.T) {
+		h, service := setUp(t)
+		logs := plogtest.Capture(t)
+
+		renamed, err := service.RenameIcon(ctx, testActor, "plc-2", "plc-3")
+		if err != nil {
+			t.Fatalf("RenameIcon(plc-2, plc-3) returned error: %v", err)
+		}
+
+		if diff := cmp.Diff(iconNaming{Name: "plc-3", Aliases: []string{"plc", "plc-2"}}, namingOf(renamed)); diff != "" {
+			t.Errorf("RenameIcon(plc-2, plc-3) mismatch (-want +got):\n%s", diff)
+		}
+
+		logged := logs.Records(t, func(r map[string]any) bool { return r["level"] == slog.LevelError.String() })
+
+		want := []map[string]any{{"msg": "reading a builder icon alias failed", "alias": "plc"}}
+		got := make([]map[string]any, 0, len(logged))
+
+		for _, record := range logged {
+			got = append(got, map[string]any{"msg": record["msg"], "alias": record["alias"]})
+		}
+
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("RenameIcon(plc-2, plc-3) logged errors mismatch (-want +got):\n%s", diff)
+		}
+
+		if diff := cmp.Diff(aliasRecord("plc", "plc-2"), storedValue(t, h, "name/plc")); diff != "" {
+			t.Errorf("icon record name/plc that could not be read mismatch (-want +got):\n%s", diff)
+		}
+
+		if got := mustGetIcon(t, h, "plc"); got.Name != "plc-3" {
+			t.Errorf("GetIcon(plc) name = %q, want plc-3", got.Name)
+		}
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		h, service := setUp(t)
+
+		if err := service.DeleteIcon(ctx, testActor, "plc-2", iconTag(t, h, "plc-2")); !errors.Is(err, injected) {
+			t.Errorf("DeleteIcon(plc-2) error = %v, want the injected read failure", err)
+		}
+
+		if keys := h.store.Keys(NamespaceIcons); !slices.Equal(keys, []string{"name/plc", "name/plc-2"}) {
+			t.Errorf("icon records after the failed delete = %q, want [name/plc name/plc-2]", keys)
+		}
+	})
 }

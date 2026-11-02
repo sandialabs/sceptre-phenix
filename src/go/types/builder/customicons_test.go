@@ -376,6 +376,56 @@ func TestValidateIconPNGRefuses(t *testing.T) {
 			wantMsg: afterPixels,
 		},
 		{name: "a wrong checksum", data: badChecksum, wantMsg: "the Builder cannot decode the PNG"},
+		{name: "an SVG", data: []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`), wantMsg: "the image is not a PNG"},
+		{name: "a part of a chunk", data: append(joinPNG(chunks[0]), 0, 0, 0, 0, 'I'), wantMsg: "the PNG is not complete"},
+		{
+			name:    "a chunk longer than the image",
+			data:    append(joinPNG(chunks[0]), 0, 0, 0x03, 0xe8, 'I', 'D', 'A', 'T', 0, 0, 0, 0),
+			wantMsg: "the PNG is not complete",
+		},
+		{name: "no end", data: joinPNG(chunks[0], chunks[1]), wantMsg: "the PNG is not complete"},
+		{name: "pixels first", data: joinPNG(chunks[1], chunks[0], chunks[2]), wantMsg: "the PNG does not start with its header"},
+		{
+			name:    "a short header",
+			data:    joinPNG(pngChunk{kind: chunkIHDR, data: chunks[0].data[:12]}, chunks[1], chunks[2]),
+			wantMsg: "the PNG does not start with its header",
+		},
+		{
+			name:    "no pixels wide",
+			data:    joinPNG(headerChunk(0, 1, 8, colorRGBA), chunks[1], chunks[2]),
+			wantMsg: "icon is 0 x 1 pixels: the limit is 96 x 96",
+		},
+		{name: "a second header", data: joinPNG(chunks[0], chunks[0], chunks[1], chunks[2]), wantMsg: "the PNG has a second header"},
+		{
+			name:    "an end with data",
+			data:    joinPNG(chunks[0], chunks[1], pngChunk{kind: chunkIEND, data: []byte{0}}),
+			wantMsg: "the PNG does not end as a PNG does",
+		},
+		{
+			name:    "a chunk after the end",
+			data:    joinPNG(chunks[0], chunks[1], chunks[2], chunks[2]),
+			wantMsg: "the PNG has data after its end",
+		},
+		{
+			name:    "a text chunk",
+			data:    withChunk(t, "tEXt", []byte("Comment\x00"+hidden)),
+			wantMsg: `the PNG holds a "tEXt" chunk: an icon can hold only IHDR, PLTE, tRNS, IDAT and IEND chunks`,
+		},
+		{
+			name:    "a palette of an image with alpha",
+			data:    withChunk(t, "PLTE", []byte{0, 0, 0}),
+			wantMsg: `the PNG holds a "PLTE" chunk, which its color type does not use`,
+		},
+		{
+			name:    "a palette of a grayscale image",
+			data:    onePixel(colorGray, []byte{0x80}, pngChunk{kind: "PLTE", data: []byte{0, 0, 0}}),
+			wantMsg: `the PNG holds a "PLTE" chunk, which its color type does not use`,
+		},
+		{
+			name:    "a transparent color of an image with alpha",
+			data:    withChunk(t, chunkTRNS, []byte{0, 1, 0, 2, 0, 3}),
+			wantMsg: `the PNG holds a "tRNS" chunk, which its color type does not use`,
+		},
 		{
 			name:    "corrupt pixels",
 			data:    joinPNG(chunks[0], pngChunk{kind: chunkIDAT, data: corrupt}, chunks[2]),
@@ -804,4 +854,55 @@ func TestValidateIconsIsStable(t *testing.T) {
 			break
 		}
 	}
+}
+
+// FuzzNormalizeIconPNG checks that what NormalizeIconPNG returns is an
+// accepted icon of the same size that normalizes to itself, and that an
+// accepted icon normalizes.
+// Run it longer with "go test -fuzz=FuzzNormalizeIconPNG -fuzztime=30s ./types/builder/".
+func FuzzNormalizeIconPNG(f *testing.F) {
+	fixture, err := base64.StdEncoding.DecodeString(iconFixtureData)
+	if err != nil {
+		f.Fatalf("decoding the fixture icon: %v", err)
+	}
+
+	f.Add(fixture)
+	f.Add(onePixel(colorGray, []byte{0x80}, pngChunk{kind: chunkTRNS, data: []byte{0, 0x80}}))
+	f.Add(headerOnly(2, 3))
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		width, height, validErr := builder.ValidateIconPNG(data)
+		if validErr == nil {
+			if w, h, err := builder.IconPNGSize(data); err != nil || w != width || h != height {
+				t.Errorf("IconPNGSize() of an accepted icon = %d x %d, %v, want %d x %d, nil", w, h, err, width, height)
+			}
+		}
+
+		normalized, err := builder.NormalizeIconPNG(data)
+		if err != nil {
+			if validErr == nil {
+				t.Errorf("NormalizeIconPNG() of an accepted icon error = %v, want nil", err)
+			}
+
+			return
+		}
+
+		config, err := png.DecodeConfig(bytes.NewReader(data))
+		if err != nil {
+			t.Fatalf("png.DecodeConfig() of a normalized input error = %v, want nil", err)
+		}
+
+		if w, h, err := builder.ValidateIconPNG(normalized); err != nil || w != config.Width || h != config.Height {
+			t.Errorf("ValidateIconPNG(NormalizeIconPNG()) = %d x %d, %v, want %d x %d, nil", w, h, err, config.Width, config.Height)
+		}
+
+		again, err := builder.NormalizeIconPNG(normalized)
+		if err != nil {
+			t.Fatalf("NormalizeIconPNG() of a normalized icon error = %v, want nil", err)
+		}
+
+		if !bytes.Equal(normalized, again) {
+			t.Error("NormalizeIconPNG() of a normalized icon changed it, want the same bytes")
+		}
+	})
 }

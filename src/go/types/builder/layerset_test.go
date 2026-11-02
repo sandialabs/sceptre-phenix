@@ -1,6 +1,7 @@
 package builder_test
 
 import (
+	"errors"
 	"regexp"
 	"slices"
 	"strings"
@@ -138,6 +139,30 @@ func TestLayerSetIssues(t *testing.T) {
 
 	if diff := cmp.Diff([]string{"set.name"}, paths); diff != "" {
 		t.Errorf("LayerSet.Issues(\"set\") of a set without a name paths mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestLayerSetError checks the text of a layer set error and that it unwraps to ErrInvalidLayerSet.
+func TestLayerSetError(t *testing.T) {
+	set := builder.LayerSet{Name: "a\nb"}
+
+	err := set.Validate()
+	if err == nil {
+		t.Fatal("LayerSet.Validate() of a set with a control name and no layers = nil, want an error")
+	}
+
+	issues := builder.ErrorIssues(err)
+	if len(issues) != 2 {
+		t.Fatalf("LayerSet.Validate() issues = %v, want 2 issues", issues)
+	}
+
+	want := "invalid layer set: " + issues[0].String() + ". " + issues[1].String()
+	if got := err.Error(); got != want {
+		t.Errorf("LayerSet.Validate().Error() = %q, want %q", got, want)
+	}
+
+	if !errors.Is(err, builder.ErrInvalidLayerSet) {
+		t.Errorf("errors.Is(%v, ErrInvalidLayerSet) = false, want true", err)
 	}
 }
 
@@ -365,10 +390,19 @@ func TestNestedRepeat(t *testing.T) {
 		`(a){2,}`:            false,
 		`a{2}{`:              false,
 		`(?i)a+`:             false,
+		`[^]a|]+`:            false,
+		`[\](a+)+]`:          false,
+		`\Q(a+)+`:            false,
+		`(?`:                 false,
+		`(?i`:                false,
+		`(a+`:                false,
+		`a+)+`:               false,
 	} {
-		if got := builder.NestedRepeat(pattern); got != want {
-			t.Errorf("NestedRepeat(%q) = %v, want %v", pattern, got, want)
-		}
+		t.Run(pattern, func(t *testing.T) {
+			if got := builder.NestedRepeat(pattern); got != want {
+				t.Errorf("NestedRepeat(%q) = %v, want %v", pattern, got, want)
+			}
+		})
 	}
 }
 
@@ -398,9 +432,46 @@ func TestUnboundedRepeats(t *testing.T) {
 		`\x{2a}+`:             1,
 		`(a+)+`:               2,
 		`a*a*a*a*a*a*a*a*a*b`: 9,
+		`[^*]+`:               1,
+		`[^]*]`:               0,
+		`[\]*]+`:              1,
+		`[[:a*]`:              0,
+		`[a*`:                 0,
+		`\Qa*`:                0,
+		`\x{2a+`:              1,
+		`\p`:                  0,
+		`a\`:                  0,
+		`(?`:                  0,
+		`ñ*é+`:                2,
 	} {
-		if got := builder.UnboundedRepeats(pattern); got != want {
-			t.Errorf("UnboundedRepeats(%q) = %d, want %d", pattern, got, want)
-		}
+		t.Run(pattern, func(t *testing.T) {
+			if got := builder.UnboundedRepeats(pattern); got != want {
+				t.Errorf("UnboundedRepeats(%q) = %d, want %d", pattern, got, want)
+			}
+		})
 	}
+}
+
+// FuzzMatcherPatternRepeats checks that the repeat checks read any text
+// without a panic, and count at most one repeat for each "*", "+" and "{".
+// Run it longer with "go test -fuzz=FuzzMatcherPatternRepeats -fuzztime=30s ./types/builder/".
+func FuzzMatcherPatternRepeats(f *testing.F) {
+	for _, seed := range []string{`(a+)+`, `\Q(a*`, `[^]*]+(?i:a|b){2,}`} {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, pattern string) {
+		builder.NestedRepeat(pattern)
+
+		most := strings.Count(pattern, "*") + strings.Count(pattern, "+") + strings.Count(pattern, "{")
+		if got := builder.UnboundedRepeats(pattern); got < 0 || got > most {
+			t.Errorf("UnboundedRepeats(%q) = %d, want 0 to %d", pattern, got, most)
+		}
+
+		set := builder.LayerSet{
+			Name:   "fuzz",
+			Layers: []builder.Layer{{ID: layerID(1), Label: "L", Matchers: map[string]string{"general.hostname": pattern}}},
+		}
+		set.Issues("set")
+	})
 }

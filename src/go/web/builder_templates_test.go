@@ -875,6 +875,10 @@ func builderTemplateRefusals(t *testing.T, template, collection string) []builde
 			name: "collection: unknown", method: put, path: collections + "/no-such", body: `{"name":"X"}`, ifMatch: `"1"`, status: 404,
 			message: "phenix cannot find collection no-such",
 		},
+		{
+			name: "collection: not an id", method: put, path: collections + "/a%20b", body: `{"name":"X"}`, ifMatch: `"1"`,
+			status: 404, message: "phenix cannot find collection a b",
+		},
 
 		// A stale entity tag.
 		{
@@ -884,6 +888,11 @@ func builderTemplateRefusals(t *testing.T, template, collection string) []builde
 		{
 			name: "collection: a stale tag", method: put, path: one, body: `{"name":"X"}`, ifMatch: `"7"`, status: 412,
 			message: "collection " + collection + " changed after you read it. Reload the template library and try again",
+		},
+		{
+			name: "delete: a stale template tag", method: post, path: remove,
+			body:   `{"templates":[{"id":"` + template + `","etag":"\"7\""}]}`,
+			status: 412, message: "template " + template + " changed after you read it. Reload the template library and try again",
 		},
 
 		// Well formed and refused: the service tests hold the other refusals.
@@ -1318,5 +1327,38 @@ func TestBuilderTemplateRacingReplace(t *testing.T) {
 
 	if got := harness.templates(builderAlice).Templates[0].Name; got != "Winner" {
 		t.Errorf("templates(alice): template name = %q, want Winner", got)
+	}
+}
+
+// builderTemplateFailingStore fails each read of the template library.
+type builderTemplateFailingStore struct {
+	*memrecord.Store
+}
+
+func (s *builderTemplateFailingStore) GetRecord(namespace, key string) (store.Record, error) {
+	if namespace == bapi.NamespaceTemplates {
+		return store.Record{}, errors.New("store offline")
+	}
+
+	return s.Store.GetRecord(namespace, key) //nolint:wrapcheck // the wrapped store's answer
+}
+
+// TestBuilderTemplateListingFailure answers 500 when the store cannot read
+// the template library, which is not a damaged library.
+func TestBuilderTemplateListingFailure(t *testing.T) {
+	service, err := bapi.New(bapi.WithStore(&builderTemplateFailingStore{Store: memrecord.New()}))
+	if err != nil {
+		t.Fatalf("bapi.New returned error: %v", err)
+	}
+
+	harness := newBuilderHarnessWith(t, []builderOption{withBuilderService(service)})
+
+	recorder := harness.library(http.MethodGet, builderTemplatesRoute, builderAlice, "", "")
+	if err := builderStatusError(recorder, http.StatusInternalServerError); err != nil {
+		t.Fatalf("GET %s: %v", builderTemplatesRoute, err)
+	}
+
+	if got, want := builderRefusal(t, recorder).Message, "unable to list the templates"; got != want {
+		t.Errorf("GET %s: message = %q, want %q", builderTemplatesRoute, got, want)
 	}
 }

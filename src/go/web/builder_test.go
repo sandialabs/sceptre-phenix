@@ -32,6 +32,7 @@ import (
 	bdoc "phenix/types/builder"
 	ifaces "phenix/types/interfaces"
 	v1 "phenix/types/version/v1"
+	"phenix/util/common"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/weberror"
@@ -1271,6 +1272,8 @@ func TestBuilderErrorStatuses(t *testing.T) {
 		{name: "invalid", err: bapi.ErrInvalid, status: http.StatusUnprocessableEntity},
 		{name: "corrupt", err: bapi.ErrCorrupt, status: http.StatusInternalServerError},
 		{name: "cleanup", err: bapi.ErrCleanup, status: http.StatusInternalServerError},
+		{name: "busy", err: bapi.ErrBusy, status: http.StatusServiceUnavailable},
+		{name: "unknown", err: errors.New("unknown"), status: http.StatusInternalServerError},
 		{
 			name:   "wrapped",
 			err:    fmt.Errorf("appending snapshot: %w", bapi.ErrTooLarge),
@@ -1854,5 +1857,449 @@ func TestBuilderDraftLimit(t *testing.T) {
 
 	if listing.Limits.Drafts != bapi.MaxDrafts {
 		t.Errorf("GET /builder/drafts limits.drafts = %d, want %d", listing.Limits.Drafts, bapi.MaxDrafts)
+	}
+}
+
+// TestBuilderDocumentFilesExcludeTheMounts reads Builder files from the phenix
+// base directory, and never from the VM mount directory.
+func TestBuilderDocumentFilesExcludeTheMounts(t *testing.T) {
+	root, excluded := builderDocumentFiles()
+
+	if root != common.PhenixBase {
+		t.Errorf("builderDocumentFiles() root = %q, want %q", root, common.PhenixBase)
+	}
+
+	if diff := cmp.Diff([]string{common.MountDir()}, excluded); diff != "" {
+		t.Errorf("builderDocumentFiles() excluded mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// builderRequestAs returns a GET request that carries user and role, as the
+// auth middleware gives them. A nil role and an empty user are left out.
+func builderRequestAs(user string, role *rbac.Role) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/builder/drafts", nil)
+	ctx := req.Context()
+
+	if user != "" {
+		ctx = context.WithValue(ctx, middleware.ContextKeyUser, user)
+	}
+
+	if role != nil {
+		ctx = context.WithValue(ctx, middleware.ContextKeyRole, *role)
+	}
+
+	return req.WithContext(ctx)
+}
+
+func TestBuilderRequestActor(t *testing.T) {
+	tests := []struct {
+		name string
+		user string
+		role *rbac.Role
+		ok   bool
+	}{
+		{name: "user and role", user: builderAlice, role: builderOnlyRole(), ok: true},
+		{name: "no user", user: "", role: builderOnlyRole(), ok: false},
+		{name: "no role", user: builderAlice, role: nil, ok: false},
+		{name: "a role without a spec", user: builderAlice, role: &rbac.Role{}, ok: false},
+		{name: "a user name in Unicode", user: "zoë", role: builderOnlyRole(), ok: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actor, ok := builderRequestActor(builderRequestAs(tt.user, tt.role))
+
+			if ok != tt.ok {
+				t.Errorf("builderRequestActor() ok = %t, want %t", ok, tt.ok)
+			}
+
+			if actor.user != tt.user {
+				t.Errorf("builderRequestActor() user = %q, want %q", actor.user, tt.user)
+			}
+		})
+	}
+}
+
+func TestBuilderConfigAllowed(t *testing.T) {
+	verbs := []builderVerb{builderVerbList, builderVerbGet, builderVerbCreate, builderVerbUpdate, builderVerbDelete}
+
+	for _, verb := range verbs {
+		t.Run(string(verb), func(t *testing.T) {
+			only := builderRole(builderPolicy([]string{"configs"}, []string{"Topology/lab"}, []string{string(verb)}))
+
+			for _, other := range verbs {
+				if got, want := builderConfigAllowed(*only, other, "Topology/lab"), other == verb; got != want {
+					t.Errorf("builderConfigAllowed(role with %s, %s, Topology/lab) = %t, want %t", verb, other, got, want)
+				}
+			}
+
+			if builderConfigAllowed(*only, verb, "Topology/other") {
+				t.Errorf("builderConfigAllowed(role with %s on Topology/lab, %s, Topology/other) = true, want false", verb, verb)
+			}
+		})
+	}
+
+	// A verb that names no config permission is never allowed.
+	if builderConfigAllowed(*builderFullRole(), builderVerb("use"), "Topology/lab") {
+		t.Error(`builderConfigAllowed(full role, "use", Topology/lab) = true, want false`)
+	}
+}
+
+func TestBuilderErrorCode(t *testing.T) {
+	issues := []bdoc.Issue{bdoc.NewIssue(bdoc.CodeMetadataIDInvalid, "metadata.id", "bad")}
+	plain := errors.New("plain")
+
+	tests := []struct {
+		name   string
+		err    error
+		status int
+		issues []bdoc.Issue
+		want   bdoc.Code
+	}{
+		{name: "package", err: fmt.Errorf("x: %w", bdoc.ErrInvalidPackage), status: http.StatusConflict, want: bdoc.CodePackageInvalid},
+		{name: "document", err: bdoc.ErrInvalidDocument, status: http.StatusNotFound, want: bdoc.CodeDocumentInvalid},
+		{name: "template file", err: &bdoc.TemplateFileError{Issues: issues}, issues: issues, want: bdoc.CodeTemplateFileInvalid},
+		{name: "layer set", err: &bdoc.LayerSetError{Issues: issues}, issues: issues, want: bdoc.CodeLayerSetInvalid},
+		{name: "other issues", err: plain, status: http.StatusNotFound, issues: issues, want: bdoc.CodePublishBlocked},
+		{name: "403", err: plain, status: http.StatusForbidden, want: bdoc.CodeRequestForbidden},
+		{name: "404", err: plain, status: http.StatusNotFound, want: bdoc.CodeRequestNotFound},
+		{name: "409", err: plain, status: http.StatusConflict, want: bdoc.CodeRequestConflict},
+		{name: "412", err: plain, status: http.StatusPreconditionFailed, want: bdoc.CodeRequestStale},
+		{name: "413", err: plain, status: http.StatusRequestEntityTooLarge, want: bdoc.CodeRequestTooLarge},
+		{name: "422", err: plain, status: http.StatusUnprocessableEntity, want: bdoc.CodeRequestUnprocessable},
+		{name: "503", err: plain, status: http.StatusServiceUnavailable, want: bdoc.CodeServerBusy},
+		{name: "500", err: plain, status: http.StatusInternalServerError, want: bdoc.CodeServerError},
+		{name: "502", err: plain, status: http.StatusBadGateway, want: bdoc.CodeServerError},
+		{name: "400", err: plain, status: http.StatusBadRequest, want: bdoc.CodeRequestInvalid},
+		{name: "405", err: plain, status: http.StatusMethodNotAllowed, want: bdoc.CodeRequestInvalid},
+		{name: "no status", err: nil, status: 0, want: bdoc.CodeRequestInvalid},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := builderErrorCode(tt.err, tt.status, tt.issues); got != tt.want {
+				t.Errorf("builderErrorCode(%v, %d, %d issues) = %q, want %q", tt.err, tt.status, len(tt.issues), got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuilderCodedError(t *testing.T) {
+	if err := builderCodedError(nil); err != nil {
+		t.Errorf("builderCodedError(nil) = %v, want nil", err)
+	}
+
+	plain := errors.New("plain")
+	if err := builderCodedError(plain); err != plain { //nolint:errorlint // the same error, not one that wraps it
+		t.Errorf("builderCodedError(%v) = %v, want the same error", plain, err)
+	}
+
+	issues := []bdoc.Issue{bdoc.NewIssue(bdoc.CodeMetadataIDInvalid, "metadata.id", "bad")}
+	kept := []bdoc.Issue{bdoc.NewIssue(bdoc.CodeMetadataNameTooLong, "metadata.name", "kept")}
+
+	// coded is what the coded error holds. Issues is any, as in WebError.
+	type coded struct {
+		Code   string
+		Issues any
+	}
+
+	tests := []struct {
+		name string
+		err  *weberror.WebError
+		want coded
+	}{
+		{
+			name: "no code",
+			err:  weberror.NewWebError(nil, "missing").SetStatus(http.StatusNotFound),
+			want: coded{Code: string(bdoc.CodeRequestNotFound)},
+		},
+		{
+			name: "a code of its own",
+			err:  weberror.NewWebError(nil, "stale").SetStatus(http.StatusPreconditionFailed).WithCode(string(bdoc.CodeDraftStale)),
+			want: coded{Code: string(bdoc.CodeDraftStale)},
+		},
+		{
+			name: "issues of its cause",
+			err:  weberror.NewWebError(&bdoc.LayerSetError{Issues: issues}, "bad set").SetStatus(http.StatusUnprocessableEntity),
+			want: coded{Code: string(bdoc.CodeLayerSetInvalid), Issues: issues},
+		},
+		{
+			name: "issues of its own",
+			err: func() *weberror.WebError {
+				web := weberror.NewWebError(&bdoc.LayerSetError{Issues: issues}, "bad set")
+				web.Issues = kept
+
+				return web
+			}(),
+			want: coded{Code: string(bdoc.CodeLayerSetInvalid), Issues: kept},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// It is wrapped, as a handler may return it.
+			err := builderCodedError(fmt.Errorf("handler: %w", tt.err))
+
+			var web *weberror.WebError
+			if !errors.As(err, &web) {
+				t.Fatalf("builderCodedError(%v) = %T, want a *weberror.WebError", tt.err, err)
+			}
+
+			got := coded{Code: web.Code, Issues: web.Issues}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("builderCodedError(%v) mismatch (-want +got):\n%s", tt.err, diff)
+			}
+		})
+	}
+}
+
+// builderWebStatus returns the status of err, a *weberror.WebError, and 0
+// for any other error or nil.
+func builderWebStatus(err error) int {
+	var web *weberror.WebError
+	if !errors.As(err, &web) {
+		return 0
+	}
+
+	return web.Status
+}
+
+func TestBuilderIfMatch(t *testing.T) {
+	tests := []struct {
+		name   string
+		header string
+		want   string
+		status int
+	}{
+		{name: "a strong tag", header: `"12"`, want: `"12"`},
+		{name: "spaces around", header: "  \"12\"\t", want: `"12"`},
+		{name: "Unicode", header: `"größe"`, want: `"größe"`},
+		{name: "missing", header: "", status: http.StatusBadRequest},
+		{name: "only spaces", header: "   ", status: http.StatusBadRequest},
+		{name: "empty tag", header: `""`, status: http.StatusBadRequest},
+		{name: "one quote", header: `"`, status: http.StatusBadRequest},
+		{name: "unquoted", header: "12", status: http.StatusBadRequest},
+		{name: "no closing quote", header: `"12`, status: http.StatusBadRequest},
+		{name: "a quote inside", header: `"1"2"`, status: http.StatusBadRequest},
+		{name: "weak", header: `W/"12"`, status: http.StatusBadRequest},
+		{name: "wildcard", header: "*", status: http.StatusBadRequest},
+		{name: "list", header: `"12", "13"`, status: http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodDelete, "/api/v1/builder/drafts/x", nil)
+			if tt.header != "" {
+				req.Header.Set("If-Match", tt.header)
+			}
+
+			got, err := builderIfMatch(req)
+
+			if got != tt.want {
+				t.Errorf("builderIfMatch(%q) = %q, want %q", tt.header, got, tt.want)
+			}
+
+			if status := builderWebStatus(err); status != tt.status {
+				t.Errorf("builderIfMatch(%q) error status = %d, want %d (error %v)", tt.header, status, tt.status, err)
+			}
+		})
+	}
+}
+
+func TestBuilderDecodeLimit(t *testing.T) {
+	type target struct {
+		Name string `json:"name"`
+	}
+
+	tests := []struct {
+		name   string
+		body   string
+		limit  int64
+		want   target
+		status int
+	}{
+		{name: "valid", body: `{"name":"lab"}`, limit: 64, want: target{Name: "lab"}},
+		{name: "Unicode", body: `{"name":"läb ✓"}`, limit: 64, want: target{Name: "läb ✓"}},
+		{name: "at the limit", body: `{"name":"lab"}`, limit: int64(len(`{"name":"lab"}`)), want: target{Name: "lab"}},
+		{name: "past the limit", body: `{"name":"lab"}`, limit: int64(len(`{"name":"lab"}`)) - 1, status: http.StatusRequestEntityTooLarge},
+		{name: "unknown field", body: `{"other":1}`, limit: 64, status: http.StatusBadRequest},
+		{name: "two values", body: `{"name":"a"}{"name":"b"}`, limit: 64, status: http.StatusBadRequest},
+		{name: "trailing text", body: `{"name":"a"} x`, limit: 64, status: http.StatusBadRequest},
+		{name: "not JSON", body: `nope`, limit: 64, status: http.StatusBadRequest},
+		{name: "empty", body: ``, limit: 64, status: http.StatusBadRequest},
+		{name: "wrong type", body: `{"name":1}`, limit: 64, status: http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/builder/drafts", strings.NewReader(tt.body))
+
+			var got target
+
+			err := builderDecodeLimit(httptest.NewRecorder(), req, &got, tt.limit)
+
+			if status := builderWebStatus(err); status != tt.status {
+				t.Errorf("builderDecodeLimit(%q, %d) error status = %d, want %d (error %v)", tt.body, tt.limit, status, tt.status, err)
+			}
+
+			if tt.status == 0 && got != tt.want {
+				t.Errorf("builderDecodeLimit(%q, %d) decoded %+v, want %+v", tt.body, tt.limit, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuilderDocumentBytes(t *testing.T) {
+	for _, raw := range []json.RawMessage{nil, {}} {
+		got, err := builderDocumentBytes(raw)
+		if status := builderWebStatus(err); status != http.StatusBadRequest {
+			t.Errorf("builderDocumentBytes(%q) = %q, error status %d, want %d", raw, got, status, http.StatusBadRequest)
+		}
+	}
+
+	raw := json.RawMessage(`{"kind":"x"}`)
+
+	got, err := builderDocumentBytes(raw)
+	if err != nil || !bytes.Equal(got, raw) {
+		t.Errorf("builderDocumentBytes(%s) = %q, %v, want the same bytes and no error", raw, got, err)
+	}
+}
+
+func TestBuilderWriteJSON(t *testing.T) {
+	t.Run("with a tag", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+
+		if err := builderWriteJSON(recorder, http.StatusCreated, `"3"`, map[string]string{"name": "lab"}); err != nil {
+			t.Fatalf("builderWriteJSON returned error: %v", err)
+		}
+
+		var body map[string]string
+
+		decodeBuilderAnswer(t, recorder, &body)
+
+		got := builderAnswer{Status: recorder.Code, ContentType: recorder.Header().Get("Content-Type"), Body: body["name"]}
+		want := builderAnswer{Status: http.StatusCreated, ContentType: mimeJSON, Body: "lab"}
+
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("builderWriteJSON mismatch (-want +got):\n%s", diff)
+		}
+
+		if etag := recorder.Header().Get("ETag"); etag != `"3"` {
+			t.Errorf("builderWriteJSON ETag = %q, want %q", etag, `"3"`)
+		}
+	})
+
+	t.Run("without a tag", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+
+		if err := builderWriteJSON(recorder, http.StatusOK, "", []int{}); err != nil {
+			t.Fatalf("builderWriteJSON returned error: %v", err)
+		}
+
+		if _, set := recorder.Header()["Etag"]; set {
+			t.Errorf("builderWriteJSON with no tag: ETag = %q, want none", recorder.Header().Get("ETag"))
+		}
+	})
+
+	t.Run("a payload JSON cannot encode", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+
+		err := builderWriteJSON(recorder, http.StatusOK, `"3"`, make(chan int))
+		if status := builderWebStatus(err); status != http.StatusInternalServerError {
+			t.Errorf("builderWriteJSON(a channel) error status = %d, want %d (error %v)", status, http.StatusInternalServerError, err)
+		}
+
+		if recorder.Body.Len() != 0 || len(recorder.Header()) != 0 {
+			t.Errorf("builderWriteJSON(a channel) wrote headers %v and %d bytes, want nothing", recorder.Header(), recorder.Body.Len())
+		}
+	})
+}
+
+func TestBuilderSchemaHandlerFailures(t *testing.T) {
+	schemaErr := errors.New("injected schema failure")
+	handler := builderSchemaHandler("Test", "test schema", func() ([]byte, error) { return nil, schemaErr })
+
+	tests := []struct {
+		name   string
+		req    *http.Request
+		status int
+	}{
+		{name: "not a Builder user", req: builderRequestAs(builderAlice, builderConfigsOnlyRole()), status: http.StatusForbidden},
+		{name: "no identity", req: builderRequestAs("", nil), status: http.StatusForbidden},
+		{name: "the schema fails to build", req: builderRequestAs(builderAlice, builderOnlyRole()), status: http.StatusInternalServerError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+
+			err := handler(recorder, tt.req)
+			if status := builderWebStatus(err); status != tt.status {
+				t.Errorf("schema handler error status = %d, want %d (error %v)", status, tt.status, err)
+			}
+
+			if recorder.Body.Len() != 0 {
+				t.Errorf("schema handler wrote %d bytes, want none", recorder.Body.Len())
+			}
+		})
+	}
+}
+
+func TestBuilderPath(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{path: "/api/v1/builder/drafts", want: true},
+		{path: "/api/v1/builder/", want: true},
+		{path: "/api/v1/builder", want: false},
+		{path: "/api/v1/builders/x", want: false},
+		{path: "/builder/drafts", want: false},
+		{path: "/api/v2/builder/drafts", want: false},
+		{path: "/api/v1" + builderSchemaPath, want: true},
+		{path: "/api/v1" + builderTemplateSchemaPath, want: true},
+		{path: "/api/v1" + builderPackageSchemaPath, want: true},
+		{path: "/api/v1" + builderLayerSetSchemaPath, want: true},
+		{path: "/api/v1" + builderSchemaPath + "/x", want: false},
+		{path: "/api/v1/schemas/topology/v1", want: false},
+		{path: "", want: false},
+	}
+
+	for _, tt := range tests {
+		if got := builderPath(tt.path); got != tt.want {
+			t.Errorf("builderPath(%q) = %t, want %t", tt.path, got, tt.want)
+		}
+	}
+}
+
+// TestBuilderRoutesNeedAStore registers no route when phenix has no config
+// store. It replaces the default store, so it is not parallel.
+func TestBuilderRoutesNeedAStore(t *testing.T) {
+	original := store.DefaultStore
+
+	t.Cleanup(func() { store.DefaultStore = original }) //nolint:reassign // restore the default
+
+	store.DefaultStore = nil //nolint:reassign // no store at all
+
+	if api, err := newBuilderAPI(); !errors.Is(err, bapi.ErrInvalid) || api != nil {
+		t.Errorf("newBuilderAPI() = %v, %v, want nil and an error that matches %v", api, err, bapi.ErrInvalid)
+	}
+
+	router := mux.NewRouter()
+
+	if err := registerBuilderRoutes(router); !errors.Is(err, bapi.ErrInvalid) {
+		t.Errorf("registerBuilderRoutes() error = %v, want one that matches %v", err, bapi.ErrInvalid)
+	}
+
+	routes := 0
+
+	_ = router.Walk(func(*mux.Route, *mux.Router, []*mux.Route) error {
+		routes++
+
+		return nil
+	})
+
+	if routes != 0 {
+		t.Errorf("registerBuilderRoutes() without a store registered %d routes, want 0", routes)
 	}
 }

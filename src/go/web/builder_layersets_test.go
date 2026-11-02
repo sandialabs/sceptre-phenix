@@ -2,6 +2,8 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -11,6 +13,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
+	bapi "phenix/api/builder"
 	bdoc "phenix/types/builder"
 )
 
@@ -489,5 +492,115 @@ func TestBuilderDefaultLayerSet(t *testing.T) {
 
 	if got := readDefault(t, alice).ID; got != nil {
 		t.Errorf("GET %s after its set was deleted: id = %q, want null", path, *got)
+	}
+}
+
+// TestBuilderLayerSetErrorStatus maps each failure of the layer set library
+// to its status, code, message and headers.
+func TestBuilderLayerSetErrorStatus(t *testing.T) {
+	const generic = "unable to complete the layer set request"
+
+	type answer struct {
+		Status  int
+		Code    string
+		Message string
+		Header  http.Header
+	}
+
+	tests := []struct {
+		name string
+		err  error
+		want answer
+	}{
+		{
+			name: "a stale version", err: &bapi.LayerSetStaleError{ID: "ls-1", ETag: `"4"`},
+			want: answer{
+				Status: http.StatusPreconditionFailed, Code: string(bdoc.CodeLayerSetStale),
+				Message: "layer set ls-1 changed after you last read it", Header: http.Header{"Etag": {`"4"`}},
+			},
+		},
+		{
+			name: "a built-in set", err: fmt.Errorf("update: %w", bapi.ErrForbidden),
+			want: answer{
+				Status: http.StatusForbidden, Code: string(bdoc.CodeLayerSetReadOnly),
+				Message: "you cannot change or delete a built-in layer set. Duplicate it and change the copy",
+			},
+		},
+		{
+			name: "a full library", err: &bapi.LayerSetLimitError{Limit: 2},
+			want: answer{
+				Status: http.StatusRequestEntityTooLarge, Code: string(bdoc.CodeLayerSetLibraryFull),
+				Message: "the layer set library holds 2 sets, the most it can hold",
+			},
+		},
+		{
+			name: "a set that is not valid", err: fmt.Errorf("%w: no name", bdoc.ErrInvalidLayerSet),
+			want: answer{Status: http.StatusUnprocessableEntity, Message: "the layer set is not valid"},
+		},
+		{
+			name: "a set nobody has", err: fmt.Errorf("get: %w", bapi.ErrNotFound),
+			want: answer{Status: http.StatusNotFound, Message: "phenix cannot find layer set ls-1"},
+		},
+		{
+			name: "a record this version cannot read", err: fmt.Errorf("get: %w", bapi.ErrCorrupt),
+			want: answer{Status: http.StatusConflict, Message: "this version of phenix cannot read layer set ls-1"},
+		},
+		{
+			name: "a busy store", err: fmt.Errorf("update: %w", bapi.ErrBusy),
+			want: answer{Status: http.StatusServiceUnavailable, Message: generic, Header: http.Header{"Retry-After": {"1"}}},
+		},
+		{
+			name: "any other failure", err: errors.New("disk failure"),
+			want: answer{Status: http.StatusInternalServerError, Message: generic},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			webErr := builderLayerSetError(recorder, tt.err, "ls-1")
+			got := answer{Status: webErr.Status, Code: webErr.Code, Message: webErr.Message, Header: recorder.Header()}
+
+			if diff := cmp.Diff(tt.want, got, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("builderLayerSetError(%v) mismatch (-want +got):\n%s", tt.err, diff)
+			}
+		})
+	}
+}
+
+// TestNewBuilderLayerSetResponseDefaults answers a stored set without a
+// match conflict or layers with the default conflict and an empty list.
+func TestNewBuilderLayerSetResponseDefaults(t *testing.T) {
+	set := &bapi.LibraryLayerSet{ID: "ls-1", Version: 3, CreatedBy: builderAlice}
+
+	got := newBuilderLayerSetResponse(set)
+	want := builderLayerSetResponse{
+		ID: "ls-1", MatchConflict: bdoc.MatchConflictLowest, Layers: []bdoc.Layer{},
+		Version: 3, ETag: bapi.RevisionETag(3), CreatedBy: builderAlice,
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("newBuilderLayerSetResponse(a set without conflict or layers) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestBuilderLayerSetsOfAFailingStore answers 500 with fixed words when the
+// layer set library cannot be read.
+func TestBuilderLayerSetsOfAFailingStore(t *testing.T) {
+	harness := newBuilderFailingHarness(t)
+
+	for path, message := range map[string]string{
+		builderLayerSetsRoute:              "unable to list the layer sets",
+		builderLayerSetsRoute + "/default": "unable to read the default layer set",
+	} {
+		recorder := harness.do(builderRequest{method: http.MethodGet, path: path, user: builderAlice, role: builderUserRole()})
+
+		if err := builderStatusError(recorder, http.StatusInternalServerError); err != nil {
+			t.Errorf("GET %s of a failing store: %v", path, err)
+		}
+
+		if got := builderRefusal(t, recorder).Message; got != message {
+			t.Errorf("GET %s of a failing store: message = %q, want %q", path, got, message)
+		}
 	}
 }
