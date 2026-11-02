@@ -31,7 +31,23 @@ func (Tap) Type() string {
 	return "tap"
 }
 
-func (Tap) Configure(context.Context) error {
+// Configure validates the component's tap metadata so config errors surface
+// before the Start stage touches any host.
+func (t Tap) Configure(context.Context) error {
+	var tp *tap.Tap
+
+	if err := mapstructure.Decode(t.options.Meta, &tp); err != nil {
+		return fmt.Errorf("decoding tap component metadata: %w", err)
+	}
+
+	if tp == nil {
+		return nil
+	}
+
+	if err := tp.External.Firewall.Validate(); err != nil {
+		return fmt.Errorf("validating external access firewall: %w", err)
+	}
+
 	return nil
 }
 

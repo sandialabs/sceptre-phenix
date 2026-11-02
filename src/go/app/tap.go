@@ -56,8 +56,31 @@ func (Tap) Name() string {
 	return "tap"
 }
 
-func (Tap) Configure(ctx context.Context, exp *types.Experiment) error {
-	return nil
+// Configure validates tap app metadata at experiment creation time so config
+// errors surface before any host is touched.
+func (t *Tap) Configure(ctx context.Context, exp *types.Experiment) error {
+	app := exp.App(t.Name())
+	if app == nil {
+		return nil
+	}
+
+	var amd TapAppMetadata
+	if err := app.ParseMetadata(&amd); err != nil {
+		return fmt.Errorf("decoding %s app metadata: %w", t.Name(), err)
+	}
+
+	var errs error
+
+	for _, tp := range amd.Taps {
+		if err := tp.External.Firewall.Validate(); err != nil {
+			errs = multierror.Append(
+				errs,
+				fmt.Errorf("validating external access firewall for VLAN %s: %w", tp.VLAN, err),
+			)
+		}
+	}
+
+	return errs
 }
 
 func (t *Tap) PreStart(ctx context.Context, exp *types.Experiment) error {
