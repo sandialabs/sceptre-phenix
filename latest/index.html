@@ -1678,7 +1678,7 @@
 <p>To use the pre-built image from the registry instead of building from source, run:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d<span class="w"> </span>--pull<span class="w"> </span>always
 </span></code></pre></div>
-<p>This will pull the latest images specified in the <code>image</code> key for each service (e.g., <code>ghcr.io/sandialabs/sceptre-phenix/phenix:main</code> and <code>ghcr.io/sandia-minimega/minimega:master</code>) and skip the build step.</p>
+<p>This will pull the latest images specified in the <code>image</code> key for each service (e.g., <code>ghcr.io/sandialabs/sceptre-phenix/phenix:main</code> and <code>ghcr.io/sandia-minimega/minimega:latest</code>) and skip the build step.</p>
 <h4 id="3-check-status">3. Check Status<a class="headerlink" href="#3-check-status" title="Permanent link">&para;</a></h4>
 <p>After starting the services with either method, view the logs to see the initialization progress:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"> </span>-f
@@ -1687,6 +1687,7 @@
 <p class="admonition-title">Note</p>
 <p>The Docker image includes the user apps from the <a href="https://github.com/sandialabs/sceptre-phenix-apps">sceptre-phenix-apps</a> repository.</p>
 </div>
+<p>To build the image with Podman instead, run <code>podman build -f docker/Dockerfile -t phenix .</code> from the repository root. See <code>podman/README.md</code> for running phēnix and minimega as a Podman pod.</p>
 <h3 id="accessing-the-cli-shell-completion">Accessing the CLI &amp; Shell Completion<a class="headerlink" href="#accessing-the-cli-shell-completion" title="Permanent link">&para;</a></h3>
 <p>With <code>phenix</code> running in a container, you can execute commands. For the best experience, including shell (tab) completion, you should install the provided wrapper script.</p>
 <h4 id="using-the-wrapper-script-recommended">Using the Wrapper Script (Recommended)<a class="headerlink" href="#using-the-wrapper-script-recommended" title="Permanent link">&para;</a></h4>
