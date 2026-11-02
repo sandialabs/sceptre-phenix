@@ -45,6 +45,25 @@ begin with a capital letter.
     When we say this, we mean passing a YAML or JSON configuration file of any
     type to the `phenix config create` command.
 
+## Revisions
+
+phēnix stamps every stored config with `metadata.created`, `metadata.updated`
+and `metadata.revision`. The revision is a number that increases on every
+write to the config. phēnix ignores the revision and the timestamps in files
+and requests.
+
+```yaml
+metadata:
+  name: foobar
+  created: "2026-10-14T09:12:44-06:00"
+  updated: "2026-10-14T09:30:02-06:00"
+  revision: 42
+```
+
+`phenix config edit` remembers the revision it opened. If someone else saves
+the config before you close the editor, it refuses to save your edits with
+`<kind/name> changed while you edited it, so run phenix config edit again`.
+
 ## Topology
 
 The `Topology` configuration is one of the core configuration types for
@@ -156,6 +175,14 @@ three options available to set, but on only one option can be set:
     experiment page shows a blue tag, for example `2 delayed VMs waiting`, next
     to the `Running` status. The VMs tile of the summary also shows the number
     of delayed VMs. To see the tiles, click `Details` in the summary.
+
+!!! note
+    An experiment started from the web UI or the API counts as running while
+    its `timer` and `c2` delayed VMs are still pending. If `phenix ui`
+    restarts before they start, it resumes them. A delayed VM that minimega
+    no longer holds cannot start. The experiment is then marked interrupted
+    in the Experiments table, and its post-start apps do not run. Restart
+    the experiment to run them.
 
 #### Network Address Translation (NAT)
 
@@ -694,10 +721,12 @@ available configuration files. It is possible to filter in two ways:
 
 Clicking on the `X` next to the `Find a Config` field will reset both filters.
 
-The totals strip above the table counts the configs of each kind. Click the
-count of a kind to filter on that kind. Click the `Configs` total, or the
-count of the kind again, to show all kinds. The `Kind` selector shows the same
-filter.
+Above the table, the page counts the configs in all and by kind, whatever the
+filters show. Click the count of a kind to filter on that kind. Click the
+`Configs` total, or the count of the kind again, to show all kinds. The `Kind`
+selector shows the same filter. Click the `Name`, `Kind` or `Last Updated`
+heading to sort the table by it. `Last Updated` shows when the config last
+changed and how long ago that was (see [Timestamps](web-ui.md#timestamps)).
 
 ### View a Config
 
@@ -706,8 +735,8 @@ There are two ways to view a specific config:
 1. Clicking the name of the config entry will open a modal to view the config.
    It is possible to select text and copy from this modal. However, it is not
    possible to edit the config directly in this view. Instead, there is an
-   `Edit Config` button, which will open an editor. It is also possible to
-   download a copy of the config. From the keyboard, Tab to the name and press
+   `Edit` button to the right of `Copy`, which will open an editor. The
+   `Download` button downloads a copy of the config. From the keyboard, Tab to the name and press
    Enter. A topology or scenario name on the `Experiments` page opens its
    config in this viewer, too. The annotations of the config show next to
    its title. Above the text, the viewer shows the kind, name, creation time
@@ -758,6 +787,18 @@ The editor window allows direct editing of an existing or new config file.
 - It is also possible to set keybindings to the Vim editor by enabling them with
   the sliding selector under `Vim Mode`.
   ![Editor settings with the File Format radio buttons set to YAML and the Vim Mode toggle disabled.](images/edit_settings.png){: width=150 .center}
+
+When you leave the editor with unsaved changes, phēnix asks whether to discard
+them. A config the server rejects as invalid opens the `Validation Error`
+dialog, which keeps the config open so you can correct it. Any other failure,
+such as a missing permission, is reported in the usual error notification.
+
+A save only overwrites the config if nobody saved it since you opened it (see
+[Revisions](#revisions)). Otherwise the `Config Changed` dialog offers to
+`Reload it (your edits are lost)`, to `Overwrite anyway`, or to `Cancel` and
+keep editing.
+
+![The Config Changed dialog naming the revision opened and the current one, with Reload it (your edits are lost), Overwrite anyway and Cancel buttons](images/config_conflict.png){: width=500 .center}
 
 #### New Config
 

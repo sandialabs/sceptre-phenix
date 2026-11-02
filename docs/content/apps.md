@@ -39,6 +39,10 @@ during every lifecycle stage. User apps configured in a scenario are
 unaffected. Omit the annotation, or set it to `true`, to retain the default
 behavior.
 
+To set the annotation on every VM of one experiment without editing its
+topology, add it when you create the experiment; see
+[Adding Annotations](experiments.md#adding-annotations).
+
 ### startup App
 
 The `startup` app generates scripts that configure supported guest operating
@@ -175,6 +179,10 @@ spec:
         drives:
           - image: ubuntu.qc2
 ```
+
+To set the annotation on every VM of one experiment without editing its
+topology, add it when you create the experiment; see
+[Adding Annotations](experiments.md#adding-annotations).
 
 For a disk layout that cannot be injected into, such as an LVM-based image, set
 the injection partition on the first drive to `0`:
@@ -769,6 +777,15 @@ string over `STDIN`.
     You can run `phenix util app-json <exp name>` to see an example of what the
     JSON that's passed to a user app looks like.
 
+!!! tip
+    The REST API also gives this JSON. Send
+    `GET /api/v1/experiments/{name}/apps/input`. The JSON also has the `hosts`
+    and `vms` keys: the schedulable cluster hosts and the experiment VMs that
+    minimega reports. The JSON holds the full experiment config. The role must
+    have `experiments` `get` on the experiment, `configs` `get` on
+    `Experiment/<experiment>`, and `vms` `list` on each VM. If minimega does
+    not report all of the hosts and VMs, the response is `502`.
+
 The user app can modify the experiment at will, then return the updated
 JSON over `STDOUT` and exit with a `0` status. If the user app encounters an
 error, it should print error messages to `STDERR` and exit with a non-zero
@@ -792,6 +809,12 @@ field, such as `time` or `app`, gets the `proc_` prefix.
     In the case of user apps, `phenix` will send a `SIGTERM` to the user app
     process and wait a maximum of 10 seconds for the process to exit gracefully
     before killin the process with a `SIGKILL`.
+
+!!! note
+    While an app runs a stage, phēnix refuses to start that app's `running`
+    stage, such as a Scorch run, again until it finishes. If phēnix stops in
+    the middle, `phenix ui` clears these marks when it starts again, so the
+    app can run without restarting the experiment.
 
 ### Available User Apps
 

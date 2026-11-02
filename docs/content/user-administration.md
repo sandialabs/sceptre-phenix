@@ -107,8 +107,9 @@ Without the `-k` (or `--jwt-signing-key`), authentication is disabled.
 ## Generating User Authentication Tokens
 
 From the `Users` page in the `Admin` menu, click the key icon next to the
-given user's name. The icon shows for your own user, and for another user only when your role has
-`users/tokens` `create` on them. A dialog
+given user's name. The icon shows for your own user, and for another user
+only when your role has [`users/tokens`](#resource-userstokens) `create` on
+them. A dialog
 box will pop up where you can enter in a description for the token to be created
 and an expiration date. This expiration date should be entered in Golang time
 duration. For example, `4320h` is valid and represents 4320 hours or about 6
@@ -132,6 +133,13 @@ An administrator is able to click on the username on the table in the Users tab
 to update a user. They can update `First Name` or `Last Name`, `Role`,
 `Experiment Names`, and `Resource Name(s)`.
 
+The `Find a User` search box above the table matches user names, first and
+last names, and role names. The table can be sorted by `User`, `First Name`,
+`Last Name` or `Role`, and the counts above it give how many users and roles
+it lists.
+
+![Users page with its Users and Roles totals, a Find a User box, and a table of five example users with first and last names, roles, and change password, delete and edit actions.](images/users_search.png){: width=800 .center}
+
 ### Roles
 
 `Global Admin` is the administrator level account and has access to all
@@ -153,6 +161,81 @@ Key: E - experiment resource, V - VM resource, U - user resource
 
 E\* in the Experiment Admin row means the role can delete an experiment's
 files, but not the experiment itself.
+
+The web UI hides or disables what your role cannot do, using the same
+permissions the server checks. If you open a page your role cannot use, phēnix
+sends you to the first page your role can use.
+
+### Manage Custom Roles Through the API
+
+A Global Admin can create, update and delete custom roles through the REST
+API. The built-in roles cannot be changed or deleted. The
+[`roles`](#resource-roles) resource controls these routes. The caller must
+also hold each permission that the role gives. A policy without resource names
+counts as a policy for `*`. A custom role cannot give `create`, `patch` or
+`delete` on `roles`.
+
+To create a role:
+
+1. Send `POST /api/v1/roles` with the name and the policies of the role.
+2. Optionally, add `metadataName` to set the config name.
+3. Read the config name from the `Location` header of the `201` response.
+
+```json
+{
+  "name": "Lab Operator",
+  "metadataName": "lab-operator",
+  "policies": [
+    {"resources": ["experiments"], "verbs": ["list", "get"]},
+    {"resources": ["vms", "vms/*"], "verbs": ["list", "get", "update"]}
+  ]
+}
+```
+
+If you do not set `metadataName`, phēnix makes the config name from the name.
+phēnix changes the name to lower case and changes other characters to `-`.
+For example, `Lab Operator` becomes `lab-operator`. The config name and the
+name must not be a name of another role. phēnix compares these names without
+case, so `GLOBAL ADMIN` is the name of a built-in role.
+
+A request body can have 1 MiB. A role can have 256 policies. A policy can have
+64 resources, 64 verbs and 64 resource names.
+
+To give the role to a user, send `PATCH /api/v1/users/{username}` with
+`role_name` and `resource_names`. You must hold each permission that the role
+gives with those resource names. Permissions that the user already holds do
+not count.
+
+To update a role:
+
+1. Send `PATCH /api/v1/roles/{name}` with all of the new policies.
+2. Read `count` and the `users` list in the response.
+
+An empty `policies` list leaves the role with no policies. The `users`
+list names only the users that you can list. The UI of each changed user
+connects again with the new role.
+
+`{name}` is the config name or the name of the role. The update replaces the
+policies of the role. It also changes the copy of the role that each user with
+the role holds. Each user keeps the resource names that the user got with the
+role. If the old role has no policy without resource names, phēnix cannot find
+those names. Then the new policies without resource names give the user no
+named resource. Give the role to the user again to set the names. A role
+cannot get a new name.
+
+If phēnix cannot change the copy of some users, the response is `500`. The
+`details.users` list names those users. Send the same request again to update
+them. A user copy that is not a copy of the old role keeps its resource names.
+
+To delete a role:
+
+1. Give each user of the role a different role.
+2. Send `DELETE /api/v1/roles/{name}`.
+
+phēnix does not delete a role that a user has. phēnix also does not delete a
+role that a default user in `ui.users` or the development key in
+`ui.jwt-signing-key` names. The `409` response gives the number of users of the
+role.
 
 ### Resources
 
@@ -254,6 +337,20 @@ files, but not the experiment itself.
 | Exp. Scoped | yes |
 | Res. Scoped | no |
 
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | upload one or more files to an experiment |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | delete one or more experiment files |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
 #### Resource: `vms`
 
 |      |      |
@@ -352,6 +449,22 @@ files, but not the experiment itself.
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
+#### Resource: `exp/captureSubnet`
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | start packet captures on every VM interface in a subnet of an experiment |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | stop the packet captures of a subnet of an experiment (roles that may start them gain it on startup) |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
 #### Resource: `vms/snapshots`
 
 |      |      |
@@ -404,12 +517,51 @@ files, but not the experiment itself.
 
 #### Resource: `disks`
 
+A `disks` resource name is a disk image's file name, such as `win10.qcow2`,
+and matches the files of that name in every folder of the minimega files
+directory. See [Disks](disks.md#permissions).
+
 |      |      |
 |------|------|
 | Verb | list |
 | Desc | get list of disk images |
 | Exp. Scoped | no (listing one experiment's images also needs `get` on that experiment) |
 | Res. Scoped | yes (list is filtered to only include images in scope; an image outside the minimega files directory also needs `get` on an experiment using it, unless it backs a listed image) |
+
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | download a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | yes |
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | snapshot or clone a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | yes (the new image's file name; the image copied also needs `get`) |
+
+|      |      |
+|------|------|
+| Verb | update |
+| Desc | commit, rebase, resize, or rename a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | yes (commit also needs it for the backing image) |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | delete a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | yes |
+
+|      |      |
+|------|------|
+| Verb | upload |
+| Desc | upload a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | no |
 
 #### Resource: `hosts`
 
@@ -457,6 +609,18 @@ files, but not the experiment itself.
 | Exp. Scoped | no |
 | Res. Scoped | yes |
 
+#### Resource: `users/tokens`
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | create an API token for another user (also needs `users` `patch` on them) |
+| Exp. Scoped | no |
+| Res. Scoped | yes |
+
+By default only `Global Admin` has this permission. A user with `users`
+`patch` on themselves creates their own tokens without it.
+
 #### Resource: `users/roles`
 
 |      |      |
@@ -465,6 +629,51 @@ files, but not the experiment itself.
 | Desc | update user role assignments |
 | Exp. Scoped | no |
 | Res. Scoped | yes |
+
+#### Resource: `roles`
+
+|      |      |
+|------|------|
+| Verb | list |
+| Desc | get list of roles (`GET /roles`) |
+| Exp. Scoped | no |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | get a specific role by its config name or display name (`GET /roles/{name}`) |
+| Exp. Scoped | no |
+| Res. Scoped | yes (the name in the request) |
+
+Add `?permissions=true` to either request to also get the permissions that
+each role gives.
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | create a new custom role (`POST /roles`) |
+| Exp. Scoped | no |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | patch |
+| Desc | update the policies of a custom role, and of the users that have it (`PATCH /roles/{name}`) |
+| Exp. Scoped | no |
+| Res. Scoped | yes (the name in the request) |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | delete a custom role that no user has (`DELETE /roles/{name}`) |
+| Exp. Scoped | no |
+| Res. Scoped | yes (the name in the request) |
+
+Only the built-in Global Admin role has `create`, `patch` and `delete` on
+`roles`. A custom role cannot get them. For `get`, `patch` and `delete`, the
+resource name is the role name in the request path. That name can be the
+config name or the name of the role.
 
 #### Resource: `configs`
 
@@ -475,11 +684,18 @@ files, but not the experiment itself.
 | Exp. Scoped | no |
 | Res. Scoped | yes |
 
-Resource names are `<Kind>/<name>`, such as `Topology/riverside-water`.
-`Topology/*` covers every topology, and `*/*` covers every config, User and
-Role configs included. phēnix also checks create and update against the kind
-and name of the config in the request body. So a role scoped to `Topology/*`
-cannot create or overwrite a User or Role config.
+Config permissions are matched against the config's `Kind/name`, not its name
+alone, so write `resourceNames` that way: `Topology/my-topo` rather than
+`my-topo`. A `*` in a resource name never crosses the `/`, so use `*/*` or
+`Topology/*` to cover every config or every topology. `create` and `update`
+are also checked against the `Kind/name` of the config in the request body, so
+a role scoped to `Topology/*` cannot create or overwrite a `User` or `Role`
+config. An update that renames a config or changes its kind also needs
+`create` for the new `Kind/name`.
+
+A `User` config read or written through the configs API never carries the
+user's password hash or API tokens, and an update keeps the stored ones.
+Change a password or a token from the `Users` tab or the users API.
 
 #### Resource: `settings`
 
@@ -529,6 +745,24 @@ the VM.
 | Desc | create ELF memory dumps of experiment VMs |
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
+
+#### Resource: `jobs`
+
+|      |      |
+|------|------|
+| Verb | list, get, update, delete |
+| Desc | list, read (and download the artifact of), cancel, and dismiss [background jobs](jobs.md) other users started; a user always may for their own |
+| Exp. Scoped | yes (the job's experiment; a job of no experiment needs `jobs/global` instead) |
+| Res. Scoped | no |
+
+#### Resource: `jobs/global`
+
+|      |      |
+|------|------|
+| Verb | list, get, update, delete |
+| Desc | as for `jobs`, for the background jobs of no experiment, such as disk clones, that other users started |
+| Exp. Scoped | no |
+| Res. Scoped | no |
 
 ### Built-In Roles
 
@@ -636,6 +870,11 @@ spec:
     - list
 ```
 
+!!! note
+    On startup the UI server adds `experiments/files` `delete` to stored
+    `Experiment Admin` roles, and a `jobs` policy scoped to each user's
+    experiments. `Experiment User` can upload but not delete experiment files.
+
 #### Experiment User (`experiment-user`)
 
 ```yaml
@@ -716,6 +955,11 @@ spec:
     - post
     - delete
 ```
+
+!!! note
+    On startup the UI server scopes the `vms/mount` policy of every user
+    assigned `Experiment Viewer` to the same resource names as the user's
+    `vms` policy.
 
 #### VM Admin (`vm-admin`)
 

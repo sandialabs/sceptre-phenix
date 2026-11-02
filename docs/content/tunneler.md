@@ -13,14 +13,16 @@ UI.
 
 ## Downloading the Tunneler
 
-Click the `Tunneler` button (a download icon) near the right-hand end of the
+Click the `Tunneler` button (an archway icon) near the right-hand end of the
 banner at the top of the phēnix UI.
 
-![The Tunneler page, opened from the Tunneler button in the banner, with the Tunneler Downloads table above the Quick Start and its Tunneler Documentation button](images/tunneler_page.png)
+![The Tunneler page, opened from the Tunneler button in the banner, with the Tunneler Downloads table above the Quick Start, and the Tunneler Documentation button after the Quick Start text](images/tunneler_page.png)
 
-This page lists the `phenix-tunneler` binaries built for the phēnix
-instance's version, along with a download link for each supported OS and
-architecture:
+The page starts with a `Tunneler Downloads` table of the `phenix-tunneler`
+builds installed on the phēnix server, with a `Download` link for each OS and
+architecture. Below it, a `Quick Start` summarizes the steps described below.
+
+phēnix ships these builds:
 
 | OS      | Architecture |
 | ------- | ------------ |
@@ -28,6 +30,9 @@ architecture:
 | macOS   | arm64        |
 | macOS   | amd64        |
 | Windows | amd64        |
+
+If the server holds no builds, the table says so. If the server does not
+serve tunneler binaries at all, the page says that in place of the table.
 
 Download the binary that matches your local machine and make it
 executable (on Linux/macOS, `chmod +x phenix-tunneler-<os>-<arch>`).
@@ -116,6 +121,14 @@ traffic will be forwarded through the phēnix UI server to the VM.
 Existing port forwards for a VM are listed in the `Port forwards` section
 of the same VM details, each with the user that created it, and can be
 removed by clicking the trash icon next to a forward.
+
+On the phēnix server, `phenix vm forward add`, `list` and `remove` do the
+same through the running `phenix ui`. A forward that the command line adds
+has the owner `global-admin`, so a tunneler of another user must activate it.
+
+```shell
+phenix vm forward add <experiment name> <vm name> 80 --host 10.0.0.5 --source-port 8080
+```
 
 ## Managing Listeners from the Local Web App
 

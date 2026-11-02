@@ -30,6 +30,18 @@ E2E_BASE_URL=http://127.0.0.1:3080 npm run docs-screenshots -- -g disks_table
 `E2E_BASE_URL` set. `DOCS_IMAGES_DIR` writes the images somewhere else, for
 comparing them before replacing the committed ones.
 
+`login_create` and `create_new_account` show the sign-in page, so they need a
+`phenix ui` built with `VITE_AUTH=enabled` and started with
+`--jwt-signing-key`. Run them on their own, with `E2E_BASE_URL` pointing at
+that server:
+
+```bash
+E2E_BASE_URL=http://127.0.0.1:3081 npm run docs-screenshots -- -g 'login_create|create_new_account'
+```
+
+`settings_page` shows the server's own default settings, so it needs no
+sample data.
+
 Pages render at 1600 by 900 pixels at twice the pixel density. Review the new
 images, and the alt text of each one in the docs, before committing them.
 

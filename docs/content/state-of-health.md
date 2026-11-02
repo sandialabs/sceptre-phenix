@@ -7,16 +7,91 @@ collect the experiment health state data. See the [command and control](#command
 
 ## User Interface
 
-SoH information is presented in the UI in two separate tabs. You can access
-the information by clicking the SoH button from the Experiments or Running
-Experiment components. The `SoH` tab in the navbar summarizes
-every experiment in one table.
-
-Button available on the experiments table.
+SoH information is presented in the UI in two places. The `SoH` tab in
+the navbar summarizes every experiment in one table (see
+[State of Health Overview](#state-of-health-overview)). Each experiment also
+has its own SoH page, with its [topology graph](#topology-graph) and, when SoH
+[packet capture](#packet-capture) is enabled, its
+[network volume](#network-volume). To open an experiment's SoH page, click its
+heartbeat button (tooltip `view state of health`) in the `Actions` column of
+the Experiments table, or beside the `Running` status on the experiment's
+page. Both buttons need `get` on the experiment.
 
 ![The Actions column of the Experiments table, where each row has start, stop, delete, State of Health heartbeat and SCORCH fire buttons, grayed out where they do not apply.](images/exps_soh.png){: width=200 .center}
 
-### Topology Graph
+On an experiment's SoH page, `Go to experiment` returns to the experiment, a
+book button opens this documentation page, and a flame button opens the
+experiment's [SCORCH](scorch.md) runs. Two counters above the graph show how
+many VMs and VLANs the current filter is showing, and the status legend is in
+a column to the left of the graph. The refresh control in the header reloads
+either page (see
+[Page Freshness and Refresh](web-ui.md#page-freshness-and-refresh)).
+
+## State of Health Overview
+
+The `SoH` tab in the navbar lists every experiment in one table,
+so you can see which experiments need attention without opening each one. The
+tab needs the `experiments` `list` and `vms` `list` permissions, and it lists
+only the experiments your role may `get`.
+
+![State of Health overview with its filters, summary line and a table of five experiments with each one's status, SoH verdict, VM health bar, checks, reachability, a 12-run trend, last check time and actions.](images/soh_overview.png){: width=800 .center}
+
+Each row describes one experiment:
+
+| Column | Shows |
+|---|---|
+| `Experiment` | the experiment's name, linking to it, with its scenario and VM count beneath |
+| `Experiment Status` | `started`, `stopped`, or what phēnix is doing to it |
+| `SoH` | the experiment's verdict (see below) |
+| `VM Health` | a bar of the experiment's VMs by state, with the counts beneath |
+| `Checks` | how many checks passed out of the total, and how many are failing |
+| `Reachability` | the share of reachability pairs that pass, or `not tested` |
+| `Failing, last 12 runs` | a sparkline of the failing check count of each of the last 12 runs |
+| `Last Check` | when the last run finished and how long ago that was, or `running now…` |
+| `Actions` | a button to run SoH on the experiment, and one to open its topology graph |
+
+The `SoH` column holds one of these verdicts:
+
+| Verdict | Meaning |
+|---|---|
+| `degraded` | a VM that should be up is down, at least 20% of the checked hosts have a failing check, or fewer than 90% of the reachability pairs pass |
+| `checks failing` | at least one check is failing, but the experiment is not `degraded` |
+| `waiting for start` | the `soh` app is configured, but the experiment is not running yet |
+| `waiting for first run` | the experiment is running, but the app has no results yet |
+| `healthy` | every check the app ran passed |
+| `not configured` | the experiment's scenario does not include the `soh` app |
+
+Rows are marked red for `degraded` and orange for `checks failing`. The table
+is sorted by verdict, worst first, and can also be sorted by `Experiment`,
+`Experiment Status`, `Checks` and `Last Check`.
+
+Above the table, the `All`, `Needs attention`, `Healthy` and `No SOH data`
+filters each count the experiments they hold, and the `Find an Experiment` box
+narrows the table by name. A one-line summary beside the filters gives how
+many experiments SoH is active on, how many hosts are failing checks, and how
+many VMs are down.
+
+Expand the row of an experiment with problems to list them by `Host`, `Check`,
+`Target`, `Result` and `Checked`, failing checks first, then the VMs that are
+down. The detail has `Open topology graph` and `Run SOH` buttons, and a
+`Show all N problems` link when it lists only some of them.
+
+![Expanded ics-water-plant row listing 6 of its 9 problems by host, check type, target and result, with Open topology graph and Run SOH buttons and a Show all 9 problems link.](images/soh_overview_detail.png){: width=800 .center}
+
+A legend under the table names the colors of the `VM Health` bar. A VM counts
+as down only when it should be up: a VM marked Do Not Boot, an external
+device, or a VM still waiting for its delayed start is not a problem.
+
+`Run SOH` in a row's `Actions` column triggers a new run for that experiment.
+When a run cannot be triggered, the button is disabled and its tooltip says
+why.
+
+The overview reloads when an experiment, a VM or an `soh` run changes, and
+while a run is in progress. While an experiment is starting or stopping, the
+overview shows each running experiment's VM states as it last read them, and
+says `states may be out of date` under the `VM Health` bar.
+
+## Topology Graph
 
 This tab displays a network graph of the running experiment.
 
@@ -32,7 +107,12 @@ could be:
 * `External / HIL` (an [external node](configuration.md#external-nodes), i.e.
   hardware in the loop, not deployed by minimega)
 
-It is also possible to filter the graph based on nodes that are either:
+Those five conditions, along with the icon used for a VLAN segment, make up
+the legend to the left of the graph. While the experiment is stopped, its VMs
+are drawn without a status color. External nodes keep theirs.
+
+The graph can also be filtered to one condition, with the filters above the
+graph:
 
 * `All` (the default)
 * `Running`
@@ -41,11 +121,18 @@ It is also possible to filter the graph based on nodes that are either:
 * `Not deployed`
 * `External / HIL`
 
+The filter you pick is kept when the graph reloads, and the VM and VLAN
+counters above the graph show how much of the experiment it is showing. When
+nothing matches, choose `All` to see every node again.
+
 The `Refresh Network` button reloads the graph data from the server. It keeps
 the filter you picked.
 
-The `Run SOH` button triggers a new SoH run. To get the latest server-side SoH
-data without a new run, use the `Refresh Network` button.
+The `Run SOH` button triggers a new SoH run. It is only shown to roles that
+may trigger apps for the experiment. While a run cannot be triggered, it is
+replaced by a disabled button that says why, such as `Exp Not Running`. To
+bring in the latest SoH data without running the checks again, use the
+`Refresh Network` button.
 
 Before the first SoH run, a note beside the buttons tells you why there are no
 results:
@@ -94,7 +181,55 @@ example of no SoH information with the VNC button disabled.
 
 ![VM Details dialog saying there is no state of health data available for the VM.](images/soh_no_details.png){: width=800 .center}
 
-### External Devices
+## Graph Layouts
+
+The `Layout` picker in the bar above the graph decides how the nodes are
+arranged. The hint for the layout you picked is shown beside the picker.
+
+![Layout picker with the Force, Radial, Layered, VLANs and ELK buttons, Force selected as the default physics simulation.](images/soh_layout_picker.png){: width=800 .center}
+
+| Layout | What it draws |
+|---|---|
+| `Force` | `Physics simulation (default)`: nodes repel each other and their links pull them together |
+| `Radial tree` | `Rings out from the core router`: the most central router or firewall in the middle, everything else in rings by hop distance |
+| `Layered` | `Top-down tiers (dagre)`: the core on top, VLANs under their routers, hosts below |
+| `VLAN groups` | `Hosts boxed by VLAN (cola.js)`: a labeled box per VLAN around the hosts on it |
+| `ELK layered` | `Top-down tiers with host blocks (ELK)`: tiers like `Layered`, arranged by the ELK engine |
+
+![State of Health graph in the Layered layout, with the router at the top and VLAN segments grouping their VMs in tiers below.](images/soh_layout_layered.png){: width=800 .center}
+
+Your choice is remembered in the browser. `VLAN groups` is disabled on graphs
+of more than 300 nodes, and a layout that fails to load falls back to `Force`
+with an error notification. Hovering, clicking and the status colors work the
+same in every layout.
+
+The `Fit` button zooms the whole graph into view. The graph refits itself when
+the window is resized, unless you have zoomed or panned it.
+
+## Downloading the Graph
+
+The `Download` menu beside the `Fit` button saves the graph as drawn, in one of
+three formats.
+
+![Graph Download menu offering PNG, SVG and GEXF (for Gephi) files.](images/soh_download_menu.png){: width=800 .center}
+
+| Format | Menu hint | What you get |
+|---|---|---|
+| `PNG` | `Image of the graph, 2× size` | A bitmap at twice the drawing's size |
+| `SVG` | `Vector image, scales cleanly` | A standalone vector image that can be scaled or edited |
+| `GEXF` | `Graph with VM and SOH data for Gephi` | A GEXF 1.3 graph file for [Gephi](https://gephi.org/) and Gephi Lite |
+
+The PNG and the SVG are sized so the whole graph fits. Both carry a title
+naming the experiment, the VM and VLAN counts, the filter, the layout, the date
+and the legend. The GEXF file holds each VM and VLAN node with its status, OS
+type, VM state, SoH check results and position, and an edge for each interface.
+When [network volume](#network-volume) data is available, the traffic flows are
+added as weighted edges. VM details such as host and addresses are included
+only if your role may list the experiment's VMs.
+
+Downloads are named `<experiment>-soh-<layout>-<timestamp>.<ext>`.
+
+## External Devices
 
 Experiments that include hardware-in-the-loop or other devices not deployed by
 minimega can still represent them in the topology graph by adding them to the
@@ -127,7 +262,7 @@ to/from the device from another VM in the experiment.
     with no `vlan` set on its interface(s) will appear in the graph as an
     isolated node with no connecting lines.
 
-### Network Volume
+## Network Volume
 
 This tab displays a chord graph that shows network flows between nodes using
 flows from Packetbeat fed to Elasticsearch; connections represent the volume of
@@ -165,6 +300,24 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
   string](https://golang.org/pkg/time/#ParseDuration) specifying how long to
   wait for the `miniccc` C2 client to become active in a VM before moving on and
   marking the VM as not to be monitored. The default is `5m`.
+
+* `c2AppearGrace`: a [Golang duration
+  string](https://golang.org/pkg/time/#ParseDuration) specifying how long a
+  C2 command can take to show on the cluster host that has the VM's `miniccc`
+  client. If the command does not show in this time, the check fails at once.
+  `0s` disables this limit. The default is `30s`.
+
+* `c2ClientGrace`: a [Golang duration
+  string](https://golang.org/pkg/time/#ParseDuration) specifying how long the
+  `miniccc` client of a VM can be absent while a check waits for its response.
+  If the client stays absent for longer, the check fails with the error for an
+  inactive C2 client, and SoH sends no more checks to the VM during that SoH run.
+  `0s` disables this limit. The default is `90s`.
+
+* `c2Concurrency`: the maximum number of C2 checks that one SoH run sends at the
+  same time. The other checks wait until a check ends. This wait does not count
+  against `c2Timeout`. A value of `0` or less removes the limit. The default is
+  `16`.
 
 * `exitOnError`: a boolean representing whether the app should cause the entire
   experiment deployment to fail if it has any errors. The default is `false`.
@@ -422,8 +575,9 @@ added to the experiment topology so they do not clutter the phenix UI.
 When packet capture is enabled, the phenix UI SoH tab will include a Network
 Volume tab that uses network flow data queried from Elasticsearch to populate a
 chord graph in an effort to depict how much traffic is flowing between VMs.
-Users/Analysts can also access Kibana using VNC via the phenix UI to do
-additional analysis on the network flow data that's being captured.
+Users/Analysts can also access Kibana using
+VNC via the phenix UI to do additional analysis on the network flow data that's
+being captured.
 
 ## Sample SoH Scenario Config
 
@@ -551,3 +705,14 @@ are permitted, for example at the end of a process pattern. minimega also
 replaces a value that starts with `file:`, `http:`, `https:`, or `tar:`, so
 SoH does not send that check. For each check that SoH does not send, the
 check result shows an error.
+
+### SoH Run History
+
+Besides the per-host results of its latest run, the `soh` app records each
+finished run in its app status: `lastRun` (when the run finished),
+`lastRunDuration` (in seconds), and `history`, a summary of the last 20 runs.
+Each history entry holds the run's `time` and `duration`, the `total` number
+of checks it ran, how many were `failing`, and the `hostsFailing` and
+`hostsDown` counts. The
+[State of Health Overview](#state-of-health-overview) takes its `Last Check`
+column and its `Failing, last 12 runs` sparkline from this history.

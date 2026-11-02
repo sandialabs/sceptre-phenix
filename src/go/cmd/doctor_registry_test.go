@@ -1044,14 +1044,17 @@ func TestContainerHint(t *testing.T) {
 	}
 }
 
-// The check table in settings.md lists every registered check, by id, with
+// doctorDocPath is the page whose Checks table lists every doctor check.
+const doctorDocPath = "../../../docs/content/doctor.md"
+
+// The check table in doctor.md lists every registered check, by id, with
 // its group, and nothing else.
 func TestDoctorChecksMatchDocs(t *testing.T) {
 	t.Parallel()
 
 	got := make(map[string]string)
 
-	for _, row := range docTable(t, settingsDocPath, "Checking the Configuration", 4) {
+	for _, row := range docTable(t, doctorDocPath, "Checks", 4) {
 		group := firstSpan(row[1])
 		for _, m := range codeSpan.FindAllStringSubmatch(row[0], -1) {
 			got[m[1]] = group
@@ -1064,7 +1067,7 @@ func TestDoctorChecksMatchDocs(t *testing.T) {
 	}
 
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("%s check table does not match the registered checks (-registry +docs):\n%s", settingsDocPath, diff)
+		t.Errorf("%s check table does not match the registered checks (-registry +docs):\n%s", doctorDocPath, diff)
 	}
 }
 
