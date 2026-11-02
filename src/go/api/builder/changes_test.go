@@ -300,3 +300,110 @@ func TestDescribePublishChangesOfAnExperiment(t *testing.T) {
 		t.Errorf("DescribePublishChanges(held experiment).Experiment mismatch (-want +got):\n%s", diff)
 	}
 }
+
+// TestDescribePublishChangesRefusesUndecodableConfigs describes no change
+// when one of the configs does not decode.
+func TestDescribePublishChangesRefusesUndecodableConfigs(t *testing.T) {
+	t.Parallel()
+
+	undecodable := map[string]any{"nodes": "not a list of nodes"}
+	stored := changesConfig(t, "Topology", "riverside", undecodable, nil)
+	experiment := changesConfig(t, "Experiment", "lab", map[string]any{
+		"vlans": map[string]any{"aliases": map[string]any{"ot": "not a VLAN"}},
+	}, nil)
+
+	for _, test := range []struct {
+		name  string
+		state PublishState
+	}{
+		{
+			name:  "the published spec",
+			state: PublishState{TopologyName: "riverside", Spec: undecodable},
+		},
+		{
+			name:  "the stored topology",
+			state: PublishState{TopologyName: "riverside", Spec: changesSpec(nil), StoredTopology: stored},
+		},
+		{
+			name: "the stored experiment",
+			state: PublishState{
+				TopologyName: "riverside", Spec: changesSpec(nil),
+				Experiment: &ExperimentState{Name: "lab", Stored: experiment, Held: false},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			changes, err := DescribePublishChanges(test.state)
+			if changes != nil {
+				t.Errorf("DescribePublishChanges(%s) = %+v, want nil", test.name, changes)
+			}
+
+			if err == nil {
+				t.Errorf("DescribePublishChanges(%s) returned no error, want the decoding error", test.name)
+			}
+		})
+	}
+}
+
+func TestNamesDiskImage(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name string
+		spec map[string]any
+		want bool
+	}{
+		{name: "no spec", spec: nil, want: false},
+		{name: "no nodes", spec: changesSpec([]string{"plant-a"}), want: false},
+		{name: "drives without an image", spec: changesSpec(nil, changesNode("fw", "", "")), want: false},
+		{name: "a node without drives", spec: changesSpec(nil, changesNode("fw")), want: false},
+		{name: "an image", spec: changesSpec(nil, changesNode("fw", "vyos.qc2")), want: true},
+		{name: "an image on a later drive", spec: changesSpec(nil, changesNode("fw", "", "data.qc2")), want: true},
+		{name: "an image of a node without a hostname", spec: changesSpec(nil, changesNode("", "vyos.qc2")), want: true},
+		{name: "a spec that does not decode", spec: map[string]any{"nodes": "fw"}, want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := NamesDiskImage(test.spec); got != test.want {
+				t.Errorf("NamesDiskImage(%v) = %t, want %t", test.spec, got, test.want)
+			}
+		})
+	}
+}
+
+func TestHasTopologyAnnotation(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		value string
+		want  bool
+	}{
+		{value: "", want: false},
+		{value: "riverside", want: true},
+		{value: " riverside\t", want: true},
+		{value: "plant-a,riverside", want: true},
+		{value: "plant-a , riverside ,plant-b", want: true},
+		{value: ",,riverside,", want: true},
+		{value: "riverside-old", want: false},
+		{value: "river", want: false},
+		{value: "Riverside", want: false},
+		{value: "plant-a;riverside", want: false},
+		{value: "riverside\u00e9", want: false},
+	} {
+		t.Run(test.value, func(t *testing.T) {
+			t.Parallel()
+
+			if got := HasTopologyAnnotation(test.value, "riverside"); got != test.want {
+				t.Errorf("HasTopologyAnnotation(%q, riverside) = %t, want %t", test.value, got, test.want)
+			}
+		})
+	}
+
+	// A name with an accent matches only in the same Unicode form.
+	if !HasTopologyAnnotation("na\u00efve", "na\u00efve") || HasTopologyAnnotation("nai\u0308ve", "na\u00efve") {
+		t.Error("HasTopologyAnnotation of naïve matches another Unicode form, or not its own")
+	}
+}

@@ -54,6 +54,13 @@ func TestValidateIconKeys(t *testing.T) {
 		{name: "traversal", key: "..icon", wantMsg: "not a URL or path"},
 		{name: "windows path", key: `c:\icons\a.svg`, wantMsg: "not a URL or path"},
 		{name: "data uri", key: "data:image/png;base64,AAAA", wantMsg: "not a URL or path"},
+		{name: "query", key: "router?size=2", wantMsg: "not a URL or path"},
+		{name: "fragment", key: "router#v2", wantMsg: "not a URL or path"},
+		{name: "relative windows path", key: `icons\router`, wantMsg: "not a URL or path"},
+		{name: "traversal inside", key: "icons..router", wantMsg: "not a URL or path"},
+		{name: "hidden file", key: ".router", wantMsg: "not a URL or path"},
+		{name: "case variant", key: "Router", wantMsg: "unknown icon key"},
+		{name: "not ASCII", key: "routér", wantMsg: "unknown icon key"},
 	}
 
 	for _, test := range tests {

@@ -1,9 +1,13 @@
 package builder
 
 import (
+	"maps"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
 
 	"phenix/types/builder"
 )
@@ -64,6 +68,20 @@ func TestPruneHostPins(t *testing.T) {
 			},
 		},
 		{
+			name:        "another Unicode form",
+			schedules:   map[string]string{"\u00e9cole": "compute1", "na\u00efve": "compute2"},
+			hostnames:   []string{"cafe\u0301", "na\u00efve"},
+			wantKept:    map[string]string{"na\u00efve": "compute2"},
+			wantRemoved: []HostPin{{Hostname: "\u00e9cole", Host: "compute1", RenamedTo: ""}},
+		},
+		{
+			name:        "a hostname listed twice",
+			schedules:   map[string]string{"plc-1": "compute1", "hmi": "compute2"},
+			hostnames:   []string{"plc-1", "plc-1"},
+			wantKept:    map[string]string{"plc-1": "compute1"},
+			wantRemoved: []HostPin{{Hostname: "hmi", Host: "compute2", RenamedTo: ""}},
+		},
+		{
 			name:        "no pins",
 			schedules:   map[string]string{},
 			hostnames:   []string{"plc-1"},
@@ -107,6 +125,58 @@ func TestPruneHostPinsKeepsUnchangedSchedules(t *testing.T) {
 	if _, ok := schedules["hmi"]; !ok {
 		t.Errorf("PruneHostPins(%v, [plc-1]) returned a copy, want the schedules themselves", schedules)
 	}
+}
+
+// TestPruneHostPinsPartitionsSchedules checks that every pin is kept or
+// removed, never both, and that only the pins of a node are kept.
+func TestPruneHostPinsPartitionsSchedules(t *testing.T) {
+	t.Parallel()
+
+	names := rapid.SampledFrom([]string{"plc-1", "PLC-1", "hmi", "historian", "\u00e9cole", ""})
+
+	rapid.Check(t, func(rt *rapid.T) {
+		schedules := rapid.MapOf(names, rapid.SampledFrom([]string{"compute1", "compute2"})).Draw(rt, "schedules")
+		hostnames := rapid.SliceOf(names).Draw(rt, "hostnames")
+
+		kept, removed := PruneHostPins(schedules, hostnames)
+
+		got := maps.Clone(kept)
+		if got == nil {
+			got = map[string]string{}
+		}
+
+		for _, pin := range removed {
+			if slices.Contains(hostnames, pin.Hostname) {
+				rt.Errorf("PruneHostPins(%v, %q) removed the pin of node %q", schedules, hostnames, pin.Hostname)
+			}
+
+			if _, ok := got[pin.Hostname]; ok {
+				rt.Errorf("PruneHostPins(%v, %q) kept and removed the pin of %q", schedules, hostnames, pin.Hostname)
+			}
+
+			got[pin.Hostname] = pin.Host
+		}
+
+		for hostname := range kept {
+			if !slices.Contains(hostnames, hostname) {
+				rt.Errorf("PruneHostPins(%v, %q) kept the pin of %q, which is no node", schedules, hostnames, hostname)
+			}
+		}
+
+		if !slices.IsSortedFunc(removed, func(a, b HostPin) int { return strings.Compare(a.Hostname, b.Hostname) }) {
+			rt.Errorf("PruneHostPins(%v, %q) removed %v, want them sorted by hostname", schedules, hostnames, removed)
+		}
+
+		want := schedules
+		if want == nil {
+			want = map[string]string{}
+		}
+
+		if diff := cmp.Diff(want, got); diff != "" {
+			rt.Errorf("PruneHostPins(%v, %q) kept and removed pins mismatch with the schedules (-want +got):\n%s",
+				schedules, hostnames, diff)
+		}
+	})
 }
 
 // renamesDevice returns a device node with the ID and hostname given.
@@ -189,6 +259,23 @@ func TestDeviceRenames(t *testing.T) {
 			current:  renamesDocument(renamesDevice(builder.DeviceNodeID("historian"), "historian-2")),
 			hostname: "historian",
 			want:     "historian-2",
+		},
+		{
+			name:     "a note with the node ID an import gives",
+			previous: nil,
+			current: renamesDocument(builder.Node{
+				ID: builder.DeviceNodeID("hmi"), Kind: builder.NodeKindNote, Label: "hmi-2",
+				Note: &builder.Note{Text: "hmi-2", Color: ""}, Device: &builder.Device{Hostname: "hmi-2"},
+			}),
+			hostname: "hmi",
+			want:     "",
+		},
+		{
+			name:     "a device node without a device",
+			previous: renamesDocument(builder.Node{ID: randomID, Kind: builder.NodeKindDevice, Device: nil}),
+			current:  renamesDocument(builder.Node{ID: builder.DeviceNodeID("plc-1"), Kind: builder.NodeKindDevice, Device: nil}),
+			hostname: "plc-1",
+			want:     "",
 		},
 		{
 			name:     "added in the editor, no earlier document",

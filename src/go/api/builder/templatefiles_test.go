@@ -534,3 +534,103 @@ func TestLoadServerTemplatesWhenTheDirectoryIsAFile(t *testing.T) {
 		t.Errorf("log of a directory that is a file mismatch (-want +got):\n%s", diff)
 	}
 }
+
+// TestReadTemplateDirectorySizeLimit reads a file at the size limit, and
+// skips a file one byte past it without reading it.
+func TestReadTemplateDirectorySizeLimit(t *testing.T) {
+	directory := t.TempDir()
+	text := templateFileText("At the limit", "", nil, "PLC") + "#"
+	text += strings.Repeat("x", builder.MaxTemplateFileBytes-len(text))
+
+	writeTemplateFile(t, directory, "a-limit.yaml", text)
+
+	large := filepath.Join(directory, "b-large.yaml")
+	writeTemplateFile(t, directory, "b-large.yaml", "")
+
+	if err := os.Truncate(large, builder.MaxTemplateFileBytes+1); err != nil {
+		t.Fatalf("growing b-large.yaml: %v", err)
+	}
+
+	found, err := ReadTemplateDirectory(directory)
+	if err != nil {
+		t.Fatalf("ReadTemplateDirectory returned error: %v", err)
+	}
+
+	if diff := cmp.Diff([][]string{{"PLC"}}, templateNames(found.Collections)); diff != "" {
+		t.Errorf("ReadTemplateDirectory template names mismatch (-want +got):\n%s", diff)
+	}
+
+	want := []TemplateFileProblem{{File: "b-large.yaml", Reason: "is larger than 8388608 bytes"}}
+	if diff := cmp.Diff(want, found.Problems); diff != "" {
+		t.Errorf("ReadTemplateDirectory problems mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestLoadServerTemplatesWhenIconsCannotBeAdded reads the collections of the
+// files, and logs a warning, when the icon library cannot be listed or a store
+// write fails.
+func TestLoadServerTemplatesWhenIconsCannotBeAdded(t *testing.T) {
+	refused := errors.New("disk full")
+
+	for _, tt := range []struct {
+		name    string
+		cancel  bool
+		message string
+		fields  []string
+		want    map[string]string
+	}{
+		{
+			name: "a canceled context", cancel: true,
+			message: "builder template file icons cannot be added: the icon library cannot be listed",
+			fields:  []string{"level"}, want: map[string]string{"level": "WARN"},
+		},
+		{
+			name:    "the store refuses",
+			message: "builder template file icon cannot be added to the icon library",
+			fields:  []string{"level", "file", "icon"},
+			want:    map[string]string{"level": "WARN", "file": "one.yaml", "icon": "fresh"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			logs := plogtest.Capture(t)
+			directory := t.TempDir()
+
+			writeTemplateFile(t, directory, "one.yaml", templateFileText("One", "fresh", iconPixel(t, 2), "PLC"))
+
+			h.store.BeforeCreate = func(namespace, _ string) error {
+				if namespace == NamespaceIcons {
+					return refused
+				}
+
+				return nil
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			if tt.cancel {
+				cancel()
+			}
+
+			problems := h.service.LoadServerTemplates(ctx, directory)
+
+			cancel()
+
+			if len(problems) != 0 {
+				t.Errorf("LoadServerTemplates = %v, want no problems", problems)
+			}
+
+			if diff := cmp.Diff([][]string{{"PLC"}}, templateNames(h.service.ServerCollections())); diff != "" {
+				t.Errorf("ServerCollections() template names mismatch (-want +got):\n%s", diff)
+			}
+
+			if h.store.Count(NamespaceIcons) != 0 {
+				t.Errorf("icon records = %q, want none", h.store.Keys(NamespaceIcons))
+			}
+
+			records := logs.Records(t, plogtest.Message(tt.message))
+			if diff := cmp.Diff([]map[string]string{tt.want}, logFields(records, tt.fields...)); diff != "" {
+				t.Errorf("log %q mismatch (-want +got):\n%s", tt.message, diff)
+			}
+		})
+	}
+}

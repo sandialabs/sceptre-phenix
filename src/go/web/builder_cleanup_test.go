@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 	"strings"
@@ -316,5 +317,134 @@ func TestBuilderSweepEveryStops(t *testing.T) {
 	case <-done:
 	case <-time.After(10 * time.Second):
 		t.Fatal("sweepEvery did not return within 10s after its context ended")
+	}
+}
+
+func TestBuilderLiveDocuments(t *testing.T) {
+	var (
+		digest = "sha256:" + strings.Repeat("ab", 32)
+		byID   = bapi.PublishedDocumentID("other", digest)
+	)
+
+	topology := func(name, value string) store.Config {
+		config := builderConfig(t, builderKindTopology, name)
+		if value != "" {
+			config.Metadata.Annotations = store.Annotations{bapi.DocumentAnnotation: value}
+		}
+
+		return config
+	}
+
+	tests := []struct {
+		name       string
+		topologies store.Configs
+		want       []bapi.LiveDocument
+		complete   bool
+	}{
+		{
+			name: "every kind of reference",
+			topologies: store.Configs{
+				topology("digest", encodeBuilderReference(t, bapi.DocumentReference{Digest: digest})),
+				topology("id", encodeBuilderReference(t, bapi.DocumentReference{ID: byID})),
+				topology("file", encodeBuilderReference(t, bapi.DocumentReference{Path: "/phenix/lab.json"})),
+				topology("none", ""),
+			},
+			want: []bapi.LiveDocument{
+				{Target: "digest", ID: bapi.PublishedDocumentID("digest", digest)},
+				{Target: "id", ID: byID},
+			},
+			complete: true,
+		},
+		{
+			name: "an invalid reference",
+			topologies: store.Configs{
+				topology("bad", "not a reference"),
+				topology("digest", encodeBuilderReference(t, bapi.DocumentReference{Digest: digest})),
+			},
+			want:     []bapi.LiveDocument{{Target: "digest", ID: bapi.PublishedDocumentID("digest", digest)}},
+			complete: false,
+		},
+		{name: "no topologies", topologies: nil, want: []bapi.LiveDocument{}, complete: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			api := &builderAPI{listConfigs: func(kind string) (store.Configs, error) {
+				if kind != builderKindTopology {
+					t.Errorf("listConfigs(%q), want %q", kind, builderKindTopology)
+				}
+
+				return tt.topologies, nil
+			}}
+
+			live, complete, err := api.liveDocuments()
+			if err != nil {
+				t.Fatalf("liveDocuments() returned error: %v", err)
+			}
+
+			if diff := cmp.Diff(tt.want, live); diff != "" {
+				t.Errorf("liveDocuments() mismatch (-want +got):\n%s", diff)
+			}
+
+			if complete != tt.complete {
+				t.Errorf("liveDocuments() complete = %t, want %t", complete, tt.complete)
+			}
+		})
+	}
+
+	listErr := errors.New("injected listing failure")
+	api := &builderAPI{listConfigs: func(string) (store.Configs, error) { return nil, listErr }}
+
+	if live, complete, err := api.liveDocuments(); !errors.Is(err, listErr) || live != nil || complete {
+		t.Errorf("liveDocuments() of a failed listing = %v, %t, %v, want nil, false, %v", live, complete, err, listErr)
+	}
+}
+
+// TestBuilderCleanupFailsWhenTopologiesCannotBeListed deletes nothing when
+// it cannot tell which documents the topologies reference.
+func TestBuilderCleanupFailsWhenTopologiesCannotBeListed(t *testing.T) {
+	harness := newBuilderHarness(t)
+	clean, _ := builderPublishedDraft(t, harness, "clean")
+
+	harness.reroute(withBuilderConfigs(func(string) (store.Configs, error) {
+		return nil, errors.New("injected listing failure")
+	}, harness.getConfig))
+
+	for _, path := range []string{builderCleanupPath + "?dryRun=true", builderCleanupPath} {
+		recorder := harness.as(builderAlice, nil).do(builderRequest{method: http.MethodPost, path: path})
+		if err := builderStatusError(recorder, http.StatusInternalServerError); err != nil {
+			t.Errorf("POST %s: %v", path, err)
+		}
+	}
+
+	harness.doDecode(builderRequest{method: http.MethodGet, path: "/builder/drafts/" + clean.ID, user: builderAlice},
+		http.StatusOK, nil)
+}
+
+// TestBuilderCleanupKeepsDocumentsWhenAReferenceIsInvalid keeps the orphaned
+// published documents while one topology reference does not decode, because
+// that topology may name one of them. Orphaned content still goes.
+func TestBuilderCleanupKeepsDocumentsWhenAReferenceIsInvalid(t *testing.T) {
+	harness, clock := builderClockHarness(t)
+
+	orphan := builderPutDocument(t, harness, builderKindTopology, "gone", "gone")
+
+	if _, err := harness.store.CreateRecord(bapi.NamespaceContent, "drafts/vanished/snapshot", []byte("orphan")); err != nil {
+		t.Fatalf("CreateRecord returned error: %v", err)
+	}
+
+	bad := builderConfig(t, builderKindTopology, "bad")
+	bad.Metadata.Annotations = store.Annotations{bapi.DocumentAnnotation: "not a reference"}
+	harness.configs = append(harness.configs, bad)
+
+	clock.Add(int64(2 * bapi.OrphanGracePeriod / time.Second))
+
+	want := builderCleanupResponse{DryRun: false, Drafts: []string{}, Documents: 0, Content: 1}
+	if diff := cmp.Diff(want, builderCleanup(t, harness, "")); diff != "" {
+		t.Errorf("POST %s mismatch (-want +got):\n%s", builderCleanupPath, diff)
+	}
+
+	if _, err := harness.service.GetPublishedDocument(t.Context(), orphan.ID); err != nil {
+		t.Errorf("GetPublishedDocument(%s) after the cleanup returned error: %v, want it kept", orphan.ID, err)
 	}
 }

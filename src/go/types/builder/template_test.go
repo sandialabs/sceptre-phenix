@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -248,6 +249,12 @@ func TestTemplateIssuesRefuses(t *testing.T) {
 			mutate:   func(tpl *builder.Template) { tpl.Device = tooLarge },
 			wantPath: ".device",
 			wantMsg:  "template device must take at most 16384 bytes as JSON, not 16385",
+		},
+		{
+			name:     "a spec that JSON cannot hold",
+			mutate:   func(tpl *builder.Template) { tpl.Device.Spec["hardware"] = map[string]any{"vcpus": math.NaN()} },
+			wantPath: ".device",
+			wantMsg:  "template device is not encodable: json: unsupported value: NaN",
 		},
 	}
 
@@ -578,5 +585,26 @@ func TestBuiltinTemplates(t *testing.T) {
 
 	if got := builder.BuiltinTemplates()[1].Name; got != "Workstation" {
 		t.Errorf("BuiltinTemplates() workstation name after changing an earlier result = %q, want Workstation", got)
+	}
+}
+
+// TestTemplateSourceKinds checks the kinds in the order of the schema, and that a template accepts
+// a source of each.
+func TestTemplateSourceKinds(t *testing.T) {
+	kinds := builder.TemplateSourceKinds()
+
+	if diff := cmp.Diff([]builder.TemplateSourceKind{"library", "builtin", "preloaded"}, kinds); diff != "" {
+		t.Errorf("TemplateSourceKinds() mismatch (-want +got):\n%s", diff)
+	}
+
+	for _, kind := range kinds {
+		t.Run(string(kind), func(t *testing.T) {
+			template := sampleTemplate()
+			template.Source = &builder.TemplateSource{Kind: kind, ID: "server", Version: 1}
+
+			if issues := template.Issues("templates[0]"); len(issues) != 0 {
+				t.Errorf("Issues(templates[0]) of a template with a %s source = %v, want none", kind, issues)
+			}
+		})
 	}
 }

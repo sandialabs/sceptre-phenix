@@ -2,8 +2,10 @@ package builder
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -752,5 +754,276 @@ func TestParsePreflightCheck(t *testing.T) {
 		if got, ok := ParsePreflightCheck(name); ok {
 			t.Errorf("ParsePreflightCheck(%q) = %q, true; want false", name, got)
 		}
+	}
+}
+
+func TestPreflightUnavailableErrorMessage(t *testing.T) {
+	const reason = "your role may not list the cluster hosts"
+
+	err := NewPreflightUnavailable(reason)
+
+	var unavailable *PreflightUnavailableError
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("NewPreflightUnavailable(%q) = %T, want a *PreflightUnavailableError", reason, err)
+	}
+
+	if got := err.Error(); got != reason {
+		t.Errorf("NewPreflightUnavailable(%q).Error() = %q, want the reason", reason, got)
+	}
+}
+
+// A check that RunPreflight does not know is unavailable, and the other
+// checks still run.
+func TestRunPreflightUnknownCheck(t *testing.T) {
+	report := RunPreflight(t.Context(), disksDocument(), PreflightRequest{
+		Checks: []PreflightCheck{"everything", PreflightApps}, Experiment: "", Timeout: 0,
+	}, &fakePreflight{})
+
+	want := PreflightReport{
+		Passed: []PreflightCheck{PreflightApps}, Failed: []PreflightCheck{}, Unavailable: []PreflightCheck{"everything"},
+	}
+
+	if diff := cmp.Diff(want, report, cmpopts.IgnoreFields(PreflightReport{}, "Checks")); diff != "" {
+		t.Errorf("RunPreflight(everything, apps) mismatch (-want +got):\n%s", diff)
+	}
+
+	if len(report.Checks) == 2 {
+		if diff := unavailableDiff(report.Checks[0], "There is no such check."); diff != "" {
+			t.Errorf("RunPreflight(everything) result mismatch (-want +got):\n%s", diff)
+		}
+	}
+}
+
+func TestPreflightSpecWhole(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		value any
+		want  int
+		ok    bool
+	}{
+		{name: "number", value: float64(4), want: 4, ok: true},
+		{name: "largest number", value: float64(math.MaxInt32), want: math.MaxInt32, ok: true},
+		{name: "number past the largest", value: float64(math.MaxInt32) + 1},
+		{name: "zero", value: float64(0)},
+		{name: "negative number", value: float64(-2)},
+		{name: "fraction", value: 1.5},
+		{name: "int", value: 3, want: 3, ok: true},
+		{name: "int zero", value: 0},
+		{name: "JSON number", value: json.Number("8"), want: 8, ok: true},
+		{name: "JSON number with a fraction", value: json.Number("8.5")},
+		{name: "text", value: " 16 ", want: 16, ok: true},
+		{name: "text zero", value: "0"},
+		{name: "negative text", value: "-1"},
+		{name: "text that is not a number", value: "four"},
+		{name: "text with an exponent", value: "1e3"},
+		{name: "full-width digits", value: "１６"},
+		{name: "empty text", value: ""},
+		{name: "true", value: true},
+		{name: "nothing", value: nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, ok := specWhole(tt.value); got != tt.want || ok != tt.ok {
+				t.Errorf("specWhole(%#v) = %d, %t; want %d, %t", tt.value, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+func TestPreflightMessageWords(t *testing.T) {
+	for _, tt := range []struct {
+		text, want string
+	}{
+		{text: "", want: ""},
+		{text: "x", want: "X."},
+		{text: "the check passed.", want: "The check passed."},
+		{text: "élan", want: "Élan."},
+		{text: "42 hosts", want: "42 hosts."},
+	} {
+		t.Run("sentence "+tt.text, func(t *testing.T) {
+			if got := sentence(tt.text); got != tt.want {
+				t.Errorf("sentence(%q) = %q, want %q", tt.text, got, tt.want)
+			}
+		})
+	}
+
+	for _, tt := range []struct {
+		names []string
+		want  string
+	}{
+		{names: nil, want: ""},
+		{names: []string{"h1"}, want: "h1"},
+		{names: []string{"h1", "h2", "h3"}, want: "h1, h2, h3"},
+		{names: []string{"h1", "h2", "h3", "h4", "h5"}, want: "h1, h2, h3 and 2 more"},
+	} {
+		t.Run(fmt.Sprintf("listed %d names", len(tt.names)), func(t *testing.T) {
+			if got := listed(tt.names); got != tt.want {
+				t.Errorf("listed(%q) = %q, want %q", tt.names, got, tt.want)
+			}
+		})
+	}
+
+	for n, want := range map[int]string{0: "0 hosts", 1: "1 host", 2: "2 hosts"} {
+		t.Run("plural "+want, func(t *testing.T) {
+			if got := plural(n, "host", "hosts"); got != want {
+				t.Errorf("plural(%d, host, hosts) = %q, want %q", n, got, want)
+			}
+		})
+	}
+}
+
+func TestPreflightImageKinds(t *testing.T) {
+	for _, tt := range []struct {
+		kind                  string
+		fitsVM, fitsContainer bool
+		words                 string
+	}{
+		{kind: PreflightImageVM, fitsVM: true, words: "a VM image"},
+		{kind: PreflightImageISO, fitsVM: true, words: "an ISO image"},
+		{kind: PreflightImageContainer, fitsContainer: true, words: "a container image"},
+		{kind: "", fitsVM: true, fitsContainer: true, words: "an image of unknown kind"},
+		{kind: "vm", fitsVM: true, fitsContainer: true, words: "an image of unknown kind"},
+	} {
+		t.Run(tt.kind, func(t *testing.T) {
+			if got := imageFits(tt.kind, false); got != tt.fitsVM {
+				t.Errorf("imageFits(%q, kvm VM) = %t, want %t", tt.kind, got, tt.fitsVM)
+			}
+
+			if got := imageFits(tt.kind, true); got != tt.fitsContainer {
+				t.Errorf("imageFits(%q, container) = %t, want %t", tt.kind, got, tt.fitsContainer)
+			}
+
+			if got := imageKind(tt.kind); got != tt.words {
+				t.Errorf("imageKind(%q) = %q, want %q", tt.kind, got, tt.words)
+			}
+		})
+	}
+
+	if got := deviceKind(true) + ", " + deviceKind(false); got != "a container, a kvm VM" {
+		t.Errorf("deviceKind(true), deviceKind(false) = %q, want \"a container, a kvm VM\"", got)
+	}
+}
+
+// TestPreflightNetworkNeeds reads the VLANs and bridges of interfaces that are
+// connected, connected under a name in another case, and not connected.
+func TestPreflightNetworkNeeds(t *testing.T) {
+	doc := builder.NewDocument("needs")
+	doc.Networks = []builder.Network{{ID: "net-a", Name: "A"}, {ID: "net-b", Name: "B"}}
+	doc.Nodes = []builder.Node{
+		{ID: "n-sw", Kind: builder.NodeKindSwitch, Switch: &builder.Switch{NetworkID: "net-a"}},
+		preflightNode("n-1", "one", map[string]any{"network": map[string]any{"interfaces": []any{
+			"not an interface",
+			map[string]any{"name": "ETH0", "vlan": "X", "bridge": "phenix"},
+			map[string]any{"name": "Eth0", "vlan": "Y", "bridge": " lab "},
+			map[string]any{"name": "eth9", "vlan": " Z "},
+		}}},
+			builder.InterfaceHandle{ID: "h-1", Name: "eth0", Index: 0},
+			builder.InterfaceHandle{ID: "h-2", Name: "ETH0", Index: 1},
+			builder.InterfaceHandle{ID: "h-3", Name: "eth9", Index: 2},
+		),
+	}
+	doc.Edges = []builder.Edge{
+		{ID: "e1", SourceNodeID: "n-1", SourceHandleID: "h-1", TargetNodeID: "n-sw", NetworkID: "net-a"},
+		// The device is the target of this edge.
+		{ID: "e2", SourceNodeID: "n-sw", TargetNodeID: "n-1", TargetHandleID: "h-2", NetworkID: "net-b"},
+		{ID: "e3", SourceNodeID: "n-1", SourceHandleID: "h-1", TargetNodeID: "n-sw", NetworkID: "net-gone"},
+	}
+
+	needs := networkNeeds(doc)
+
+	// ETH0 is on B through the handle of its exact name. Eth0 is on A through
+	// the first handle of its name in another case. eth9 is not connected.
+	if diff := cmp.Diff([]string{"A", "B", "Z"}, needs.vlans); diff != "" {
+		t.Errorf("networkNeeds VLANs mismatch (-want +got):\n%s", diff)
+	}
+
+	positions := make(map[string]int, len(needs.bridges))
+	for name, use := range needs.bridges {
+		positions[name] = use.position
+	}
+
+	if diff := cmp.Diff(map[string]int{"": 1, "lab": 2}, positions); diff != "" {
+		t.Errorf("networkNeeds bridge first uses mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestPreflightNetworkEdgeCases runs the network check where a part has
+// nothing to compare, or a source has nothing to give.
+func TestPreflightNetworkEdgeCases(t *testing.T) {
+	plain := builder.NewDocument("plain")
+	plain.Nodes = []builder.Node{preflightNode("n-a", "a", map[string]any{})}
+
+	unaliased := networkDocument()
+	unaliased.Networks = append(unaliased.Networks, builder.Network{ID: "net-plain", Name: "PLAIN"})
+
+	unreachable := errors.New("unable to dial")
+
+	for _, tt := range []struct {
+		name       string
+		doc        *builder.Document
+		experiment string
+		env        *fakePreflight
+		status     PreflightStatus
+		issues     []builder.Code
+		text       string
+	}{
+		{
+			name: "nothing to compare reads nothing", doc: plain,
+			env:    &fakePreflight{vlansErr: unreachable, bridgesErr: unreachable},
+			status: PreflightPassed,
+			text:   "The diagram's devices use 0 VLANs. No VLAN range applies, because the check has no experiment.",
+		},
+		{
+			name: "an experiment with no VLAN range", doc: networkDocument(), experiment: "exp",
+			env:    &fakePreflight{bridges: map[string][]string{"h1": {"lab", "phenix"}}},
+			status: PreflightPassed, text: "Experiment exp sets no VLAN range",
+		},
+		{
+			name: "no host lists its bridges", doc: networkDocument(),
+			env:    &fakePreflight{bridges: map[string][]string{}},
+			status: PreflightUnavailable, issues: []builder.Code{builder.CodePreflightUnavailable},
+			text: "No cluster host listed its bridges. The check did not compare bridges.",
+		},
+		{
+			name: "a network without an alias", doc: unaliased,
+			env: &fakePreflight{
+				vlans:   []PreflightVLAN{{ID: 300, Alias: "M", Experiment: "seen"}},
+				bridges: map[string][]string{"h1": {"lab", "phenix"}},
+			},
+			status: PreflightFailed, issues: []builder.Code{builder.CodePreflightNetworkAliasInUse},
+			text: "The check compared 2 VLAN aliases with running experiments",
+		},
+		{
+			name: "a bridge missing on many hosts", doc: networkDocument(),
+			env: &fakePreflight{bridges: map[string][]string{
+				"h1": {"phenix"}, "h2": {"phenix"}, "h3": {"phenix"}, "h4": {"phenix"}, "h5": {"phenix"},
+			}},
+			status: PreflightPassed, issues: []builder.Code{builder.CodePreflightNetworkBridge},
+			text: `bridge "lab" does not exist on hosts h1, h2, h3 and 2 more`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result := runOne(t, tt.doc, PreflightNetwork, tt.experiment, tt.env)
+
+			if result.Status != tt.status {
+				t.Errorf("RunPreflight(network) status = %s, want %s", result.Status, tt.status)
+			}
+
+			if diff := cmp.Diff(tt.issues, issueCodes(result.Issues), cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("RunPreflight(network) issue codes mismatch (-want +got):\n%s", diff)
+			}
+
+			lines := make([]string, 0, len(result.Issues)+1)
+			lines = append(lines, result.Summary)
+
+			for _, issue := range result.Issues {
+				lines = append(lines, issue.Message)
+			}
+
+			text := strings.Join(lines, "\n")
+
+			if !strings.Contains(text, tt.text) {
+				t.Errorf("RunPreflight(network) summary and messages = %q, want them to contain %q", text, tt.text)
+			}
+		})
 	}
 }

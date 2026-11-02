@@ -259,3 +259,59 @@ func TestMemrecordTxnFailsAfterAnInterleavedWrite(t *testing.T) {
 		t.Errorf("Commits() = %d, want 4: three creates and the interleaved update", got)
 	}
 }
+
+// TestRecordTxnRejectsInvalidNamesAndKeys checks that each call of a
+// transaction refuses an invalid namespace, key or prefix, and writes nothing.
+func TestRecordTxnRejectsInvalidNamesAndKeys(t *testing.T) {
+	for name, s := range txnStores(t) {
+		t.Run(name, func(t *testing.T) {
+			txnSeed(t, s)
+			before := txnValues(t, s)
+
+			err := s.RecordTxn(func(tx store.RecordTx) error {
+				for call, check := range map[string]struct {
+					err  error
+					want error
+				}{
+					"GetRecord(txn, /keep)": {
+						err: func() error { _, err := tx.GetRecord(txnNamespace, "/keep"); return err }(), want: store.ErrInvalidRecordKey,
+					},
+					"GetRecord(bad/namespace, keep)": {
+						err:  func() error { _, err := tx.GetRecord("bad/namespace", "keep"); return err }(),
+						want: store.ErrInvalidRecordNamespace,
+					},
+					"CreateRecord(txn, a/./b)": {
+						err: func() error { _, err := tx.CreateRecord(txnNamespace, "a/./b", nil); return err }(), want: store.ErrInvalidRecordKey,
+					},
+					"UpdateRecord(txn, \"\")": {
+						err: func() error {
+							_, err := tx.UpdateRecord(txnNamespace, "", nil, store.AnyRevision)
+							return err
+						}(),
+						want: store.ErrInvalidRecordKey,
+					},
+					"DeleteRecord(.., keep)": {err: tx.DeleteRecord("..", "keep", store.AnyRevision), want: store.ErrInvalidRecordNamespace},
+					"DeleteRecordPrefix(\"\", k)": {
+						err: func() error { _, err := tx.DeleteRecordPrefix("", "k"); return err }(), want: store.ErrInvalidRecordNamespace,
+					},
+					"DeleteRecordPrefix(txn, \"\")": {
+						err: func() error { _, err := tx.DeleteRecordPrefix(txnNamespace, ""); return err }(), want: store.ErrInvalidRecordKey,
+					},
+				} {
+					if !errors.Is(check.err, check.want) {
+						t.Errorf("%s in a transaction error = %v, want %v", call, check.err, check.want)
+					}
+				}
+
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("RecordTxn returned error: %v", err)
+			}
+
+			if diff := cmp.Diff(before, txnValues(t, s)); diff != "" {
+				t.Errorf("records after the refused calls mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

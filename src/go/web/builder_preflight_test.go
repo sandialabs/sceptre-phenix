@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 
 	bapi "phenix/api/builder"
 	"phenix/api/disk"
+	"phenix/app"
 	"phenix/store"
 	bdoc "phenix/types/builder"
 	v1 "phenix/types/version/v1"
@@ -625,5 +627,166 @@ func TestBuilderPreflightAliasesLeaveOutHiddenExperiments(t *testing.T) {
 
 	if want := `running experiment secret uses for VLAN "HIDDEN"`; !strings.Contains(issue.Message, want) {
 		t.Errorf("POST preflight of network for the full role: message = %q, want it to say %q", issue.Message, want)
+	}
+}
+
+// TestDefaultBuilderPreflightSources reads the apps as GET /applications
+// does, and bounds each check by the preflight timeout.
+func TestDefaultBuilderPreflightSources(t *testing.T) {
+	sources := defaultBuilderPreflightSources()
+
+	if sources.clusterHosts == nil || sources.bridges == nil {
+		t.Error("defaultBuilderPreflightSources() reads no cluster hosts or bridges, want minimega's")
+	}
+
+	if sources.timeout != bapi.PreflightTimeout {
+		t.Errorf("defaultBuilderPreflightSources() timeout = %v, want %v", sources.timeout, bapi.PreflightTimeout)
+	}
+
+	// The apps come from a map, in any order.
+	anyOrder := cmpopts.SortSlices(func(a, b string) bool { return a < b })
+
+	if diff := cmp.Diff(app.DefaultApps(), sources.defaultApps(), anyOrder); diff != "" {
+		t.Errorf("defaultBuilderPreflightSources() default apps mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(app.List(), sources.apps(), anyOrder); diff != "" {
+		t.Errorf("defaultBuilderPreflightSources() apps mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestBuilderConfigInt reads a whole number as JSON or YAML decodes it, and
+// 0 for any other value.
+func TestBuilderConfigInt(t *testing.T) {
+	tests := []struct {
+		name  string
+		value any
+		want  int
+	}{
+		{name: "an int", value: 101, want: 101},
+		{name: "an int64", value: int64(102), want: 102},
+		{name: "a float64", value: 103.0, want: 103},
+		{name: "a float64 with a fraction", value: 104.9, want: 104},
+		{name: "a negative float64", value: -5.0, want: -5},
+		{name: "text", value: "105", want: 0},
+		{name: "a boolean", value: true, want: 0},
+		{name: "nothing", value: nil, want: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := builderConfigInt(tt.value); got != tt.want {
+				t.Errorf("builderConfigInt(%#v) = %d, want %d", tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestBuilderScenarioApps lists the apps a scenario runs: each named entry
+// that it does not disable, without the spaces around its name.
+func TestBuilderScenarioApps(t *testing.T) {
+	tests := []struct {
+		name string
+		spec map[string]any
+		want []string
+	}{
+		{name: "no spec", spec: nil, want: []string{}},
+		{name: "apps that are not a list", spec: map[string]any{"apps": "scorch"}, want: []string{}},
+		{
+			name: "entries of each form",
+			spec: map[string]any{"apps": []any{
+				map[string]any{"name": " scorch "},
+				map[string]any{"name": "gone", "disabled": true},
+				map[string]any{"name": "kept", "disabled": false},
+				map[string]any{"name": "odd", "disabled": "yes"},
+				map[string]any{"name": "  "},
+				map[string]any{"name": 3},
+				map[string]any{},
+				"ntp",
+				nil,
+				map[string]any{"name": "\u00e9t\u00e9"},
+			}},
+			want: []string{"scorch", "kept", "odd", "\u00e9t\u00e9"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := builderConfig(t, builderKindScenario, "sc")
+			config.Spec = tt.spec
+
+			if diff := cmp.Diff(tt.want, builderScenarioApps(&config)); diff != "" {
+				t.Errorf("builderScenarioApps(%v) mismatch (-want +got):\n%s", tt.spec, diff)
+			}
+		})
+	}
+}
+
+// TestBuilderPreflightEnvironmentFailures passes on each failure of what the
+// checks read, and reads the cluster hosts once.
+func TestBuilderPreflightEnvironmentFailures(t *testing.T) {
+	failure := errors.New("the source failed")
+	reads := 0
+
+	api := &builderAPI{
+		preflight: builderPreflightSources{
+			clusterHosts: func() (mm.Hosts, error) {
+				reads++
+
+				return nil, failure
+			},
+			bridges: func(...string) (map[string][]string, error) {
+				t.Error("the environment read the bridges after the hosts failed")
+
+				return map[string][]string{}, nil
+			},
+		},
+		getConfig:   func(string) (*store.Config, error) { return nil, failure },
+		listConfigs: func(string) (store.Configs, error) { return nil, failure },
+		disks:       newBuilderDiskLister(func() ([]disk.Details, error) { return nil, failure }, time.Now, builderDiskListWait),
+	}
+	env := newBuilderPreflightEnvironment(api, builderActor{user: builderAlice, role: *builderFullRole()})
+	ctx := t.Context()
+
+	checks := map[string]func() error{
+		"ClusterHosts": func() error { _, err := env.ClusterHosts(ctx); return err },
+		"Bridges":      func() error { _, err := env.Bridges(ctx); return err },
+		"DiskImages":   func() error { _, err := env.DiskImages(ctx); return err },
+		"ScenarioApps": func() error { _, err := env.ScenarioApps(ctx, "sc"); return err },
+		"Experiment":   func() error { _, err := env.Experiment(ctx, "exp"); return err },
+		"VLANsInUse":   func() error { _, err := env.VLANsInUse(ctx, ""); return err },
+	}
+
+	for name, check := range checks {
+		if err := check(); !errors.Is(err, failure) {
+			t.Errorf("%s() error = %v, want %v", name, err, failure)
+		}
+	}
+
+	if reads != 1 {
+		t.Errorf("the environment read the cluster hosts %d times, want 1", reads)
+	}
+}
+
+// TestBuilderPreflightBridgesOfNoHost reads no bridges when no host that the
+// caller may list is schedulable.
+func TestBuilderPreflightBridgesOfNoHost(t *testing.T) {
+	api := &builderAPI{preflight: builderPreflightSources{
+		clusterHosts: func() (mm.Hosts, error) { return mm.Hosts{{Name: "head", Schedulable: false}}, nil },
+		bridges: func(...string) (map[string][]string, error) {
+			t.Error("the environment read the bridges of no host")
+
+			return map[string][]string{}, nil
+		},
+	}}
+	env := newBuilderPreflightEnvironment(api, builderActor{user: builderAlice, role: *builderFullRole()})
+
+	got, err := env.Bridges(t.Context())
+	if err != nil {
+		t.Fatalf("Bridges() error: %v", err)
+	}
+
+	if diff := cmp.Diff(map[string][]string{}, got); diff != "" {
+		t.Errorf("Bridges() mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -2,6 +2,8 @@ package builder_test
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -133,5 +135,104 @@ func TestFrontendCodesMatchRegistry(t *testing.T) {
 
 	if len(decoded) != len(builder.Codes()) {
 		t.Errorf("%s holds %d codes, want %d", frontendCodes, len(decoded), len(builder.Codes()))
+	}
+}
+
+func TestCodeDefaultSeverity(t *testing.T) {
+	for _, test := range []struct {
+		code builder.Code
+		want builder.Severity
+	}{
+		{code: builder.CodeNodeHostnameRequired, want: builder.SeverityError},
+		{code: builder.CodeNetworkSwitchMissing, want: builder.SeverityWarning},
+		{code: "node.hostname.unheard-of", want: builder.SeverityError},
+		{code: "", want: builder.SeverityError},
+	} {
+		t.Run(string(test.code), func(t *testing.T) {
+			if got := test.code.DefaultSeverity(); got != test.want {
+				t.Errorf("Code(%q).DefaultSeverity() = %q, want %q", test.code, got, test.want)
+			}
+		})
+	}
+}
+
+func TestNewIssue(t *testing.T) {
+	want := builder.Issue{
+		Code: builder.CodeNetworkSwitchMissing, Severity: builder.SeverityWarning, Path: "networks[2]", Message: "no switch",
+	}
+	if diff := cmp.Diff(want, builder.NewIssue(builder.CodeNetworkSwitchMissing, "networks[2]", "no switch")); diff != "" {
+		t.Errorf("NewIssue(network.switch.missing) mismatch (-want +got):\n%s", diff)
+	}
+
+	// A code the registry does not hold is an error.
+	want = builder.Issue{Code: "x.unheard-of", Severity: builder.SeverityError, Message: "ñandú"}
+	if diff := cmp.Diff(want, builder.NewIssue("x.unheard-of", "", "ñandú")); diff != "" {
+		t.Errorf("NewIssue(x.unheard-of) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestIssueMessages(t *testing.T) {
+	issues := []builder.Issue{
+		builder.NewIssue(builder.CodeNodeHostnameRequired, "nodes[0]", "first"),
+		builder.NewIssue(builder.CodeNetworkSwitchMissing, "networks[0]", ""),
+		builder.NewIssue(builder.CodeNodeHostnameRequired, "nodes[1]", "third"),
+	}
+
+	if diff := cmp.Diff([]string{"first", "", "third"}, builder.IssueMessages(issues)); diff != "" {
+		t.Errorf("IssueMessages() mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff([]string{}, builder.IssueMessages(nil)); diff != "" {
+		t.Errorf("IssueMessages(nil) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// listedIssuesError is an error that lists its issues, as a publish blocker does.
+type listedIssuesError struct {
+	issues []builder.Issue
+}
+
+func (e listedIssuesError) Error() string { return "blocked" }
+
+func (e listedIssuesError) Issues() []builder.Issue { return e.issues }
+
+func TestErrorIssues(t *testing.T) {
+	issues := []builder.Issue{
+		builder.NewIssue(builder.CodeNodeHostnameRequired, "nodes[0]", "a device needs a hostname"),
+		builder.NewIssue(builder.CodeNetworkSwitchMissing, "networks[1]", "no switch"),
+	}
+
+	for _, test := range []struct {
+		name string
+		err  error
+		want []builder.Issue
+	}{
+		{name: "no error", err: nil, want: nil},
+		{name: "an error without issues", err: errors.New("disk full"), want: nil},
+		{name: "a validation error", err: &builder.ValidationError{Issues: issues}, want: issues},
+		{
+			name: "a wrapped validation error",
+			err:  fmt.Errorf("saving: %w", &builder.ValidationError{Issues: issues}),
+			want: issues,
+		},
+		{name: "a package error", err: &builder.PackageError{Issues: issues}, want: issues},
+		{name: "a template file error", err: fmt.Errorf("reading: %w", &builder.TemplateFileError{Issues: issues}), want: issues},
+		{name: "a layer set error", err: &builder.LayerSetError{Issues: issues}, want: issues},
+		{name: "an error that lists its issues", err: fmt.Errorf("publishing: %w", listedIssuesError{issues: issues}), want: issues},
+		{name: "a validation error without issues", err: &builder.ValidationError{}, want: nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if diff := cmp.Diff(test.want, builder.ErrorIssues(test.err)); diff != "" {
+				t.Errorf("ErrorIssues(%v) mismatch (-want +got):\n%s", test.err, diff)
+			}
+		})
+	}
+
+	// The issues are a copy: a change to them does not change the error.
+	invalid := &builder.ValidationError{Issues: []builder.Issue{issues[0]}}
+	builder.ErrorIssues(invalid)[0].Message = "changed"
+
+	if got := invalid.Issues[0].Message; got != issues[0].Message {
+		t.Errorf("ValidationError issue message after a change to ErrorIssues() = %q, want %q", got, issues[0].Message)
 	}
 }

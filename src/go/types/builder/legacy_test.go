@@ -692,6 +692,101 @@ func TestLegacyVariables(t *testing.T) {
 	}
 }
 
+// TestLegacyVariablesPastTheLimit uses only the first 100 variables of a
+// diagram, and keeps a placeholder of a later one as text.
+func TestLegacyVariablesPastTheLimit(t *testing.T) {
+	entries := make([]map[string]string, 0, 101)
+	for i := range 101 {
+		entries = append(entries, map[string]string{"name": fmt.Sprintf("V%03d", i), "value": fmt.Sprintf("x%03d", i)})
+	}
+
+	encoded, err := json.Marshal(entries)
+	if err != nil {
+		t.Fatalf("encoding the variables: %v", err)
+	}
+
+	settings := legacyNode("vars")
+	settings["device"] = "server"
+	settings["commands"] = []any{"$V099", "$V100"}
+
+	model := strings.Replace(
+		legacyModel(legacyVertex("2", "vars", settings, "image;html=1;image=/server_blue_vm.png", 40, 40)),
+		`<mxGraphModel grid="1">`, `<mxGraphModel grid="1" experimentVars="`+html.EscapeString(string(encoded))+`">`, 1,
+	)
+
+	doc, warnings := convertLegacy(t, model, "limit")
+
+	if diff := cmp.Diff([]any{"x099", "$V100"}, nodeByHostname(t, doc, "vars").Device.Spec["commands"]); diff != "" {
+		t.Errorf("FromLegacy(limit) commands mismatch (-want +got):\n%s", diff)
+	}
+
+	want := "1 placeholder has no value in the diagram. The Builder kept it as text: $V100."
+	if !slices.Contains(warnings, want) {
+		t.Errorf("FromLegacy(limit) warnings = %q, want %q", warnings, want)
+	}
+}
+
+// TestLegacySettingsNestedTooDeep reads no device from settings that nest
+// lists more than 64 levels deep.
+func TestLegacySettingsNestedTooDeep(t *testing.T) {
+	for name, test := range map[string]struct {
+		lists  int
+		device bool
+	}{
+		"64 levels":       {lists: 63, device: true},
+		"65 levels":       {lists: 64, device: false},
+		"far more levels": {lists: 200, device: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var nested any = []any{}
+			for range test.lists - 1 {
+				nested = []any{nested}
+			}
+
+			settings := legacyNode("deep")
+			settings["device"] = "server"
+			settings["extra"] = nested
+
+			doc, _ := convertLegacy(t, legacyModel(
+				legacyVertex("2", "deep", settings, "image;html=1;image=/server_blue_vm.png", 40, 40),
+			), "deep")
+
+			if got := len(doc.DeviceNodes()) == 1; got != test.device {
+				t.Errorf("FromLegacy(%d lists) has a device = %t, want %t", test.lists, got, test.device)
+			}
+		})
+	}
+}
+
+// TestLegacyGroupDoesNotJoinItsOwnMember keeps a group out of a larger group
+// that is a member of it, so groups do not form a circle.
+func TestLegacyGroupDoesNotJoinItsOwnMember(t *testing.T) {
+	const rectangle = "rounded=0;whiteSpace=wrap;html=1;"
+
+	doc, _ := convertLegacy(t, legacyModel(
+		`<mxCell id="a" value="small" style="`+rectangle+`" vertex="1" parent="1">`+
+			`<mxGeometry x="0" y="0" width="200" height="200" as="geometry"/></mxCell>`,
+		`<mxCell id="b" value="large" style="`+rectangle+`" vertex="1" parent="a">`+
+			`<mxGeometry x="0" y="0" width="400" height="400" as="geometry"/></mxCell>`,
+		legacyDevice("2", "alpha", "server", 300, 300),
+	), "circle")
+
+	groups := legacyNodes(doc, builder.NodeKindGroup)
+	small, large := groups["small"], groups["large"]
+
+	if small == nil || large == nil {
+		t.Fatalf("FromLegacy(circle) groups = %v, want small and large", groups)
+	}
+
+	if small.ParentID != "" || large.ParentID != small.ID {
+		t.Errorf("FromLegacy(circle) parents of small and large = %q, %q, want none and small", small.ParentID, large.ParentID)
+	}
+
+	if got := nodeByHostname(t, doc, "alpha").ParentID; got != large.ID {
+		t.Errorf("FromLegacy(circle) parent of alpha = %q, want large %q", got, large.ID)
+	}
+}
+
 // TestDecodeLegacyForms decodes one diagram in every form that is read:
 // each gives the same document.
 func TestDecodeLegacyForms(t *testing.T) {
@@ -740,6 +835,103 @@ func TestDecodeLegacyForms(t *testing.T) {
 
 			if diff := cmp.Diff([]string{"The diagram has no nodes."}, warnings); diff != "" {
 				t.Errorf("FromLegacy(%s) warnings mismatch (-want +got):\n%s", name, diff)
+			}
+		})
+	}
+
+	t.Run("no diagram", func(t *testing.T) {
+		doc, warnings, err := builder.FromLegacy(nil, "nothing")
+		if err != nil {
+			t.Fatalf("FromLegacy(nil) error = %v, want nil", err)
+		}
+
+		if err := checkLegacyDocument(doc, warnings); err != nil {
+			t.Errorf("FromLegacy(nil): %v", err)
+		}
+
+		if len(doc.Nodes) != 0 || doc.Metadata.Name != "nothing" {
+			t.Errorf("FromLegacy(nil) = %s, want an empty document named nothing", asJSON(t, doc))
+		}
+
+		if diff := cmp.Diff([]string{"The diagram has no nodes."}, warnings); diff != "" {
+			t.Errorf("FromLegacy(nil) warnings mismatch (-want +got):\n%s", diff)
+		}
+	})
+}
+
+// TestLegacySettingsOfOtherShapes checks device settings whose general is no object or whose network
+// has no interfaces, and VLAN IDs that are absent or text.
+func TestLegacySettingsOfOtherShapes(t *testing.T) {
+	doc, warnings := convertLegacy(t, legacyModel(
+		legacyVertex("2", "plc one", map[string]any{
+			"device": "server", "general": "x", "network": map[string]any{"routes": []any{}},
+		}, "image;html=1;image=/server_blue_vm.png", 40, 40),
+		legacySwitch("3", "none", nil, 240, 40),
+		legacySwitch("4", "plus", "+7", 440, 40),
+		legacySwitch("5", "word", "seven", 640, 40),
+		legacySwitch("6", "spaced", " 12 ", 840, 40),
+	), "shapes")
+
+	wantWarnings := []string{
+		"VLAN ID +7 of network plus is not a number from 1 to 4094. The Builder did not import it.",
+		"VLAN ID seven of network word is not a number from 1 to 4094. The Builder did not import it.",
+		`The Builder renamed node "plc one" to "plc-one": a hostname cannot hold spaces.`,
+	}
+	if diff := cmp.Diff(wantWarnings, warnings); diff != "" {
+		t.Errorf("FromLegacy(shapes) warnings mismatch (-want +got):\n%s", diff)
+	}
+
+	// The label names the node, in a general object that replaces the text.
+	want := map[string]any{"general": map[string]any{"hostname": "plc-one"}, "network": map[string]any{"routes": []any{}}}
+	if diff := cmp.Diff(want, nodeByHostname(t, doc, "plc-one").Device.Spec); diff != "" {
+		t.Errorf("FromLegacy(shapes) plc-one spec mismatch (-want +got):\n%s", diff)
+	}
+
+	for network, want := range map[string]int{"none": 0, "plus": 0, "word": 0, "spaced": 12} {
+		if got := legacyAlias(doc, network); got != want {
+			t.Errorf("FromLegacy(shapes) VLAN ID of %s = %d, want %d", network, got, want)
+		}
+	}
+}
+
+// TestLegacyAddedSwitchJoinsSharedGroup checks that a switch the conversion adds is placed between
+// its devices, and joins their group only when all of them are in it.
+func TestLegacyAddedSwitchJoinsSharedGroup(t *testing.T) {
+	const group = `<mxCell id="g" value="plant" style="group" vertex="1" parent="1">` +
+		`<mxGeometry x="0" y="0" width="600" height="400" as="geometry"/></mxCell>`
+
+	for name, test := range map[string]struct {
+		betaX   int
+		inGroup bool
+	}{
+		"devices in one group":    {betaX: 300, inGroup: true},
+		"a device out of a group": {betaX: 1400, inGroup: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc, _ := convertLegacy(t, legacyModel(group,
+				legacyDevice("2", "alpha", "server", 40, 40, "lan"),
+				legacyDevice("3", "beta", "server", test.betaX, 40, "lan"),
+			), "groups")
+
+			plant := legacyNodes(doc, builder.NodeKindGroup)["plant"]
+			hubs := legacySwitchesOf(doc, "lan")
+
+			if plant == nil || len(hubs) != 1 {
+				t.Fatalf("FromLegacy(groups) = %s, want the group plant and one switch of lan", asJSON(t, doc))
+			}
+
+			want := ""
+			if test.inGroup {
+				want = plant.ID
+			}
+
+			if got := hubs[0].ParentID; got != want {
+				t.Errorf("FromLegacy(groups) switch parent = %q, want %q", got, want)
+			}
+
+			alpha, beta := legacyPosition(t, doc, "alpha"), legacyPosition(t, doc, "beta")
+			if x := hubs[0].Position.X; x <= alpha.X || x >= beta.X {
+				t.Errorf("FromLegacy(groups) switch x = %v, want it between alpha %v and beta %v", x, alpha.X, beta.X)
 			}
 		})
 	}
@@ -829,6 +1021,12 @@ func TestDecodeLegacyRefusals(t *testing.T) {
 		{
 			"a root element with a long name", "<" + strings.Repeat("é", 100) + "/>", builder.LegacyRoot,
 			"the XML is not a legacy Builder diagram: its root element is <" + strings.Repeat("é", 32) +
+				">, not <mxGraphModel>",
+		},
+		{
+			// The cut falls inside a character, so it moves back to the start of it.
+			"a long name cut inside a character", "<a" + strings.Repeat("é", 100) + "/>", builder.LegacyRoot,
+			"the XML is not a legacy Builder diagram: its root element is <a" + strings.Repeat("é", 31) +
 				">, not <mxGraphModel>",
 		},
 		{
@@ -1499,8 +1697,10 @@ func TestLegacyName(t *testing.T) {
 		"my\u0085lan":   "my-lan",
 		"\ufeff\u0085 ": "",
 	} {
-		if got := builder.LegacyName(text); got != want {
-			t.Errorf("LegacyName(%q) = %q, want %q", text, got, want)
-		}
+		t.Run(text, func(t *testing.T) {
+			if got := builder.LegacyName(text); got != want {
+				t.Errorf("LegacyName(%q) = %q, want %q", text, got, want)
+			}
+		})
 	}
 }

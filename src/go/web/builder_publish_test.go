@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"maps"
+	"math"
 	"net/http"
 	"slices"
 	"strings"
@@ -15,13 +16,17 @@ import (
 	"github.com/activeshadow/structs"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 
 	bapi "phenix/api/builder"
 	"phenix/store"
 	"phenix/store/storetest"
 	"phenix/types"
 	bdoc "phenix/types/builder"
+	ifaces "phenix/types/interfaces"
+	v1 "phenix/types/version/v1"
 	"phenix/util/common"
+	"phenix/util/plog/plogtest"
 	"phenix/web/rbac"
 	"phenix/web/weberror"
 )
@@ -416,6 +421,12 @@ func TestBuilderPublishValidatesIntentBeforeWriting(t *testing.T) {
 			"empty scenario name",
 			`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
 				`"scenario":{"name":""},"experiment":{"name":"exp","action":"create"}}`,
+		},
+		{"topology-experiment without an experiment", `{"mode":"topology-experiment","topology":{"name":"topo","action":"create"}}`},
+		{
+			"experiment with an unknown action",
+			`{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
+				`"experiment":{"name":"exp","action":"replace"}}`,
 		},
 		{
 			"expected digest on update",
@@ -3055,5 +3066,1228 @@ func TestBuilderPublishOpsBroadcast(t *testing.T) {
 
 	if err := ops.broadcastExperiment("missing", "update"); !errors.Is(err, store.ErrNotExist) {
 		t.Errorf("broadcastExperiment(missing, update) = %v, want store.ErrNotExist", err)
+	}
+}
+
+// builderPublishRefusalView is what a client sees of a refusal.
+type builderPublishRefusalView struct {
+	Status  int
+	Code    string
+	Message string
+}
+
+// builderPublishRefusalOf returns the view of err, the zero view for nil. It
+// reports false for an error that is not a *weberror.WebError.
+func builderPublishRefusalOf(err error) (builderPublishRefusalView, bool) {
+	if err == nil {
+		return builderPublishRefusalView{}, true
+	}
+
+	var werr *weberror.WebError
+	if !errors.As(err, &werr) {
+		return builderPublishRefusalView{}, false
+	}
+
+	return builderPublishRefusalView{Status: werr.Status, Code: werr.Code, Message: werr.Message}, true
+}
+
+// TestIncludedHostnameRefusal checks the refusal for each number of refused
+// included hostnames: none, one, as many as it lists, and more.
+func TestIncludedHostnameRefusal(t *testing.T) {
+	refused := func(count int) []bdoc.RefusedHostname {
+		names := make([]bdoc.RefusedHostname, count)
+		for i := range names {
+			names[i] = bdoc.RefusedHostname{Include: "shared", Reason: fmt.Sprintf("hostname h%d is reserved.", i)}
+		}
+
+		return names
+	}
+
+	const (
+		prefix = "phenix cannot publish experiment exp: In included topology shared, hostname h0 is reserved"
+		listed = prefix + ". In included topology shared, hostname h1 is reserved" +
+			". In included topology shared, hostname h2 is reserved"
+	)
+
+	refusal := func(message string) builderPublishRefusalView {
+		return builderPublishRefusalView{
+			Status: http.StatusUnprocessableEntity, Code: string(bdoc.CodePublishIncludeHostname), Message: message,
+		}
+	}
+
+	tests := []struct {
+		name  string
+		count int
+		want  builderPublishRefusalView
+	}{
+		{name: "none", count: 0},
+		{name: "one", count: 1, want: refusal(prefix)},
+		{name: "three", count: 3, want: refusal(listed)},
+		{name: "four", count: 4, want: refusal(listed + ". 1 more hostname phenix refuses")},
+		{name: "five", count: 5, want: refusal(listed + ". 2 more hostnames phenix refuses")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := builderPublishRefusalOf(includedHostnameRefusal("exp", bdoc.IncludeReport{Refused: refused(tt.count)}))
+			if !ok {
+				t.Fatalf("includedHostnameRefusal(exp, %d refused) is not a *weberror.WebError", tt.count)
+			}
+
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("includedHostnameRefusal(exp, %d refused) mismatch (-want +got):\n%s", tt.count, diff)
+			}
+		})
+	}
+}
+
+// TestBuilderPublishRoleChecks checks the experiment and source permission
+// checks of a publication, and the config verb of each publish action.
+func TestBuilderPublishRoleChecks(t *testing.T) {
+	role := *nonBuilderRole(
+		builderPolicy([]string{"experiments"}, []string{"exp"}, []string{"create", "update", "delete", "get"}),
+		builderPolicy([]string{"topologies"}, []string{"topo"}, []string{"get"}),
+		builderPolicy([]string{"scenarios"}, []string{"*"}, []string{"get"}),
+	)
+
+	tests := []struct {
+		name string
+		got  bool
+		want bool
+	}{
+		{"experiment create", builderExperimentAllowed(role, "create", "exp"), true},
+		{"experiment update", builderExperimentAllowed(role, "update", "exp"), true},
+		{"experiment delete is no publish action", builderExperimentAllowed(role, "delete", "exp"), false},
+		{"experiment of another name", builderExperimentAllowed(role, "create", "other"), false},
+		{"topology source", builderSourceGetAllowed(role, builderKindTopology, "topo"), true},
+		{"topology source of another name", builderSourceGetAllowed(role, builderKindTopology, "other"), false},
+		{"experiment source", builderSourceGetAllowed(role, kindExperiment, "exp"), true},
+		{"scenario source is no publish source", builderSourceGetAllowed(role, builderKindScenario, "sc"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.got != tt.want {
+				t.Errorf("allowed = %t, want %t", tt.got, tt.want)
+			}
+		})
+	}
+
+	verbs := map[string]builderVerb{}
+	for _, action := range []string{"create", "update", ""} {
+		verbs[action] = builderPublishVerb(action)
+	}
+
+	want := map[string]builderVerb{"create": builderVerbCreate, "update": builderVerbUpdate, "": builderVerbUpdate}
+	if diff := cmp.Diff(want, verbs); diff != "" {
+		t.Errorf("builderPublishVerb mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestAuthorizePublishTargets refuses a publication whose caller may not
+// write the topology, or may not write the experiment as an experiment and
+// as a config.
+func TestAuthorizePublishTargets(t *testing.T) {
+	writes := []string{"create", "update"}
+	forbidden := func(action string) builderPublishRefusalView {
+		return builderPublishRefusalView{
+			Status: http.StatusForbidden, Message: action + ": user alice does not have permission",
+		}
+	}
+
+	topologyOnly := builderPublishRequest{Topology: builderPublishTarget{Name: "topo", Action: "create"}}
+	withExperiment := builderPublishRequest{
+		Topology:   builderPublishTarget{Name: "topo", Action: "update"},
+		Experiment: &builderPublishTarget{Name: "exp", Action: "create"},
+	}
+
+	tests := []struct {
+		name    string
+		role    *rbac.Role
+		request builderPublishRequest
+		want    builderPublishRefusalView
+	}{
+		{name: "topology", role: builderFullRole(), request: topologyOnly},
+		{name: "topology and experiment", role: builderFullRole(), request: withExperiment},
+		{
+			name:    "no topology create",
+			role:    nonBuilderRole(builderPolicy([]string{"configs"}, []string{"*", "*/*"}, []string{"update"})),
+			request: topologyOnly,
+			want:    forbidden("publishing topology topo"),
+		},
+		{
+			name:    "no experiment permission",
+			role:    nonBuilderRole(builderPolicy([]string{"configs"}, []string{"*", "*/*"}, writes)),
+			request: withExperiment,
+			want:    forbidden("publishing experiment config exp"),
+		},
+		{
+			name: "no experiment config permission",
+			role: nonBuilderRole(
+				builderPolicy([]string{"configs"}, []string{"Topology/*"}, writes),
+				builderPolicy([]string{"experiments"}, []string{"*"}, writes),
+			),
+			request: withExperiment,
+			want:    forbidden("publishing experiment config exp"),
+		},
+	}
+
+	api := &builderAPI{}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := api.authorizePublishTargets(builderActor{user: builderAlice, role: *tt.role}, tt.request)
+
+			got, ok := builderPublishRefusalOf(err)
+			if !ok {
+				t.Fatalf("authorizePublishTargets = %v, want a *weberror.WebError", err)
+			}
+
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("authorizePublishTargets mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestCheckSourceFreshness checks the source of a draft against the stored
+// config before a publication writes anything.
+func TestCheckSourceFreshness(t *testing.T) {
+	topology := builderConfig(t, builderKindTopology, "topo")
+	experiment := builderConfig(t, kindExperiment, "exp")
+	undigestable := builderConfig(t, builderKindTopology, "nan")
+	undigestable.Spec["weight"] = math.NaN()
+
+	digest := func(config store.Config) string {
+		t.Helper()
+
+		value, err := bdoc.ImportDigest(config)
+		if err != nil {
+			t.Fatalf("ImportDigest(%s) returned error: %v", config.FullName(), err)
+		}
+
+		return value
+	}
+
+	stored := map[string]*store.Config{
+		topology.FullName(): &topology, experiment.FullName(): &experiment, undigestable.FullName(): &undigestable,
+	}
+	api := &builderAPI{getConfig: func(name string) (*store.Config, error) {
+		if name == "Topology/broken" {
+			return nil, errors.New("store offline")
+		}
+
+		if config, ok := stored[name]; ok {
+			return config, nil
+		}
+
+		return nil, store.ErrNotExist
+	}}
+
+	source := func(kind bdoc.SourceKind, name, digest string) *bdoc.Source {
+		return &bdoc.Source{Kind: kind, Name: name, Digest: digest}
+	}
+
+	const stale = "sha256:" + "00000000000000000000000000000000" + "00000000000000000000000000000000"
+
+	changed := func(kind, name, again string) builderPublishRefusalView {
+		return builderPublishRefusalView{
+			Status: http.StatusConflict, Code: string(bdoc.CodePublishSourceChanged),
+			Message: fmt.Sprintf("this diagram comes from %[1]s %[2]s. That %[1]s changed on the server after Builder "+
+				"made the diagram. Publish refuses this diagram under any name. To continue, make a new draft of "+
+				"%[1]s %[2]s: %[3]s. Then copy your changes to the new draft", kind, name, again),
+		}
+	}
+
+	tests := []struct {
+		name   string
+		source *bdoc.Source
+		token  string
+		role   *rbac.Role
+		want   builderPublishRefusalView
+	}{
+		{name: "no source"},
+		{name: "a manual diagram", source: source(bdoc.SourceKindManual, "", "")},
+		{name: "an upload", source: source(bdoc.SourceKindTopology, "topo", stale), token: "uploaded/Topology/topo"},
+		{name: "an unchanged topology", source: source(bdoc.SourceKindTopology, "topo", digest(topology))},
+		{name: "an unchanged experiment", source: source(bdoc.SourceKindExperiment, "exp", digest(experiment))},
+		{name: "a deleted topology", source: source(bdoc.SourceKindTopology, "gone", stale)},
+		{
+			name: "a source of an unknown kind", source: source("image", "img", stale),
+			want: builderPublishRefusalView{
+				Status: http.StatusUnprocessableEntity, Message: "phenix cannot publish a Builder source of kind image",
+			},
+		},
+		{
+			name: "a source the caller may not get", source: source(bdoc.SourceKindTopology, "topo", stale),
+			role: nonBuilderRole(builderPolicy([]string{"configs"}, []string{"*", "*/*"}, []string{"get"})),
+			want: builderPublishRefusalView{
+				Status:  http.StatusForbidden,
+				Message: "checking Builder source Topology/topo: user alice does not have permission",
+			},
+		},
+		{
+			name: "a store failure", source: source(bdoc.SourceKindTopology, "broken", stale),
+			want: builderPublishRefusalView{
+				Status: http.StatusInternalServerError, Message: "unable to reload Builder source Topology/broken",
+			},
+		},
+		{
+			name: "a source with no digest", source: source(bdoc.SourceKindTopology, "nan", stale),
+			want: builderPublishRefusalView{
+				Status:  http.StatusInternalServerError,
+				Message: "unable to calculate the digest of Builder source Topology/nan",
+			},
+		},
+		{
+			name: "a changed topology", source: source(bdoc.SourceKindTopology, "topo", stale),
+			want: changed(builderSourceTopology, "topo", "import it again or open its published diagram"),
+		},
+		{
+			name: "a changed experiment", source: source(bdoc.SourceKindExperiment, "exp", stale),
+			want: changed(builderSourceExperiment, "exp", "import it again"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			role := builderFullRole()
+			if tt.role != nil {
+				role = tt.role
+			}
+
+			document := bdoc.NewDocument("draft")
+			document.Source = tt.source
+			meta := &bapi.DraftMetadata{ID: "draft-1", SourceToken: tt.token}
+
+			err := api.checkSourceFreshness(
+				t.Context(), builderActor{user: builderAlice, role: *role}, meta, &bapi.Snapshot{}, document,
+			)
+
+			got, ok := builderPublishRefusalOf(err)
+			if !ok {
+				t.Fatalf("checkSourceFreshness = %v, want a *weberror.WebError", err)
+			}
+
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("checkSourceFreshness mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestExperimentHoldsDraftPublication reports whether an experiment records
+// the draft, or its opened document, as its last publisher, and whether the
+// experiment changed since.
+func TestExperimentHoldsDraftPublication(t *testing.T) {
+	meta := &bapi.DraftMetadata{ID: "draft-1", SourceToken: builderDocTokenPrefix + "doc-9"}
+
+	experiment := func(t *testing.T, record string, spec map[string]any) *store.Config {
+		t.Helper()
+
+		config := builderConfig(t, kindExperiment, "exp")
+		if spec != nil {
+			config.Spec = spec
+		}
+
+		if record != "" {
+			config.Metadata.Annotations = store.Annotations{builderExperimentAnnotation: record}
+		}
+
+		return &config
+	}
+
+	digest, err := bdoc.SourceDigest(*experiment(t, "", nil))
+	if err != nil {
+		t.Fatalf("SourceDigest returned error: %v", err)
+	}
+
+	record := func(draft, document, digest string) string {
+		return builderJSON(t, builderExperimentPublication{DraftID: draft, DocumentID: document, Digest: digest})
+	}
+
+	type held struct{ Owned, Unchanged, Failed bool }
+
+	tests := []struct {
+		name   string
+		config *store.Config
+		want   held
+	}{
+		{name: "no record", config: experiment(t, "", nil)},
+		{name: "an unreadable record", config: experiment(t, "{", nil)},
+		{name: "another draft", config: experiment(t, record("draft-2", "doc-2", digest), nil)},
+		{name: "this draft", config: experiment(t, record("draft-1", "", digest), nil), want: held{true, true, false}},
+		{
+			name: "the opened document", config: experiment(t, record("draft-2", "doc-9", digest), nil),
+			want: held{true, true, false},
+		},
+		{
+			name: "this draft, changed since", config: experiment(t, record("draft-1", "", "sha256:old"), nil),
+			want: held{true, false, false},
+		},
+		{
+			name:   "this draft, with no digest",
+			config: experiment(t, record("draft-1", "", digest), map[string]any{"weight": math.NaN()}),
+			want:   held{true, false, true},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			owned, unchanged, err := experimentHoldsDraftPublication(meta, tt.config)
+
+			if diff := cmp.Diff(tt.want, held{owned, unchanged, err != nil}); diff != "" {
+				t.Errorf("experimentHoldsDraftPublication mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestExperimentPublishedDocument reads the document an experiment records
+// as its last publisher, and nothing for a record it cannot follow.
+func TestExperimentPublishedDocument(t *testing.T) {
+	harness := newBuilderHarness(t)
+	published := builderPutDocument(t, harness, builderKindTopology, "topo", "lab")
+	api := &builderAPI{drafts: harness.service}
+
+	experiment := func(record string) *store.Config {
+		config := builderConfig(t, kindExperiment, "exp")
+		if record != "" {
+			config.Metadata.Annotations = store.Annotations{builderExperimentAnnotation: record}
+		}
+
+		return &config
+	}
+
+	record := func(document string) string {
+		return builderJSON(t, builderExperimentPublication{DraftID: "draft-1", DocumentID: document, Digest: ""})
+	}
+
+	tests := []struct {
+		name   string
+		config *store.Config
+		want   string
+	}{
+		{name: "no record", config: experiment("")},
+		{name: "no document", config: experiment(record(""))},
+		{name: "a removed document", config: experiment(record("no-such"))},
+		{name: "a stored document", config: experiment(record(published.ID)), want: "lab"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ""
+			if document := api.experimentPublishedDocument(t.Context(), tt.config); document != nil {
+				got = document.Metadata.Name
+			}
+
+			if got != tt.want {
+				t.Errorf("experimentPublishedDocument: document name = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestBuilderConfigIfExists reads a publication target, and refuses a name
+// that is not one.
+func TestBuilderConfigIfExists(t *testing.T) {
+	stored := builderConfig(t, builderKindTopology, "topo")
+	api := &builderAPI{getConfig: func(name string) (*store.Config, error) {
+		switch name {
+		case stored.FullName():
+			return &stored, nil
+		case "Topology/broken":
+			return nil, errors.New("store offline")
+		}
+
+		return nil, store.ErrNotExist
+	}}
+
+	invalid := func(name string) builderPublishRefusalView {
+		return builderPublishRefusalView{
+			Status: http.StatusBadRequest, Code: string(bdoc.CodePublishTargetInvalid),
+			Message: fmt.Sprintf("topology target %q is not a valid config name", name),
+		}
+	}
+
+	type answer struct {
+		Name    string
+		Exists  bool
+		Refusal builderPublishRefusalView
+	}
+
+	tests := []struct {
+		name, kind, target string
+		want               answer
+	}{
+		{name: "stored", kind: builderKindTopology, target: "topo", want: answer{Name: "topo", Exists: true}},
+		{name: "missing", kind: builderKindTopology, target: "new"},
+		{name: "empty name", kind: builderKindTopology, target: "", want: answer{Refusal: invalid("")}},
+		{name: "spaces around the name", kind: builderKindTopology, target: " topo ", want: answer{Refusal: invalid(" topo ")}},
+		{
+			name: "unknown kind", kind: "Nope", target: "topo",
+			want: answer{Refusal: builderPublishRefusalView{
+				Status: http.StatusBadRequest, Code: string(bdoc.CodePublishTargetInvalid),
+				Message: `nope target "topo" is not a valid config name`,
+			}},
+		},
+		{
+			name: "store failure", kind: builderKindTopology, target: "broken",
+			want: answer{Refusal: builderPublishRefusalView{
+				Status: http.StatusInternalServerError, Message: "unable to inspect config Topology/broken",
+			}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config, exists, err := api.configIfExists(tt.kind, tt.target)
+
+			refusal, ok := builderPublishRefusalOf(err)
+			if !ok {
+				t.Fatalf("configIfExists(%s, %q) = %v, want a *weberror.WebError", tt.kind, tt.target, err)
+			}
+
+			got := answer{Exists: exists, Refusal: refusal}
+			if config != nil {
+				got.Name = config.Metadata.Name
+			}
+
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("configIfExists(%s, %q) mismatch (-want +got):\n%s", tt.kind, tt.target, diff)
+			}
+		})
+	}
+}
+
+// TestBuilderWriteExperimentFailures fails an experiment update at each step
+// before its configure stage, and releases the lock it took.
+func TestBuilderWriteExperimentFailures(t *testing.T) {
+	stored := builderConfig(t, kindExperiment, "exp")
+	undecodable := builderConfig(t, kindExperiment, "exp")
+	undecodable.Version = "phenix.sandia.gov/v0"
+	running := builderConfig(t, kindExperiment, "exp")
+	running.Status = map[string]any{"startTime": "2026-01-01T00:00:00Z"}
+
+	var (
+		locked   = errors.New("experiment is locked")
+		offline  = errors.New("store offline")
+		rebuilt  = errors.New("rebuild failed")
+		rejected = errors.New("update rejected")
+	)
+
+	tests := []struct {
+		name                     string
+		lock, reload, rebuild    error
+		update                   error
+		current                  *store.Config
+		want                     error
+		wantUnlocks, wantUpdates int
+	}{
+		{name: "the lock", lock: locked, current: &stored, want: locked},
+		{name: "the reload", reload: offline, want: offline, wantUnlocks: 1},
+		{name: "an undecodable experiment", current: &undecodable, wantUnlocks: 1},
+		{name: "a started experiment", current: &running, want: errBuilderExperimentRunning, wantUnlocks: 1},
+		{name: "the rebuild", rebuild: rebuilt, current: &stored, want: rebuilt, wantUnlocks: 1},
+		{name: "the write", update: rejected, current: &stored, want: rejected, wantUnlocks: 1, wantUpdates: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			unlocks, updates := 0, 0
+			api := &builderAPI{
+				getConfig: func(string) (*store.Config, error) {
+					if tt.reload != nil {
+						return nil, tt.reload
+					}
+
+					return cloneBuilderConfig(tt.current), nil
+				},
+				publish: builderPublishOps{
+					lockExperiment:   func(string, string) error { return tt.lock },
+					unlockExperiment: func(string) { unlocks++ },
+					updateConfig: func(string, *store.Config) error {
+						updates++
+
+						return tt.update
+					},
+				},
+			}
+			plan := builderPublishExperimentPlan{
+				action: builderPublishActionUpdate, name: "exp",
+				rebuild: func(current *store.Config) (*store.Config, []bapi.HostPin, error) {
+					return current, nil, tt.rebuild
+				},
+			}
+
+			recorded, removed, err := api.writeExperiment(
+				t.Context(), plan, &store.Config{}, nil, "", builderExperimentPublication{},
+			)
+
+			switch {
+			case err == nil:
+				t.Errorf("writeExperiment = nil error, want one")
+			case tt.want != nil && !errors.Is(err, tt.want):
+				t.Errorf("writeExperiment = %v, want %v", err, tt.want)
+			}
+
+			if recorded || removed != nil {
+				t.Errorf("writeExperiment = recorded %t, removed %v, want false and none", recorded, removed)
+			}
+
+			if got := [2]int{unlocks, updates}; got != [2]int{tt.wantUnlocks, tt.wantUpdates} {
+				t.Errorf("writeExperiment: unlocks and updates = %v, want %v", got, [2]int{tt.wantUnlocks, tt.wantUpdates})
+			}
+		})
+	}
+}
+
+// TestBuilderPublishExperimentStageWarnings warns of an experiment that was
+// stored but not recorded or broadcast, and writes nothing for one that an
+// earlier attempt applied.
+func TestBuilderPublishExperimentStageWarnings(t *testing.T) {
+	tests := []struct {
+		name    string
+		applied bool
+		want    builderPublishResponse
+	}{
+		{
+			name: "created",
+			want: builderPublishResponse{
+				Stages: []builderPublishStage{{Name: "experiment", Status: "created", Config: "Experiment/exp"}},
+				Warnings: []bdoc.Issue{
+					bdoc.NewIssue(bdoc.CodePublishExperimentUnrecorded, "", "phenix stored the experiment, but did not "+
+						"record which draft published it. Thus this draft cannot update it again"),
+					bdoc.NewIssue(bdoc.CodePublishBroadcastFailed, "",
+						"phenix stored the experiment, but could not broadcast its live update"),
+				},
+			},
+		},
+		{
+			name: "applied", applied: true,
+			want: builderPublishResponse{
+				Stages: []builderPublishStage{{Name: "experiment", Status: bapi.PublishSkipped, Config: "Experiment/exp"}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			writes := 0
+			api := &builderAPI{
+				getConfig: func(string) (*store.Config, error) { return nil, errors.New("store offline") },
+				publish: builderPublishOps{
+					lockExperiment:   func(string, string) error { return nil },
+					unlockExperiment: func(string) {},
+					createExperiment: func(context.Context, string, string, string, map[string]int) error {
+						writes++
+
+						return nil
+					},
+					broadcastExperiment: func(string, string) error { return errors.New("injected broadcast failure") },
+				},
+			}
+			plan := builderPublishExperimentPlan{action: builderPublishActionCreate, name: "exp", applied: tt.applied}
+			topology := builderConfig(t, builderKindTopology, "topo")
+
+			var response builderPublishResponse
+
+			if err := api.publishExperimentStage(
+				t.Context(), plan, &topology, nil, "", builderExperimentPublication{}, &response,
+			); err != nil {
+				t.Fatalf("publishExperimentStage returned error: %v", err)
+			}
+
+			if diff := cmp.Diff(tt.want, response, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("publishExperimentStage mismatch (-want +got):\n%s", diff)
+			}
+
+			if want := map[bool]int{false: 1, true: 0}[tt.applied]; writes != want {
+				t.Errorf("publishExperimentStage created %d experiments, want %d", writes, want)
+			}
+		})
+	}
+}
+
+// TestRecordExperimentPublication stores which draft published an
+// experiment, with the experiment's digest, and reports a record it could
+// not store.
+func TestRecordExperimentPublication(t *testing.T) {
+	stored := builderConfig(t, kindExperiment, "exp")
+	undigestable := builderConfig(t, kindExperiment, "exp")
+	undigestable.Spec["weight"] = math.NaN()
+
+	digest, err := bdoc.SourceDigest(stored)
+	if err != nil {
+		t.Fatalf("SourceDigest returned error: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		current  *store.Config
+		reload   error
+		annotate error
+		want     *builderExperimentPublication
+	}{
+		{
+			name: "recorded", current: &stored,
+			want: &builderExperimentPublication{DraftID: "draft-1", DocumentID: "doc-1", Digest: digest},
+		},
+		{name: "the reload fails", reload: errors.New("store offline")},
+		{name: "the experiment has no digest", current: &undigestable},
+		{name: "the write fails", current: &stored, annotate: errors.New("write rejected")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var annotated *store.Config
+
+			api := &builderAPI{
+				getConfig: func(string) (*store.Config, error) {
+					if tt.reload != nil {
+						return nil, tt.reload
+					}
+
+					return cloneBuilderConfig(tt.current), nil
+				},
+				publish: builderPublishOps{annotateConfig: func(config *store.Config) error {
+					annotated = config
+
+					return tt.annotate
+				}},
+			}
+
+			recorded := api.recordExperimentPublication("exp", builderExperimentPublication{DraftID: "draft-1", DocumentID: "doc-1"})
+			if recorded != (tt.want != nil) {
+				t.Errorf("recordExperimentPublication = %t, want %t", recorded, tt.want != nil)
+			}
+
+			if tt.want == nil {
+				return
+			}
+
+			record, ok := experimentPublicationRecord(annotated)
+			if !ok {
+				t.Fatalf("recordExperimentPublication stored no readable record: %v", annotated.Metadata.Annotations)
+			}
+
+			if diff := cmp.Diff(*tt.want, record); diff != "" {
+				t.Errorf("recordExperimentPublication record mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestRestoreExperiment puts back an experiment whose configure stage failed,
+// with its current status, and leaves one it cannot read or that started.
+func TestRestoreExperiment(t *testing.T) {
+	previous := builderConfig(t, kindExperiment, "exp")
+	previous.Spec["marker"] = "previous"
+
+	current := builderConfig(t, kindExperiment, "exp")
+	current.Status = map[string]any{"vms": []any{}}
+
+	undecodable := builderConfig(t, kindExperiment, "exp")
+	undecodable.Version = "phenix.sandia.gov/v0"
+	running := builderConfig(t, kindExperiment, "exp")
+	running.Status = map[string]any{"startTime": "2026-01-01T00:00:00Z"}
+
+	restored := cloneBuilderConfig(&previous)
+	restored.Status = current.Status
+
+	tests := []struct {
+		name    string
+		current *store.Config
+		reload  error
+		want    []*store.Config
+	}{
+		{name: "restored", current: &current, want: []*store.Config{restored}},
+		{name: "the reload fails", reload: errors.New("store offline")},
+		{name: "an undecodable experiment", current: &undecodable},
+		{name: "a started experiment", current: &running},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logs := plogtest.Capture(t)
+
+			var written []*store.Config
+
+			api := &builderAPI{
+				getConfig: func(string) (*store.Config, error) {
+					if tt.reload != nil {
+						return nil, tt.reload
+					}
+
+					return cloneBuilderConfig(tt.current), nil
+				},
+				publish: builderPublishOps{updateConfig: func(name string, config *store.Config) error {
+					if name != previous.FullName() {
+						t.Errorf("restoreExperiment updated %s, want %s", name, previous.FullName())
+					}
+
+					written = append(written, config)
+
+					return nil
+				}},
+			}
+
+			api.restoreExperiment(&previous)
+
+			if diff := cmp.Diff(tt.want, written); diff != "" {
+				t.Errorf("restoreExperiment writes mismatch (-want +got):\n%s", diff)
+			}
+
+			failures := len(logs.Records(t, plogtest.Message("restoring experiment after its configure stage failed")))
+			if want := map[bool]int{true: 0, false: 1}[tt.want != nil]; failures != want {
+				t.Errorf("restoreExperiment logged %d failures, want %d: %s", failures, want, logs)
+			}
+		})
+	}
+}
+
+// TestPublishScenarioStageBroadcastFailure warns of a scenario that was
+// stored but not broadcast, and still reports the stage.
+func TestPublishScenarioStageBroadcastFailure(t *testing.T) {
+	scenario := builderConfig(t, builderKindScenario, "sc")
+	changed := cloneBuilderConfig(&scenario)
+	changed.Metadata.Annotations = store.Annotations{"topology": "topo"}
+
+	var updated []string
+
+	api := &builderAPI{publish: builderPublishOps{
+		updateConfig: func(name string, _ *store.Config) error {
+			updated = append(updated, name)
+
+			return nil
+		},
+		broadcastConfig: func(*store.Config, string) error { return errors.New("injected broadcast failure") },
+	}}
+	plan := builderPublishScenarioPlan{
+		changed:   []builderPublishConfigPlan{{action: builderPublishActionUpdate, existing: &scenario, config: changed}},
+		unchanged: []string{"other"},
+		listed:    []string{"sc", "other"},
+	}
+
+	var response builderPublishResponse
+
+	if err := api.publishScenarioStage("topo", plan, &response); err != nil {
+		t.Fatalf("publishScenarioStage returned error: %v", err)
+	}
+
+	want := builderPublishResponse{
+		Stages: []builderPublishStage{{
+			Name: "scenario", Status: "updated",
+			Message: "added topology topo to scenario sc, and scenario other already names it",
+		}},
+		Warnings: []bdoc.Issue{bdoc.NewIssue(bdoc.CodePublishBroadcastFailed, "",
+			"phenix stored scenario sc, but could not broadcast its live update")},
+	}
+
+	if diff := cmp.Diff(want, response, cmpopts.EquateEmpty()); diff != "" {
+		t.Errorf("publishScenarioStage mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff([]string{"Scenario/sc"}, updated); diff != "" {
+		t.Errorf("publishScenarioStage updates mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestExperimentAlreadyApplied reports an experiment as applied only when
+// it names the topology and scenario and decodes, and refuses an
+// experiment config that does not decode.
+func TestExperimentAlreadyApplied(t *testing.T) {
+	projection := &bdoc.Topology{Spec: map[string]any{"nodes": []any{}}, VLANAliases: map[string]int{}}
+
+	spec, err := projection.SpecV1()
+	if err != nil {
+		t.Fatalf("SpecV1 returned error: %v", err)
+	}
+
+	experiment := func(version string, annotations store.Annotations) *store.Config {
+		config := builderConfig(t, kindExperiment, "exp")
+		config.Version = version
+		config.Metadata.Annotations = annotations
+
+		return &config
+	}
+
+	const v1 = "phenix.sandia.gov/v1"
+
+	tests := []struct {
+		name     string
+		existing *store.Config
+	}{
+		{name: "none"},
+		{name: "another topology", existing: experiment(v1, store.Annotations{"topology": "other"})},
+		{name: "another scenario", existing: experiment(v1, store.Annotations{"topology": "topo", "scenario": "sc"})},
+		{name: "an undecodable experiment", existing: experiment("phenix.sandia.gov/v0", store.Annotations{"topology": "topo"})},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if experimentAlreadyApplied(tt.existing, spec, projection, "topo", "") {
+				t.Errorf("experimentAlreadyApplied = true, want false")
+			}
+		})
+	}
+
+	if _, err := initializedExperiment(experiment("phenix.sandia.gov/v0", nil)); err == nil {
+		t.Errorf("initializedExperiment(Experiment at v0) = nil error, want one")
+	}
+
+	if _, err := initializedExperiment(experiment(v1, nil)); err != nil {
+		t.Errorf("initializedExperiment(Experiment at v1) returned error: %v", err)
+	}
+}
+
+// TestExperimentCreateRefusal refuses, before anything is written, an
+// experiment name or spec that experiment.Create refuses.
+func TestExperimentCreateRefusal(t *testing.T) {
+	valid := &bdoc.Topology{Spec: map[string]any{"nodes": []any{}}, VLANAliases: map[string]int{}}
+	invalid := &bdoc.Topology{Spec: map[string]any{"nodes": "none"}, VLANAliases: map[string]int{}}
+
+	tests := []struct {
+		name, experiment string
+		projection       *bdoc.Topology
+		want             builderPublishRefusalView
+	}{
+		{name: "valid", experiment: "exp", projection: valid},
+		{
+			name: "reserved, in any case", experiment: "ALL", projection: valid,
+			want: builderPublishRefusalView{
+				Status: http.StatusUnprocessableEntity, Code: string(bdoc.CodePublishExperimentReserved),
+				Message: "experiment ALL is reserved: phenix uses the name to mean every experiment",
+			},
+		},
+		{
+			name: "not a config name", experiment: "a/b", projection: valid,
+			want: builderPublishRefusalView{
+				Status: http.StatusBadRequest, Code: string(bdoc.CodePublishTargetInvalid),
+				Message: `experiment target "a/b" is not a valid config name`,
+			},
+		},
+		{
+			name: "an invalid spec", experiment: "exp", projection: invalid,
+			want: builderPublishRefusalView{
+				Status: http.StatusUnprocessableEntity, Code: string(bdoc.CodePublishExperimentInvalid),
+				Message: "experiment exp is not valid",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := experimentCreateRefusal(tt.experiment, tt.projection)
+
+			got, ok := builderPublishRefusalOf(err)
+			if !ok {
+				t.Fatalf("experimentCreateRefusal(%q) = %v, want a *weberror.WebError", tt.experiment, err)
+			}
+
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("experimentCreateRefusal(%q) mismatch (-want +got):\n%s", tt.experiment, diff)
+			}
+		})
+	}
+}
+
+// TestExperimentTopology merges a projection's included topologies as phenix
+// does, and reads a projection without includes as it is.
+func TestExperimentTopology(t *testing.T) {
+	var decoded []store.Config
+
+	api := &builderAPI{publish: builderPublishOps{decodeTopology: func(config store.Config) (ifaces.TopologySpec, error) {
+		decoded = append(decoded, config)
+
+		return &v1.TopologySpec{}, nil
+	}}}
+
+	includes := map[string]any{"nodes": []any{}, "includeTopologies": []any{"shared"}}
+
+	tests := []struct {
+		name, topology string
+		spec           map[string]any
+		wantErr        bool
+		wantDecoded    []string
+	}{
+		{name: "no includes", topology: "topo", spec: map[string]any{"nodes": []any{}}},
+		{name: "includes", topology: "topo", spec: includes, wantDecoded: []string{"Topology/topo"}},
+		{name: "an undecodable spec", topology: "topo", spec: map[string]any{"nodes": "none"}, wantErr: true},
+		{name: "includes of a topology with no config name", topology: "a/b", spec: includes, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decoded = nil
+
+			spec, err := api.experimentTopology(&bdoc.Topology{Spec: tt.spec}, tt.topology)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("experimentTopology(%s) = %v, want error %t", tt.topology, err, tt.wantErr)
+			}
+
+			if !tt.wantErr && spec == nil {
+				t.Errorf("experimentTopology(%s) = nil spec, want one", tt.topology)
+			}
+
+			names := make([]string, 0, len(decoded))
+			for _, config := range decoded {
+				names = append(names, config.FullName())
+
+				if config.Version != bdoc.TopologyAPIVersion {
+					t.Errorf("experimentTopology(%s) decoded version %q, want %q", tt.topology, config.Version, bdoc.TopologyAPIVersion)
+				}
+			}
+
+			if diff := cmp.Diff(tt.wantDecoded, names, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("experimentTopology(%s) decoded mismatch (-want +got):\n%s", tt.topology, diff)
+			}
+		})
+	}
+}
+
+// TestOpenedBuilderFile reads the topology and digest of a Builder file
+// source token, and refuses any other token.
+func TestOpenedBuilderFile(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("ab", 32)
+
+	type opened struct {
+		Topology, Digest string
+		OK               bool
+	}
+
+	tests := []struct {
+		name, token string
+		want        opened
+	}{
+		{name: "a file", token: "builder-file/topo/" + digest, want: opened{"topo", digest, true}},
+		{name: "a document", token: "builder-doc/doc-1"},
+		{name: "no topology", token: "builder-file//" + digest},
+		{name: "no digest", token: "builder-file/topo"},
+		{name: "a topology with a slash", token: "builder-file/a/b/" + digest},
+		{name: "a digest in upper case", token: "builder-file/topo/sha256:" + strings.Repeat("AB", 32)},
+		{name: "a short digest", token: "builder-file/topo/sha256:abcd"},
+		{name: "empty", token: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			topology, digest, ok := openedBuilderFile(tt.token)
+
+			if diff := cmp.Diff(tt.want, opened{topology, digest, ok}); diff != "" {
+				t.Errorf("openedBuilderFile(%q) mismatch (-want +got):\n%s", tt.token, diff)
+			}
+
+			meta := &bapi.DraftMetadata{SourceToken: tt.token}
+			if got := draftOpenedFile(meta, "topo", tt.want.Digest); got != tt.want.OK {
+				t.Errorf("draftOpenedFile(%q, topo) = %t, want %t", tt.token, got, tt.want.OK)
+			}
+		})
+	}
+}
+
+// FuzzOpenedBuilderFile asserts a token that openedBuilderFile accepts is
+// exactly the token of the topology and digest it returns.
+func FuzzOpenedBuilderFile(f *testing.F) {
+	f.Add("builder-file/topo/sha256:" + strings.Repeat("0f", 32))
+	f.Add("builder-file/a/b/sha256:" + strings.Repeat("0f", 32))
+	f.Add("builder-file//sha256:")
+	f.Add("builder-doc/doc-1")
+
+	f.Fuzz(func(t *testing.T, token string) {
+		topology, digest, ok := openedBuilderFile(token)
+		if !ok {
+			if topology != "" || digest != "" {
+				t.Errorf("openedBuilderFile(%q) refused it with %q and %q, want both empty", token, topology, digest)
+			}
+
+			return
+		}
+
+		if topology == "" || strings.Contains(topology, "/") || !bdoc.IsDigest(digest) {
+			t.Errorf("openedBuilderFile(%q) = %q, %q, want a topology name and a digest", token, topology, digest)
+		}
+
+		if rebuilt := builderFileTokenPrefix + topology + "/" + digest; rebuilt != token {
+			t.Errorf("openedBuilderFile(%q) = %q, %q, which make the token %q", token, topology, digest, rebuilt)
+		}
+	})
+}
+
+// TestAddTopologyAnnotationProperties asserts that the annotation names the
+// topology once it is added, that a second add changes nothing, and that
+// the value before it stays as it was.
+func TestAddTopologyAnnotationProperties(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		value := rapid.StringMatching(`[a-z ,]{0,12}`).Draw(rt, "value")
+		topology := rapid.StringMatching(`[a-zA-Z0-9_@.-]{1,8}`).Draw(rt, "topology")
+
+		added := addTopologyAnnotation(value, topology)
+
+		if !hasTopologyAnnotation(added, topology) {
+			rt.Errorf("addTopologyAnnotation(%q, %q) = %q, which does not name the topology", value, topology, added)
+		}
+
+		if again := addTopologyAnnotation(added, topology); again != added {
+			rt.Errorf("addTopologyAnnotation(%q, %q) = %q, want it unchanged", added, topology, again)
+		}
+
+		if !strings.HasPrefix(added, value) {
+			rt.Errorf("addTopologyAnnotation(%q, %q) = %q, which does not keep the value", value, topology, added)
+		}
+
+		if hasTopologyAnnotation(value, topology) && added != value {
+			rt.Errorf("addTopologyAnnotation(%q, %q) = %q, want the value as it was", value, topology, added)
+		}
+	})
+}
+
+// TestBuilderPublishExperimentTargetRefusals refuses, before anything is
+// written, an experiment action that does not match the stored experiment,
+// and a publication of a draft that does not exist.
+func TestBuilderPublishExperimentTargetRefusals(t *testing.T) {
+	harness := newBuilderHarness(t, builderConfig(t, kindExperiment, "taken"))
+	draft := harness.createDraft(builderAlice, "topo")
+
+	tests := []struct {
+		name, experiment string
+		want             bdoc.Code
+	}{
+		{
+			name: "create of a stored experiment", experiment: `{"name":"taken","action":"create"}`,
+			want: bdoc.CodePublishExperimentExists,
+		},
+		{
+			name: "update of a missing experiment", experiment: `{"name":"absent","action":"update"}`,
+			want: bdoc.CodePublishExperimentMissing,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := `{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},"experiment":` + tt.experiment + `}`
+
+			_, refusal := publishBuilderDraftAs(t, harness, draft, nil, body, http.StatusConflict)
+			if refusal.Code != string(tt.want) {
+				t.Errorf("publish %s: refusal code = %q, want %q: %+v", body, refusal.Code, tt.want, refusal)
+			}
+		})
+	}
+
+	missing := harness.do(builderRequest{
+		method: http.MethodPost, path: "/builder/drafts/no-such/publish", user: builderAlice, ifMatch: `"1"`,
+		body: `{"mode":"topology","topology":{"name":"topo","action":"create"}}`,
+	})
+	if err := builderStatusError(missing, http.StatusNotFound); err != nil {
+		t.Errorf("publishing a missing draft: %v", err)
+	}
+
+	if writes := harness.configWrites + harness.experimentWrites; writes != 0 {
+		t.Errorf("refused publications wrote %d configs, want none", writes)
+	}
+}
+
+// TestBuilderPublishTargetReadFailures answers 500, and writes nothing, when
+// the store cannot read a config that the publication names.
+func TestBuilderPublishTargetReadFailures(t *testing.T) {
+	const (
+		topologyOnly   = `{"mode":"topology","topology":{"name":"topo","action":"create"}}`
+		withExperiment = `{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
+			`"experiment":{"name":"exp","action":"create"}}`
+	)
+
+	tests := []struct {
+		name, failing, body string
+		scenarios           []string
+	}{
+		{name: "the topology", failing: "Topology/topo", body: topologyOnly},
+		{name: "a listed scenario", failing: "Scenario/sc", body: topologyOnly, scenarios: []string{"sc"}},
+		{name: "the experiment", failing: "Experiment/exp", body: withExperiment},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			harness := newBuilderHarness(t)
+			document := bdoc.NewDocument("topo")
+			document.Scenarios = tt.scenarios
+			draft := createBuilderPublishDraft(t, harness, document)
+
+			harness.reroute(withBuilderConfigs(harness.listConfigs, func(name string) (*store.Config, error) {
+				if name == tt.failing {
+					return nil, errors.New("store offline")
+				}
+
+				return harness.getConfig(name)
+			}))
+
+			_, refusal := publishBuilderDraft(t, harness, draft, tt.body, http.StatusInternalServerError)
+			if want := "unable to inspect config " + tt.failing; refusal != want {
+				t.Errorf("publish %s: refusal = %q, want %q", tt.body, refusal, want)
+			}
+
+			if writes, documents := harness.configWrites, harness.store.Count(bapi.NamespacePublished); writes != 0 || documents != 0 {
+				t.Errorf("publish %s wrote %d configs and %d published documents, want none", tt.body, writes, documents)
+			}
+		})
+	}
+}
+
+// TestBuilderPublishExperimentUpdateRefusals refuses, before anything is
+// written, an update of a source experiment that phenix cannot decode or
+// rebuild.
+func TestBuilderPublishExperimentUpdateRefusals(t *testing.T) {
+	scenario := builderConfig(t, builderKindScenario, "sc")
+	scenario.Version = "phenix.sandia.gov/v0"
+	scenario.Metadata.Annotations = store.Annotations{"topology": "topo"}
+
+	tests := []struct {
+		name, version, body, want string
+		configs                   []store.Config
+		scenarios                 []string
+	}{
+		{
+			name: "an undecodable experiment", version: "phenix.sandia.gov/v0",
+			body: `{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
+				`"experiment":{"name":"exp","action":"update"}}`,
+			want: "phenix cannot decode experiment exp",
+		},
+		{
+			name: "a scenario phenix cannot read", version: "phenix.sandia.gov/v1",
+			configs: []store.Config{scenario}, scenarios: []string{"sc"},
+			body: `{"mode":"topology-experiment","topology":{"name":"topo","action":"create"},` +
+				`"scenario":{"name":"sc"},"experiment":{"name":"exp","action":"update"}}`,
+			want: "phenix cannot update experiment exp",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			experiment := builderConfig(t, kindExperiment, "exp")
+			experiment.Version = tt.version
+			experiment.Spec = map[string]any{"topology": map[string]any{"nodes": []any{}}}
+			experiment.Metadata.Annotations = store.Annotations{"topology": "topo"}
+
+			document := bdoc.NewDocument("topo")
+			document.Scenarios = tt.scenarios
+			document.Source = &bdoc.Source{
+				Kind: bdoc.SourceKindExperiment, Name: "exp", APIVersion: tt.version, Topology: "topo",
+			}
+
+			harness := newBuilderHarness(t, append(tt.configs, experiment)...)
+			draft := createBuilderPublishDraft(t, harness, document, "Experiment/exp")
+
+			_, refusal := publishBuilderDraftAs(t, harness, draft, nil, tt.body, http.StatusUnprocessableEntity)
+
+			got := builderPublishRefusalView{Code: refusal.Code, Message: refusal.Message}
+			want := builderPublishRefusalView{Code: string(bdoc.CodePublishExperimentInvalid), Message: tt.want}
+
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("publish %s mismatch (-want +got):\n%s", tt.body, diff)
+			}
+
+			if writes, documents := harness.configWrites, harness.store.Count(bapi.NamespacePublished); writes != 0 || documents != 0 {
+				t.Errorf("publish %s wrote %d configs and %d published documents, want none", tt.body, writes, documents)
+			}
+		})
 	}
 }

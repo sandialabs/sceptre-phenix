@@ -369,3 +369,49 @@ func TestBuilderRoutesGoOnWithoutTheDiskListing(t *testing.T) {
 		}
 	})
 }
+
+// builderDisksTestFiles is a disk.DiskFiles that lists images and records
+// the experiment each listing names. Its other methods are unused.
+type builderDisksTestFiles struct {
+	disk.DiskFiles
+
+	images      []disk.Details
+	err         error
+	experiments []string
+}
+
+func (f *builderDisksTestFiles) GetImages(expName string) ([]disk.Details, error) {
+	f.experiments = append(f.experiments, expName)
+
+	return f.images, f.err
+}
+
+// TestBuilderDiskImagesListsEveryImage lists the images of every experiment,
+// as GET /disks does.
+func TestBuilderDiskImagesListsEveryImage(t *testing.T) {
+	listErr := errors.New("injected listing failure")
+	images := []disk.Details{{Kind: disk.VMImage, Name: "ubuntu.qc2", FullPath: "/phenix/images/ubuntu.qc2"}}
+
+	for _, tt := range []struct {
+		name string
+		fake *builderDisksTestFiles
+	}{
+		{name: "images", fake: &builderDisksTestFiles{images: images}},
+		{name: "a failure", fake: &builderDisksTestFiles{err: listErr}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := builderDiskImages(tt.fake)()
+			if !errors.Is(err, tt.fake.err) {
+				t.Errorf("builderDiskImages() error = %v, want %v", err, tt.fake.err)
+			}
+
+			if diff := cmp.Diff(tt.fake.images, got); diff != "" {
+				t.Errorf("builderDiskImages() mismatch (-want +got):\n%s", diff)
+			}
+
+			if diff := cmp.Diff([]string{""}, tt.fake.experiments); diff != "" {
+				t.Errorf("experiments listed mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

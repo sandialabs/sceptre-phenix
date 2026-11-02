@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"pgregory.net/rapid"
 )
 
 // The list the UI build writes. The worker has both copies, elk-api only gzip,
@@ -139,6 +140,7 @@ func TestBuilderAssetHandler(t *testing.T) {
 		{"gzip copy itself", builderTestList, builderTestWorker + ".gz", "gzip", http.StatusNotFound, "", ""},
 		{"gzip copy, path not clean", builderTestList, "/assets/./elk-api-A.js.gz", "gzip", http.StatusNotFound, "", ""},
 		{"no list", "", builderTestWorker, "br, gzip", http.StatusOK, "", ""},
+		{"a listed directory", `["assets"]`, "/assets", "br, gzip", http.StatusMovedPermanently, "", ""},
 	}
 
 	for _, c := range cases {
@@ -350,4 +352,54 @@ func TestPreferredEncoding(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEncodingSuffix(t *testing.T) {
+	for coding, want := range map[string]string{"br": ".br", "gzip": ".gz", "": "", "deflate": "", "BR": ""} {
+		if got := encodingSuffix(coding); got != want {
+			t.Errorf("encodingSuffix(%q) = %q, want %q", coding, got, want)
+		}
+	}
+
+	// Each coding the build writes has a copy of its own.
+	for _, coding := range builderCodings() {
+		if encodingSuffix(coding) == "" {
+			t.Errorf("encodingSuffix(%q) = \"\", want the suffix of its copy", coding)
+		}
+	}
+}
+
+// TestPreferredEncodingPicksTheHigherWeight weighs br and gzip in any order
+// and case, by name or by "*". The higher weight wins, br on a tie, and none
+// when both weigh 0.
+func TestPreferredEncodingPicksTheHigherWeight(t *testing.T) {
+	rapid.Check(t, func(rt *rapid.T) {
+		br := float64(rapid.IntRange(0, 1000).Draw(rt, "br")) / 1000
+		gzip := float64(rapid.IntRange(0, 1000).Draw(rt, "gzip")) / 1000
+
+		gzipName := rapid.SampledFrom([]string{"gzip", "GZip", "*"}).Draw(rt, "gzipName")
+		entries := []string{
+			rapid.SampledFrom([]string{"br", "BR"}).Draw(rt, "brName") + ";q=" + strconv.FormatFloat(br, 'f', -1, 64),
+			gzipName + " ; Q=" + strconv.FormatFloat(gzip, 'f', -1, 64),
+		}
+
+		if rapid.Bool().Draw(rt, "gzipFirst") {
+			slices.Reverse(entries)
+		}
+
+		header := strings.Join(entries, ", ")
+
+		want := ""
+
+		switch {
+		case br > 0 && br >= gzip:
+			want = "br"
+		case gzip > 0:
+			want = "gzip"
+		}
+
+		if got := preferredEncoding(header, builderCodings()); got != want {
+			rt.Errorf("preferredEncoding(%q, %q) = %q, want %q", header, builderCodings(), got, want)
+		}
+	})
 }

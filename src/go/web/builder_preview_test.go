@@ -2,6 +2,7 @@ package web
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,6 +22,7 @@ import (
 	bdoc "phenix/types/builder"
 	v1 "phenix/types/version/v1"
 	"phenix/web/rbac"
+	"phenix/web/weberror"
 )
 
 // previewTargets are the configs a role of these tests may change: every
@@ -781,6 +783,198 @@ func TestBuilderPublishPreviewDocumented(t *testing.T) {
 
 			if want := jsonFieldNames(reflect.TypeOf(value)); !slices.Equal(documented, want) {
 				t.Errorf("openapi.yml %s properties = %v, want %v", component, documented, want)
+			}
+		})
+	}
+}
+
+// TestBuilderDryRunRequested peeks at a publish request for a dry run, and
+// puts back the body that it read.
+func TestBuilderDryRunRequested(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "an empty body", body: "", want: false},
+		{name: "a dry run", body: `{"dryRun":true,"topology":{"name":"lab"}}`, want: true},
+		{name: "a publication", body: `{"dryRun":false}`, want: false},
+		{name: "no dryRun field", body: `{"topology":{"name":"lab"}}`, want: false},
+		{name: "a body that is not JSON", body: `{"dryRun":true`, want: false},
+		{name: "a dryRun that is not a boolean", body: `{"dryRun":"true"}`, want: false},
+		{name: "an array", body: `[{"dryRun":true}]`, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, "/builder/drafts/d/publish", strings.NewReader(tt.body))
+
+			if got := builderDryRunRequested(httptest.NewRecorder(), r); got != tt.want {
+				t.Errorf("builderDryRunRequested(%s) = %t, want %t", tt.body, got, tt.want)
+			}
+
+			if body, err := io.ReadAll(r.Body); err != nil || string(body) != tt.body {
+				t.Errorf("builderDryRunRequested(%s): body after = %q, %v, want the body as it was", tt.body, body, err)
+			}
+		})
+	}
+
+	t.Run("no body", func(t *testing.T) {
+		r := httptest.NewRequest(http.MethodPost, "/builder/drafts/d/publish", nil)
+		r.Body = nil
+
+		if builderDryRunRequested(httptest.NewRecorder(), r) || r.Body != nil {
+			t.Errorf("builderDryRunRequested(no body) = true or a body, want false and no body")
+		}
+	})
+
+	t.Run("a body above the limit", func(t *testing.T) {
+		body := `{"dryRun":true,"pad":"` + strings.Repeat("a", builderMaxRequestBytes) + `"}`
+		r := httptest.NewRequest(http.MethodPost, "/builder/drafts/d/publish", strings.NewReader(body))
+
+		if builderDryRunRequested(httptest.NewRecorder(), r) {
+			t.Error("builderDryRunRequested(a body above the limit) = true, want false")
+		}
+	})
+}
+
+// TestBuilderPreviewRefusal lists a refusal of 400, 409 or 422 as the
+// issues of a dry run, and keeps every other failure.
+func TestBuilderPreviewRefusal(t *testing.T) {
+	refusal := func(status int) error {
+		return weberror.NewWebError(errors.New("cause"), "refused").SetStatus(status)
+	}
+	invalid := &bdoc.ValidationError{Issues: []bdoc.Issue{
+		bdoc.NewIssue(bdoc.CodePublishLegacyReplaced, "/nodes/0", "first"),
+		bdoc.NewIssue(bdoc.CodeDocumentInvalid, "/nodes/1", "second"),
+	}}
+	asErrors := func(issues ...bdoc.Issue) []bdoc.Issue {
+		for i := range issues {
+			issues[i].Severity = bdoc.SeverityError
+		}
+
+		return issues
+	}
+
+	tests := []struct {
+		name    string
+		err     error
+		want    []bdoc.Issue
+		refused bool
+	}{
+		{name: "an error that is not a web error", err: errors.New("disk failure")},
+		{name: "a 304", err: refusal(http.StatusNotModified)},
+		{name: "a 401", err: refusal(http.StatusUnauthorized)},
+		{name: "a 403", err: refusal(http.StatusForbidden)},
+		{name: "a 404", err: refusal(http.StatusNotFound)},
+		{name: "a 500", err: refusal(http.StatusInternalServerError)},
+		{name: "a 503", err: refusal(http.StatusServiceUnavailable)},
+		{
+			name: "a 400 without a code", err: refusal(http.StatusBadRequest), refused: true,
+			want: asErrors(bdoc.NewIssue(bdoc.CodeRequestInvalid, "", "refused: cause")),
+		},
+		{
+			name: "a 409 with its code", refused: true,
+			err:  weberror.NewWebError(nil, "draft changed").SetStatus(http.StatusConflict).WithCode(string(bdoc.CodeDraftConflict)),
+			want: asErrors(bdoc.NewIssue(bdoc.CodeDraftConflict, "", "draft changed")),
+		},
+		{
+			name: "a 422 with issues", refused: true,
+			err:  weberror.NewWebError(invalid, "not valid").SetStatus(http.StatusUnprocessableEntity),
+			want: asErrors(slices.Clone(invalid.Issues)...),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, refused := builderPreviewRefusal(tt.err)
+			if refused != tt.refused {
+				t.Errorf("builderPreviewRefusal(%v) refused = %t, want %t", tt.err, refused, tt.refused)
+			}
+
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("builderPreviewRefusal(%v) mismatch (-want +got):\n%s", tt.err, diff)
+			}
+		})
+	}
+
+	if invalid.Issues[0].Severity == bdoc.SeverityError {
+		t.Error("builderPreviewRefusal changed the severity of the issues of the error it read")
+	}
+}
+
+// TestPublishPreviewWarnings warns, without a write, of the Builder file a
+// topology names, of a legacy diagram it replaces, and of removed host pins.
+func TestPublishPreviewWarnings(t *testing.T) {
+	const file = "/phenix/topologies/lab.json"
+
+	reference, err := bapi.DocumentReference{Path: file}.EncodeReference()
+	if err != nil {
+		t.Fatalf("EncodeReference(%s) error: %v", file, err)
+	}
+
+	topology := func(annotations map[string]string) *store.Config {
+		config := builderConfig(t, builderKindTopology, "lab")
+		config.Metadata.Annotations = annotations
+
+		return &config
+	}
+	pins := []bapi.HostPin{{Hostname: "web", Host: "h1"}}
+
+	fileWarning := bdoc.NewIssue(bdoc.CodePublishFileUnchanged, "", builderFileNotWrittenWarning("lab", file))
+	legacyWarning := bdoc.NewIssue(bdoc.CodePublishLegacyReplaced, "",
+		"This diagram replaced the legacy Builder diagram of topology lab.")
+
+	tests := []struct {
+		name     string
+		topology *store.Config
+		plan     builderPublishPlan
+		want     []bdoc.Issue
+	}{
+		{name: "a new topology", topology: topology(nil)},
+		{
+			name: "a topology that names a Builder file", topology: topology(nil),
+			plan: builderPublishPlan{topology: builderPublishConfigPlan{
+				existing: topology(map[string]string{bapi.DocumentAnnotation: reference}),
+			}},
+			want: []bdoc.Issue{fileWarning},
+		},
+		{
+			name: "a topology whose reference does not decode", topology: topology(nil),
+			plan: builderPublishPlan{topology: builderPublishConfigPlan{
+				existing: topology(map[string]string{bapi.DocumentAnnotation: "{"}),
+			}},
+		},
+		{
+			name:     "a legacy diagram that the write replaces",
+			topology: topology(map[string]string{bdoc.LegacyXMLAnnotation: "<mxGraphModel/>"}),
+			want:     []bdoc.Issue{legacyWarning},
+		},
+		{
+			name:     "a legacy diagram of a topology that holds the document already",
+			topology: topology(map[string]string{bdoc.LegacyXMLAnnotation: "<mxGraphModel/>"}),
+			plan:     builderPublishPlan{topology: builderPublishConfigPlan{applied: true}},
+		},
+		{
+			name: "an experiment update with no removed pins", topology: topology(nil),
+			plan: builderPublishPlan{experiment: &builderPublishExperimentPlan{name: "lab"}},
+		},
+		{
+			name:     "each warning in order",
+			topology: topology(map[string]string{bdoc.LegacyXMLAnnotation: "<mxGraphModel/>"}),
+			plan: builderPublishPlan{
+				topology:   builderPublishConfigPlan{existing: topology(map[string]string{bapi.DocumentAnnotation: reference})},
+				experiment: &builderPublishExperimentPlan{name: "lab", removedPins: pins, pinsVisible: true},
+			},
+			want: []bdoc.Issue{fileWarning, legacyWarning, hostPinsWarning(pins, true)},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := publishPreviewWarnings("lab", tt.topology, &tt.plan)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("publishPreviewWarnings(%s) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
 	}

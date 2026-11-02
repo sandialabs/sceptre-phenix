@@ -255,6 +255,45 @@ func TestSaveWritesNothingWhenOneWriteFails(t *testing.T) {
 			},
 		},
 		{
+			name: "create draft, content refused",
+			fail: func(h *testHarness) {
+				h.store.BeforeCreate = func(namespace, _ string) error {
+					if namespace == NamespaceContent {
+						return refused
+					}
+
+					return nil
+				}
+			},
+			save: func(h *testHarness, _ *DraftMetadata) error {
+				_, err := h.service.CreateDraft(context.Background(), CreateDraftRequest{
+					Actor: testActor, Title: "other", Document: testDocument(t, "other", 0),
+				})
+
+				return err
+			},
+		},
+		{
+			name: "append snapshot, content refused",
+			fail: func(h *testHarness) {
+				h.store.BeforeCreate = func(namespace, _ string) error {
+					if namespace == NamespaceContent {
+						return refused
+					}
+
+					return nil
+				}
+			},
+			save: func(h *testHarness, meta *DraftMetadata) error {
+				_, err := h.service.AppendSnapshot(context.Background(), AppendSnapshotRequest{
+					DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision,
+					Document: testDocument(t, "topo-v3", 0),
+				})
+
+				return err
+			},
+		},
+		{
 			name: "append snapshot, metadata refused",
 			fail: func(h *testHarness) {
 				h.store.BeforeUpdate = func(string, string) error { return refused }

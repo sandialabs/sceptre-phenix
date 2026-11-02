@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -1573,8 +1574,54 @@ func damagedLibraryCases(t *testing.T) []damagedLibraryCase {
 			},
 		},
 		{
+			name: "a collection with an id that is none",
+			edit: func(library map[string]any) { item(library, "collections", 0)["id"] = "../" + secret },
+		},
+		{
+			name: "a collection of too many templates",
+			edit: func(library map[string]any) {
+				ids := make([]any, MaxCollectionTemplates+1)
+				for i := range ids {
+					ids[i] = fmt.Sprintf("t-%d", i)
+				}
+
+				item(library, "collections", 0)["templateIds"] = ids
+			},
+		},
+		{
+			name: "a collection whose creator has a control character",
+			edit: func(library map[string]any) { item(library, "collections", 0)["createdBy"] = "bad\nname" },
+		},
+		{
+			name: "too many templates",
+			edit: func(library map[string]any) {
+				templates := make([]any, MaxLibraryTemplates+1)
+				for i := range templates {
+					templates[i] = item(library, "templates", 1)
+				}
+
+				library["templates"] = templates
+			},
+		},
+		{
+			name: "too many collections",
+			edit: func(library map[string]any) {
+				collections := make([]any, MaxLibraryCollections+1)
+				for i := range collections {
+					collections[i] = item(library, "collections", 0)
+				}
+
+				library["collections"] = collections
+			},
+		},
+		{
 			name:  "lists that are null",
 			edit:  func(library map[string]any) { library["collections"] = nil },
+			valid: true,
+		},
+		{
+			name:  "no lists",
+			raw:   `{"templates":null,"collections":null,"updated":"2026-10-01T12:00:00Z","updatedBy":"alice"}`,
 			valid: true,
 		},
 	}
@@ -1618,8 +1665,9 @@ func TestLibraryRefusesDamagedRecords(t *testing.T) {
 					t.Fatalf("GetLibrary(%s) returned error: %v", tt.name, err)
 				}
 
-				if library.Collections == nil {
-					t.Errorf("GetLibrary(%s) collections = nil, want an empty list", tt.name)
+				if library.Templates == nil || library.Collections == nil {
+					t.Errorf("GetLibrary(%s) templates, collections = %v, %v; want empty lists, not nil",
+						tt.name, library.Templates, library.Collections)
 				}
 
 				return
@@ -1712,4 +1760,53 @@ func TestLibraryErrorKinds(t *testing.T) {
 	if errors.Is(limit, ErrInvalid) {
 		t.Errorf("errors.Is(%v, ErrInvalid) = true, want false", limit)
 	}
+}
+
+func TestLibraryAddCollectionWhenTheIDSourceFails(t *testing.T) {
+	h := newHarness(t)
+	failure := errors.New("no entropy")
+	ids := mustAddTemplates(t, h, testTemplate("PLC"))
+	library := mustLibrary(t, h)
+
+	_, err := library.AddCollection(
+		CollectionContent{Name: "Floor", Description: "", TemplateIDs: ids},
+		func() (string, error) { return "", failure },
+	)
+	if !errors.Is(err, failure) {
+		t.Errorf("AddCollection(Floor) with a failed ID source = %v, want the failure", err)
+	}
+
+	if len(library.Collections) != 0 {
+		t.Errorf("AddCollection(Floor) with a failed ID source left collections %v, want none", library.Collections)
+	}
+}
+
+// FuzzShownID checks that a shown ID is the ID itself up to 80 bytes, else a
+// prefix of at most 80 bytes and "...". A valid UTF-8 ID is cut at a whole
+// character, at most 3 bytes before the bound.
+func FuzzShownID(f *testing.F) {
+	for _, seed := range []string{"", "draft-1", strings.Repeat("a", 81), strings.Repeat("€", 40), strings.Repeat("\x80", 81)} {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, id string) {
+		shown := shownID(id)
+
+		if len(id) <= maxShownIDBytes {
+			if shown != id {
+				t.Errorf("shownID(%q) = %q, want the ID unchanged", id, shown)
+			}
+
+			return
+		}
+
+		prefix, ok := strings.CutSuffix(shown, "...")
+		if !ok || !strings.HasPrefix(id, prefix) || len(prefix) > maxShownIDBytes {
+			t.Errorf("shownID(%q) = %q, want a prefix of at most %d bytes and \"...\"", id, shown, maxShownIDBytes)
+		}
+
+		if utf8.ValidString(id) && (!utf8.ValidString(shown) || len(prefix) < maxShownIDBytes-utf8.UTFMax+1) {
+			t.Errorf("shownID(%q) = %q, want it cut at the last whole character within %d bytes", id, shown, maxShownIDBytes)
+		}
+	})
 }

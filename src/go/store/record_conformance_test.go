@@ -455,6 +455,10 @@ func TestRecordRejectsInvalidNamespacesAndKeys(t *testing.T) {
 				t.Errorf("CreateRecord(drafts, ../escape) error = %v, want store.ErrInvalidRecordKey", err)
 			}
 
+			if _, err := s.GetRecord("drafts", ""); !errors.Is(err, store.ErrInvalidRecordKey) {
+				t.Errorf("GetRecord(drafts, \"\") error = %v, want store.ErrInvalidRecordKey", err)
+			}
+
 			if _, err := s.ListRecords("drafts", "../escape"); !errors.Is(err, store.ErrInvalidRecordKey) {
 				t.Errorf("ListRecords(drafts, ../escape) error = %v, want store.ErrInvalidRecordKey", err)
 			}

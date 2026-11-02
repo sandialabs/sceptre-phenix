@@ -227,6 +227,32 @@ func TestDeleteSnapshotRefusals(t *testing.T) {
 	}
 }
 
+// TestDraftMetadataWithoutACurrentSnapshot asks metadata whose cursor names
+// no snapshot for its current snapshot: there is none, and it is dirty.
+func TestDraftMetadataWithoutACurrentSnapshot(t *testing.T) {
+	t.Parallel()
+
+	manifest := SnapshotManifest{ID: "snap-1", Digest: digestOf([]byte("content")), Size: 7, CompressedSize: 1}
+
+	for name, meta := range map[string]*DraftMetadata{
+		"no history":                {History: nil, Cursor: 0},
+		"a cursor before the start": {History: []SnapshotManifest{manifest}, Cursor: -1},
+		"a cursor past the end":     {History: []SnapshotManifest{manifest}, Cursor: 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if current := meta.Current(); current != nil {
+				t.Errorf("Current() = %+v, want nil", current)
+			}
+
+			if !meta.Dirty() {
+				t.Error("Dirty() = false, want true")
+			}
+		})
+	}
+}
+
 func TestCreateDraftRejectsMetadataOverLimit(t *testing.T) {
 	meta := &DraftMetadata{
 		ID: "draft", CreatedBy: testActor, Title: "", SourceToken: "",

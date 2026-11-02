@@ -321,29 +321,40 @@ func TestToTopologyDeviceHostnameWins(t *testing.T) {
 	}
 }
 
-func TestPublishTopologyReturnsTheProjectionTheConfigHolds(t *testing.T) {
-	doc := loadDocumentFixture(t, "strict-document.json")
+// A device spec without general, or with a null one, gets one that holds the device hostname.
+func TestToTopologyAddsGeneral(t *testing.T) {
+	for name, null := range map[string]bool{"no general": false, "a null general": true} {
+		t.Run(name, func(t *testing.T) {
+			doc := loadDocumentFixture(t, "document.json")
+			host := nodeByHostname(t, doc, "host-a")
 
-	config, projection, warnings, err := doc.PublishTopology("strict-topology")
-	if err != nil {
-		t.Fatalf("publishing topology: %v", err)
+			delete(host.Device.Spec, "general")
+
+			if null {
+				host.Device.Spec["general"] = nil
+			}
+
+			topology, err := doc.ToTopology()
+			if err != nil {
+				t.Fatalf("ToTopology: %v", err)
+			}
+
+			if diff := cmp.Diff(map[string]any{"hostname": "host-a"}, specNode(t, topology, "host-a")["general"]); diff != "" {
+				t.Errorf("ToTopology() general of host-a mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// SpecSetString with no keys names no value, so it changes nothing.
+func TestSpecSetStringWithoutKeys(t *testing.T) {
+	spec := map[string]any{"general": map[string]any{}}
+	if builder.SpecSetString(spec, "value") {
+		t.Errorf("SpecSetString() with no keys = true, want false")
 	}
 
-	want, err := doc.ToTopology()
-	if err != nil {
-		t.Fatalf("projecting topology: %v", err)
-	}
-
-	if diff := cmp.Diff(want, projection); diff != "" {
-		t.Errorf("PublishTopology(strict-topology) projection mismatch (-want +got):\n%s", diff)
-	}
-
-	if diff := cmp.Diff(projection.Spec, config.Spec); diff != "" {
-		t.Errorf("PublishTopology(strict-topology) config spec mismatch, want the projection spec (-want +got):\n%s", diff)
-	}
-
-	if len(warnings) != 0 {
-		t.Errorf("PublishTopology(strict-topology) warnings = %v, want none", warnings)
+	if diff := cmp.Diff(map[string]any{"general": map[string]any{}}, spec); diff != "" {
+		t.Errorf("SpecSetString() with no keys changed the spec (-want +got):\n%s", diff)
 	}
 }
 
@@ -354,13 +365,26 @@ func TestPublishTopologyReturnsValidatedConfig(t *testing.T) {
 		t.Fatalf("fixture document is invalid: %v", err)
 	}
 
-	config, _, warnings, err := doc.PublishTopology("strict-topology")
+	config, projection, warnings, err := doc.PublishTopology("strict-topology")
 	if err != nil {
 		t.Fatalf("publishing topology: %v", err)
 	}
 
 	if len(warnings) != 0 {
 		t.Errorf("PublishTopology(strict-topology) warnings = %v, want none", warnings)
+	}
+
+	wantProjection, err := doc.ToTopology()
+	if err != nil {
+		t.Fatalf("projecting topology: %v", err)
+	}
+
+	if diff := cmp.Diff(wantProjection, projection); diff != "" {
+		t.Errorf("PublishTopology(strict-topology) projection mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(projection.Spec, config.Spec); diff != "" {
+		t.Errorf("PublishTopology(strict-topology) config spec mismatch, want the projection spec (-want +got):\n%s", diff)
 	}
 
 	want := &store.Config{
@@ -872,27 +896,40 @@ func TestExportTopologyConfigReportsSharedAddresses(t *testing.T) {
 // Interfaces of one device are compared too, and past the two a problem
 // names, the others are counted.
 func TestPublishTopologyRefusesAddressesOfOneDevice(t *testing.T) {
-	doc := withInterfaces(t, map[string][]map[string]any{
-		"host-a": {
-			{"mac": "00:00:00:00:00:01"},
-			{"name": "eth1", "vlan": "EXP", "proto": "static", "address": "10.0.0.2", "mac": "00-00-00-00-00-01"},
-			{"name": "eth1", "vlan": "EXP", "mac": "00:00:00:00:00:01"},
-		},
-	})
+	const (
+		eth0, eth1 = `interface "eth0" of device "host-a"`, `interface "eth1" (#2) of device "host-a"`
+		ip         = `IP address 10.0.0.2 on VLAN "EXP" is used by ` + eth0 + " and " + eth1
+		mac        = `MAC address 00:00:00:00:00:01 on VLAN "EXP" is used by ` + eth0
+	)
 
-	want := []string{
-		`IP address 10.0.0.2 on VLAN "EXP" is used by interface "eth0" of device "host-a" and interface "eth1" (#2) of device "host-a"`,
-		`MAC address 00:00:00:00:00:01 on VLAN "EXP" is used by interface "eth0" of device "host-a", ` +
-			`interface "eth1" (#2) of device "host-a" and 1 more interface`,
-	}
+	sameMAC := map[string]any{"name": "eth1", "vlan": "EXP", "mac": "00:00:00:00:00:01"}
 
-	got, issuesErr := sharedAddresses(t, doc)
-	if issuesErr != nil {
-		t.Errorf("PublishTopology(shared) %v", issuesErr)
-	}
+	for name, test := range map[string]struct {
+		more []map[string]any
+		want []string
+	}{
+		// The one eth1 is named without its position.
+		"two": {more: nil, want: []string{
+			strings.Replace(ip, " (#2)", "", 1), mac + ` and interface "eth1" of device "host-a"`,
+		}},
+		"three": {more: []map[string]any{sameMAC}, want: []string{ip, mac + ", " + eth1 + " and 1 more interface"}},
+		"four":  {more: []map[string]any{sameMAC, sameMAC}, want: []string{ip, mac + ", " + eth1 + " and 2 more interfaces"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			interfaces := append([]map[string]any{
+				{"mac": "00:00:00:00:00:01"},
+				{"name": "eth1", "vlan": "EXP", "proto": "static", "address": "10.0.0.2", "mac": "00-00-00-00-00-01"},
+			}, test.more...)
 
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("PublishTopology(shared) problems mismatch (-want +got):\n%s", diff)
+			got, issuesErr := sharedAddresses(t, withInterfaces(t, map[string][]map[string]any{"host-a": interfaces}))
+			if issuesErr != nil {
+				t.Errorf("PublishTopology(shared) %v", issuesErr)
+			}
+
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("PublishTopology(shared) problems mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -1019,6 +1056,15 @@ func TestPublishTopologyComparesIncludedDevices(t *testing.T) {
 		t.Errorf("PublishTopology(shared) problems mismatch (-want +got):\n%s", diff)
 	}
 
+	// The spec of an included device that has a key that is not text is not compared.
+	host := nodeByHostname(t, doc, "host-a")
+	host.Device.Spec["extra"] = map[any]any{1: "x"}
+
+	if got, issuesErr = sharedAddresses(t, doc); got != nil || issuesErr != nil {
+		t.Errorf("PublishTopology(shared) = %q, %v, want no problem with an unreadable included spec", got, issuesErr)
+	}
+
+	delete(host.Device.Spec, "extra")
 	nodeByHostname(t, doc, "router").Device.IncludedFrom = "shared"
 
 	got, issuesErr = sharedAddresses(t, doc)
@@ -1235,21 +1281,30 @@ func TestPublishTopologyComparesConnectedAddressesOnTheirNetworks(t *testing.T) 
 // Interfaces without a VLAN, which publishing refuses unless their device is
 // external, are compared with each other, and with no interface on a VLAN.
 func TestPublishBlockersCompareAddressesWithoutVLAN(t *testing.T) {
+	const both = `is used by interface "eth0" of device "router" and interface "eth0" of device "host-a"`
+
 	for name, test := range map[string]struct {
-		host map[string]any
-		want []string
+		router, host map[string]any
+		want         []string
 	}{
 		"both without a VLAN": {
-			host: map[string]any{"vlan": " ", "address": "10.0.0.1"},
-			want: []string{
-				`IP address 10.0.0.1 without a VLAN is used by interface "eth0" of device "router" ` +
-					`and interface "eth0" of device "host-a"`,
-			},
+			router: map[string]any{"vlan": ""},
+			host:   map[string]any{"vlan": " ", "address": "10.0.0.1"},
+			want:   []string{`IP address 10.0.0.1 without a VLAN ` + both},
 		},
-		"one on a VLAN": {host: map[string]any{"vlan": "EXP", "address": "10.0.0.1"}, want: nil},
+		"one on a VLAN": {
+			router: map[string]any{"vlan": ""},
+			host:   map[string]any{"vlan": "EXP", "address": "10.0.0.1"},
+			want:   nil,
+		},
+		"both on one bridge without a VLAN": {
+			router: map[string]any{"vlan": "", "bridge": "lab"},
+			host:   map[string]any{"vlan": "", "bridge": "lab", "address": "10.0.0.1"},
+			want:   []string{`IP address 10.0.0.1 on bridge "lab" without a VLAN ` + both},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			doc := unconnectedPair(t, map[string]any{"vlan": ""}, test.host)
+			doc := unconnectedPair(t, test.router, test.host)
 
 			blockers, err := doc.PublishBlockers("no-vlan")
 			if err != nil {
@@ -1604,5 +1659,225 @@ func TestToTopologyOmitsPresentationFields(t *testing.T) {
 	// The includes themselves are written back, all of them.
 	if diff := cmp.Diff([]string{"shared", "plant"}, got.Spec["includeTopologies"]); diff != "" {
 		t.Errorf("ToTopologyConfig(decorated) includeTopologies mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// A publish blocker made outside the package has no located issues, so each problem is an issue of
+// the blocker's code without a location. The located issues of a publish are a copy.
+func TestPublishBlockerIssuesWithoutLocation(t *testing.T) {
+	problems := []string{"first problem", "second problem"}
+
+	for name, test := range map[string]struct {
+		blocker interface {
+			error
+			Issues() []builder.Issue
+		}
+		code builder.Code
+	}{
+		"interface VLAN":    {blocker: &builder.InterfaceVLANError{Problems: problems}, code: builder.CodeInterfaceVLANMissing},
+		"interface address": {blocker: &builder.InterfaceAddressError{Problems: problems}, code: builder.CodeInterfaceIPShared},
+		"node hostname":     {blocker: &builder.NodeHostnameError{Problems: problems}, code: builder.CodeNodeHostnameShort},
+		"device setup":      {blocker: &builder.DeviceSetupError{Problems: problems}, code: builder.CodeDeviceOSPFMissing},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got, want := test.blocker.Error(), "first problem. second problem"; got != want {
+				t.Errorf("Error() = %q, want %q", got, want)
+			}
+
+			want := []builder.Issue{
+				builder.NewIssue(test.code, "", problems[0]),
+				builder.NewIssue(test.code, "", problems[1]),
+			}
+			if diff := cmp.Diff(want, test.blocker.Issues()); diff != "" {
+				t.Errorf("Issues() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+
+	doc, eth0 := unconnectedHost(t)
+	eth0["vlan"] = ""
+
+	var vlanErr *builder.InterfaceVLANError
+	if err := publishTopologyError(doc, "copy"); !errors.As(err, &vlanErr) {
+		t.Fatalf("PublishTopology(copy) = %v, want an InterfaceVLANError", err)
+	}
+
+	issues := vlanErr.Issues()
+	want := slices.Clone(issues)
+	issues[0].Message = "changed"
+
+	if diff := cmp.Diff(want, vlanErr.Issues()); diff != "" {
+		t.Errorf("InterfaceVLANError.Issues() after a change to its result mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// topologyEntryErrors returns the error of each projection of doc as the topology named name, by
+// the method that made it, and reports a result that comes with an error.
+func topologyEntryErrors(t *testing.T, doc *builder.Document, name string) map[string]error {
+	t.Helper()
+
+	errs := map[string]error{}
+
+	config, warnings, err := doc.ToTopologyConfig(name)
+	if err != nil && (config != nil || warnings != nil) {
+		t.Errorf("ToTopologyConfig(%s) = %v, %v with error %v, want no result", name, config, warnings, err)
+	}
+
+	errs["ToTopologyConfig"] = err
+
+	published, projection, _, err := doc.PublishTopology(name)
+	if err != nil && (published != nil || projection != nil) {
+		t.Errorf("PublishTopology(%s) = %v, %v with error %v, want no result", name, published, projection, err)
+	}
+
+	errs["PublishTopology"] = err
+
+	export, err := doc.ExportTopologyConfig(name)
+	if err != nil && export != nil {
+		t.Errorf("ExportTopologyConfig(%s) = %v with error %v, want no result", name, export, err)
+	}
+
+	errs["ExportTopologyConfig"] = err
+
+	blockers, err := doc.PublishBlockers(name)
+	if err != nil && blockers != nil {
+		t.Errorf("PublishBlockers(%s) = %v with error %v, want no result", name, blockers, err)
+	}
+
+	errs["PublishBlockers"] = err
+
+	return errs
+}
+
+// A topology name with a slash is no config name, so each projection refuses it.
+func TestTopologyProjectionRefusesConfigName(t *testing.T) {
+	doc := loadDocumentFixture(t, "strict-document.json")
+
+	const want = "creating topology config: invalid config name provided: topology/lab/copy"
+
+	for method, err := range topologyEntryErrors(t, doc, "lab/copy") {
+		if err == nil || err.Error() != want {
+			t.Errorf("%s(lab/copy) error = %v, want %q", method, err, want)
+		}
+	}
+}
+
+// A device spec that validation accepts but that has no topology node form is refused by each
+// projection, which names the device.
+func TestToTopologyRefusesUnmappableSpec(t *testing.T) {
+	for name, test := range map[string]struct {
+		set    func(spec map[string]any)
+		reason string
+	}{
+		"general is not an object": {
+			set:    func(spec map[string]any) { spec["general"] = "router" },
+			reason: `node spec key "general" is not an object`,
+		},
+		"a key that is not text": {
+			set:    func(spec map[string]any) { spec["annotations"] = map[any]any{1: "one"} },
+			reason: "non-string spec key 1 (int)",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := loadDocumentFixture(t, "strict-document.json")
+			test.set(nodeByHostname(t, doc, "router").Device.Spec)
+
+			if err := doc.Validate(); err != nil {
+				t.Fatalf("the draft must stay valid: %v", err)
+			}
+
+			want := `mapping device "router": ` + test.reason
+
+			if topology, err := doc.ToTopology(); err == nil || err.Error() != want {
+				t.Errorf("ToTopology() = %v, %v, want error %q", topology, err, want)
+			}
+
+			for method, err := range topologyEntryErrors(t, doc, "unmappable") {
+				if err == nil || err.Error() != want {
+					t.Errorf("%s(unmappable) error = %v, want %q", method, err, want)
+				}
+			}
+		})
+	}
+}
+
+// A connection point names its spec interface exactly, else in another case.
+func TestToTopologyMatchesInterfaceNamesIgnoringCase(t *testing.T) {
+	for name, test := range map[string]struct {
+		extra []any
+		// want is the VLAN of each spec interface of the router, by name.
+		want map[string]any
+	}{
+		"only in another case": {extra: nil, want: map[string]any{"eth0": "EXP", "eth1": nil}},
+		"also exactly": {
+			extra: []any{map[string]any{"name": "ETH0", "vlan": "OLD"}},
+			want:  map[string]any{"eth0": "STALE", "eth1": nil, "ETH0": "EXP"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := loadDocumentFixture(t, "document.json")
+			router := nodeByHostname(t, doc, "router")
+			router.Device.Interfaces[0].Name = "ETH0"
+
+			network, _ := router.Device.Spec["network"].(map[string]any)
+			ifaces, _ := network["interfaces"].([]any)
+			network["interfaces"] = append(ifaces, test.extra...)
+
+			topology, err := doc.ToTopology()
+			if err != nil {
+				t.Fatalf("ToTopology: %v", err)
+			}
+
+			if slices.ContainsFunc(topology.Warnings, func(warning builder.Issue) bool {
+				return warning.Code == builder.CodeInterfaceNameUnmatched
+			}) {
+				t.Errorf("ToTopology() warnings = %v, want no %s", topology.Warnings, builder.CodeInterfaceNameUnmatched)
+			}
+
+			got := map[string]any{}
+
+			specNetwork, _ := specNode(t, topology, "router")["network"].(map[string]any)
+			specIfaces, _ := specNetwork["interfaces"].([]any)
+
+			for _, entry := range specIfaces {
+				iface, _ := entry.(map[string]any)
+				name, _ := iface["name"].(string)
+				got[name] = iface["vlan"]
+			}
+
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("ToTopology() router interface VLANs mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestSpecV1RefusesMistypedSpec(t *testing.T) {
+	topology := &builder.Topology{Spec: map[string]any{"nodes": []any{"router"}}}
+
+	spec, err := topology.SpecV1()
+	if err == nil || !strings.HasPrefix(err.Error(), "decoding topology spec: ") {
+		t.Errorf("SpecV1() of a node that is text = %v, %v, want a decoding error", spec, err)
+	}
+}
+
+// A spec interface that is not an object is no publish blocker. It is the phenix schema's to refuse.
+func TestPublishTopologyLeavesMistypedInterfacesToTheSchema(t *testing.T) {
+	doc := loadDocumentFixture(t, "strict-document.json")
+	network, _ := nodeByHostname(t, doc, "host-a").Device.Spec["network"].(map[string]any)
+	ifaces, _ := network["interfaces"].([]any)
+	network["interfaces"] = append([]any{"eth9"}, ifaces...)
+
+	if blockers, err := doc.PublishBlockers("mistyped"); err != nil || len(blockers) != 0 {
+		t.Errorf("PublishBlockers(mistyped) = %v, %v, want none", blockers, err)
+	}
+
+	err := publishTopologyError(doc, "mistyped")
+	if !errors.Is(err, types.ErrValidationFailed) {
+		t.Errorf("PublishTopology(mistyped) = %v, want an error matching types.ErrValidationFailed", err)
+	}
+
+	if _, exportErr := doc.ExportTopologyConfig("mistyped"); exportErr == nil || err == nil || exportErr.Error() != err.Error() {
+		t.Errorf("ExportTopologyConfig(mistyped) error = %v, want the publish error %v", exportErr, err)
 	}
 }

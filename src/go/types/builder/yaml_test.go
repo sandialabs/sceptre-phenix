@@ -172,6 +172,8 @@ func TestJSONFromYAMLScalars(t *testing.T) {
 			`a: !!str 12` + "\nb: !!int \"12\"\nc: !!float 3\nd: !!bool \"true\"\ne: !!null ~",
 			`{"a":"12","b":12,"c":3,"d":true,"e":null}`,
 		},
+		"a tagged quoted null": {"a: !!null '~'\nb: !!null", `{"a":null,"b":null}`},
+		"a tagged key":         {"!!int 0x10: a\n!!str 1: b", `{"1":"b","16":"a"}`},
 		"keys are text": {
 			"1.0: a\ntrue: b\n~: c\n0x10: e\n2001-01-01: f\n\"x y\": g\n1e21: h",
 			`{"1":"a","16":"e","1e+21":"h","2001-01-01":"f","null":"c","true":"b","x y":"g"}`,
@@ -292,6 +294,11 @@ func TestJSONFromYAMLRefusals(t *testing.T) {
 		"a tag that does not match":   {"a: !!int " + marker + "\n", "line 1: a Builder document cannot have the tag of this value"},
 		"a tagged map":                {"a: !!set {" + marker + "}\n", "line 1: a Builder document cannot have the tag of this map"},
 		"a tagged list":               {"a: !!omap [" + marker + ": 1]\n", "line 1: a Builder document cannot have the tag of this list"},
+		"an infinite key":             {"a: " + marker + "\n.inf: 1\n", "line 2: a Builder document cannot have an infinite number or one that is not a number"},
+		"a tagged key that is no int": {"!!int " + marker + ": 1\n", "line 1: a Builder document cannot have the tag of this value"},
+		"a quoted empty null":         {"a: !!null ''\nb: " + marker + "\n", "line 1: a Builder document cannot have the tag of this value"},
+		"a bool tag on yes":           {"a: !!bool yes\nb: " + marker + "\n", "line 1: a Builder document cannot have the tag of this value"},
+		"a float tag too large":       {"a: !!float 1e999\nb: " + marker + "\n", "line 1: a Builder document cannot have the tag of this value"},
 		"no document":                 {"", "the text holds no document"},
 		"only a comment":              {"# " + marker + "\n", "the text holds no document"},
 	} {
@@ -346,6 +353,46 @@ func TestJSONFromYAMLDoesNotExpandAliases(t *testing.T) {
 
 	if got, err := builder.JSONFromYAML([]byte(text.String())); !errors.Is(err, builder.ErrUnsupportedYAML) {
 		t.Errorf("JSONFromYAML(nested aliases) = %d bytes, %v, want an error matching ErrUnsupportedYAML", len(got), err)
+	}
+}
+
+// TestYAMLNodesTheReaderNeverMakes refuses nodes that yaml.v3 does not give
+// for text. It always reads the anchor before an alias to it.
+func TestYAMLNodesTheReaderNeverMakes(t *testing.T) {
+	t.Parallel()
+
+	alias := &yaml.Node{Kind: yaml.AliasNode, Line: 4}
+	twoValues := &yaml.Node{Kind: yaml.DocumentNode, Line: 1, Content: []*yaml.Node{{}, {}}}
+
+	for name, test := range map[string]struct {
+		node   *yaml.Node
+		key    bool
+		reason string
+	}{
+		"an alias":                 {node: alias, reason: "line 4: a Builder document cannot have an alias (*name)"},
+		"an alias as a key":        {node: alias, key: true, reason: "line 4: a Builder document cannot have an alias (*name)"},
+		"an empty document":        {node: &yaml.Node{Kind: yaml.DocumentNode, Line: 2}, reason: "line 2: a Builder document cannot have a document without one value"},
+		"a document of two values": {node: twoValues, reason: "line 1: a Builder document cannot have a document without one value"},
+		"a node of no known kind":  {node: &yaml.Node{Line: 3}, reason: "line 3: a Builder document cannot have this value"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var (
+				got any
+				err error
+			)
+
+			if test.key {
+				got, err = builder.YAMLKey(test.node)
+			} else {
+				got, err = builder.YAMLValue(test.node)
+			}
+
+			if !errors.Is(err, builder.ErrUnsupportedYAML) || !strings.HasSuffix(err.Error(), test.reason) {
+				t.Errorf("reading %s = %v, %v, want an error matching ErrUnsupportedYAML that ends %q", name, got, err, test.reason)
+			}
+		})
 	}
 }
 
@@ -427,4 +474,46 @@ func TestFileKindOfDocument(t *testing.T) {
 			}
 		})
 	}
+}
+
+// FuzzJSONFromYAML checks that any refusal matches ErrUnsupportedYAML, and that the JSON of text it
+// reads is valid JSON that it reads back to the same JSON.
+func FuzzJSONFromYAML(f *testing.F) {
+	for _, seed := range []string{
+		"a: 1\nb: [x, {c: 2.5}]\n", `{"a": "2001-01-01", "b": null}`, "- 0x1F\n- -0.0\n- '~'\n",
+		"a: &x 1\nb: *x\n", "\"\\x7f\": \"\\u2028\"\n",
+	} {
+		f.Add([]byte(seed))
+	}
+
+	f.Fuzz(func(t *testing.T, text []byte) {
+		converted, err := builder.JSONFromYAML(text)
+		if err != nil {
+			if !errors.Is(err, builder.ErrUnsupportedYAML) {
+				t.Errorf("JSONFromYAML(%q) error = %v, want an error matching ErrUnsupportedYAML", text, err)
+			}
+
+			return
+		}
+
+		if !json.Valid(converted) {
+			t.Fatalf("JSONFromYAML(%q) = %q, want valid JSON", text, converted)
+		}
+
+		// YAML text may not hold DEL, C1 controls other than NEL, U+FFFE or U+FFFF, which JSON may.
+		if strings.ContainsFunc(string(converted), func(r rune) bool {
+			return r == 0x7f || (r >= 0x80 && r <= 0x9f && r != 0x85) || r == 0xfffe || r == 0xffff
+		}) {
+			return
+		}
+
+		again, err := builder.JSONFromYAML(converted)
+		if err != nil {
+			t.Fatalf("JSONFromYAML(%q) = %v, want its own JSON %q read back", converted, err, text)
+		}
+
+		if diff := cmp.Diff(string(converted), string(again)); diff != "" {
+			t.Errorf("JSONFromYAML(JSONFromYAML(%q)) mismatch (-want +got):\n%s", text, diff)
+		}
+	})
 }

@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -22,6 +24,7 @@ import (
 	bdoc "phenix/types/builder"
 	"phenix/util/plog/plogtest"
 	"phenix/web/rbac"
+	"phenix/web/weberror"
 )
 
 // The messages a conversion of the captured sample diagram warns with.
@@ -1073,4 +1076,117 @@ func TestBuilderPublishKeepsLegacyTopology(t *testing.T) {
 	draft := createBuilderPublishDraft(t, harness, generateBuilderDocument(t, harness, "Experiment/exp"), "Experiment/exp")
 
 	publishBuilderDraft(t, harness, draft, update, http.StatusOK)
+}
+
+// builderLegacyShownControl reports whether r is a character that
+// builderLegacyShown removes.
+func builderLegacyShownControl(r rune) bool {
+	return r < ' ' || r == '\x7f'
+}
+
+// TestBuilderLegacyShown removes control characters from a config name and
+// cuts it at a character boundary.
+func TestBuilderLegacyShown(t *testing.T) {
+	most := strings.Repeat("n", builderLegacyShownBytes)
+
+	tests := []struct {
+		name, in, want string
+	}{
+		{name: "a plain name", in: "lab", want: "lab"},
+		{name: "an empty name", in: "", want: ""},
+		{name: "control characters", in: "a\tb\nc\x00d\x7fe\x1b", want: "abcde"},
+		{name: "a name of the most bytes", in: most, want: most},
+		{name: "a name one byte longer", in: most + "x", want: most + "..."},
+		{name: "control characters that do not count", in: "\x01" + most + "\n", want: most},
+		{name: "a character across the cut", in: most[1:] + "\u00e9", want: most[1:] + "..."},
+		{name: "bytes that are not UTF-8", in: "a\xffb", want: "a\ufffdb"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := builderLegacyShown(tt.in); got != tt.want {
+				t.Errorf("builderLegacyShown(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// FuzzBuilderLegacyShown checks that a refusal repeats a config name as
+// valid UTF-8 without control characters, never longer than the cut.
+func FuzzBuilderLegacyShown(f *testing.F) {
+	for _, seed := range []string{"lab", "a\tb\x7f", strings.Repeat("\u00e9", 40), "a\xffb"} {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, name string) {
+		got := builderLegacyShown(name)
+
+		if !utf8.ValidString(got) || strings.ContainsFunc(got, builderLegacyShownControl) {
+			t.Errorf("builderLegacyShown(%q) = %q, want valid UTF-8 without control characters", name, got)
+		}
+
+		if len(got) > builderLegacyShownBytes+len("...") {
+			t.Errorf("builderLegacyShown(%q) = %d bytes, want at most %d", name, len(got), builderLegacyShownBytes+len("..."))
+		}
+
+		short := utf8.ValidString(name) && len(name) <= builderLegacyShownBytes
+		if short && !strings.ContainsFunc(name, builderLegacyShownControl) && got != name {
+			t.Errorf("builderLegacyShown(%q) = %q, want the name as it is", name, got)
+		}
+	})
+}
+
+// TestBuilderConvertDiagram converts a diagram without a topology, and
+// answers each refusal of the decoder with its status and words.
+func TestBuilderConvertDiagram(t *testing.T) {
+	document, warnings, err := builderConvertDiagram(`<mxGraphModel><root><mxCell id="0"/></root></mxGraphModel>`, "lab")
+	if err != nil {
+		t.Fatalf("builderConvertDiagram(an empty diagram) error: %v", err)
+	}
+
+	if document.Metadata.Name != "lab" || document.Source == nil || document.Source.Kind != bdoc.SourceKindManual {
+		t.Errorf("builderConvertDiagram(an empty diagram) = name %q, source %+v, want lab from a manual source",
+			document.Metadata.Name, document.Source)
+	}
+
+	if diff := cmp.Diff(document.Source.Warnings, warnings); diff != "" {
+		t.Errorf("builderConvertDiagram(an empty diagram): warnings mismatch the source (-want +got):\n%s", diff)
+	}
+
+	tests := []struct {
+		name    string
+		content string
+		status  int
+		message string
+	}{
+		{
+			name: "content beyond the limit", content: "<" + strings.Repeat(" ", bdoc.MaxLegacyBytes),
+			status:  http.StatusRequestEntityTooLarge,
+			message: "the legacy diagram is larger than " + strconv.Itoa(bdoc.MaxLegacyBytes) + " bytes",
+		},
+		{
+			name: "a DOCTYPE", content: `<!DOCTYPE x [<!ENTITY a "b">]><mxGraphModel/>`, status: http.StatusUnprocessableEntity,
+			message: "the legacy diagram has a DOCTYPE or entity declaration, which the Builder does not accept",
+		},
+		{
+			name: "XML that is not well formed", content: "<mxGraphModel>\n<root>", status: http.StatusUnprocessableEntity,
+			message: "the legacy diagram is not well-formed XML (line 2)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := builderConvertDiagram(tt.content, "lab")
+
+			var refusal *weberror.WebError
+			if !errors.As(err, &refusal) {
+				t.Fatalf("builderConvertDiagram(%s) error = %v, want a *weberror.WebError", tt.name, err)
+			}
+
+			if refusal.Status != tt.status || refusal.Message != tt.message || refusal.Cause != "" {
+				t.Errorf("builderConvertDiagram(%s) = %d %q, cause %q, want %d %q and no cause",
+					tt.name, refusal.Status, refusal.Message, refusal.Cause, tt.status, tt.message)
+			}
+		})
+	}
 }

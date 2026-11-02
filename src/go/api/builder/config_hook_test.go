@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -966,6 +967,7 @@ func TestConfigUpdated(t *testing.T) {
 		{name: "offset", updated: "2026-09-30T14:00:05+02:00", want: second},
 		{name: "fraction of a second", updated: "2026-09-30T12:00:05.25Z", want: second},
 		{name: "no updated time", updated: "", want: time.Time{}},
+		{name: "a time that is not RFC 3339", updated: "30 Sep 2026 12:00:05", want: time.Time{}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -973,6 +975,42 @@ func TestConfigUpdated(t *testing.T) {
 			got := configUpdated(&store.Config{Metadata: store.ConfigMetadata{Updated: test.updated}})
 			if !got.Equal(test.want) {
 				t.Errorf("configUpdated(%q) = %s, want %s", test.updated, got, test.want)
+			}
+		})
+	}
+}
+
+// TestTopologyConfigHookLeavesOtherWrites stores a topology that has no document
+// reference, and runs a stage the hook does not act on: the hook accepts the
+// config and changes nothing.
+func TestTopologyConfigHookLeavesOtherWrites(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name        string
+		stage       string
+		annotations store.Annotations
+	}{
+		{name: "create without annotations", stage: configStageCreate, annotations: nil},
+		{name: "update with other annotations", stage: configStageUpdate, annotations: store.Annotations{"kept": "yes"}},
+		{name: "another stage", stage: "list", annotations: store.Annotations{DocumentAnnotation: "{"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			c, err := store.NewConfig("Topology/topo")
+			if err != nil {
+				t.Fatalf("NewConfig returned error: %v", err)
+			}
+
+			c.Metadata.Annotations = maps.Clone(test.annotations)
+
+			if err := topologyConfigHook(test.stage, c); err != nil {
+				t.Errorf("topologyConfigHook(%s) returned error: %v", test.stage, err)
+			}
+
+			if diff := cmp.Diff(test.annotations, c.Metadata.Annotations); diff != "" {
+				t.Errorf("annotations after topologyConfigHook(%s) mismatch (-want +got):\n%s", test.stage, diff)
 			}
 		})
 	}

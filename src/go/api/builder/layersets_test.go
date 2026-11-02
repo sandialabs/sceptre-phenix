@@ -12,6 +12,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
+	"phenix/store"
+	"phenix/store/recordtest/memrecord"
 	"phenix/types/builder"
 )
 
@@ -294,6 +296,35 @@ func TestLayerSetLibraryRefuses(t *testing.T) {
 	if got := created.Layers[1].Matchers; got != nil {
 		t.Errorf("CreateLayerSet(Plant) second layer matchers = %#v, want nil", got)
 	}
+
+	// Each "<" of a matcher takes 6 bytes in the record, which then holds
+	// more than MaxMetadataBytes.
+	large := testLayerSet("Large")
+	large.Layers = nil
+
+	for id := range builder.MaxLayers {
+		matchers := make(map[string]string, builder.MaxLayerMatchers)
+		for i := range builder.MaxLayerMatchers {
+			matchers["spec.field"+strconv.Itoa(i)] = strings.Repeat("<", builder.MaxMatcherPatternBytes)
+		}
+
+		large.Layers = append(large.Layers, builder.Layer{
+			ID: &id, Label: "Layer " + strconv.Itoa(id), IconKey: "", Icon: "", Color: "", Matchers: matchers,
+		})
+	}
+
+	sets := h.store.Count(NamespaceLayerSets)
+
+	var tooLarge *TooLargeError
+	if _, err := h.service.CreateLayerSet(ctx, testActor, large); !errors.As(err, &tooLarge) {
+		t.Errorf("CreateLayerSet(Large) error = %v, want a *TooLargeError", err)
+	} else if tooLarge.What != kindLayerSet || tooLarge.Limit != MaxMetadataBytes {
+		t.Errorf("CreateLayerSet(Large) refusal = %+v, want the %s record past %d bytes", tooLarge, kindLayerSet, MaxMetadataBytes)
+	}
+
+	if got := h.store.Count(NamespaceLayerSets); got != sets {
+		t.Errorf("layer set records after CreateLayerSet(Large) = %d, want %d", got, sets)
+	}
 }
 
 func TestLayerSetLibraryHoldsAtMost200Sets(t *testing.T) {
@@ -334,6 +365,7 @@ func TestLayerSetLibrarySkipsDamagedRecords(t *testing.T) {
 		"set/other":   `{"id":"another","name":"x","layers":[{"id":1,"label":"a"}],"version":1}`,
 		"set/version": `{"id":"version","name":"x","layers":[{"id":1,"label":"a"}],"version":0}`,
 		"set/invalid": `{"id":"invalid","name":"x","layers":[],"version":1}`,
+		"set/user":    `{"id":"user","name":"x","layers":[{"id":1,"label":"a"}],"version":1,"createdBy":"a\nb"}`,
 	} {
 		if _, err := h.store.CreateRecord(NamespaceLayerSets, key, []byte(value)); err != nil {
 			t.Fatalf("CreateRecord(%s) returned error: %v", key, err)
@@ -345,8 +377,8 @@ func TestLayerSetLibrarySkipsDamagedRecords(t *testing.T) {
 		t.Fatalf("ListLayerSets returned error: %v", err)
 	}
 
-	if damaged != 5 {
-		t.Errorf("ListLayerSets damaged = %d, want 5", damaged)
+	if damaged != 6 {
+		t.Errorf("ListLayerSets damaged = %d, want 6", damaged)
 	}
 
 	if diff := cmp.Diff([]string{builder.BuiltinPurdueLayerSetID, created.ID}, layerSetIDs(sets)); diff != "" {
@@ -517,4 +549,443 @@ func TestUpdateLayerSetRetriesAfterAnotherWrite(t *testing.T) {
 		cmpopts.IgnoreFields(LibraryLayerSet{}, "Updated", "Revision")); diff != "" {
 		t.Errorf("UpdateLayerSet(%s) racing another write mismatch (-want +got):\n%s", created.ID, diff)
 	}
+}
+
+func TestLayerSetErrorMessages(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "stale",
+			err:  &LayerSetStaleError{ID: "set-1", ETag: `"3"`},
+			want: "builder: revision conflict: layer set set-1 changed after you last read it",
+		},
+		{
+			name: "limit",
+			err:  &LayerSetLimitError{Limit: MaxLayerSets},
+			want: "builder: payload too large: the layer set library holds at most 200 sets",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.err.Error(); got != tt.want {
+				t.Errorf("Error() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLayerSetLibraryRefusesACanceledContext(t *testing.T) {
+	h := newHarness(t)
+
+	created, err := h.service.CreateLayerSet(context.Background(), testActor, testLayerSet("Plant"))
+	if err != nil {
+		t.Fatalf("CreateLayerSet(Plant) returned error: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	commits := h.store.Commits()
+
+	for _, tt := range []struct {
+		name string
+		call func() error
+	}{
+		{name: "ListLayerSets", call: func() error { _, _, err := h.service.ListLayerSets(ctx); return err }},
+		{name: "GetLayerSet", call: func() error { _, err := h.service.GetLayerSet(ctx, created.ID); return err }},
+		{name: "CreateLayerSet", call: func() error {
+			_, err := h.service.CreateLayerSet(ctx, testActor, testLayerSet("Other"))
+
+			return err
+		}},
+		{name: "UpdateLayerSet", call: func() error {
+			_, err := h.service.UpdateLayerSet(ctx, testActor, created.ID, created.ETag(), testLayerSet("Other"))
+
+			return err
+		}},
+		{name: "DeleteLayerSet", call: func() error { return h.service.DeleteLayerSet(ctx, created.ID, created.ETag()) }},
+		{name: "DefaultLayerSet", call: func() error { _, err := h.service.DefaultLayerSet(ctx); return err }},
+		{name: "SetDefaultLayerSet", call: func() error {
+			_, err := h.service.SetDefaultLayerSet(ctx, created.ID, `"0"`)
+
+			return err
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.call(); !errors.Is(err, context.Canceled) {
+				t.Errorf("%s with a canceled context = %v, want context.Canceled", tt.name, err)
+			}
+		})
+	}
+
+	if got := h.store.Commits(); got != commits {
+		t.Errorf("store commits after the canceled calls = %d, want %d", got, commits)
+	}
+}
+
+// TestLayerSetNotFoundShowsAShortID asserts a refusal repeats at most 80 bytes
+// of an ID, cut at a whole character.
+func TestLayerSetNotFoundShowsAShortID(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	for _, tt := range []struct {
+		name, id, want string
+	}{
+		{name: "short", id: "a/b", want: "a/b"},
+		{name: "long", id: strings.Repeat("a", MaxIDLength+1), want: strings.Repeat("a", 80) + "..."},
+		{name: "three-byte characters", id: strings.Repeat("€", 40), want: strings.Repeat("€", 26) + "..."},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, getErr := h.service.GetLayerSet(ctx, tt.id)
+
+			for name, err := range map[string]error{
+				"GetLayerSet":    getErr,
+				"DeleteLayerSet": h.service.DeleteLayerSet(ctx, tt.id, `"1"`),
+			} {
+				var notFound *NotFoundError
+				if !errors.As(err, &notFound) {
+					t.Errorf("%s(%q) = %v, want a NotFoundError", name, tt.id, err)
+				} else if diff := cmp.Diff(NotFoundError{Kind: kindLayerSet, ID: tt.want}, *notFound); diff != "" {
+					t.Errorf("%s(%q) refusal mismatch (-want +got):\n%s", name, tt.id, diff)
+				}
+			}
+		})
+	}
+}
+
+func TestUpdateLayerSetRefusesBadRequests(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	created, err := h.service.CreateLayerSet(ctx, testActor, testLayerSet("Plant"))
+	if err != nil {
+		t.Fatalf("CreateLayerSet(Plant) returned error: %v", err)
+	}
+
+	for _, tt := range []struct {
+		name, actor string
+		content     builder.LayerSet
+	}{
+		{name: "no actor", actor: "", content: testLayerSet("Changed")},
+		{name: "an actor with a control character", actor: "a\nb", content: testLayerSet("Changed")},
+		{name: "no name", actor: testActor, content: testLayerSet("")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := h.service.UpdateLayerSet(ctx, tt.actor, created.ID, created.ETag(), tt.content); !errors.Is(
+				err, ErrInvalid,
+			) {
+				t.Errorf("UpdateLayerSet(%s) = %v, want ErrInvalid", created.ID, err)
+			}
+		})
+	}
+
+	if got, err := h.service.GetLayerSet(ctx, created.ID); err != nil || got.Version != 1 {
+		t.Errorf("GetLayerSet(%s) after the refusals = %+v, %v; want version 1", created.ID, got, err)
+	}
+}
+
+// TestCreateLayerSetStoresNothingWhenRefused gives CreateLayerSet an ID it
+// cannot use, or a store that refuses the write.
+func TestCreateLayerSetStoresNothingWhenRefused(t *testing.T) {
+	failure := errors.New("no entropy")
+
+	for _, tt := range []struct {
+		name     string
+		id       func() (string, error)
+		refuse   error
+		count    error
+		wantErr  error
+		anyError bool
+	}{
+		{name: "the ID source fails", id: func() (string, error) { return "", failure }, wantErr: failure},
+		{name: "an invalid ID", id: func() (string, error) { return "a/b", nil }, anyError: true},
+		{name: "the ID of a built-in set", id: func() (string, error) { return builder.BuiltinPurdueLayerSetID, nil }, anyError: true},
+		{name: "the store refuses", id: func() (string, error) { return "set-1", nil }, refuse: failure, wantErr: failure},
+		{name: "the store cannot count the sets", id: func() (string, error) { return "set-1", nil }, count: failure, wantErr: failure},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := memrecord.New()
+			fake.BeforeCreate = func(string, string) error { return tt.refuse }
+
+			faults := &cleanupFaultStore{
+				Store: fake, failList: nil, failKeys: func(string) error { return tt.count }, failGet: nil, failTxGet: nil,
+			}
+
+			service, err := New(WithStore(faults), WithIDSource(tt.id))
+			if err != nil {
+				t.Fatalf("New returned error: %v", err)
+			}
+
+			_, err = service.CreateLayerSet(context.Background(), testActor, testLayerSet("Plant"))
+
+			switch {
+			case tt.anyError && err == nil:
+				t.Error("CreateLayerSet(Plant) error = nil, want an error")
+			case !tt.anyError && !errors.Is(err, tt.wantErr):
+				t.Errorf("CreateLayerSet(Plant) error = %v, want %v", err, tt.wantErr)
+			}
+
+			if keys := fake.Keys(NamespaceLayerSets); len(keys) != 0 {
+				t.Errorf("layer set records after a refused CreateLayerSet = %q, want none", keys)
+			}
+		})
+	}
+}
+
+// TestLayerSetWritesThatFail makes every write of a set lose to another
+// writer, or fail in the store. A lost write is tried again up to five times.
+func TestLayerSetWritesThatFail(t *testing.T) {
+	failure := errors.New("disk full")
+
+	for _, tt := range []struct {
+		name         string
+		lose         bool
+		wantErr      error
+		wantAttempts int
+	}{
+		{name: "every write loses", lose: true, wantErr: ErrBusy, wantAttempts: maxLibraryAttempts},
+		{name: "the store fails", lose: false, wantErr: failure, wantAttempts: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			ctx := context.Background()
+
+			created, err := h.service.CreateLayerSet(ctx, testActor, testLayerSet("Plant"))
+			if err != nil {
+				t.Fatalf("CreateLayerSet(Plant) returned error: %v", err)
+			}
+
+			key := layerSetKey(created.ID)
+			attempts, writing := 0, false
+
+			// interleave writes the record again unchanged, so its revision
+			// changes and its entity tag does not.
+			interleave := func(namespace, at string) error {
+				if namespace != NamespaceLayerSets || at != key || writing {
+					return nil
+				}
+
+				attempts++
+
+				if !tt.lose {
+					return failure
+				}
+
+				writing = true
+				defer func() { writing = false }()
+
+				record, err := h.store.GetRecord(namespace, at)
+				if err != nil {
+					return err
+				}
+
+				_, err = h.store.UpdateRecord(namespace, at, record.Value, record.Revision)
+
+				return err
+			}
+
+			h.store.BeforeUpdate = interleave
+
+			_, err = h.service.UpdateLayerSet(ctx, testPeer, created.ID, created.ETag(), testLayerSet("Changed"))
+			if !errors.Is(err, tt.wantErr) || attempts != tt.wantAttempts {
+				t.Errorf("UpdateLayerSet(%s) = %v after %d attempts, want %v after %d",
+					created.ID, err, attempts, tt.wantErr, tt.wantAttempts)
+			}
+
+			h.store.BeforeUpdate = nil
+			attempts = 0
+			h.store.FailDelete = interleave
+
+			err = h.service.DeleteLayerSet(ctx, created.ID, created.ETag())
+			if !errors.Is(err, tt.wantErr) || attempts != tt.wantAttempts {
+				t.Errorf("DeleteLayerSet(%s) = %v after %d attempts, want %v after %d",
+					created.ID, err, attempts, tt.wantErr, tt.wantAttempts)
+			}
+
+			h.store.FailDelete = nil
+
+			if got, err := h.service.GetLayerSet(ctx, created.ID); err != nil {
+				t.Errorf("GetLayerSet(%s) after the failed writes returned error: %v", created.ID, err)
+			} else if got.Name != "Plant" || got.Version != 1 {
+				t.Errorf("GetLayerSet(%s) after the failed writes = %q at version %d, want Plant at version 1",
+					created.ID, got.Name, got.Version)
+			}
+		})
+	}
+}
+
+// TestSetDefaultLayerSetLosesToAnotherChoice makes another writer choose a
+// default between the read and the write. The choice is refused with the tag
+// of the other one, which stays.
+func TestSetDefaultLayerSetLosesToAnotherChoice(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	created, err := h.service.CreateLayerSet(ctx, testActor, testLayerSet("Plant"))
+	if err != nil {
+		t.Fatalf("CreateLayerSet(Plant) returned error: %v", err)
+	}
+
+	var other store.Record
+
+	writing := false
+	h.store.BeforeCreate = func(namespace, at string) error {
+		if namespace != NamespaceLayerSets || at != layerSetDefaultKey || writing {
+			return nil
+		}
+
+		writing = true
+
+		record, err := h.store.CreateRecord(namespace, at, []byte(`{"layerSet":"`+builder.BuiltinPurdueLayerSetID+`"}`))
+		other = record
+
+		return err
+	}
+
+	_, err = h.service.SetDefaultLayerSet(ctx, created.ID, `"0"`)
+
+	var stale *LayerSetStaleError
+	if !errors.As(err, &stale) {
+		t.Fatalf("SetDefaultLayerSet(%s) racing another choice = %v, want a LayerSetStaleError", created.ID, err)
+	}
+
+	if diff := cmp.Diff(LayerSetStaleError{ID: layerSetDefaultKey, ETag: RevisionETag(other.Revision)}, *stale); diff != "" {
+		t.Errorf("SetDefaultLayerSet(%s) racing another choice refusal mismatch (-want +got):\n%s", created.ID, diff)
+	}
+
+	want := LayerSetDefault{ID: builder.BuiltinPurdueLayerSetID, ETag: RevisionETag(other.Revision)}
+	if got, err := h.service.DefaultLayerSet(ctx); err != nil || got != want {
+		t.Errorf("DefaultLayerSet() after the lost choice = %+v, %v; want %+v, nil", got, err, want)
+	}
+}
+
+// TestDefaultLayerSetStoreFailures fails a read or the write of the default
+// layer set, or makes another writer change the choice before each write.
+func TestDefaultLayerSetStoreFailures(t *testing.T) {
+	ctx := context.Background()
+	failure := errors.New("disk full")
+
+	for _, tt := range []struct {
+		name string
+		// fail sets the store hooks once the set is the default.
+		fail func(t *testing.T, h *testHarness, faults *cleanupFaultStore, set string)
+		// clear removes the choice before fail runs.
+		clear   bool
+		wantErr error
+	}{
+		{
+			name: "the default cannot be read",
+			fail: func(_ *testing.T, _ *testHarness, faults *cleanupFaultStore, _ string) {
+				faults.failGet = func(_, key string) error {
+					if key == layerSetDefaultKey {
+						return failure
+					}
+
+					return nil
+				}
+			},
+			wantErr: failure,
+		},
+		{
+			name: "the default cannot be written",
+			fail: func(_ *testing.T, h *testHarness, _ *cleanupFaultStore, _ string) {
+				h.store.BeforeUpdate = func(_, key string) error {
+					if key == layerSetDefaultKey {
+						return failure
+					}
+
+					return nil
+				}
+			},
+			wantErr: failure,
+		},
+		{
+			// Another writer clears the choice before each read and makes it
+			// again before each write.
+			name:  "every write loses",
+			clear: true,
+			fail: func(t *testing.T, h *testHarness, faults *cleanupFaultStore, set string) {
+				t.Helper()
+
+				faults.failGet = func(namespace, key string) error {
+					if key == layerSetDefaultKey {
+						_ = h.store.DeleteRecord(namespace, key, store.AnyRevision)
+					}
+
+					return nil
+				}
+
+				writing := false
+				h.store.BeforeCreate = func(namespace, key string) error {
+					if key != layerSetDefaultKey || writing {
+						return nil
+					}
+
+					writing = true
+					defer func() { writing = false }()
+
+					_, err := h.store.CreateRecord(namespace, key, []byte(`{"layerSet":"`+set+`"}`))
+
+					return err
+				}
+			},
+			wantErr: ErrBusy,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			service, faults := newCleanupFaultService(t, h)
+
+			created, err := h.service.CreateLayerSet(ctx, testActor, testLayerSet("Plant"))
+			if err != nil {
+				t.Fatalf("CreateLayerSet(Plant) returned error: %v", err)
+			}
+
+			chosen, err := h.service.SetDefaultLayerSet(ctx, created.ID, RevisionETag(0))
+			if err != nil {
+				t.Fatalf("SetDefaultLayerSet(%s) returned error: %v", created.ID, err)
+			}
+
+			if tt.clear {
+				if chosen, err = h.service.SetDefaultLayerSet(ctx, "", chosen.ETag); err != nil {
+					t.Fatalf("SetDefaultLayerSet(\"\") returned error: %v", err)
+				}
+			}
+
+			tt.fail(t, h, faults, builder.BuiltinPurdueLayerSetID)
+
+			if got, err := service.SetDefaultLayerSet(ctx, builder.BuiltinPurdueLayerSetID, chosen.ETag); !errors.Is(err, tt.wantErr) {
+				t.Errorf("SetDefaultLayerSet(%s) = %+v, %v; want %v", builder.BuiltinPurdueLayerSetID, got, err, tt.wantErr)
+			}
+		})
+	}
+
+	t.Run("the default set cannot be read", func(t *testing.T) {
+		h := newHarness(t)
+		service, faults := newCleanupFaultService(t, h)
+
+		created, err := h.service.CreateLayerSet(ctx, testActor, testLayerSet("Plant"))
+		if err != nil {
+			t.Fatalf("CreateLayerSet(Plant) returned error: %v", err)
+		}
+
+		if _, err := h.service.SetDefaultLayerSet(ctx, created.ID, RevisionETag(0)); err != nil {
+			t.Fatalf("SetDefaultLayerSet(%s) returned error: %v", created.ID, err)
+		}
+
+		faults.failGet = func(_, key string) error {
+			if key == layerSetKey(created.ID) {
+				return failure
+			}
+
+			return nil
+		}
+
+		if got, err := service.DefaultLayerSet(ctx); !errors.Is(err, failure) || got != (LayerSetDefault{}) {
+			t.Errorf("DefaultLayerSet() = %+v, %v; want no choice and %v", got, err, failure)
+		}
+	})
 }

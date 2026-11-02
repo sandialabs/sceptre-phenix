@@ -3,6 +3,8 @@ package builder
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -866,6 +868,10 @@ func TestGetDamagedDocumentFields(t *testing.T) {
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("GetDamagedDocument(%s) mismatch (-want +got):\n%s", tt.value, diff)
 			}
+
+			if want := fmt.Sprintf(`"%d"`, record.Revision); got.ETag() != want {
+				t.Errorf("GetDamagedDocument(%s) ETag() = %s, want %s", tt.value, got.ETag(), want)
+			}
 		})
 	}
 }
@@ -1000,6 +1006,22 @@ func TestPublishedDocumentValidation(t *testing.T) {
 			name: "no actor",
 			req:  PutPublishedDocumentRequest{Target: "topo", Kind: "Topology", Actor: "", Document: data, DraftID: "", SnapshotID: ""},
 		},
+		{
+			name: "a draft ID that is none",
+			req:  PutPublishedDocumentRequest{Target: "topo", Kind: "Topology", Actor: testActor, Document: data, DraftID: "a/b"},
+		},
+		{
+			name: "a snapshot ID that is none",
+			req:  PutPublishedDocumentRequest{Target: "topo", Kind: "Topology", Actor: testActor, Document: data, SnapshotID: "a/b"},
+		},
+		{
+			name: "not a document",
+			req:  PutPublishedDocumentRequest{Target: "topo", Kind: "Topology", Actor: testActor, Document: []byte(`{"nodes":`)},
+		},
+		{
+			name: "no document",
+			req:  PutPublishedDocumentRequest{Target: "topo", Kind: "Topology", Actor: testActor, Document: nil},
+		},
 	}
 
 	for _, tt := range tests {
@@ -1011,8 +1033,8 @@ func TestPublishedDocumentValidation(t *testing.T) {
 		})
 	}
 
-	if _, err := h.service.GetPublishedDocument(ctx, "missing-document"); !errors.Is(err, ErrNotFound) {
-		t.Errorf("GetPublishedDocument(missing-document) error = %s, want ErrNotFound", fmtErr(err))
+	if keys := h.store.Keys(NamespacePublished); len(keys) != 0 {
+		t.Errorf("published records after the refusals = %q, want none", keys)
 	}
 }
 
@@ -1061,5 +1083,292 @@ func TestMarkPublishedLinksPublishedDocument(t *testing.T) {
 
 	if published.Dirty() {
 		t.Errorf("MarkPublished(%s) Dirty() = true, want false right after publishing the current snapshot", meta.ID)
+	}
+}
+
+// TestReferencePublishes asserts a reference read from a topology names what a
+// publication of a digest stores for that topology, by its ID or its digest.
+func TestReferencePublishes(t *testing.T) {
+	const (
+		digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+		other  = "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+		file   = "/phenix/builder.yaml"
+	)
+
+	stored := PublishedDocumentID("topo", digest)
+
+	for _, tt := range []struct {
+		name string
+		ref  DocumentReference
+		want bool
+	}{
+		{name: "digest", ref: DocumentReference{Digest: digest}, want: true},
+		{name: "id", ref: DocumentReference{ID: stored}, want: true},
+		{name: "digest and id", ref: DocumentReference{Digest: digest, ID: stored}, want: true},
+		{name: "all three", ref: DocumentReference{Digest: digest, ID: stored, Path: file}, want: true},
+		{name: "another digest", ref: DocumentReference{Digest: other}, want: false},
+		{name: "id and another digest", ref: DocumentReference{Digest: other, ID: stored}, want: false},
+		{name: "id of another topology", ref: DocumentReference{ID: PublishedDocumentID("other", digest)}, want: false},
+		{name: "path", ref: DocumentReference{Path: file}, want: false},
+		{name: "none", ref: DocumentReference{}, want: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.ref.Publishes("topo", digest); got != tt.want {
+				t.Errorf("%+v.Publishes(topo, digest) = %t, want %t", tt.ref, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPublishedDocumentsRefuseACanceledContext(t *testing.T) {
+	h := newHarness(t)
+
+	data := testDocument(t, "topo", 0)
+	doc := publishTestDocument(t, h, "topo", data)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	commits := h.store.Commits()
+
+	for _, tt := range []struct {
+		name string
+		call func() error
+	}{
+		{name: "PutPublishedDocument", call: func() error {
+			_, err := h.service.PutPublishedDocument(ctx, PutPublishedDocumentRequest{
+				Target: "other", Kind: "Topology", Actor: testActor, Document: data,
+			})
+
+			return err
+		}},
+		{name: "GetPublishedDocument", call: func() error {
+			_, err := h.service.GetPublishedDocument(ctx, doc.ID)
+
+			return err
+		}},
+		{name: "GetPublishedDocumentData", call: func() error {
+			_, _, err := h.service.GetPublishedDocumentData(ctx, doc.ID)
+
+			return err
+		}},
+		{name: "ListPublishedDocuments", call: func() error {
+			_, err := h.service.ListPublishedDocuments(ctx)
+
+			return err
+		}},
+		{name: "GetDamagedDocument", call: func() error {
+			_, err := h.service.GetDamagedDocument(ctx, doc.ID)
+
+			return err
+		}},
+		{name: "DeleteDamagedDocument", call: func() error {
+			return h.service.DeleteDamagedDocument(ctx, doc.ID, doc.Revision)
+		}},
+		{name: "DeleteSupersededDocuments", call: func() error {
+			_, err := h.service.DeleteSupersededDocuments(ctx, "topo", "")
+
+			return err
+		}},
+		{name: "DeleteTargetDocuments", call: func() error {
+			_, err := h.service.DeleteTargetDocuments(ctx, "topo")
+
+			return err
+		}},
+		{name: "DeleteConfigDocuments", call: func() error {
+			_, err := h.service.DeleteConfigDocuments(ctx, DeletedConfig{Kind: "Topology", Name: "topo"})
+
+			return err
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.call(); !errors.Is(err, context.Canceled) {
+				t.Errorf("%s with a canceled context = %s, want context.Canceled", tt.name, fmtErr(err))
+			}
+		})
+	}
+
+	if got := h.store.Commits(); got != commits {
+		t.Errorf("store commits after the canceled calls = %d, want %d", got, commits)
+	}
+}
+
+// TestPublishedDocumentRefusesBadIdentifiers asserts each call that names a
+// document refuses an ID that is none, and finds no document of an unused one.
+func TestPublishedDocumentRefusesBadIdentifiers(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	for _, tt := range []struct {
+		name string
+		call func(id string) error
+	}{
+		{name: "GetPublishedDocument", call: func(id string) error {
+			_, err := h.service.GetPublishedDocument(ctx, id)
+
+			return err
+		}},
+		{name: "GetDamagedDocument", call: func(id string) error {
+			_, err := h.service.GetDamagedDocument(ctx, id)
+
+			return err
+		}},
+		{name: "DeleteDamagedDocument", call: func(id string) error {
+			return h.service.DeleteDamagedDocument(ctx, id, 1)
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.call("a/b"); !errors.Is(err, ErrInvalid) {
+				t.Errorf("%s(a/b) = %s, want ErrInvalid", tt.name, fmtErr(err))
+			}
+
+			if err := tt.call("missing"); !errors.Is(err, ErrNotFound) {
+				t.Errorf("%s(missing) = %s, want ErrNotFound", tt.name, fmtErr(err))
+			}
+		})
+	}
+
+	if _, err := h.service.DeleteSupersededDocuments(ctx, "topo", "a/b"); !errors.Is(err, ErrInvalid) {
+		t.Errorf("DeleteSupersededDocuments(topo, a/b) = %s, want ErrInvalid", fmtErr(err))
+	}
+
+	deleted := DeletedConfig{Kind: "Topology", Name: "topo", DocumentID: "a/b"}
+	if _, err := h.service.DeleteConfigDocuments(ctx, deleted); !errors.Is(err, ErrInvalid) {
+		t.Errorf("DeleteConfigDocuments(%+v) = %s, want ErrInvalid", deleted, fmtErr(err))
+	}
+}
+
+// TestPutPublishedDocumentKeepsADamagedRecord publishes content whose ID names
+// a record that does not decode. The record is not replaced.
+func TestPutPublishedDocumentKeepsADamagedRecord(t *testing.T) {
+	h := newHarness(t)
+	data := testDocument(t, "topo", 0)
+	id := PublishedDocumentID("topo", digestOf(data))
+
+	record, err := h.store.CreateRecord(NamespacePublished, id, []byte(`{"kind":"Topology"}`))
+	if err != nil {
+		t.Fatalf("CreateRecord(%s) returned error: %v", id, err)
+	}
+
+	_, err = h.service.PutPublishedDocument(context.Background(), PutPublishedDocumentRequest{
+		Target: "topo", Kind: "Topology", Actor: testActor, Document: data,
+	})
+	if !errors.Is(err, ErrCorrupt) {
+		t.Errorf("PutPublishedDocument(topo) over a damaged record = %s, want ErrCorrupt", fmtErr(err))
+	}
+
+	if got, err := h.store.GetRecord(NamespacePublished, id); err != nil || got.Revision != record.Revision {
+		t.Errorf("record %s after the refusal = revision %d, %v; want revision %d", id, got.Revision, err, record.Revision)
+	}
+
+	if keys := h.store.Keys(NamespaceContent); len(keys) != 0 {
+		t.Errorf("content after the refusal = %q, want none", keys)
+	}
+}
+
+// TestPutPublishedDocumentWhenTheStoreRefuses publishes content that is new,
+// stored, or stored and lost, to a store that refuses to write its content,
+// to update its record, or to read either in the transaction. Nothing changes.
+func TestPutPublishedDocumentWhenTheStoreRefuses(t *testing.T) {
+	refused := errors.New("disk full")
+
+	for _, tt := range []struct {
+		name          string
+		stored, lose  bool
+		refuseContent bool
+		// refuseRead is the namespace whose reads in the transaction fail.
+		refuseRead string
+	}{
+		{name: "new content", refuseContent: true},
+		{name: "intact content", stored: true},
+		{name: "lost content, refused record", stored: true, lose: true},
+		{name: "lost content, refused content", stored: true, lose: true, refuseContent: true},
+		{name: "a record that cannot be read", stored: true, refuseRead: NamespacePublished},
+		{name: "content that cannot be read", stored: true, refuseRead: NamespaceContent},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			service, faults := newCleanupFaultService(t, h)
+			data := testRandomDocument(t, "topo", 1000)
+			id := PublishedDocumentID("topo", digestOf(data))
+
+			if tt.stored {
+				publishTestDocument(t, h, "topo", data)
+			}
+
+			if tt.lose {
+				h.store.Drop(NamespaceContent, publishedKey(id))
+			}
+
+			content, records := h.store.Keys(NamespaceContent), h.store.Keys(NamespacePublished)
+
+			switch {
+			case tt.refuseRead != "":
+				faults.failTxGet = func(namespace, _ string) error {
+					if namespace == tt.refuseRead {
+						return refused
+					}
+
+					return nil
+				}
+			case tt.refuseContent:
+				h.store.BeforeCreate = func(namespace, _ string) error {
+					if namespace == NamespaceContent {
+						return refused
+					}
+
+					return nil
+				}
+			default:
+				h.store.BeforeUpdate = func(namespace, _ string) error {
+					if namespace == NamespacePublished {
+						return refused
+					}
+
+					return nil
+				}
+			}
+
+			commits := h.store.Commits()
+
+			_, err := service.PutPublishedDocument(context.Background(), PutPublishedDocumentRequest{
+				Target: "topo", Kind: "Topology", Actor: testActor, Document: data,
+			})
+			if !errors.Is(err, refused) {
+				t.Errorf("PutPublishedDocument(topo) error = %s, want the store error", fmtErr(err))
+			}
+
+			if got := h.store.Commits(); got != commits {
+				t.Errorf("store commits after the refusal = %d, want %d", got, commits)
+			}
+
+			if diff := cmp.Diff(content, h.store.Keys(NamespaceContent), cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("content after the refusal mismatch (-want +got):\n%s", diff)
+			}
+
+			if diff := cmp.Diff(records, h.store.Keys(NamespacePublished), cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("published records after the refusal mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestDeleteDamagedDocumentWhenTheStoreRefuses(t *testing.T) {
+	h := newHarness(t)
+	refused := errors.New("disk full")
+
+	record, err := h.store.CreateRecord(NamespacePublished, "damaged", []byte(`not metadata`))
+	if err != nil {
+		t.Fatalf("CreateRecord(damaged) returned error: %v", err)
+	}
+
+	h.store.FailDelete = func(string, string) error { return refused }
+
+	if err := h.service.DeleteDamagedDocument(context.Background(), "damaged", record.Revision); !errors.Is(err, refused) {
+		t.Errorf("DeleteDamagedDocument(damaged) = %s, want the store error", fmtErr(err))
+	}
+
+	if keys := h.store.Keys(NamespacePublished); !slices.Equal(keys, []string{"damaged"}) {
+		t.Errorf("published records after the refusal = %q, want only damaged", keys)
 	}
 }

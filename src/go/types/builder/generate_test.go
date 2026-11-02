@@ -3,6 +3,8 @@ package builder_test
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"math"
 	"slices"
 	"sort"
 	"strconv"
@@ -506,6 +508,12 @@ func TestFromConfigWarnings(t *testing.T) {
 				"interfaces": []any{map[string]any{"vlan": "EXP"}},
 			},
 		},
+		map[string]any{
+			"general": map[string]any{"hostname": "two-eth0"},
+			"network": map[string]any{
+				"interfaces": []any{map[string]any{"name": "eth0", "vlan": "EXP"}, map[string]any{"name": "ETH0", "vlan": "MGMT"}},
+			},
+		},
 	)
 
 	doc, warnings := documentFromConfig(t, config)
@@ -515,6 +523,7 @@ func TestFromConfigWarnings(t *testing.T) {
 		"duplicates the hostname",
 		"is not an object",
 		"has no name",
+		`node "two-eth0" declares interface "ETH0" more than once. You can connect only the first one`,
 	} {
 		if !containsSubstring(warnings, want) {
 			t.Errorf("FromConfig() warnings = %q, want one containing %q", warnings, want)
@@ -525,8 +534,13 @@ func TestFromConfigWarnings(t *testing.T) {
 		t.Error("FindDevice(ROUTER) = nil, want the first node with the hostname kept")
 	}
 
-	if got := len(doc.DeviceNodes()); got != 5 {
-		t.Errorf("FromConfig() = %d devices, want 5", got)
+	if got := len(doc.DeviceNodes()); got != 6 {
+		t.Errorf("FromConfig() = %d devices, want 6", got)
+	}
+
+	twice := nodeByHostname(t, doc, "two-eth0")
+	if len(twice.Device.Interfaces) != 1 || connectedSwitch(doc, twice, "eth0") != "EXP" {
+		t.Errorf("FromConfig() two-eth0 = %s, want only its first eth0, on EXP", asJSON(t, twice))
 	}
 }
 
@@ -674,35 +688,263 @@ func TestFromConfigChecksKind(t *testing.T) {
 }
 
 func TestFromConfigEmptyTopology(t *testing.T) {
-	config := store.Config{
-		Version:  builder.TopologyAPIVersion,
-		Kind:     "Topology",
-		Metadata: store.ConfigMetadata{Name: "empty"},
-		Spec:     map[string]any{},
+	for name, spec := range map[string]map[string]any{"an empty spec": {}, "no spec": nil} {
+		t.Run(name, func(t *testing.T) {
+			config := store.Config{
+				Version:  builder.TopologyAPIVersion,
+				Kind:     "Topology",
+				Metadata: store.ConfigMetadata{Name: "empty"},
+				Spec:     spec,
+			}
+
+			doc, warnings, err := builder.FromConfig(config)
+			if err != nil {
+				t.Fatalf("FromConfig(empty): %v", err)
+			}
+
+			if len(warnings) != 0 {
+				t.Errorf("FromConfig(empty) warnings = %q, want none", warnings)
+			}
+
+			type contents struct {
+				Nodes    []builder.Node
+				Networks []builder.Network
+				Edges    []builder.Edge
+			}
+
+			got := contents{Nodes: doc.Nodes, Networks: doc.Networks, Edges: doc.Edges}
+			if diff := cmp.Diff(contents{}, got, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("FromConfig(empty) mismatch (-want +got):\n%s", diff)
+			}
+
+			if err := doc.Validate(); err != nil {
+				t.Errorf("Validate() of the empty document = %v, want nil", err)
+			}
+		})
+	}
+}
+
+func TestFromConfigRefusesUnreadableSpecs(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		fixture string
+		edit    func(spec map[string]any)
+		wantMsg string
+	}{
+		{
+			name:    "a topology spec key that is not text",
+			fixture: "topology.json",
+			edit:    func(spec map[string]any) { spec["extra"] = map[any]any{1: "x"} },
+			wantMsg: "reading Topology spec: non-string spec key 1 (int)",
+		},
+		{
+			name:    "a key that is not text in a nested YAML map",
+			fixture: "topology.json",
+			edit:    func(spec map[string]any) { spec["extra"] = map[any]any{"outer": map[any]any{2: "x"}} },
+			wantMsg: "reading Topology spec: non-string spec key 2 (int)",
+		},
+		{
+			name:    "a value that JSON cannot hold",
+			fixture: "topology.json",
+			edit:    func(spec map[string]any) { spec["extra"] = math.NaN() },
+			wantMsg: "marshaling content for digest: json: unsupported value: NaN",
+		},
+		{
+			name:    "an experiment topology that is not an object",
+			fixture: "experiment.json",
+			edit:    func(spec map[string]any) { spec["topology"] = "router" },
+			wantMsg: "reading experiment topology: expected an object, got string",
+		},
+		{
+			name:    "an experiment scenario that is not an object",
+			fixture: "experiment.json",
+			edit:    func(spec map[string]any) { spec["scenario"] = []any{"builder-scenario"} },
+			wantMsg: "reading experiment scenario: expected an object",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config := loadConfig(t, test.fixture)
+			test.edit(config.Spec)
+
+			doc, _, err := builder.FromConfig(config)
+			if err == nil || !strings.Contains(err.Error(), test.wantMsg) {
+				t.Errorf("FromConfig() = %v, error %v, want an error containing %q", doc != nil, err, test.wantMsg)
+			}
+		})
+	}
+}
+
+// A spec decoded from YAML into maps with keys of any type reads as the same
+// spec with text keys.
+func TestFromConfigReadsMapsOfAnyKeys(t *testing.T) {
+	config := loadConfig(t, "topology.json")
+	want, _ := documentFromConfig(t, config)
+
+	nodes, _ := config.Spec["nodes"].([]any)
+	router := nodes[0].(map[string]any)
+	general, _ := router["general"].(map[string]any)
+
+	asAny := make(map[any]any, len(general))
+	for key, value := range general {
+		asAny[key] = value
 	}
 
-	doc, warnings, err := builder.FromConfig(config)
-	if err != nil {
-		t.Fatalf("FromConfig(empty): %v", err)
+	router["general"] = asAny
+
+	got, _ := documentFromConfig(t, config)
+	if diff := cmp.Diff(want, got, ignoreDigest); diff != "" {
+		t.Errorf("FromConfig(general of any keys) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestFromExperimentWithoutTopology imports only the VLAN aliases of an
+// experiment that has no topology.
+func TestFromExperimentWithoutTopology(t *testing.T) {
+	config := loadConfig(t, "experiment.json")
+	delete(config.Spec, "topology")
+
+	doc, _ := documentFromConfig(t, config)
+
+	if len(doc.Nodes) != 0 || len(doc.Edges) != 0 {
+		t.Errorf("FromConfig() nodes = %s, edges = %s, want none", asJSON(t, doc.Nodes), asJSON(t, doc.Edges))
 	}
 
-	if len(warnings) != 0 {
-		t.Errorf("FromConfig(empty) warnings = %q, want none", warnings)
+	want := []builder.Network{
+		{ID: builder.NetworkID("EXP"), Name: "EXP", Alias: vlanAlias(101)},
+		{ID: builder.NetworkID("RESERVED"), Name: "RESERVED", Alias: vlanAlias(250)},
+	}
+	if diff := cmp.Diff(want, doc.Networks); diff != "" {
+		t.Errorf("FromConfig() networks mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestFromExperimentDropsUnusableVLANAliases warns about each VLAN alias a
+// network cannot hold, and ignores VLANs that are not an object.
+func TestFromExperimentDropsUnusableVLANAliases(t *testing.T) {
+	config := loadConfig(t, "experiment.json")
+
+	vlans, _ := config.Spec["vlans"].(map[string]any)
+	aliases, _ := vlans["aliases"].(map[string]any)
+
+	maps.Copy(aliases, map[string]any{
+		"two words": 5, " ": 6, "text": "101", "far": 5000, "below": -1, "huge": 4294967296.0,
+	})
+
+	doc, warnings := documentFromConfig(t, config)
+
+	for _, want := range []string{
+		"the builder document does not hold the maximum (300) of the experiment VLAN range",
+		`VLAN alias name "two words" is invalid. The Builder dropped it`,
+		`VLAN alias name " " is invalid. The Builder dropped it`,
+		`VLAN alias for "text" is not an integer. The Builder dropped it`,
+		`VLAN alias 5000 for "far" is out of range (1-4094). The Builder dropped it`,
+		`VLAN alias -1 for "below" is out of range (1-4094). The Builder dropped it`,
+		`VLAN alias 4294967296 for "huge" is out of range (1-4094). The Builder dropped it`,
+	} {
+		if !containsSubstring(warnings, want) {
+			t.Errorf("FromConfig() warnings = %q, want one containing %q", warnings, want)
+		}
 	}
 
-	type contents struct {
-		Nodes    []builder.Node
-		Networks []builder.Network
-		Edges    []builder.Edge
+	for _, name := range []string{"two words", " ", "text", "far", "below", "huge"} {
+		if network := doc.NetworkByName(name); network != nil {
+			t.Errorf("FromConfig() network %q = %s, want none", name, asJSON(t, network))
+		}
 	}
 
-	got := contents{Nodes: doc.Nodes, Networks: doc.Networks, Edges: doc.Edges}
-	if diff := cmp.Diff(contents{}, got, cmpopts.EquateEmpty()); diff != "" {
-		t.Errorf("FromConfig(empty) mismatch (-want +got):\n%s", diff)
-	}
+	for name, value := range map[string]any{"text": "none", "aliases that are text": map[string]any{"aliases": "none"}} {
+		t.Run(name, func(t *testing.T) {
+			config := loadConfig(t, "experiment.json")
+			config.Spec["vlans"] = value
 
-	if err := doc.Validate(); err != nil {
-		t.Errorf("Validate() of the empty document = %v, want nil", err)
+			doc, warnings := documentFromConfig(t, config)
+
+			if containsSubstring(warnings, "VLAN") {
+				t.Errorf("FromConfig() warnings = %q, want none about VLANs", warnings)
+			}
+
+			if network := doc.NetworkByName("RESERVED"); network != nil {
+				t.Errorf("FromConfig() network RESERVED = %s, want none", asJSON(t, network))
+			}
+		})
+	}
+}
+
+// TestFromExperimentKeepsInjectionsOutsideTheBaseDir drops no injection
+// outside the base directory, and none when it is relative or the root.
+func TestFromExperimentKeepsInjectionsOutsideTheBaseDir(t *testing.T) {
+	for _, baseDir := range []string{"/srv/plant", "/", "/srv/..", "experiments/plant", "."} {
+		t.Run(strconv.Quote(baseDir), func(t *testing.T) {
+			config := loadConfig(t, "experiment.json")
+			config.Spec["baseDir"] = baseDir
+
+			topology, _ := config.Spec["topology"].(map[string]any)
+			topology["nodes"] = append(topology["nodes"].([]any), "not-a-node")
+
+			injections := []any{
+				map[string]any{"src": "/phenix/startup/router.sh", "dst": "/etc/router.sh"},
+				map[string]any{"src": "experiments/plant/startup/router.sh", "dst": "/etc/plant.sh"},
+			}
+			storedNode(t, topology, "router")["injections"] = slices.Clone(injections)
+
+			doc, warnings := documentFromConfig(t, config)
+
+			if diff := cmp.Diff(injections, nodeByHostname(t, doc, "router").Device.Spec["injections"]); diff != "" {
+				t.Errorf("router injections mismatch (-want +got):\n%s", diff)
+			}
+
+			if want := "topology node at index 3 is not an object"; !containsSubstring(warnings, want) {
+				t.Errorf("FromConfig() warnings = %q, want one containing %q", warnings, want)
+			}
+		})
+	}
+}
+
+// TestFromExperimentWarnsOfUnrepresentedFields names the experiment settings
+// that have a value the document does not hold.
+func TestFromExperimentWarnsOfUnrepresentedFields(t *testing.T) {
+	const lead = "the builder document does not hold these experiment fields"
+
+	for _, test := range []struct {
+		name   string
+		fields map[string]any
+		want   string
+	}{
+		{
+			name:   "empty values",
+			fields: map[string]any{"baseDir": "", "deployMode": "", "schedules": map[string]any{}, "useGREMesh": false},
+			want:   "",
+		},
+		{
+			name: "set values",
+			fields: map[string]any{
+				"deployMode": "only-headnode", "schedules": map[string]any{"router": "compute1"}, "useGREMesh": true,
+			},
+			want: lead + ": deployMode, schedules, useGREMesh",
+		},
+		{name: "a value of another type", fields: map[string]any{"deployMode": 3}, want: lead + ": deployMode"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config := loadConfig(t, "experiment.json")
+			delete(config.Spec, "baseDir")
+			delete(config.Spec, "defaultBridge")
+
+			maps.Copy(config.Spec, test.fields)
+
+			_, warnings := documentFromConfig(t, config)
+
+			var got string
+
+			for _, warning := range warnings {
+				if strings.HasPrefix(warning, lead) {
+					got = warning
+				}
+			}
+
+			if got != test.want {
+				t.Errorf("FromConfig() warning = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 
@@ -877,6 +1119,168 @@ func TestFromTopologyConfigAddsIncludedTopologies(t *testing.T) {
 
 	if diff := cmp.Diff([]string{"shared-services"}, topology.Spec["includeTopologies"]); diff != "" {
 		t.Errorf("ToTopology() includeTopologies mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestFromTopologyConfigSkipsInvalidIncludeNames keeps only the includes
+// that name a topology, with a warning for each other one.
+func TestFromTopologyConfigSkipsInvalidIncludeNames(t *testing.T) {
+	config := loadConfig(t, "topology.json")
+	config.Spec["includeTopologies"] = []any{5, "two words", " ", "", "plant"}
+
+	doc, warnings := documentFromConfig(t, config)
+
+	if diff := cmp.Diff([]string{"plant"}, doc.Source.IncludeTopologies); diff != "" {
+		t.Errorf("FromConfig() included topologies mismatch (-want +got):\n%s", diff)
+	}
+
+	for i := range 4 {
+		if want := fmt.Sprintf(
+			"included topology at index %d has an invalid name. The Builder skipped it",
+			i,
+		); !containsSubstring(
+			warnings,
+			want,
+		) {
+			t.Errorf("FromConfig() warnings = %q, want one containing %q", warnings, want)
+		}
+	}
+}
+
+// TestFromTopologyConfigReportsUnusableIncludes reports each include the
+// loader gives no topology for, and the nodes of an include it cannot add.
+func TestFromTopologyConfigReportsUnusableIncludes(t *testing.T) {
+	root := loadConfig(t, "topology.json")
+	root.Spec["includeTopologies"] = []any{"empty", "scenario", "old", "nameless", "nameless", "nameless"}
+
+	scenario := store.Config{Version: "phenix.sandia.gov/v2", Kind: "Scenario", Metadata: store.ConfigMetadata{Name: "scenario"}}
+	old := includeFixture("old", nil, map[string]string{"old-node": "EXP"})
+	old.Version = "phenix.sandia.gov/v0"
+
+	nameless := includeFixture("nameless", nil, map[string]string{"named": "EXP"})
+	nameless.Spec["nodes"] = append(nameless.Spec["nodes"].([]any), map[string]any{"general": map[string]any{}})
+
+	configs := storeLoader(scenario, old, nameless)
+	load := func(name string) (*store.Config, error) {
+		if name == "empty" {
+			return nil, nil //nolint:nilnil // a loader that breaks its contract
+		}
+
+		return configs(name)
+	}
+
+	doc, warnings := documentFromConfigWith(t, root, builder.WithTopologyLoader(load))
+
+	for _, want := range []string{
+		`the Builder could not read included topology "empty": the loader returned no topology`,
+		`the Builder could not read included topology "scenario": Scenario is not a topology`,
+		`the Builder could not read included topology "old": ` + builder.ErrUnsupportedVersion.Error(),
+		`node at index 1 of included topology "nameless" has no hostname. The Builder skipped it`,
+		`included topology "nameless" occurs more than once (through builder-fixture 3 times)`,
+		"The Builder added 1 node from included topology nameless (1 node).",
+	} {
+		if !containsSubstring(warnings, want) {
+			t.Errorf("FromConfig() warnings = %q, want one containing %q", warnings, want)
+		}
+	}
+
+	if diff := cmp.Diff([]string{"empty", "scenario", "old"}, doc.Source.UnresolvedIncludes); diff != "" {
+		t.Errorf("FromConfig() unresolved includes mismatch (-want +got):\n%s", diff)
+	}
+
+	if got := nodeByHostname(t, doc, "named").Device.IncludedFrom; got != "nameless" {
+		t.Errorf("named IncludedFrom = %q, want nameless", got)
+	}
+}
+
+// TestFromExperimentConfigMatchesIncludedNodes marks the nodes of an
+// experiment by the include that defines them, and says why when it cannot.
+func TestFromExperimentConfigMatchesIncludedNodes(t *testing.T) {
+	ownRoot := includeFixture("builder-fixture", nil, map[string]string{"router": "EXP", "host-a": "EXP"})
+	sensors := includeFixture("sensors", nil, map[string]string{"sensor": "SENSOR"})
+	notFound := store.ErrNotExist.Error()
+
+	for _, test := range []struct {
+		name     string
+		includes []string
+		// unnamed removes the topology annotation of the experiment.
+		unnamed  bool
+		configs  []store.Config
+		want     map[string]string
+		warnings []string
+	}{
+		{
+			name:     "two includes that define one node",
+			includes: []string{"sensors", "more-sensors"},
+			configs:  []store.Config{ownRoot, sensors, includeFixture("more-sensors", nil, map[string]string{"sensor": "EXP"})},
+			want:     map[string]string{"router": "", "host-a": "", "sensor": "sensors"},
+			warnings: []string{
+				`included topology "more-sensors" defines node "sensor", which duplicates a hostname in included topology "sensors"`,
+			},
+		},
+		{
+			name:     "two unreadable includes",
+			includes: []string{"gone", "lost"},
+			configs:  []store.Config{ownRoot},
+			want:     map[string]string{"router": "", "host-a": "", "sensor": "gone"},
+			warnings: []string{
+				`the Builder could not read included topology "gone": ` + notFound +
+					`. The Builder marks the experiment's 1 node that neither topology "builder-fixture"`,
+				`the Builder could not read included topology "lost": ` + notFound +
+					`. The Builder cannot distinguish its nodes in the experiment from those of included topology "gone", ` +
+					`which the Builder also could not read. Thus the Builder marks them as included from "gone"`,
+			},
+		},
+		{
+			name:     "an unreadable include that adds no node",
+			includes: []string{"gone"},
+			configs: []store.Config{
+				includeFixture("builder-fixture", nil, map[string]string{"router": "EXP", "host-a": "EXP", "sensor": "SENSOR"}),
+			},
+			want: map[string]string{"router": "", "host-a": "", "sensor": ""},
+			warnings: []string{
+				`the Builder could not read included topology "gone": ` + notFound +
+					`. Topology "builder-fixture" and its readable included topologies define every experiment node. ` +
+					"Thus the Builder marks no node as included from it",
+			},
+		},
+		{
+			name:     "no topology named",
+			includes: []string{"sensors", "sensors"},
+			unnamed:  true,
+			configs:  []store.Config{sensors},
+			want:     map[string]string{"router": "", "host-a": "", "sensor": "sensors"},
+			warnings: []string{
+				"the experiment does not name the topology that it was created from. " +
+					"Thus the Builder matches its nodes to included topologies only by hostname",
+				`included topology "sensors" occurs more than once (through the experiment's topology twice)`,
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config := loadConfig(t, "experiment.json")
+
+			topology, _ := config.Spec["topology"].(map[string]any)
+			topology["includeTopologies"] = toAnySlice(test.includes)
+
+			if test.unnamed {
+				delete(config.Metadata.Annotations, "topology")
+			}
+
+			doc, warnings := documentFromConfigWith(t, config, builder.WithTopologyLoader(storeLoader(test.configs...)))
+
+			for _, want := range test.warnings {
+				if !containsSubstring(warnings, want) {
+					t.Errorf("FromConfig() warnings = %q, want one containing %q", warnings, want)
+				}
+			}
+
+			for hostname, want := range test.want {
+				if got := nodeByHostname(t, doc, hostname).Device.IncludedFrom; got != want {
+					t.Errorf("%s IncludedFrom = %q, want %q", hostname, got, want)
+				}
+			}
+		})
 	}
 }
 
@@ -1235,7 +1639,6 @@ func TestCheckIncludes(t *testing.T) {
 
 	// phenix's schema refuses a single character, which an older phenix
 	// stored, and phenix refuses an all-digit hostname in an experiment.
-	// Each reason goes on with phenix's own words, so only its start is compared.
 	wantRefused := []builder.RefusedHostname{
 		{Include: "services", Reason: "hostname 'x' is 1 character long: "},
 		{Include: "storage", Reason: "hostname '007' is all digits: "},
@@ -1257,6 +1660,12 @@ func TestCheckIncludes(t *testing.T) {
 
 	if diff := cmp.Diff(builder.IncludeReport{}, clean, cmpopts.EquateEmpty()); diff != "" {
 		t.Errorf("CheckIncludes(root without includes) mismatch (-want +got):\n%s", diff)
+	}
+
+	unreadable := map[string]any{"nodes": []any{map[any]any{1: "x"}}}
+	if _, err := builder.CheckIncludes("root", unreadable, storeLoader()); err == nil ||
+		!strings.Contains(err.Error(), "reading topology spec") {
+		t.Errorf("CheckIncludes(root with a key that is not text) error = %v, want one reading the topology spec", err)
 	}
 }
 
@@ -1570,6 +1979,45 @@ func TestFromTopologyConfigListsIncludesPastTheLimit(t *testing.T) {
 		names[limit+7] + " and 12 more. They stay in includeTopologies, and publishing keeps the references."
 	if !slices.Contains(warnings, want) {
 		t.Errorf("FromConfig(site, combined) warnings = %q, want one of %q", warnings, want)
+	}
+}
+
+// TestFromExperimentConfigReportsAnIncludePastTheLimitOnce gives one warning
+// for an include that is past the resolution limit in two include lists.
+func TestFromExperimentConfigReportsAnIncludePastTheLimitOnce(t *testing.T) {
+	const limit = 100
+
+	var (
+		parts   = make([]string, 0, limit)
+		configs = make([]store.Config, 0, limit+1)
+	)
+
+	for i := range limit - 1 {
+		name := "part-" + strconv.Itoa(1000+i)
+		parts = append(parts, name)
+		configs = append(configs, includeFixture(name, nil, map[string]string{"node-" + strconv.Itoa(1000+i): "EXP"}))
+	}
+
+	// "late" is past the limit in the list of "first", and again in the list of the experiment.
+	configs = append(configs, includeFixture("first", append(parts, "late"), map[string]string{"first-node": "EXP"}))
+	configs = append(configs, includeFixture("builder-fixture", nil, map[string]string{"router": "EXP", "host-a": "EXP"}))
+
+	config := loadConfig(t, "experiment.json")
+	topology, _ := config.Spec["topology"].(map[string]any)
+	topology["includeTopologies"] = []any{"first", "late"}
+
+	_, warnings := documentFromConfigWith(t, config, builder.WithTopologyLoader(storeLoader(configs...)))
+
+	late := 0
+
+	for _, warning := range warnings {
+		if strings.HasPrefix(warning, `the Builder could not read included topology "late": `+builder.ErrTooManyIncludes.Error()) {
+			late++
+		}
+	}
+
+	if late != 1 {
+		t.Errorf("FromConfig() warnings = %q, want one about late, not %d", warnings, late)
 	}
 }
 

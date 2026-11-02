@@ -77,6 +77,19 @@ func (f *documentFiles) read(path string) (*DocumentFile, error) {
 	return ReadDocumentFile(f.root, []string{f.excluded}, path)
 }
 
+// expandingDocument returns the JSON text of a valid document of about 1 MiB
+// whose canonical encoding is more than [MaxDocumentBytes]. The encoding
+// writes each "<" as 6 bytes.
+func expandingDocument(t *testing.T) []byte {
+	t.Helper()
+
+	const padding = MaxDocumentBytes / 5
+
+	return bytes.Replace(
+		testDocument(t, "site", padding), []byte(strings.Repeat("x", padding)), []byte(strings.Repeat("<", padding)), 1,
+	)
+}
+
 // documentYAML returns the document data holds, written as YAML.
 func documentYAML(t *testing.T, data []byte) []byte {
 	t.Helper()
@@ -268,6 +281,9 @@ func TestReadDocumentFileRefusals(t *testing.T) {
 			path: files.write(files.path("large.json"), padded), reason: DocumentFileTooLarge, is: ErrTooLarge,
 			said: "Builder file %s is larger than 5 MiB.",
 		},
+		"a document that is more than 5 MiB when encoded": {
+			path: files.write(files.path("expanding.json"), expandingDocument(t)), reason: DocumentFileTooLarge, is: ErrTooLarge,
+		},
 		"a document with another schema": {
 			path: files.write(files.path("schema.json"), invalid), reason: DocumentFileInvalid, is: ErrInvalid,
 			said: "Builder file %s is not a valid Builder document. Upload it in the Builder to see why.",
@@ -420,6 +436,16 @@ func TestReadDocumentFileDirectories(t *testing.T) {
 		return fileErr.Reason, nil
 	}
 
+	excludedLink := files.link(files.excluded, filepath.Join(files.outside, "mounts-link"))
+
+	// With no link above the root, only the link below it leads elsewhere.
+	resolved, err := filepath.EvalSymlinks(files.root)
+	if err != nil {
+		t.Fatalf("resolving the root: %v", err)
+	}
+
+	files.link(filepath.Join("..", "..", "mounts", "vm", "guest.json"), files.path("guest-link.json"))
+
 	t.Chdir(filepath.Dir(files.root))
 
 	for name, test := range map[string]struct {
@@ -434,6 +460,13 @@ func TestReadDocumentFileDirectories(t *testing.T) {
 		"an excluded directory that is gone": {root: files.root, excluded: []string{files.root + "/gone"}, path: path},
 		"an excluded directory with a slash": {
 			root: files.root, excluded: []string{files.excluded + "/"}, path: guest, want: DocumentFileOutside,
+		},
+		"an excluded directory named through a link": {
+			root: files.root, excluded: []string{excludedLink}, path: guest, want: DocumentFileOutside,
+		},
+		"a link into the excluded directory, from the resolved root": {
+			root: resolved, excluded: []string{filepath.Join(resolved, "mounts")},
+			path: filepath.Join(resolved, "topologies", "site", "guest-link.json"), want: DocumentFileOutside,
 		},
 		"a second excluded directory": {
 			root: files.root, excluded: []string{files.root + "/gone", files.excluded}, path: guest, want: DocumentFileOutside,
@@ -462,22 +495,160 @@ func TestReadDocumentFileDirectories(t *testing.T) {
 			}
 		})
 	}
+
+	if os.Geteuid() == 0 {
+		return
+	}
+
+	// A relative root is below no directory when the process cannot find its
+	// working directory.
+	locked := filepath.Join(files.outside, "locked")
+	if err := os.Mkdir(locked, 0o750); err != nil {
+		t.Fatalf("creating %s: %v", locked, err)
+	}
+
+	t.Chdir(locked)
+
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatalf("changing the mode of the working directory: %v", err)
+	}
+
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o750) })
+
+	if _, err := filepath.Abs("phenix"); err == nil {
+		t.Fatal("filepath.Abs in a working directory of mode 0 returned no error, want one")
+	}
+
+	if got, err := reason("phenix", nil, path); err != nil || got != DocumentFileOutside {
+		t.Errorf("ReadDocumentFile(phenix) in a working directory of mode 0 = %q, %v; want %q", got, err, DocumentFileOutside)
+	}
 }
 
-// TestDocumentFileErrorDigest is the error of a file whose document is not
-// the one its topology's reference pins.
-func TestDocumentFileErrorDigest(t *testing.T) {
+// TestDocumentFileErrorMessages gives the error of the reasons that
+// ReadDocumentFile never returns: a file whose document is not the one its
+// topology's reference pins, and a reason this package does not know.
+func TestDocumentFileErrorMessages(t *testing.T) {
 	t.Parallel()
 
-	err := error(&DocumentFileError{Reason: DocumentFileDigest, Path: "/phenix/site.yaml", Root: "", Topology: "site"})
+	for _, test := range []struct {
+		reason DocumentFileReason
+		want   string
+	}{
+		{reason: DocumentFileDigest, want: "Builder file /phenix/site.yaml does not match the digest topology site records for it."},
+		{reason: "", want: "phenix cannot use Builder file /phenix/site.yaml."},
+		{reason: "unknown", want: "phenix cannot use Builder file /phenix/site.yaml."},
+	} {
+		t.Run(string(test.reason), func(t *testing.T) {
+			t.Parallel()
 
-	if want := "Builder file /phenix/site.yaml does not match the digest topology site records for it."; err.Error() != want {
-		t.Errorf("DocumentFileError{Reason: DocumentFileDigest}.Error() = %q, want %q", err, want)
+			err := error(&DocumentFileError{Reason: test.reason, Path: "/phenix/site.yaml", Root: "", Topology: "site"})
+
+			if err.Error() != test.want {
+				t.Errorf("DocumentFileError{Reason: %q}.Error() = %q, want %q", test.reason, err, test.want)
+			}
+
+			if !errors.Is(err, ErrInvalid) {
+				t.Errorf("DocumentFileError{Reason: %q} = %q, want it to match ErrInvalid", test.reason, err)
+			}
+		})
+	}
+}
+
+// TestPathBelow compares paths as they are written: only a path that names
+// something inside the directory is below it.
+func TestPathBelow(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		directory, path string
+		want            string
+		below           bool
+	}{
+		{directory: "/phenix", path: "/phenix/site.yaml", want: "site.yaml", below: true},
+		{directory: "/phenix/", path: "/phenix/topologies/site.yaml", want: "topologies/site.yaml", below: true},
+		{directory: "/phenix/./topologies", path: "/phenix/topologies/site.yaml", want: "site.yaml", below: true},
+		{directory: "/", path: "/site.yaml", want: "site.yaml", below: true},
+		{directory: "/phenix", path: "/phenix/..site.yaml", want: "..site.yaml", below: true},
+		{directory: "phenix", path: "phenix/site.yaml", want: "site.yaml", below: true},
+		{directory: "/phenix", path: "/phenix/s\u00eete.yaml", want: "s\u00eete.yaml", below: true},
+		{directory: "", path: "/phenix/site.yaml"},
+		{directory: "/phenix", path: "/phenix"},
+		{directory: "/phenix", path: "/phenix/"},
+		{directory: "/phenix", path: "/"},
+		{directory: "/phenix", path: "/phenix-other/site.yaml"},
+		{directory: "/phenix", path: "/phenix/../site.yaml"},
+		{directory: "/phenix", path: "phenix/site.yaml"},
+		{directory: "phenix", path: "/phenix/site.yaml"},
+	} {
+		t.Run(test.directory+" "+test.path, func(t *testing.T) {
+			t.Parallel()
+
+			got, below := pathBelow(test.directory, test.path)
+			if got != test.want || below != test.below {
+				t.Errorf("pathBelow(%q, %q) = %q, %t, want %q, %t", test.directory, test.path, got, below, test.want, test.below)
+			}
+		})
+	}
+}
+
+// FuzzPathBelow checks that a path pathBelow accepts is the directory joined
+// with the relative path it returns, which leaves the directory nowhere.
+func FuzzPathBelow(f *testing.F) {
+	f.Add("/phenix", "/phenix/topologies/site.yaml")
+	f.Add("/phenix", "/phenix/../etc/passwd")
+	f.Add("phenix/", "phenix/..site.yaml")
+	f.Add("/", "//site.yaml")
+
+	f.Fuzz(func(t *testing.T, directory, path string) {
+		relative, below := pathBelow(directory, path)
+
+		switch {
+		case !below && relative != "":
+			t.Errorf("pathBelow(%q, %q) = %q, false, want no relative path", directory, path, relative)
+		case below && !filepath.IsLocal(relative):
+			t.Errorf("pathBelow(%q, %q) = %q, true, want a path that stays below the directory", directory, path, relative)
+		case below && filepath.Join(filepath.Clean(directory), relative) != filepath.Clean(path):
+			t.Errorf("pathBelow(%q, %q) = %q, true, want the path relative to the directory", directory, path, relative)
+		}
+	})
+}
+
+// FuzzParseDocumentText checks that every refusal is ErrInvalid or ErrTooLarge,
+// and that the canonical JSON of an accepted text parses to itself.
+func FuzzParseDocumentText(f *testing.F) {
+	canonical, err := EncodeDocument(builder.NewDocument("site"))
+	if err != nil {
+		f.Fatalf("EncodeDocument(site) returned error: %v", err)
 	}
 
-	if !errors.Is(err, ErrInvalid) {
-		t.Errorf("DocumentFileError{Reason: DocumentFileDigest} = %q, want it to match ErrInvalid", err)
-	}
+	f.Add(canonical)
+	f.Add([]byte("a: &x 1\nb: *x\n"))
+	f.Add([]byte("{}"))
+	f.Add([]byte(""))
+
+	f.Fuzz(func(t *testing.T, text []byte) {
+		file, err := ParseDocumentText(text)
+		if err != nil {
+			if !errors.Is(err, ErrInvalid) && !errors.Is(err, ErrTooLarge) {
+				t.Errorf("ParseDocumentText(%q) error = %v, want ErrInvalid or ErrTooLarge", text, err)
+			}
+
+			return
+		}
+
+		if file.Digest != digestOf(file.Data) {
+			t.Errorf("ParseDocumentText(%q).Digest = %s, want the digest of its Data %s", text, file.Digest, digestOf(file.Data))
+		}
+
+		again, err := ParseDocumentText(file.Data)
+		if err != nil {
+			t.Fatalf("ParseDocumentText(canonical JSON of %q) returned error: %v", text, err)
+		}
+
+		if diff := cmp.Diff(string(file.Data), string(again.Data)); diff != "" {
+			t.Errorf("ParseDocumentText(canonical JSON of %q) changed it (-want +got):\n%s", text, diff)
+		}
+	})
 }
 
 // TestParseDocumentText decodes the text of a file its caller supplied: the
@@ -531,6 +702,7 @@ func TestParseDocumentText(t *testing.T) {
 		"too large": {
 			text: append(bytes.Clone(canonical), bytes.Repeat([]byte(" "), MaxDocumentBytes)...), is: ErrTooLarge, reason: "limit is",
 		},
+		"too large when encoded": {text: expandingDocument(t), is: ErrTooLarge, reason: "limit is"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			file, err := ParseDocumentText(test.text)

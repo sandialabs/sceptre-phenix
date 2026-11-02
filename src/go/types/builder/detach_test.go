@@ -220,6 +220,26 @@ func TestNoteCopiedFrom(t *testing.T) {
 		t.Errorf("Validate() of the document with the note = %v, want nil", err)
 	}
 
+	// A note may hold a newline, a tab and any letter, up to its limit.
+	for _, name := range []string{
+		"riverside\twater\nplant",
+		"usine-de-traitement-é",
+		strings.Repeat("n", builder.MaxDiagramNoteBytes-len(builder.CopiedFromPrefix)),
+	} {
+		accepted := builder.NewDocument("accepted")
+		if !accepted.NoteCopiedFrom(name) {
+			t.Errorf("NoteCopiedFrom(%.20q) = false, want true", name)
+		}
+
+		if diff := cmp.Diff([]string{builder.CopiedFromPrefix + name}, accepted.Metadata.Notes); diff != "" {
+			t.Errorf("NoteCopiedFrom(%.20q) notes mismatch (-want +got):\n%s", name, diff)
+		}
+
+		if err := accepted.Validate(); err != nil {
+			t.Errorf("Validate() of the document with the note %.20q = %v, want nil", name, err)
+		}
+	}
+
 	full := builder.NewDocument("full")
 	for i := range builder.MaxDiagramNotes {
 		full.Metadata.Notes = append(full.Metadata.Notes, fmt.Sprintf("note %d", i))
@@ -233,7 +253,12 @@ func TestNoteCopiedFrom(t *testing.T) {
 		{name: "", doc: builder.NewDocument("blank")},
 		{name: " ", doc: builder.NewDocument("space")},
 		{name: "bad\x00name", doc: builder.NewDocument("control")},
-		{name: strings.Repeat("n", builder.MaxDiagramNoteBytes), doc: builder.NewDocument("long")},
+		{name: "bad\x7fname", doc: builder.NewDocument("delete")},
+		{name: "\t\n", doc: builder.NewDocument("blank lines")},
+		{
+			name: strings.Repeat("n", builder.MaxDiagramNoteBytes-len(builder.CopiedFromPrefix)+1),
+			doc:  builder.NewDocument("long"),
+		},
 		{name: "site", doc: full},
 	} {
 		t.Run(test.doc.Metadata.Name, func(t *testing.T) {

@@ -2,6 +2,7 @@ package builder_test
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/activeshadow/structs"
@@ -360,5 +361,59 @@ func TestFromExperimentDigestCoversStoredSpec(t *testing.T) {
 
 	if doc.Source.Digest != want {
 		t.Errorf("FromConfig(lab-experiment) digest = %q, want %q of the stored experiment", doc.Source.Digest, want)
+	}
+}
+
+// TestFromExperimentResidueSkipsWhatItCannotRead checks that the import skips a node or an
+// interface that is not an object, and keeps keys that phenix does not know.
+func TestFromExperimentResidueSkipsWhatItCannotRead(t *testing.T) {
+	config := loadConfig(t, "experiment.json")
+	// No default bridge: Init gives phenix, so phenix is the bridge to remove.
+	config.Spec["defaultBridge"] = ""
+	config.Spec["topology"] = map[string]any{"nodes": []any{"not a node", map[string]any{
+		"type":     "VirtualMachine",
+		"custom":   "",
+		"general":  map[string]any{"hostname": "host-a", "extra": 0, "vm_type": "kvm"},
+		"hardware": map[string]any{"os_type": "linux", "drives": []any{map[string]any{"image": "ubuntu.qc2"}}},
+		"network": map[string]any{"interfaces": []any{7, map[string]any{
+			"name": "eth0", "vlan": "EXP", "type": "ethernet", "proto": "dhcp",
+			"bridge": "phenix", "bridge_set_in_topo": false,
+		}}},
+	}}}
+
+	doc, warnings := documentFromConfig(t, config)
+
+	want := map[string]any{
+		"type":     "VirtualMachine",
+		"custom":   "",
+		"general":  map[string]any{"hostname": "host-a", "extra": 0},
+		"hardware": map[string]any{"os_type": "linux", "drives": []any{map[string]any{"image": "ubuntu.qc2"}}},
+		"network": map[string]any{"interfaces": []any{7, map[string]any{
+			"name": "eth0", "vlan": "EXP", "type": "ethernet", "proto": "dhcp",
+		}}},
+	}
+	if diff := cmp.Diff(jsonValue(t, want), jsonValue(t, nodeByHostname(t, doc, "host-a").Device.Spec)); diff != "" {
+		t.Errorf("FromConfig(builder-experiment) host-a spec mismatch (-want +got):\n%s", diff)
+	}
+
+	if !containsSubstring(warnings, "topology node at index 0 is not an object") {
+		t.Errorf("FromConfig(builder-experiment) warnings = %q, want one about node 0", warnings)
+	}
+}
+
+// shapedNode has the kinds of fields that a shape keeps or leaves out.
+type shapedNode struct {
+	Kept     string `structs:"kept"`
+	Optional int    `structs:"optional,omitempty"`
+	Skipped  string `structs:"-"`
+	Untagged string
+	hidden   string `structs:"hidden"` //nolint:unused // the shape must leave it out
+}
+
+// TestShapeKeepsTaggedExportedFields checks that a shape has a field for each
+// exported field with a structs name, under that name, and for no other.
+func TestShapeKeepsTaggedExportedFields(t *testing.T) {
+	if diff := cmp.Diff([]string{"kept", "optional"}, builder.ShapeFieldNames(reflect.TypeFor[shapedNode]())); diff != "" {
+		t.Errorf("ShapeFieldNames(shapedNode) mismatch (-want +got):\n%s", diff)
 	}
 }

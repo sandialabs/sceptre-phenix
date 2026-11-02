@@ -9,10 +9,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/store"
+	"phenix/store/recordtest/memrecord"
 	"phenix/types/builder"
 )
 
@@ -247,6 +249,10 @@ func TestDamagedDraftsAreListedWithWhatCanBeRead(t *testing.T) {
 	want := []DamagedDraft{{ID: bad.ID, CreatedBy: testActor, Title: bad.Title, Updated: bad.Updated, Revision: bad.Revision}}
 	if diff := cmp.Diff(want, damaged); diff != "" {
 		t.Errorf("ListDraftsWithDamaged damaged mismatch (-want +got):\n%s", diff)
+	}
+
+	if len(damaged) == 1 && damaged[0].ETag() != bad.ETag() {
+		t.Errorf("ListDraftsWithDamaged damaged ETag() = %s, want the draft's %s", damaged[0].ETag(), bad.ETag())
 	}
 
 	for _, value := range []struct {
@@ -859,18 +865,18 @@ func TestDeleteDraftCASAndContent(t *testing.T) {
 func TestRequestValidation(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
+	meta := createTestDraft(t, h, "topo")
+	commits := h.store.Commits()
 
 	tests := []struct {
 		name string
-		op   string
 		call func() error
 	}{
 		{
-			name: "append without actor",
-			op:   "AppendSnapshot",
+			name: "AppendSnapshot without actor",
 			call: func() error {
 				_, err := h.service.AppendSnapshot(ctx, AppendSnapshotRequest{
-					DraftID: "draft", Actor: "", ExpectedRevision: 1,
+					DraftID: meta.ID, Actor: "", ExpectedRevision: meta.Revision,
 					Document: testDocument(t, "x", 0), Summary: "",
 				})
 
@@ -878,10 +884,78 @@ func TestRequestValidation(t *testing.T) {
 			},
 		},
 		{
-			name: "delete without actor",
-			op:   "DeleteDraft",
+			name: "AppendSnapshot with an op ID that is none",
 			call: func() error {
-				return h.service.DeleteDraft(ctx, "draft", "", 1)
+				_, err := h.service.AppendSnapshot(ctx, AppendSnapshotRequest{
+					DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision,
+					Document: testDocument(t, "x", 0), OpID: "a/b",
+				})
+
+				return err
+			},
+		},
+		{
+			name: "AppendSnapshot of a document that is none",
+			call: func() error {
+				_, err := h.service.AppendSnapshot(ctx, AppendSnapshotRequest{
+					DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision, Document: []byte(`{"nodes":`),
+				})
+
+				return err
+			},
+		},
+		{
+			name: "CreateDraft of a document that is none",
+			call: func() error {
+				_, err := h.service.CreateDraft(ctx, CreateDraftRequest{Actor: testActor, Document: []byte(`{"nodes":`)})
+
+				return err
+			},
+		},
+		{
+			name: "MoveCursor without actor",
+			call: func() error {
+				_, err := h.service.MoveCursor(ctx, MoveCursorRequest{DraftID: meta.ID, ExpectedRevision: meta.Revision})
+
+				return err
+			},
+		},
+		{
+			name: "DeleteSnapshot without actor",
+			call: func() error {
+				_, err := h.service.DeleteSnapshot(ctx, DeleteSnapshotRequest{
+					DraftID: meta.ID, ExpectedRevision: meta.Revision, SnapshotID: meta.History[0].ID,
+				})
+
+				return err
+			},
+		},
+		{
+			name: "DeleteDraft without actor",
+			call: func() error {
+				return h.service.DeleteDraft(ctx, meta.ID, "", meta.Revision)
+			},
+		},
+		{
+			name: "DeleteDraft with an ID that is none",
+			call: func() error {
+				return h.service.DeleteDraft(ctx, "a/b", testActor, meta.Revision)
+			},
+		},
+		{
+			name: "GetDraft with an ID that is none",
+			call: func() error {
+				_, err := h.service.GetDraft(ctx, "a/b")
+
+				return err
+			},
+		},
+		{
+			name: "GetDamagedDraft with an ID that is none",
+			call: func() error {
+				_, err := h.service.GetDamagedDraft(ctx, "a/b")
+
+				return err
 			},
 		},
 	}
@@ -889,9 +963,13 @@ func TestRequestValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := tt.call(); !errors.Is(err, ErrInvalid) {
-				t.Errorf("%s(draft) without an actor error = %s, want ErrInvalid", tt.op, fmtErr(err))
+				t.Errorf("%s error = %s, want ErrInvalid", tt.name, fmtErr(err))
 			}
 		})
+	}
+
+	if got := h.store.Commits(); got != commits {
+		t.Errorf("store commits after the refused requests = %d, want %d", got, commits)
 	}
 }
 
@@ -1010,4 +1088,399 @@ func TestCreateDraftRefusesPastMaxDrafts(t *testing.T) {
 	}
 
 	createTestDraft(t, h, "again")
+}
+
+// TestCreateDraftWhenTheDraftsCannotBeCounted fails the listing that counts
+// the drafts: CreateDraft returns the error and stores nothing.
+func TestCreateDraftWhenTheDraftsCannotBeCounted(t *testing.T) {
+	h := newHarness(t)
+	service, faults := newCleanupFaultService(t, h)
+	injected := errors.New("injected listing failure")
+
+	createTestDraft(t, h, "topo")
+
+	drafts, content := h.store.Keys(NamespaceDrafts), h.store.Keys(NamespaceContent)
+
+	faults.failKeys = func(namespace string) error {
+		if namespace == NamespaceDrafts {
+			return injected
+		}
+
+		return nil
+	}
+
+	_, err := service.CreateDraft(context.Background(), CreateDraftRequest{
+		Actor: testActor, Title: "other", Document: testDocument(t, "other", 0),
+	})
+	if !errors.Is(err, injected) {
+		t.Errorf("CreateDraft(other) error = %s, want the injected listing failure", fmtErr(err))
+	}
+
+	if diff := cmp.Diff(drafts, h.store.Keys(NamespaceDrafts)); diff != "" {
+		t.Errorf("drafts after the refused CreateDraft mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(content, h.store.Keys(NamespaceContent)); diff != "" {
+		t.Errorf("content after the refused CreateDraft mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestDraftLimitErrorMessage(t *testing.T) {
+	err := &DraftLimitError{Limit: MaxDrafts}
+
+	if got, want := err.Error(), "builder: payload too large: the server holds at most 2000 drafts"; got != want {
+		t.Errorf("DraftLimitError.Error() = %q, want %q", got, want)
+	}
+}
+
+// TestNewGivesUUIDs asserts a service with no ID source names drafts and
+// snapshots with random version 4 UUIDs.
+func TestNewGivesUUIDs(t *testing.T) {
+	service, err := New(WithStore(memrecord.New()))
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	meta, err := service.CreateDraft(context.Background(), CreateDraftRequest{
+		Actor: testActor, Document: testDocument(t, "topo", 0),
+	})
+	if err != nil {
+		t.Fatalf("CreateDraft(topo) returned error: %v", err)
+	}
+
+	for _, id := range []string{meta.ID, meta.History[0].ID} {
+		if parsed, err := uuid.FromString(id); err != nil || parsed.Version() != uuid.V4 {
+			t.Errorf("generated ID %q = UUID version %d, %v; want a version 4 UUID", id, parsed.Version(), err)
+		}
+	}
+
+	if meta.ID == meta.History[0].ID {
+		t.Errorf("CreateDraft(topo) draft and snapshot IDs = %q, want two different IDs", meta.ID)
+	}
+}
+
+func TestDraftsRefuseACanceledContext(t *testing.T) {
+	h := newHarness(t)
+	meta := createTestDraft(t, h, "topo")
+	snapshotID := meta.History[0].ID
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	commits := h.store.Commits()
+
+	for _, tt := range []struct {
+		name string
+		call func() error
+	}{
+		{name: "ListDraftsWithDamaged", call: func() error { _, _, err := h.service.ListDraftsWithDamaged(ctx); return err }},
+		{name: "GetDraft", call: func() error { _, err := h.service.GetDraft(ctx, meta.ID); return err }},
+		{name: "GetDamagedDraft", call: func() error { _, err := h.service.GetDamagedDraft(ctx, meta.ID); return err }},
+		{name: "GetCurrentDocument", call: func() error { _, err := h.service.GetCurrentDocument(ctx, meta.ID); return err }},
+		{name: "GetSnapshot", call: func() error { _, err := h.service.GetSnapshot(ctx, meta.ID, snapshotID); return err }},
+		{name: "CreateDraft", call: func() error {
+			_, err := h.service.CreateDraft(ctx, CreateDraftRequest{Actor: testActor, Document: testDocument(t, "x", 0)})
+
+			return err
+		}},
+		{name: "AppendSnapshot", call: func() error {
+			_, err := h.service.AppendSnapshot(ctx, AppendSnapshotRequest{
+				DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision, Document: testDocument(t, "x", 0),
+			})
+
+			return err
+		}},
+		{name: "MoveCursor", call: func() error {
+			_, err := h.service.MoveCursor(ctx, MoveCursorRequest{
+				DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision, Index: 0,
+			})
+
+			return err
+		}},
+		{name: "DeleteSnapshot", call: func() error {
+			_, err := h.service.DeleteSnapshot(ctx, DeleteSnapshotRequest{
+				DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision, SnapshotID: snapshotID,
+			})
+
+			return err
+		}},
+		{name: "MarkPublished", call: func() error {
+			_, err := h.service.MarkPublished(ctx, markPublishedRequest(meta, meta.Revision))
+
+			return err
+		}},
+		{name: "DeleteDraft", call: func() error { return h.service.DeleteDraft(ctx, meta.ID, testActor, meta.Revision) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.call(); !errors.Is(err, context.Canceled) {
+				t.Errorf("%s with a canceled context = %s, want context.Canceled", tt.name, fmtErr(err))
+			}
+		})
+	}
+
+	if got := h.store.Commits(); got != commits {
+		t.Errorf("store commits after the canceled calls = %d, want %d", got, commits)
+	}
+}
+
+// TestChangesOfAMissingDraft asserts each read and change of a draft that does
+// not exist, or of a snapshot it does not hold, gives ErrNotFound.
+func TestChangesOfAMissingDraft(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	meta := createTestDraft(t, h, "topo")
+	missing := *meta
+	missing.ID = "missing"
+
+	for _, tt := range []struct {
+		name string
+		call func() error
+	}{
+		{name: "GetCurrentDocument", call: func() error { _, err := h.service.GetCurrentDocument(ctx, "missing"); return err }},
+		{name: "GetSnapshot of a missing draft", call: func() error {
+			_, err := h.service.GetSnapshot(ctx, "missing", meta.History[0].ID)
+
+			return err
+		}},
+		{name: "GetSnapshot of a missing snapshot", call: func() error {
+			_, err := h.service.GetSnapshot(ctx, meta.ID, "missing")
+
+			return err
+		}},
+		{name: "GetDamagedDraft", call: func() error { _, err := h.service.GetDamagedDraft(ctx, "missing"); return err }},
+		{name: "AppendSnapshot", call: func() error {
+			_, err := h.service.AppendSnapshot(ctx, AppendSnapshotRequest{
+				DraftID: "missing", Actor: testActor, ExpectedRevision: store.AnyRevision, Document: testDocument(t, "x", 0),
+			})
+
+			return err
+		}},
+		{name: "MoveCursor", call: func() error {
+			_, err := h.service.MoveCursor(ctx, MoveCursorRequest{DraftID: "missing", Actor: testActor, Index: 0})
+
+			return err
+		}},
+		{name: "DeleteSnapshot", call: func() error {
+			_, err := h.service.DeleteSnapshot(ctx, DeleteSnapshotRequest{
+				DraftID: "missing", Actor: testActor, SnapshotID: meta.History[0].ID,
+			})
+
+			return err
+		}},
+		{name: "MarkPublished", call: func() error {
+			_, err := h.service.MarkPublished(ctx, markPublishedRequest(&missing, store.AnyRevision))
+
+			return err
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.call(); !errors.Is(err, ErrNotFound) {
+				t.Errorf("%s = %s, want ErrNotFound", tt.name, fmtErr(err))
+			}
+		})
+	}
+}
+
+// TestDraftMetadataWritesThatFail asserts a change the store refuses returns
+// the store error and leaves the draft as it was.
+func TestDraftMetadataWritesThatFail(t *testing.T) {
+	refused := errors.New("disk full")
+
+	for _, tt := range []struct {
+		name string
+		call func(h *testHarness, meta *DraftMetadata) error
+	}{
+		{name: "MoveCursor", call: func(h *testHarness, meta *DraftMetadata) error {
+			_, err := h.service.MoveCursor(context.Background(), MoveCursorRequest{
+				DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision, Index: 0,
+			})
+
+			return err
+		}},
+		{name: "DeleteSnapshot", call: func(h *testHarness, meta *DraftMetadata) error {
+			_, err := h.service.DeleteSnapshot(context.Background(), DeleteSnapshotRequest{
+				DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision, SnapshotID: meta.History[0].ID,
+			})
+
+			return err
+		}},
+		{name: "MarkPublished", call: func(h *testHarness, meta *DraftMetadata) error {
+			_, err := h.service.MarkPublished(context.Background(), markPublishedRequest(meta, meta.Revision))
+
+			return err
+		}},
+		{name: "DeleteDraft", call: func(h *testHarness, meta *DraftMetadata) error {
+			return h.service.DeleteDraft(context.Background(), meta.ID, testActor, meta.Revision)
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			meta := appendTestSnapshot(t, h, createTestDraft(t, h, "topo"), "topo-v2", testActor)
+			content := h.store.Keys(NamespaceContent)
+
+			refuse := func(namespace, _ string) error {
+				if namespace == NamespaceDrafts {
+					return refused
+				}
+
+				return nil
+			}
+
+			h.store.BeforeUpdate = refuse
+			h.store.FailDelete = refuse
+
+			if err := tt.call(h, meta); !errors.Is(err, refused) {
+				t.Errorf("%s(%s) = %s, want the store error", tt.name, meta.ID, fmtErr(err))
+			}
+
+			if got, err := h.service.GetDraft(context.Background(), meta.ID); err != nil {
+				t.Errorf("GetDraft(%s) after the refusal returned error: %s", meta.ID, fmtErr(err))
+			} else if diff := draftDiff(meta, got); diff != "" {
+				t.Errorf("GetDraft(%s) after the refusal mismatch (-want +got):\n%s", meta.ID, diff)
+			}
+
+			if diff := cmp.Diff(content, h.store.Keys(NamespaceContent)); diff != "" {
+				t.Errorf("content after the refusal mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestDraftIDSourceFailures gives CreateDraft and AppendSnapshot an ID source
+// that fails, or gives a snapshot ID that is none. Nothing is stored.
+func TestDraftIDSourceFailures(t *testing.T) {
+	failure := errors.New("no entropy")
+
+	for _, tt := range []struct {
+		name    string
+		ids     []string
+		failAt  int
+		wantErr error
+	}{
+		{name: "no draft ID", failAt: 1, wantErr: failure},
+		{name: "a draft ID that is none", ids: []string{"../escape"}, wantErr: ErrInvalid},
+		{name: "no snapshot ID", ids: []string{"draft"}, failAt: 2, wantErr: failure},
+		{name: "a snapshot ID that is none", ids: []string{"draft", "../snap"}, wantErr: ErrInvalid},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := memrecord.New()
+			calls := 0
+
+			service, err := New(WithStore(fake), WithIDSource(func() (string, error) {
+				calls++
+				if calls == tt.failAt {
+					return "", failure
+				}
+
+				return tt.ids[calls-1], nil
+			}))
+			if err != nil {
+				t.Fatalf("New returned error: %v", err)
+			}
+
+			_, err = service.CreateDraft(context.Background(), CreateDraftRequest{
+				Actor: testActor, Document: testDocument(t, "topo", 0),
+			})
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("CreateDraft(topo) = %s, want %v", fmtErr(err), tt.wantErr)
+			}
+
+			if n := fake.Count(NamespaceDrafts) + fake.Count(NamespaceContent); n != 0 {
+				t.Errorf("records after a refused CreateDraft = %d, want none", n)
+			}
+		})
+	}
+
+	h := newHarness(t)
+	meta := createTestDraft(t, h, "topo")
+	h.service.newID = func() (string, error) { return "", failure }
+
+	_, err := h.service.AppendSnapshot(context.Background(), AppendSnapshotRequest{
+		DraftID: meta.ID, Actor: testActor, ExpectedRevision: meta.Revision, Document: testDocument(t, "topo-v2", 0),
+	})
+	if !errors.Is(err, failure) {
+		t.Errorf("AppendSnapshot(%s) with a failed ID source = %s, want the failure", meta.ID, fmtErr(err))
+	}
+
+	if got, err := h.service.GetDraft(context.Background(), meta.ID); err != nil || got.Revision != meta.Revision {
+		t.Errorf("GetDraft(%s) after the refusal = %+v, %v; want revision %d", meta.ID, got, err, meta.Revision)
+	}
+}
+
+// TestCreateDraftRecordsAFork stores a copy of what the forked draft had
+// published, which a later change of the request does not change.
+func TestCreateDraftRecordsAFork(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	forked := &ForkedPublication{DocumentID: "doc-1", TopologyTarget: "topo", ExperimentTarget: "exp"}
+	want := *forked
+
+	meta, err := h.service.CreateDraft(ctx, CreateDraftRequest{
+		Actor: testActor, Document: testDocument(t, "fork", 0), Forked: forked,
+	})
+	if err != nil {
+		t.Fatalf("CreateDraft(fork) returned error: %v", err)
+	}
+
+	forked.TopologyTarget = "changed"
+
+	if diff := cmp.Diff(&want, meta.Forked); diff != "" {
+		t.Errorf("CreateDraft(fork) Forked mismatch (-want +got):\n%s", diff)
+	}
+
+	stored, err := h.service.GetDraft(ctx, meta.ID)
+	if err != nil {
+		t.Fatalf("GetDraft(%s) returned error: %v", meta.ID, err)
+	}
+
+	if diff := cmp.Diff(&want, stored.Forked); diff != "" {
+		t.Errorf("GetDraft(%s) Forked mismatch (-want +got):\n%s", meta.ID, diff)
+	}
+}
+
+// TestSnapshotOfLostContent reads a snapshot whose content record is gone.
+func TestSnapshotOfLostContent(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	meta := createTestDraft(t, h, "topo")
+	snapshotID := meta.History[0].ID
+
+	h.store.Drop(NamespaceContent, snapshotKey(meta.ID, snapshotID))
+
+	if _, err := h.service.GetCurrentDocument(ctx, meta.ID); !errors.Is(err, ErrCorrupt) {
+		t.Errorf("GetCurrentDocument(%s) of lost content = %s, want ErrCorrupt", meta.ID, fmtErr(err))
+	}
+
+	if _, err := h.service.GetSnapshot(ctx, meta.ID, snapshotID); !errors.Is(err, ErrCorrupt) {
+		t.Errorf("GetSnapshot(%s, %s) of lost content = %s, want ErrCorrupt", meta.ID, snapshotID, fmtErr(err))
+	}
+}
+
+// TestMarkPublishedOfAnOlderSnapshotIsNoRetry repeats a publication after a
+// save. The request names a snapshot that is no longer current, so it is a
+// conflict and not a retry.
+func TestMarkPublishedOfAnOlderSnapshotIsNoRetry(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	meta := createTestDraft(t, h, "topo")
+
+	if _, err := h.service.MarkPublished(ctx, markPublishedRequest(meta, meta.Revision)); err != nil {
+		t.Fatalf("MarkPublished(%s) returned error: %v", meta.ID, err)
+	}
+
+	current, err := h.service.GetDraft(ctx, meta.ID)
+	if err != nil {
+		t.Fatalf("GetDraft(%s) returned error: %v", meta.ID, err)
+	}
+
+	saved := appendTestSnapshot(t, h, current, "topo-v2", testActor)
+
+	if _, err := h.service.MarkPublished(ctx, markPublishedRequest(meta, saved.Revision)); !errors.Is(err, ErrConflict) {
+		t.Errorf("MarkPublished(%s) of the older snapshot = %s, want ErrConflict", meta.ID, fmtErr(err))
+	}
+
+	if got, err := h.service.GetDraft(ctx, meta.ID); err != nil || got.Revision != saved.Revision || !got.Dirty() {
+		t.Errorf("GetDraft(%s) after the conflict = %+v, %v; want revision %d and dirty", meta.ID, got, err, saved.Revision)
+	}
 }
