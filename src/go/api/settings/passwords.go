@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"phenix/types"
 	"phenix/util/plog"
@@ -15,6 +16,9 @@ import (
 const (
 	MaxPasswordMinLen = 32
 	MinPasswordMinLen = 8
+
+	// MaxPasswordBytes is the longest password, in bytes, that bcrypt can hash.
+	MaxPasswordBytes = 72
 )
 
 type PasswordSettings struct {
@@ -109,6 +113,15 @@ func GetPasswordSettingsFromList(settings []types.Setting) (PasswordSettings, er
 func UpdatePasswordSettings(newSettings PasswordSettings) error {
 	plog.Debug(plog.TypeSystem, "Updating password settings")
 
+	minLen := newSettings.MinLength
+	if minLen > MaxPasswordMinLen || minLen < MinPasswordMinLen {
+		return fmt.Errorf(
+			"minimum password length must be between %d and %d",
+			MinPasswordMinLen,
+			MaxPasswordMinLen,
+		)
+	}
+
 	var err error
 
 	_, err = Update(settingCategoryPassword, "NumberReq", strconv.FormatBool(newSettings.NumberReq))
@@ -131,15 +144,6 @@ func UpdatePasswordSettings(newSettings PasswordSettings) error {
 		return fmt.Errorf("error updating Settings.UppercaseReq: %w", err)
 	}
 
-	minLen := newSettings.MinLength
-	if minLen > MaxPasswordMinLen || minLen < MinPasswordMinLen {
-		return fmt.Errorf(
-			"minimum password length must be between %d and %d",
-			MinPasswordMinLen,
-			MaxPasswordMinLen,
-		)
-	}
-
 	_, err = Update(settingCategoryPassword, "MinLength", formatInt(newSettings.MinLength))
 	if err != nil {
 		return fmt.Errorf("error updating Settings.MinLength: %w", err)
@@ -153,6 +157,10 @@ func UpdatePasswordSettings(newSettings PasswordSettings) error {
 func IsPasswordValid(password string) bool {
 	plog.Debug(plog.TypeSystem, "Checking if password is valid")
 
+	if len(password) > MaxPasswordBytes {
+		return false
+	}
+
 	ps, err := GetPasswordSettings()
 	if err != nil {
 		plog.Error(plog.TypeSystem, "Error checking IsPasswordValid: ", "err", err)
@@ -160,7 +168,7 @@ func IsPasswordValid(password string) bool {
 		return false
 	}
 
-	if len(password) < int(ps.MinLength) {
+	if utf8.RuneCountInString(password) < int(ps.MinLength) {
 		return false
 	}
 
@@ -202,6 +210,7 @@ func GetPasswordSettingsHTML() string {
 	var rules []string
 
 	rules = append(rules, fmt.Sprintf("Password requires %d characters", settings.MinLength))
+	rules = append(rules, fmt.Sprintf("Password must be at most %d bytes", MaxPasswordBytes))
 
 	if settings.LowercaseReq {
 		rules = append(rules, "Password requires a lowercase letter")
