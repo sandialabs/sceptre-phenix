@@ -114,10 +114,10 @@ sets another. It must start with a letter or digit and hold only letters,
 digits, `.`, `_` and `-`.
 
 `${BRANCH_NAME}` in a config or in the workflow config expands to the branch
-name; other `${VAR}` placeholders are filled in from the server's environment
-(see [Environment Variables](configuration.md#environment-variables)). That's
-why configs reference injected files as
-`/phenix/injects/${BRANCH_NAME}/<file>`, and why one directory can be deployed
+name. The server keeps every other `${VAR}` placeholder as written (see
+[Environment Variables](configuration.md#environment-variables)). Because
+only `${BRANCH_NAME}` expands, configs reference injected files as
+`/phenix/injects/${BRANCH_NAME}/<file>`. Thus you can deploy one directory
 under several names side by side. A config's `kind` and `metadata.name` can
 use no placeholder but `${BRANCH_NAME}`. An experiment that a workflow creates is
 [mapped](#actions) to its branch name.

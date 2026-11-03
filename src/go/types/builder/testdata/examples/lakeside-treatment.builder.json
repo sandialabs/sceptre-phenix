@@ -4,7 +4,11 @@
   "metadata": {
     "id": "2e8a6cc6-3d3f-56fd-9650-17797959ad40",
     "name": "Lakeside Water Treatment",
-    "description": "A small water treatment plant, its devices at the layers of the Purdue model."
+    "description": "A small water treatment plant, its devices at the layers of the Purdue model.",
+    "createdBy": "darrow",
+    "createdAt": "2026-09-30T15:02:11Z",
+    "updatedBy": "darrow",
+    "updatedAt": "2026-09-30T15:47:36Z"
   },
   "nodes": [
     {

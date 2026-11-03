@@ -26,16 +26,14 @@ SCORCH, minimega integration, or cyber-range workflows, read
 [`skills/phenix/SKILL.md`](skills/phenix/SKILL.md). For `phenix image`, `Image`
 configs, build scripts, overlays, or vmdb2 work, also read
 [`skills/phenix-image/SKILL.md`](skills/phenix-image/SKILL.md).
-For Builder routes, drafts, publishing, or code (the Builder rows below), also
-read `skills/phenix/references/builder.md`
-and then the reference that its routing table names.
+For Builder code, read [Builder](#builder) below.
 Use code as final authority when guidance differs, and update the skills when
 behavior changes.
 
 `SKILL.md` stays broad and always loaded; deep, area-specific material lives in
 `skills/phenix/references/` and is read only when that area is in scope. Put
-new detail in the matching reference file rather than growing `SKILL.md` or
-the Builder index, and leave a one-line pointer to it from `SKILL.md`.
+new detail in the matching reference file rather than growing `SKILL.md`, and
+leave a one-line pointer to it from `SKILL.md`.
 
 ## Architecture
 
@@ -114,13 +112,126 @@ When changing a capability, inspect every applicable surface:
 | RBAC role or policy | Policy generation, migrations, authorization surfaces, and migration tests |
 | minimega command | minimega API/source behavior and focused tests |
 | Log or error message text | Docs and skill text that quotes it, such as the Troubleshooting sections in `docs/content/` and `skills/phenix/references/` |
-| Builder behavior | `src/go/api/builder/`, `src/go/types/builder/` (then `make generate` for the committed schema bundle), `src/go/web/builder*.go`, `src/js/src/builder/`, `src/js/src/components/builder/`, `src/js/src/views/Builder.vue`, the `builder-*` e2e specs, `skills/phenix/references/builder.md`, and the reference its routing table names |
+| Builder behavior | Each code layer in [Builder](#builder), the `builder-*` e2e specs, and the user docs page for the area |
 
 Preserve persisted BoltDB data, RBAC migrations, and public API compatibility
 unless a breaking change is deliberate and documented. phēnix has no config
 upgraders: each kind decodes only at its stored version, so changing that
 version breaks existing configs.
 Keep CLI, REST, websocket, and UI authorization consistent.
+
+## Builder
+
+The Builder is the web topology editor at `/builder`, built on Vue Flow. It
+edits a `builder/v1` document and publishes it as Topology and Experiment
+configs. There is no `phenix builder` command, and the unix socket of
+`phenix ui` does not serve the Builder routes.
+
+The user docs in `docs/content/builder/` hold the behavior and UI rules.
+Read the page for the area before a change, and update it in the same PR.
+
+### Architecture
+
+Go paths are relative to `src/go/`, and JS paths to `src/js/src/`.
+
+| Layer | Code |
+|---|---|
+| Browser | `views/Builder.vue`, `components/builder/`, `builder/`. A Pinia store (`builder/store.js`) wraps a pure document model (`builder/model.js`). `builder/autosave.js` saves drafts, and `builder/publish.js` publishes them |
+| REST | `web/builder*.go`. `web/builder.go` registers the routes and does the authorization |
+| Storage | `api/builder/`: drafts, snapshots, published documents, preflight, and the icon, template, and layer set libraries, in BoltDB through `store.RecordStore`. Each draft change is a compare-and-swap on a revision. This package does no authorization |
+| Document | `types/builder/`: the `builder/v1` document, its validation, generation from configs, legacy (`builder-xml`) conversion, packages, and the Topology that Publish writes |
+
+A published Topology has a `builder-doc` annotation (`digest`, `id`, and
+`path`) that names its document. Config create and update refuse a Topology
+whose `builder-doc` is not valid, even with `--skip-validation`.
+
+### REST API
+
+Routes are below `/api/v1`. Each route needs the RBAC permission `builder`
+`use`. Import, Publish, and published documents also need the `configs` verbs
+of the configs they read or write. Request bodies, ETag rules, and the
+permission of each route are in
+`docs/content/builder/details/administration.md#rest-api`.
+
+| Area | Routes |
+|---|---|
+| Drafts | `GET`/`POST /builder/drafts`, `GET`/`DELETE /builder/drafts/{draft}`, `PATCH /builder/drafts/{draft}/cursor` |
+| Snapshots | `GET`/`POST /builder/drafts/{draft}/snapshots`, `GET`/`DELETE /builder/drafts/{draft}/snapshots/{snapshot}` |
+| Publishing | `POST /builder/drafts/{draft}/publish`, `POST /builder/drafts/{draft}/preflight` |
+| Sources | `GET /builder/sources`, `POST /builder/generate`, `/builder/legacy`, `/builder/export/topology`, `/builder/package`, `/builder/package/resolve` |
+| Published | `GET /builder/documents`, `GET`/`DELETE /builder/documents/{document}`, `GET /builder/topologies/{topology}/document` |
+| Icons | `GET`/`POST /builder/icons`, `GET`/`PUT`/`DELETE /builder/icons/{icon}` |
+| Templates | `GET /builder/templates`, `POST /builder/templates/items`, `PUT /builder/templates/items/{template}`, `POST /builder/templates/collections`, `PUT /builder/templates/collections/{collection}`, `POST /builder/templates/delete` |
+| Layer sets | `GET`/`POST /builder/layersets`, `GET`/`PUT /builder/layersets/default`, `GET`/`PUT`/`DELETE /builder/layersets/{layerset}` |
+| Storage | `POST /builder/cleanup` |
+| Schemas | `GET /schemas/builder/v1`, `/schemas/builder/templates/v1`, `/schemas/builder/package/v1`, `/schemas/builder/layersets/v1` |
+
+### Rules
+
+- After a change to `types/builder/` or `types/version/schemas/`, run
+  `make generate` in `src/go`. It writes `src/js/src/builder/schema/*.json`
+  and the code table in `docs/content/builder/reference.md`, but writes the
+  table only when `docs/` exists. Do not edit these files by hand. CI fails
+  when they are stale (`TestDocsCodeTableMatchesRegistry`).
+- Go and JS check the same rules with the same codes and messages. Put a new
+  rule or warning in both, with a case in `types/builder/testdata/`
+  (`validation-corpus.json`, `warning-corpus.json`).
+- Add each route and method to `src/go/web/public/docs/openapi.yml`
+  (`TestBuilderRoutesDocumented`). Each route refuses no identity, a
+  configs-only role, and Global Viewer (`TestBuilderRoutesNeedTheBuilder`).
+- `builderAllowed` stays a literal `role.Allowed("builder", "use")` call, so
+  the generator of `web/rbac/known_policy_gen.go` finds it. The Builder role
+  (`api/config/default/builder.yml`) never grants `*/*`.
+- An item button (Edit, Delete, Publish, Duplicate, Open, View, Download) is
+  `BuilderActionButton.vue` with an action from `builder/itemActions.js`.
+- Focus never falls to `<body>`, and a dialog gives focus back to its opener.
+- The phenix skill (`skills/phenix/`) leaves out the Builder on purpose. Do
+  not add Builder text to it: agents read the user docs instead.
+
+### Gotchas
+
+- Do not decode client text with `store.NewConfigFromYAML`. It expands
+  `${NAME}` from the server environment. Use `store.DecodeConfigJSON` or
+  `store.DecodeConfigYAML`.
+- Preflight lists bridges with `ovs-vsctl list-br` (`mm.GetBridges`). Do not
+  use the minimega `bridge` command: it creates the default bridge and
+  rewrites the `bridges` file.
+- Only `forkLocalHistory` (`builder/autosave.js`) sends `forkOf`, not
+  `store.duplicateDraft`. On the server, `forkOrigin`
+  (`web/builder_publish.go`) gives the new draft the source token of the
+  `forkOf` draft, so a duplicate with `forkOf` could publish to the topology
+  of the original.
+- These hold `builderPublishLock`: Publish, the deletion of a draft or of a
+  published document (`web/builder_documents.go`), `POST /builder/cleanup`,
+  and the deletion or rename of a Topology config (`lockBuilderPublishing`,
+  called from `web/config.go`). Do not call one of them while you hold the
+  lock.
+- The Scenario config route replaces all annotations on `PUT`. Make the body
+  of a Scenario update with `replacedScenarioConfig(stored, uploaded)`
+  (`builder/publish.js`), which keeps the stored annotations and merges the
+  `topology` annotation.
+- Keep devices in source order. Do not sort them: minimega starts the VMs in
+  that order.
+- When JS compares or folds a name that Go also compares, use
+  `goEqualFold`, `goToLower`, or `foldKey` (`builder/goCase.js`), not
+  `toLowerCase`. The case tests (`types/builder/case_test.go`) skip on a Go
+  with another Unicode version. Run them with Go 1.24 or 1.25.
+- Code that places, counts, or colors nodes by layer uses
+  `effectiveNodeLayer`, not `nodeLayer`.
+- Do not bind the Vue Flow `snapToGrid` prop. It snaps each node when it
+  mounts, and that moves drafts that are off the grid.
+- Show icon bytes only through an `<img>` with a `data:image/png;base64,`
+  URL, never as markup.
+- If you move `Builder.vue`, update the view that `src/js/vite.config.js`
+  gives `src/js/plugins/builder-assets.js`. The rest of the UI loads `builder/session.js`,
+  `focusMode.js`, and `configs.js` uncompressed, so keep their imports small
+  (`src/js/test/builder/session.test.js` checks the first two).
+
+### Checks
+
+- In `src/go`: `go test -race ./types/builder ./api/builder` and
+  `go test -race ./web -run Builder`
+- In `src/js`: `npm test -- test/builder`
 
 ## Validation
 
@@ -146,7 +257,7 @@ and pass it explicitly, for example
 | Config interfaces and fields | `src/go/types/interfaces/`, `src/go/types/version/` |
 | YAML config schemas | `src/go/types/version/schemas/{v0,v1,v2}.yaml`, one file per `apiVersion` holding the kinds stored at it: `v0` `Workflow`, `v1` `Topology`/`Experiment`/`Image`/`User`/`Role`, `v2` `Scenario` |
 | CLI and REST implementation | `src/go/cmd/`, `src/go/web/server.go` |
-| Builder | `skills/phenix/references/builder.md`, `src/go/api/builder/`, `src/go/web/builder*.go`, `src/js/src/builder/` |
+| Builder | [Builder](#builder), [`docs/content/builder/`](docs/content/builder/) |
 | Narrative docs source | [`docs/`](docs/) |
 | Internet-hosted narrative docs | [phenix.sceptre.dev](https://phenix.sceptre.dev/latest/) |
 | minimega commands and behavior | [API docs](https://sandia-minimega.github.io/minimega/reference/minimega/), [source](https://github.com/sandia-minimega/minimega) |

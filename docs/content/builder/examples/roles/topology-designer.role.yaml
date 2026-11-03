@@ -1,0 +1,40 @@
+# Topology Designer: uses the Builder (builder use), so it makes, changes and
+# deletes every draft and changes the Builder libraries. It reads Topology,
+# Scenario and Experiment configs to import them, but cannot publish. configs
+# names only the kinds the Builder uses: "*/*" would also match User and Role
+# configs.
+apiVersion: phenix.sandia.gov/v1
+kind: Role
+metadata:
+  name: topology-designer
+spec:
+  roleName: Topology Designer
+  policies:
+  - resources:
+    - builder
+    verbs:
+    - use
+  - resources:
+    - configs
+    resourceNames:
+    - "Topology/*"
+    - "Scenario/*"
+    - "Experiment/*"
+    verbs:
+    - list
+    - get
+  - resources:
+    - topologies
+    - scenarios
+    - experiments
+    resourceNames:
+    - "*"
+    verbs:
+    - list
+    - get
+  - resources:
+    - disks
+    resourceNames:
+    - "*"
+    verbs:
+    - list
