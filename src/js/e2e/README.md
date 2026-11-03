@@ -16,48 +16,47 @@ a CI-built binary, a container, or a full range node.
 | `builder-multi-user.spec.js`   | server started with `--jwt-signing-key` and an admin user, and `E2E_MULTI_USER=1`            | yes (own server)    |
 | `builder-legacy.spec.js`       | just a running server and `tests/fixtures/legacy-sample.xml`                                 | yes                 |
 | `experiment-lifecycle.spec.js` | minimega, VM images, a topology (`E2E_LIFECYCLE=1`)                                          | no (needs minimega) |
-| `auth-enabled.spec.js`         | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key`, `E2E_AUTH_MODE=enabled`       | yes (own job)       |
-| `auth-proxy.spec.js`           | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt`, `E2E_AUTH_MODE=proxy` | yes (own job)       |
+| `auth-enabled.spec.js`         | UI built with `VITE_AUTH=enabled`, server `--jwt-signing-key`, `E2E_AUTH_MODE=enabled`       | yes (own server)    |
+| `auth-proxy.spec.js`           | UI built with `VITE_AUTH=proxy`, server `--jwt-signing-key proxy-jwt`, `E2E_AUTH_MODE=proxy` | yes (own server)    |
 
-CI (`.github/workflows/frontend.yml`) builds `bin/phenix` three times, with
-the UI built with `VITE_AUTH=disabled`, `enabled` and `proxy`. Then it runs
-seven jobs in parallel. Each starts its own `bin/phenix ui` against a
-throw-away store and base directory (`--base-dir.phenix`, given to the tests
-as `E2E_BASE_DIR`) and runs one part of the suite:
+CI (`.github/workflows/e2e.yml`) builds `bin/phenix` three times in one job,
+with the UI built with `VITE_AUTH=disabled`, `enabled` and `proxy`. Then five
+jobs run in parallel. Each job, or each step of the last job, starts its own
+`bin/phenix ui` against a throw-away store and base directory
+(`--base-dir.phenix`, given to the smoke tests as `E2E_BASE_DIR`) and runs one
+part of the suite:
 
-| Job                | UI build   | Server                        | Runs                                        |
-| ------------------ | ---------- | ----------------------------- | ------------------------------------------- |
-| Smoke 1/3 to 3/3   | `disabled` | no flags                      | the default set without `@axe`, in 3 shards |
-| Axe scans          | `disabled` | no flags                      | the `@axe` tests, in Chromium only          |
-| Builder multi-user | `disabled` | authentication on             | `builder-multi-user.spec.js`, in Chromium   |
-| Auth enabled       | `enabled`  | authentication on             | `auth-enabled.spec.js`                      |
-| Auth proxy         | `proxy`    | `--jwt-signing-key proxy-jwt` | `auth-proxy.spec.js`, in Chromium           |
+| Job (step)                         | UI build   | Server                        | Runs                                        |
+| ---------------------------------- | ---------- | ----------------------------- | ------------------------------------------- |
+| Smoke 1/3 to 3/3                   | `disabled` | no flags                      | the default set without `@axe`, in 3 shards |
+| Axe scans                          | `disabled` | no flags                      | the `@axe` tests, in Chromium only          |
+| Auth and multi-user (auth enabled) | `enabled`  | authentication on             | `auth-enabled.spec.js`                      |
+| Auth and multi-user (auth proxy)   | `proxy`    | `--jwt-signing-key proxy-jwt` | `auth-proxy.spec.js`, in Chromium           |
+| Auth and multi-user (Builder)      | `disabled` | authentication on             | `builder-multi-user.spec.js`, in Chromium   |
 
-The builds run, and the seven jobs run their tests, only for a change that
-can affect the browser: `src/js/` outside its unit tests in `src/js/test/`,
-`src/go/web/`, `src/go/api/`, `src/go/store/`, `src/go/cmd/`,
-`src/go/types/builder/`, `src/go/types/version/`, the `Makefile`, `docker/`
-or the workflow itself (`browser_path()` in the workflow).
-For any other change the builds and the seven jobs report success without
-running a test. On CI, a `test.only` left in a spec fails the run
+The workflow runs only for a change that can affect the browser: `src/js/`
+outside its unit tests in `src/js/test/`, `src/go/web/`, `src/go/api/`,
+`src/go/store/`, `src/go/cmd/`, `src/go/types/builder/`,
+`src/go/types/version/`, the `Makefile`, `docker/` or the workflow itself
+(its path filters). On CI, a `test.only` left in a spec fails the run
 (`forbidOnly`). A test that fails on CI runs once more. A test that passes
 only on that retry is flaky, and it fails the run too (`failOnFlakyTests`).
 The trace and screenshot of the failed try are in the job's failure
 artifacts. On CI the Playwright run stops after 8 minutes (`globalTimeout`),
-and each job stops after 40 minutes.
+and each test job stops after 30 or 40 minutes.
 
-The seven jobs run in the Playwright image
+The test jobs run in the Playwright image
 (`mcr.microsoft.com/playwright:v<version>-noble`, pinned by digest), which
 has Chromium, Firefox and their system packages. Its version must be the
 `@playwright/test` version in `package-lock.json`, and the workflow's
-`changes` job fails while they differ. To update Playwright, change
+build job fails while they differ. To update Playwright, change
 `package.json` and the lockfile, then the image tag and digest in the
 workflow. To find the digest, run
 `docker buildx imagetools inspect mcr.microsoft.com/playwright:v<version>-noble`.
 
-The smoke shards and the Auth enabled job run both projects (below) on
-their part. The axe, multi-user and Auth proxy jobs run only the `chromium`
-project. The multi-user spec creates its own users with the built-in Builder
+The smoke shards and the auth-enabled step run both projects (below) on
+their part. The axe job and the auth-proxy and multi-user steps run only the
+`chromium` project. The multi-user spec creates its own users with the built-in Builder
 role and signs them in (`userMaker` in `tests/builder-support.js`). The shards
 use Playwright's `--shard`, which splits the tests by count, not by time.
 

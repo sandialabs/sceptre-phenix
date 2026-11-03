@@ -118,13 +118,13 @@ and then the reference that its routing table names.
 
 ## CI
 
-`.github/workflows/frontend.yml` runs knip and Vitest, builds the UI and a
-real backend once for each `VITE_AUTH` mode, then runs the Playwright tests
-in parallel jobs, each against its own server (see `e2e/README.md`). It
-builds and runs the Playwright tests only for a change that can affect the
-browser, as its `changes` job decides. A change to unit tests under `test/`
-alone runs Vitest only. Keep Node versions, npm cache lockfiles, auth build
-mode, backend startup, path filters, and that job's path list aligned with
-local commands. The Playwright jobs run in the Playwright image pinned in the
-workflow. When you change the `@playwright/test` version in `e2e/`, change the
-image tag and digest to match. The `changes` job fails while they differ.
+`.github/workflows/frontend.yml` runs knip and Vitest.
+`.github/workflows/e2e.yml` builds the UI and a real backend once for each
+`VITE_AUTH` mode, then runs the Playwright tests in parallel jobs, each part
+against its own server (see `e2e/README.md`). It runs only for a change that
+can affect the browser, as its path filters decide. A change to unit tests
+under `test/` alone runs Vitest only. Keep Node versions, npm cache lockfiles,
+auth build mode, backend startup, and both workflows' path filters aligned
+with local commands. The Playwright jobs run in the Playwright image pinned in
+the workflow. When you change the `@playwright/test` version in `e2e/`, change
+the image tag and digest to match. The e2e build job fails while they differ.
