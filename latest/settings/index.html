@@ -1918,12 +1918,12 @@ no <code>config.yaml</code> or restart involved.</p>
 <tr>
 <td style="text-align: left;">Idle timeout (minutes)</td>
 <td style="text-align: left;"><code>30</code></td>
-<td style="text-align: left;">Minutes of inactivity before an idle user is logged out.</td>
+<td style="text-align: left;">Minutes of inactivity before an idle user is logged out. The minimum is <code>0.5</code>.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Warning before logout (minutes)</td>
 <td style="text-align: left;"><code>3</code></td>
-<td style="text-align: left;">How long before logout to warn the user.</td>
+<td style="text-align: left;">How long before logout to warn the user. This value must be less than the idle timeout.</td>
 </tr>
 </tbody>
 </table>
