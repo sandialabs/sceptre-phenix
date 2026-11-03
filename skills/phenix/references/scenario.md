@@ -42,6 +42,12 @@ Built-in apps that always run for every experiment: `ntp`, `serial`,
 `phenix/default-apps: false` annotation (see
 [annotations.md](annotations.md)).
 
+`vrouter` configures only `Router` and `Firewall` nodes. It writes the
+router config for `hardware.os_type` `vyatta` or `vyos`, and the post-start
+stage configures `minirouter`. It ignores other OS types with a warning. The
+OS type `linux` still gets a Vyatta config, but it is deprecated
+(`src/go/app/vrouter.go`).
+
 Optional apps are added explicitly in the scenario's `apps` list. Examples:
 `user-shell`, SCORCH, monitoring apps like `packetbeat`/`elasticsearch`,
 `caldera`, `scale`, `wireguard`, `otsim`, `helics`. Many live in the companion

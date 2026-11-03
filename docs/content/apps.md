@@ -426,7 +426,7 @@ spec:
                 translation: masquerade
             dnat:
               - interface: eth1
-                dstAddr: 10.0.0.1
+                destAddr: 10.0.0.1
                 dstPort: 80
                 protocol: tcp
                 translation: 192.168.0.250:8080

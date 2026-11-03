@@ -1,0 +1,758 @@
+# Metro Campus: a larger example topology (42 devices on 7 networks) for
+# trying the Builder layouts and Auto-group.
+apiVersion: phenix.sandia.gov/v1
+kind: Topology
+metadata:
+  name: metro-campus
+spec:
+  nodes:
+    - type: Router
+      general:
+        hostname: wan-rtr
+        description: WAN edge router
+      hardware:
+        os_type: vyos
+        drives:
+          - image: vyos.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: WAN
+            proto: static
+            address: 198.51.100.2
+            mask: 24
+            gateway: 198.51.100.1
+          - name: eth1
+            type: ethernet
+            vlan: DMZ
+            proto: static
+            address: 172.16.0.1
+            mask: 24
+          - name: eth2
+            type: ethernet
+            vlan: CORE
+            proto: static
+            address: 10.0.0.1
+            mask: 24
+    - type: Router
+      general:
+        hostname: core-rtr
+        description: Core router
+      hardware:
+        os_type: vyos
+        drives:
+          - image: vyos.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: CORE
+            proto: static
+            address: 10.0.0.2
+            mask: 24
+            gateway: 10.0.0.1
+          - name: eth1
+            type: ethernet
+            vlan: SERVERS
+            proto: static
+            address: 10.2.0.1
+            mask: 24
+    - type: Router
+      general:
+        hostname: dist-a
+        description: Building A distribution router
+      hardware:
+        os_type: minirouter
+        drives:
+          - image: minirouter.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: CORE
+            proto: static
+            address: 10.0.0.11
+            mask: 24
+            gateway: 10.0.0.1
+          - name: eth1
+            type: ethernet
+            vlan: BLDG-A
+            proto: static
+            address: 10.1.1.1
+            mask: 24
+    - type: Router
+      general:
+        hostname: dist-b
+        description: Building B distribution router
+      hardware:
+        os_type: minirouter
+        drives:
+          - image: minirouter.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: CORE
+            proto: static
+            address: 10.0.0.12
+            mask: 24
+            gateway: 10.0.0.1
+          - name: eth1
+            type: ethernet
+            vlan: BLDG-B
+            proto: static
+            address: 10.1.2.1
+            mask: 24
+    - type: Router
+      general:
+        hostname: dist-c
+        description: Building C distribution router
+      hardware:
+        os_type: minirouter
+        drives:
+          - image: minirouter.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: CORE
+            proto: static
+            address: 10.0.0.13
+            mask: 24
+            gateway: 10.0.0.1
+          - name: eth1
+            type: ethernet
+            vlan: BLDG-C
+            proto: static
+            address: 10.1.3.1
+            mask: 24
+    - type: VirtualMachine
+      general:
+        hostname: inet-01
+        description: Internet host
+      hardware:
+        os_type: linux
+        drives:
+          - image: ubuntu.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: WAN
+            proto: static
+            address: 198.51.100.50
+            mask: 24
+            gateway: 198.51.100.1
+    - type: VirtualMachine
+      general:
+        hostname: web-01
+        description: Public web server
+      hardware:
+        os_type: linux
+        drives:
+          - image: ubuntu.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: DMZ
+            proto: static
+            address: 172.16.0.11
+            mask: 24
+            gateway: 172.16.0.1
+    - type: VirtualMachine
+      general:
+        hostname: web-02
+        description: Public web server
+      hardware:
+        os_type: linux
+        drives:
+          - image: ubuntu.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: DMZ
+            proto: static
+            address: 172.16.0.12
+            mask: 24
+            gateway: 172.16.0.1
+    - type: VirtualMachine
+      general:
+        hostname: web-03
+        description: Public web server
+      hardware:
+        os_type: linux
+        drives:
+          - image: ubuntu.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: DMZ
+            proto: static
+            address: 172.16.0.13
+            mask: 24
+            gateway: 172.16.0.1
+    - type: VirtualMachine
+      general:
+        hostname: mail-01
+        description: Mail relay
+      hardware:
+        os_type: linux
+        drives:
+          - image: ubuntu.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: DMZ
+            proto: static
+            address: 172.16.0.25
+            mask: 24
+            gateway: 172.16.0.1
+    - type: VirtualMachine
+      general:
+        hostname: vpn-01
+        description: Remote access VPN
+      hardware:
+        os_type: linux
+        drives:
+          - image: ubuntu.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: DMZ
+            proto: static
+            address: 172.16.0.30
+            mask: 24
+            gateway: 172.16.0.1
+    - type: VirtualMachine
+      general:
+        hostname: dc-01
+        description: Domain controller
+      hardware:
+        os_type: windows
+        drives:
+          - image: winserver2019.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: SERVERS
+            proto: static
+            address: 10.2.0.10
+            mask: 24
+            gateway: 10.2.0.1
+    - type: VirtualMachine
+      general:
+        hostname: db-01
+        description: Database server
+      hardware:
+        os_type: linux
+        drives:
+          - image: ubuntu.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: SERVERS
+            proto: static
+            address: 10.2.0.20
+            mask: 24
+            gateway: 10.2.0.1
+    - type: VirtualMachine
+      general:
+        hostname: dc-02
+        description: Domain controller
+      hardware:
+        os_type: windows
+        drives:
+          - image: winserver2019.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: SERVERS
+            proto: static
+            address: 10.2.0.11
+            mask: 24
+            gateway: 10.2.0.1
+    - type: VirtualMachine
+      general:
+        hostname: db-02
+        description: Database server
+      hardware:
+        os_type: linux
+        drives:
+          - image: ubuntu.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: SERVERS
+            proto: static
+            address: 10.2.0.21
+            mask: 24
+            gateway: 10.2.0.1
+    - type: VirtualMachine
+      general:
+        hostname: app-01
+        description: Application server
+      hardware:
+        os_type: linux
+        drives:
+          - image: ubuntu.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: SERVERS
+            proto: static
+            address: 10.2.0.30
+            mask: 24
+            gateway: 10.2.0.1
+    - type: VirtualMachine
+      general:
+        hostname: app-02
+        description: Application server
+      hardware:
+        os_type: linux
+        drives:
+          - image: ubuntu.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: SERVERS
+            proto: static
+            address: 10.2.0.31
+            mask: 24
+            gateway: 10.2.0.1
+    - type: VirtualMachine
+      general:
+        hostname: app-03
+        description: Application server
+      hardware:
+        os_type: linux
+        drives:
+          - image: ubuntu.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: SERVERS
+            proto: static
+            address: 10.2.0.32
+            mask: 24
+            gateway: 10.2.0.1
+    - type: VirtualMachine
+      general:
+        hostname: files-01
+        description: File server
+      hardware:
+        os_type: linux
+        drives:
+          - image: ubuntu.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: SERVERS
+            proto: static
+            address: 10.2.0.40
+            mask: 24
+            gateway: 10.2.0.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-a01
+        description: Building A workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-A
+            proto: static
+            address: 10.1.1.101
+            mask: 24
+            gateway: 10.1.1.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-a02
+        description: Building A workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-A
+            proto: static
+            address: 10.1.1.102
+            mask: 24
+            gateway: 10.1.1.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-a03
+        description: Building A workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-A
+            proto: static
+            address: 10.1.1.103
+            mask: 24
+            gateway: 10.1.1.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-a04
+        description: Building A workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-A
+            proto: static
+            address: 10.1.1.104
+            mask: 24
+            gateway: 10.1.1.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-a05
+        description: Building A workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-A
+            proto: static
+            address: 10.1.1.105
+            mask: 24
+            gateway: 10.1.1.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-a06
+        description: Building A workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-A
+            proto: static
+            address: 10.1.1.106
+            mask: 24
+            gateway: 10.1.1.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-a07
+        description: Building A workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-A
+            proto: static
+            address: 10.1.1.107
+            mask: 24
+            gateway: 10.1.1.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-a08
+        description: Building A workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-A
+            proto: static
+            address: 10.1.1.108
+            mask: 24
+            gateway: 10.1.1.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-b01
+        description: Building B workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-B
+            proto: static
+            address: 10.1.2.101
+            mask: 24
+            gateway: 10.1.2.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-b02
+        description: Building B workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-B
+            proto: static
+            address: 10.1.2.102
+            mask: 24
+            gateway: 10.1.2.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-b03
+        description: Building B workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-B
+            proto: static
+            address: 10.1.2.103
+            mask: 24
+            gateway: 10.1.2.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-b04
+        description: Building B workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-B
+            proto: static
+            address: 10.1.2.104
+            mask: 24
+            gateway: 10.1.2.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-b05
+        description: Building B workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-B
+            proto: static
+            address: 10.1.2.105
+            mask: 24
+            gateway: 10.1.2.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-b06
+        description: Building B workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-B
+            proto: static
+            address: 10.1.2.106
+            mask: 24
+            gateway: 10.1.2.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-b07
+        description: Building B workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-B
+            proto: static
+            address: 10.1.2.107
+            mask: 24
+            gateway: 10.1.2.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-b08
+        description: Building B workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-B
+            proto: static
+            address: 10.1.2.108
+            mask: 24
+            gateway: 10.1.2.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-c01
+        description: Building C workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-C
+            proto: static
+            address: 10.1.3.101
+            mask: 24
+            gateway: 10.1.3.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-c02
+        description: Building C workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-C
+            proto: static
+            address: 10.1.3.102
+            mask: 24
+            gateway: 10.1.3.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-c03
+        description: Building C workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-C
+            proto: static
+            address: 10.1.3.103
+            mask: 24
+            gateway: 10.1.3.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-c04
+        description: Building C workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-C
+            proto: static
+            address: 10.1.3.104
+            mask: 24
+            gateway: 10.1.3.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-c05
+        description: Building C workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-C
+            proto: static
+            address: 10.1.3.105
+            mask: 24
+            gateway: 10.1.3.1
+    - type: VirtualMachine
+      general:
+        hostname: ws-c06
+        description: Building C workstation
+      hardware:
+        os_type: windows
+        drives:
+          - image: windows10.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-C
+            proto: static
+            address: 10.1.3.106
+            mask: 24
+            gateway: 10.1.3.1
+    - type: VirtualMachine
+      general:
+        hostname: printer-c01
+        description: Building C printer
+      hardware:
+        os_type: linux
+        drives:
+          - image: ubuntu.qc2
+      network:
+        interfaces:
+          - name: eth0
+            type: ethernet
+            vlan: BLDG-C
+            proto: static
+            address: 10.1.3.200
+            mask: 24
+            gateway: 10.1.3.1
