@@ -32,6 +32,8 @@ type SOH struct {
 	nodes map[string]ifaces.NodeSpec
 	// Track hosts with active C2
 	c2Hosts map[string]struct{}
+	// Track hosts whose C2 was found inactive during this run
+	noC2 map[string]struct{}
 	// Track hosts that should be tested for reachability
 	// (ie. hosts that have at least one interface in an experiment VLAN)
 	reachabilityHosts map[string]struct{}
@@ -68,6 +70,7 @@ func newSOH() *SOH {
 	return &SOH{ //nolint:exhaustruct // partial initialization
 		nodes:             make(map[string]ifaces.NodeSpec),
 		c2Hosts:           make(map[string]struct{}),
+		noC2:              make(map[string]struct{}),
 		reachabilityHosts: make(map[string]struct{}),
 		addrHosts:         make(map[string]string),
 		vlans:             make(map[string][]string),
@@ -412,7 +415,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 			logger.Error("[✗] failed to confirm networking", hostKey, host, "err", err)
 
 			if errors.Is(err, mm.ErrC2ClientNotActive) {
-				delete(s.c2Hosts, host)
+				s.markNoC2(host)
 			} else {
 				s.failedNetwork[host] = struct{}{}
 			}
