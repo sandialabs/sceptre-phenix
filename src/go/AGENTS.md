@@ -93,6 +93,6 @@ Follow the Go wiki [TestComments](https://go.dev/wiki/TestComments) in Go tests:
 ## CI
 
 `.github/workflows/ci.yml` generates artifacts, runs `make check`, executes
-race-enabled tests, and runs `make deadcode`. Go changes can also trigger
-`.github/workflows/frontend.yml` because browser smoke tests build and run the
-backend. Keep workflow paths, Go/tool versions, and local commands aligned.
+race-enabled tests, runs `make deadcode`, and checks the Go example in
+`examples/go/`. Go changes can also trigger `.github/workflows/e2e.yml`
+because browser smoke tests build and run the backend. Keep workflow paths, Go/tool versions, and local commands aligned.

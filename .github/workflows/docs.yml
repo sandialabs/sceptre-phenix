@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-    paths:
+    paths: &paths
       - 'docs/**'
       - 'src/go/web/public/docs/openapi.yml'
       - 'src/go/types/version/schemas/**'
@@ -12,11 +12,7 @@ on:
   pull_request:
     # closed: only to cancel this PR's runs (see concurrency); jobs skip it
     types: [opened, synchronize, reopened, closed]
-    paths:
-      - 'docs/**'
-      - 'src/go/web/public/docs/openapi.yml'
-      - 'src/go/types/version/schemas/**'
-      - '.github/workflows/docs.yml'
+    paths: *paths
   workflow_dispatch:
 
 permissions:
@@ -27,18 +23,25 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Builds the site everywhere. On main it also commits the site to gh-pages
+  # locally; only the deploy job gets write access to push it.
   build:
     name: Build Documentation
-    if: >-
-      (github.event_name == 'pull_request' && github.event.action != 'closed')
-      || (github.event_name != 'pull_request' && github.ref != 'refs/heads/main')
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    outputs:
+      publish: ${{ env.PUBLISH }}
     defaults:
       run:
         working-directory: docs
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # mike commits on top of the gh-pages history.
+          fetch-depth: ${{ env.PUBLISH != 'true' && 1 || 0 }}
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -59,43 +62,13 @@ jobs:
             --title='phenix API'
       - name: Build documentation
         run: mkdocs build --strict
-
-  publish:
-    name: Build Published Documentation
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    defaults:
-      run:
-        working-directory: docs
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: docs/requirements.txt
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '24'
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Build API documentation
-        working-directory: .
-        run: |
-          npx --yes @redocly/cli@2.53.2 build-docs \
-            src/go/web/public/docs/openapi.yml \
-            --output=/tmp/swagger.html \
-            --title='phenix API'
       - name: Configure Git user
+        if: env.PUBLISH == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
       - name: Prepare latest documentation
+        if: env.PUBLISH == 'true'
         working-directory: .
         run: |
           cp docs/CNAME /tmp/CNAME
@@ -108,17 +81,19 @@ jobs:
           if ! git diff --cached --quiet; then
             git commit --message='docs: update Pages root assets'
           fi
-      - name: Publish GitHub Pages branch
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
-      - name: Export published site
-        working-directory: .
-        run: |
+          git bundle create /tmp/gh-pages.bundle gh-pages
           mkdir -p /tmp/pages
           git archive HEAD | tar -x -C /tmp/pages
+      - name: Upload gh-pages bundle
+        if: env.PUBLISH == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gh-pages-bundle
+          path: /tmp/gh-pages.bundle
+          if-no-files-found: error
+          retention-days: 1
       - name: Upload GitHub Pages artifact
+        if: env.PUBLISH == 'true'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: /tmp/pages
@@ -126,15 +101,30 @@ jobs:
 
   deploy:
     name: Deploy GitHub Pages
-    needs: publish
+    needs: build
+    if: needs.build.outputs.publish == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
+      contents: write
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gh-pages-bundle
+          path: ${{ runner.temp }}
+      - name: Publish GitHub Pages branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git init -q gh-pages
+          cd gh-pages
+          git fetch -q "$RUNNER_TEMP/gh-pages.bundle" gh-pages:gh-pages
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - name: Deploy GitHub Pages

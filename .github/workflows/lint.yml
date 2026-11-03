@@ -23,11 +23,13 @@ jobs:
     if: github.event.action != 'closed'
     name: prek
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        id: python
         with:
           python-version: '3.12'
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -40,15 +42,22 @@ jobs:
           cache: npm
           cache-dependency-path: src/js/package-lock.json
       - name: Install system dependencies
-        # protobuf-compiler is needed by the go-generate hook in src/go/prek.toml,
-        # which runs `make generate` before golangci-lint so the linter sees
-        # generated code (protobuf bindings, RBAC policy, store mocks).
+        # protoc: the go-generate hook runs `make generate` before golangci-lint
         run: sudo apt-get update -q && sudo apt-get install -y protobuf-compiler
       - name: Install frontend dependencies
-        # node_modules is needed by the prettier/eslint hooks in
-        # src/js/prek.toml, which run this project's own npm scripts.
+        # node_modules: the prettier and eslint hooks run this project's npm scripts
         working-directory: src/js
         run: npm ci
+      # Only main saves this cache, so pull requests do not fill the cache quota.
+      - name: Restore prek and golangci-lint caches
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: lint-cache
+        with:
+          path: |
+            ~/.cache/prek
+            ~/.cache/golangci-lint
+          key: lint-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('prek.toml', 'src/go/prek.toml', 'src/js/prek.toml', 'examples/go/prek.toml', 'src/go/go.sum', 'examples/go/go.sum', 'src/go/.golangci.yml') }}
+          restore-keys: lint-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-
       - name: Install prek
         run: |
           curl --proto '=https' --tlsv1.2 -LsSf https://github.com/j178/prek/releases/download/v0.4.14/prek-installer.sh | sh
@@ -56,11 +65,15 @@ jobs:
       - name: Validate prek config
         run: prek validate-config prek.toml
       - name: Run prek
-        # The no-commit-to-branch hook exists to stop contributors from
-        # committing straight to main/master locally. It rightfully fails on
-        # push/PR branches that violate the naming rules, but it must be
-        # skipped here once code has actually landed on main/master upstream,
-        # otherwise every push to those branches would fail this check.
         env:
+          # The hook guards local commits; code on main has already landed.
           PREK_SKIP: ${{ (github.ref == 'refs/heads/main') && 'no-commit-to-branch' || '' }}
         run: prek run --all-files --show-diff-on-failure
+      - name: Save prek and golangci-lint caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.lint-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/prek
+            ~/.cache/golangci-lint
+          key: ${{ steps.lint-cache.outputs.cache-primary-key }}

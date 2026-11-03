@@ -21,6 +21,7 @@ jobs:
       github.event.issue.pull_request == null &&
       contains(github.event.issue.body, '### Phenix Version')
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       issues: write
     env:

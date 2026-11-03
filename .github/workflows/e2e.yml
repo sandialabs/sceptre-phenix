@@ -1,0 +1,280 @@
+name: E2E
+
+# Runs only for a change that can affect the browser tests (see
+# src/js/e2e/README.md).
+on:
+  push:
+    branches: ['**']
+    paths: &paths
+      - 'src/js/**'
+      - '!src/js/test/**'
+      - 'src/go/web/**'
+      - 'src/go/api/**'
+      - 'src/go/store/**'
+      - 'src/go/cmd/**'
+      - 'src/go/types/builder/**'
+      - 'src/go/types/version/**'
+      - 'Makefile'
+      - 'docker/**'
+      - '.github/workflows/e2e.yml'
+  pull_request:
+    # closed: only to cancel this PR's runs (see concurrency); jobs skip it
+    types: [opened, synchronize, reopened, closed]
+    paths: *paths
+  workflow_dispatch:
+
+env:
+  GO_VERSION: '1.24'
+  NODE_VERSION: '24'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event.action != 'closed'
+    name: Build phenix (E2E)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The test jobs run in the Playwright image, which holds the browsers of
+      # one Playwright version. That version must be the one in the e2e lockfile.
+      - name: Check the Playwright image version
+        run: |
+          workflow=.github/workflows/e2e.yml
+          lock=src/js/e2e/package-lock.json
+          images=$(grep -oE 'mcr\.microsoft\.com/playwright:v[0-9A-Za-z._-]+@sha256:[0-9a-f]{64}' "$workflow" | sort -u)
+          if [ -z "$images" ]; then
+            echo "::error file=$workflow::No Playwright image pinned by tag and digest."
+            exit 1
+          fi
+          status=0
+          for pkg in @playwright/test playwright-core; do
+            version=$(jq -r --arg p "node_modules/$pkg" '.packages[$p].version' "$lock")
+            want="mcr.microsoft.com/playwright:v$version-noble"
+            while IFS= read -r image; do
+              if [ "${image%@*}" != "$want" ]; then
+                echo "::error file=$workflow::${image%@*} does not match $pkg $version in $lock. Use $want and its digest."
+                status=1
+              fi
+            done <<< "$images"
+          done
+          if [ "$status" = 0 ]; then
+            echo "The Playwright image matches $lock: $images"
+          fi
+          exit "$status"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: src/js/package-lock.json
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: src/go/go.sum
+      - name: Install system dependencies
+        run: sudo apt-get update -q && sudo apt-get install -y protobuf-compiler
+      - name: Install UI dependencies
+        working-directory: src/js
+        run: npm ci
+      # One phenix binary (which embeds the UI) for each auth mode. SKIP_UI
+      # keeps make from rebuilding the UI built just before it.
+      - name: Build phenix for each auth mode
+        run: |
+          mkdir -p e2e-bin
+          for auth in disabled enabled proxy; do
+            echo "::group::VITE_AUTH=$auth"
+            (cd src/js && VITE_AUTH=$auth npm run build)
+            make bin/phenix SKIP_UI=1
+            mv bin/phenix "e2e-bin/phenix-$auth"
+            echo "::endgroup::"
+          done
+      - name: Upload phenix
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phenix-e2e
+          path: e2e-bin/
+          if-no-files-found: error
+          retention-days: 1
+
+  test:
+    name: E2E ${{ matrix.name }}
+    needs: build
+    runs-on: ubuntu-latest
+    # About two times the slowest job seen (19 minutes, with a 15 minute npm ci stall).
+    timeout-minutes: 40
+    # The build job checks that this tag is the e2e lockfile's Playwright version.
+    container: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+    env:
+      # The server's base directory, where the Builder file specs put the files a topology names.
+      E2E_BASE_DIR: /tmp/phenix-e2e-base
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Smoke 1/3
+            id: smoke-1
+            tests: --grep-invert @axe --shard=1/3
+          - name: Smoke 2/3
+            id: smoke-2
+            tests: --grep-invert @axe --shard=2/3
+          - name: Smoke 3/3
+            id: smoke-3
+            tests: --grep-invert @axe --shard=3/3
+          - name: Axe scans
+            id: axe
+            tests: --grep @axe --project=chromium
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: src/js/e2e/package-lock.json
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: phenix-e2e
+          path: e2e-bin
+      # The container runs steps in sh, so use POSIX redirects. Output left on
+      # the step's pipe stops phenix when the step ends.
+      - name: Start phenix UI
+        run: |
+          chmod +x e2e-bin/phenix-disabled
+          mkdir -p "$E2E_BASE_DIR"
+          ./e2e-bin/phenix-disabled ui --store.endpoint bolt:///tmp/phenix-e2e.bdb \
+            --base-dir.phenix "$E2E_BASE_DIR" \
+            --listen-endpoint 127.0.0.1:3000 > /tmp/phenix-ui.log 2>&1 &
+          # /version needs no sign-in, so it answers 200 in every auth mode.
+          timeout 30 bash -c \
+            'until curl -sf -o /dev/null http://127.0.0.1:3000/version; do sleep 1; done'
+      - name: Install e2e dependencies
+        working-directory: src/js/e2e
+        run: npm ci
+      - name: Run e2e tests
+        working-directory: src/js/e2e
+        env:
+          # The container runs as root, and Firefox does not start as root
+          # when HOME belongs to another user, as the runner's HOME does.
+          HOME: /root
+        run: npx playwright test ${{ matrix.tests }}
+      - name: Server log
+        if: failure()
+        run: tail -100 /tmp/phenix-ui.log
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-artifacts-${{ matrix.id }}
+          path: src/js/e2e/test-results
+
+  # Specs that need their own server flags. Each one runs a few seconds, so
+  # they share one job and run one after another.
+  servers:
+    name: E2E Auth and multi-user
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+    defaults:
+      run:
+        working-directory: src/js/e2e
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: src/js/e2e/package-lock.json
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: phenix-e2e
+          path: e2e-bin
+      - name: Install e2e dependencies
+        id: deps
+        run: |
+          chmod +x "$GITHUB_WORKSPACE"/e2e-bin/phenix-*
+          npm ci
+      # Each step starts its own server, with its own port, socket, store and
+      # base directory. The trap stops the server when the step ends.
+      - name: Run auth-enabled tests
+        env:
+          HOME: /root
+          E2E_AUTH_MODE: enabled
+          E2E_BASE_URL: http://127.0.0.1:3000
+        run: |
+          mkdir -p /tmp/phenix-base-enabled
+          "$GITHUB_WORKSPACE"/e2e-bin/phenix-enabled ui \
+            --store.endpoint bolt:///tmp/phenix-enabled.bdb \
+            --base-dir.phenix /tmp/phenix-base-enabled \
+            --unix-socket /tmp/phenix-enabled.sock \
+            --listen-endpoint 127.0.0.1:3000 \
+            --jwt-signing-key e2e-auth \
+            --users 'e2e-admin:Testpass1!:Global Admin' > /tmp/phenix-ui-enabled.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid"' EXIT
+          timeout 30 bash -c \
+            "until curl -sf -o /dev/null $E2E_BASE_URL/version; do sleep 1; done"
+          npx playwright test auth-enabled --output test-results/auth-enabled
+      - name: Run auth-proxy tests
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        env:
+          HOME: /root
+          E2E_AUTH_MODE: proxy
+          E2E_BASE_URL: http://127.0.0.1:3100
+        run: |
+          mkdir -p /tmp/phenix-base-proxy
+          "$GITHUB_WORKSPACE"/e2e-bin/phenix-proxy ui \
+            --store.endpoint bolt:///tmp/phenix-proxy.bdb \
+            --base-dir.phenix /tmp/phenix-base-proxy \
+            --unix-socket /tmp/phenix-proxy.sock \
+            --listen-endpoint 127.0.0.1:3100 \
+            --jwt-signing-key proxy-jwt > /tmp/phenix-ui-proxy.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid"' EXIT
+          timeout 30 bash -c \
+            "until curl -sf -o /dev/null $E2E_BASE_URL/version; do sleep 1; done"
+          npx playwright test auth-proxy --project=chromium --output test-results/auth-proxy
+      - name: Run Builder multi-user tests
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        env:
+          HOME: /root
+          E2E_MULTI_USER: '1'
+          E2E_BASE_URL: http://127.0.0.1:3200
+        run: |
+          mkdir -p /tmp/phenix-base-multi-user
+          "$GITHUB_WORKSPACE"/e2e-bin/phenix-disabled ui \
+            --store.endpoint bolt:///tmp/phenix-multi-user.bdb \
+            --base-dir.phenix /tmp/phenix-base-multi-user \
+            --unix-socket /tmp/phenix-multi-user.sock \
+            --listen-endpoint 127.0.0.1:3200 \
+            --jwt-signing-key e2e-multi-user \
+            --users 'e2e-admin:Testpass1!:Global Admin' > /tmp/phenix-ui-multi-user.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid"' EXIT
+          timeout 30 bash -c \
+            "until curl -sf -o /dev/null $E2E_BASE_URL/version; do sleep 1; done"
+          npx playwright test builder-multi-user --project=chromium --output test-results/multi-user
+      - name: Server logs
+        if: failure()
+        run: |
+          for log in /tmp/phenix-ui-*.log; do
+            echo "== $log"
+            tail -100 "$log"
+          done
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-artifacts-servers
+          path: src/js/e2e/test-results

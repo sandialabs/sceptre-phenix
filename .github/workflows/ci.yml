@@ -3,21 +3,18 @@ name: CI
 on:
   push:
     branches: ['**']
-    paths:
+    paths: &paths
       - 'src/go/**'
       - 'schemas/**'
       - 'src/js/src/builder/schema/**'
+      - 'examples/go/**'
+      - 'examples/Makefile'
       - 'Makefile'
       - '.github/workflows/ci.yml'
   pull_request:
     # closed: only to cancel this PR's runs (see concurrency); jobs skip it
     types: [opened, synchronize, reopened, closed]
-    paths:
-      - 'src/go/**'
-      - 'schemas/**'
-      - 'src/js/src/builder/schema/**'
-      - 'Makefile'
-      - '.github/workflows/ci.yml'
+    paths: *paths
 
 permissions:
   contents: read
@@ -34,6 +31,7 @@ jobs:
     if: github.event.action != 'closed'
     name: Test (Go)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -69,8 +67,9 @@ jobs:
       - name: Check for dead code
         working-directory: src/go
         run: make deadcode
-      # Coverage below the minimum in .github/coverage-minimums.json warns
-      # but does not fail the job.
+      - name: Check the Go example
+        run: make -C examples example-go
+      # Coverage below the minimum in .github/coverage-minimums.json only warns.
       - name: Summarize coverage
         if: ${{ !cancelled() && hashFiles('src/go/coverage.out') != '' }}
         working-directory: src/go

@@ -5,27 +5,21 @@ name: Packages
 # and test. A v* tag push, or a manual run given a tag, publishes the release
 # images and attaches the .deb to the GitHub release.
 on:
-  # GitHub doesn't evaluate path filters for tag pushes, so releases always
-  # build.
+  # Path filters do not apply to tag pushes, so releases always build.
   push:
     branches: ['**']
     tags: ['v*']
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - '**/prek.toml'
-      - 'src/js/e2e/**'
-      - 'src/js/test/**'
-      - 'CODEOWNERS'
-      - '.github/workflows/bug-report-versions.yml'
-      - '.github/workflows/ci.yml'
-      - '.github/workflows/docs.yml'
-      - '.github/workflows/examples.yml'
-      - '.github/workflows/frontend.yml'
-      - '.github/workflows/lint.yml'
-      - '.github/workflows/podman.yml'
-  # Pull request code changes are compiled and tested by the other workflows,
-  # so only changes to how the packages are built rebuild them here.
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!**/*.md'
+      - '!**/prek.toml'
+      - '!src/js/e2e/**'
+      - '!src/js/test/**'
+      - '!CODEOWNERS'
+      - '!.github/**'
+      - '.github/workflows/packages.yml'
+  # Other workflows test pull request code; this one rebuilds only for packaging changes.
   pull_request:
     # closed: only to cancel this PR's runs (see concurrency); jobs skip it
     types: [opened, synchronize, reopened, closed]
@@ -41,8 +35,7 @@ on:
       - 'src/go/go.sum'
       - 'src/js/package.json'
       - 'src/js/package-lock.json'
-  # Weekly uncached rebuild of main, so the image picks up OS security updates
-  # and refreshed downloads that the layer cache would otherwise keep.
+  # Weekly uncached rebuild of main, for OS security updates the layer cache would keep.
   schedule:
     - cron: '17 5 * * 1'
   repository_dispatch:
@@ -56,8 +49,7 @@ on:
 
 env:
   MM_REV: latest
-  # The release being built: a pushed v* tag, or the tag given to a manual run.
-  # Only a tag push moves `latest`, so rebuilding an old release can't.
+  # A pushed v* tag, or the tag given to a manual run. Only a tag push moves `latest`.
   RELEASE_TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
 
 permissions:
@@ -65,8 +57,7 @@ permissions:
 
 concurrency:
   group: packages-${{ inputs.tag || (github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number)) || github.ref }}
-  # Never cancel a release build, but do cancel stale runs for the same
-  # branch or PR when new commits supersede them.
+  # Never cancel a release build.
   cancel-in-progress: ${{ !(inputs.tag || github.ref_type == 'tag') }}
 
 jobs:
@@ -74,6 +65,7 @@ jobs:
     if: github.event.action != 'closed'
     name: Build images and Debian package
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -90,9 +82,7 @@ jobs:
           persist-credentials: false
 
       - name: Resolve source refs
-        # Passing the current head of the apps repository as a build arg
-        # rebuilds its cached layers when it changes. vmdb2 is pinned in the
-        # Dockerfile instead.
+        # The apps head as a build arg rebuilds the cached apps layers when it changes.
         id: refs
         env:
           APPS_REPO: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.repo || 'sandialabs/sceptre-phenix-apps' }}
@@ -145,7 +135,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           load: true
           provenance: false
-          # Releases and the weekly rebuild start fresh, then refresh the cache.
+          # Releases and the weekly rebuild start fresh.
           no-cache: ${{ github.event_name == 'schedule' || !!env.RELEASE_TAG }}
           cache-from: type=gha,scope=phenix
           cache-to: type=gha,mode=max,scope=phenix
@@ -172,8 +162,7 @@ jobs:
             docker push "$tag"
           done
 
-      # The JIT image builds FROM the phenix image loaded above, which only
-      # the default (docker driver) builder can see; it isn't cached.
+      # Only the default builder sees the phenix image loaded above; this build is not cached.
       - name: Docker meta for JIT UI
         id: meta-jit
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
@@ -229,6 +218,7 @@ jobs:
     needs: build
     if: inputs.tag || github.ref_type == 'tag'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
