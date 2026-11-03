@@ -1213,11 +1213,6 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 				return
 			}
 
-			hostState, ok := s.status[host]
-			if !ok {
-				hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
-			}
-
 			if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
 				if resp == "" {
 					wg.AddError(
@@ -1228,7 +1223,7 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 					return
 				}
 
-				hostState.CPULoad = resp
+				wg.AddSuccess(resp, map[string]any{hostKey: host})
 			} else {
 				parts := strings.Fields(resp)
 
@@ -1241,10 +1236,8 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 					return
 				}
 
-				hostState.CPULoad = parts[0]
+				wg.AddSuccess(parts[0], map[string]any{hostKey: host})
 			}
-
-			s.status[host] = hostState
 		}(host)
 	}
 
@@ -1254,8 +1247,15 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 	wg.Wait()
 	cancel()
 
+	// The goroutines above only report through wg, so the status map has a single
+	// writer.
 	for _, state := range wg.States {
 		host, _ := state.Meta[hostKey].(string)
+
+		hostState, ok := s.status[host]
+		if !ok {
+			hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
+		}
 
 		err := state.Err
 		if err != nil {
@@ -1263,16 +1263,14 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 				delete(s.c2Hosts, host)
 			}
 
-			hostState, ok := s.status[host]
-			if !ok {
-				hostState = HostState{Hostname: host} //nolint:exhaustruct // partial initialization
-			}
-
 			hostState.CPULoad = err.Error()
-			s.status[host] = hostState
 
 			logger.Error("[✗] failed to get CPU load from host", hostKey, host, "err", err)
+		} else {
+			hostState.CPULoad = state.Msg
 		}
+
+		s.status[host] = hostState
 	}
 
 	return wg.ErrCount > 0
