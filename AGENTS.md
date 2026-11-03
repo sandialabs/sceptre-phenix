@@ -188,10 +188,13 @@ image (Buildx with the GHA layer cache), JIT UI image, and Debian package;
 `podman.yml` builds the same `docker/Dockerfile` with Podman; `docs.yml` builds
 the documentation site for pull requests and publishes it to GitHub Pages from
 `main`. `lint.yml` runs every prek hook
-on all changes. Update affected path filters, inputs, generated artifacts,
-tool versions, and local-equivalent commands together. Preserve least-privilege
-permissions, supported action versions, lockfile caches, and shared version
-values.
+on all changes. `ci.yml`, `frontend.yml`, `lint.yml`, `examples.yml`, and
+`podman.yml` run on pushes to `main` and on pull requests only, so a push to
+an open pull request starts each run once; use `workflow_dispatch` for a
+branch with no pull request. Update affected path filters, inputs, generated
+artifacts, tool versions, and local-equivalent commands together. Preserve
+least-privilege permissions, supported action versions, lockfile caches, and
+shared version values.
 
 Do not publish artifacts, push images, or create releases under any
 circumstances. The only exception is packages that a fork's own workflows

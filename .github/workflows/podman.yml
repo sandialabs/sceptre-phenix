@@ -4,8 +4,11 @@ name: Podman
 # working for Podman users. Nothing is published: the image only ever exists
 # on the runner.
 on:
+  # Branches other than main run through pull_request only, so a push to an
+  # open pull request starts one run, not two. workflow_dispatch runs a
+  # branch that has no pull request.
   push:
-    branches: ['**']
+    branches: [main]
     paths:
       - '.dockerignore'
       - '.github/workflows/podman.yml'
