@@ -21,33 +21,75 @@ type MMDiskFiles struct{}
 // format the web UI allows (see views/Disks.vue).
 var diskSizeRe = regexp.MustCompile(`^[+-]?\d+[KMGTPE]$`)
 
-func (MMDiskFiles) CommitDisk(path string) error {
+// quoteArg quotes s as one minimega argument, escaping what minicli reads back,
+// so spaces, quotes, and '#' in a path cannot split it or end the command.
+func quoteArg(s string) string {
+	return `"` + strings.NewReplacer(
+		`\`, `\\`,
+		`"`, `\"`,
+		"\n", `\n`,
+		"\r", `\r`,
+		"\t", `\t`,
+	).Replace(s) + `"`
+}
+
+// runDiskCommand runs a minimega command that answers with no data.
+func runDiskCommand(command string) error {
 	cmd := mmcli.NewCommand()
-	cmd.Command = "disk commit " + path
+	cmd.Command = command
 	_, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
 
 	return err
+}
+
+func commitCommand(path string) string { return "disk commit " + quoteArg(path) }
+
+func snapshotCommand(src, dst string) string {
+	return fmt.Sprintf("disk snapshot %s %s", quoteArg(src), quoteArg(dst))
+}
+
+func rebaseCommand(src, dst string, unsafe bool) string {
+	command := "disk rebase " + quoteArg(src)
+	if unsafe {
+		command = "disk set-backing " + quoteArg(src)
+	}
+
+	// No backing file makes src standalone.
+	if dst != "" {
+		command += " " + quoteArg(dst)
+	}
+
+	return command
+}
+
+func resizeCommand(src, size string) string {
+	return fmt.Sprintf("disk resize %s %s", quoteArg(src), size)
+}
+
+func cloneCommand(src, dst string) string {
+	return fmt.Sprintf("shell cp %s %s", quoteArg(src), quoteArg(dst))
+}
+
+func renameCommand(src, dst string) string {
+	return fmt.Sprintf("shell mv %s %s", quoteArg(src), quoteArg(dst))
+}
+
+func deleteCommand(src string) string { return "shell rm " + quoteArg(src) }
+
+func infoCommand(path string) string {
+	return fmt.Sprintf("disk info %s recursive", quoteArg(path))
+}
+
+func (MMDiskFiles) CommitDisk(path string) error {
+	return runDiskCommand(commitCommand(path))
 }
 
 func (MMDiskFiles) SnapshotDisk(src, dst string) error {
-	cmd := mmcli.NewCommand()
-	cmd.Command = fmt.Sprintf("disk snapshot %s %s", src, dst)
-	_, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
-
-	return err
+	return runDiskCommand(snapshotCommand(src, dst))
 }
 
 func (MMDiskFiles) RebaseDisk(src, dst string, unsafe bool) error {
-	cmd := mmcli.NewCommand()
-	if unsafe {
-		cmd.Command = fmt.Sprintf("disk set-backing %s %s", src, dst)
-	} else {
-		cmd.Command = fmt.Sprintf("disk rebase %s %s", src, dst)
-	}
-
-	_, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
-
-	return err
+	return runDiskCommand(rebaseCommand(src, dst, unsafe))
 }
 
 func (MMDiskFiles) ResizeDisk(src, size string) error {
@@ -55,35 +97,19 @@ func (MMDiskFiles) ResizeDisk(src, size string) error {
 		return fmt.Errorf("invalid disk size %q: must be an optionally signed integer followed by one of K, M, G, T, P, E", size)
 	}
 
-	cmd := mmcli.NewCommand()
-	cmd.Command = fmt.Sprintf("disk resize %s %s", src, size)
-	_, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
-
-	return err
+	return runDiskCommand(resizeCommand(src, size))
 }
 
 func (MMDiskFiles) CloneDisk(src, dst string) error {
-	cmd := mmcli.NewCommand()
-	cmd.Command = fmt.Sprintf("shell cp %s %s", src, dst)
-	_, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
-
-	return err
+	return runDiskCommand(cloneCommand(src, dst))
 }
 
 func (MMDiskFiles) RenameDisk(src, dst string) error {
-	cmd := mmcli.NewCommand()
-	cmd.Command = fmt.Sprintf("shell mv %s %s", src, dst)
-	_, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
-
-	return err
+	return runDiskCommand(renameCommand(src, dst))
 }
 
 func (MMDiskFiles) DeleteDisk(src string) error {
-	cmd := mmcli.NewCommand()
-	cmd.Command = "shell rm " + src
-	_, err := mmcli.SingleDataResponse(mmcli.Run(cmd))
-
-	return err
+	return runDiskCommand(deleteCommand(src))
 }
 
 func (MMDiskFiles) GetImages(expName string) ([]Details, error) {
@@ -126,7 +152,8 @@ func (MMDiskFiles) GetImage(path string) (Details, error) {
 		path = mm.GetMMFullPath(path)
 	}
 
-	images := resolveImage(path)
+	// Unlike a listing, a disk named in a request is resolved whatever its extension.
+	images := imageChain(path)
 	if len(images) == 0 {
 		return Details{}, fmt.Errorf("could not resolve file specified: %s", path)
 	}
@@ -205,9 +232,17 @@ func resolveImage(path string) []Details {
 		return imageDetails
 	}
 
+	return imageChain(path)
+}
+
+// imageChain returns the details of the image at path and of each image in its
+// backing chain, as minimega's disk info reports them.
+func imageChain(path string) []Details {
 	cmd := mmcli.NewCommand()
-	cmd.Command = fmt.Sprintf("disk info %v recursive", path)
+	cmd.Command = infoCommand(path)
 	images := mmcli.RunTabular(cmd)
+
+	imageDetails := make([]Details, 0, len(images))
 
 	for i, row := range images {
 		image := Details{ //nolint:exhaustruct // partial initialization
@@ -216,18 +251,21 @@ func resolveImage(path string) []Details {
 			Size:          row["disksize"],
 			VirtualSize:   row["virtualsize"],
 			BackingImages: []string{},
+			Format:        row["format"],
+		}
+
+		for _, backing := range images[i+1:] {
+			image.BackingPaths = append(image.BackingPaths, backing["image"])
+			image.BackingFormats = append(image.BackingFormats, backing["format"])
 		}
 
 		switch {
 		case row["format"] == "qcow2":
 			image.Kind = VMImage
 
-			backingChain := []string{}
 			for _, backing := range images[i+1:] {
-				backingChain = append(backingChain, filepath.Base(backing["image"]))
+				image.BackingImages = append(image.BackingImages, filepath.Base(backing["image"]))
 			}
-
-			image.BackingImages = backingChain
 		case strings.HasSuffix(image.Name, "_rootfs.tgz"):
 			image.Kind = ContainerImage
 		case strings.HasSuffix(image.Name, ".hdd"):
