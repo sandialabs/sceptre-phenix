@@ -143,7 +143,7 @@ func (s *SOH) PostStart(ctx context.Context, exp *types.Experiment) error {
 
 	s.apps = exp.Spec.Scenario().Apps()
 
-	err = s.deployCapture(exp, s.options.DryRun)
+	err = s.deployCapture(ctx, exp, s.options.DryRun)
 	if err != nil {
 		if s.md.ExitOnError {
 			return err
