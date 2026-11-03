@@ -1,7 +1,7 @@
 // Three-way merge of Builder documents: base, mine (on screen) and theirs (the
 // server's). A change on one side is taken. A field that both sides changed to
 // different values is a clash for MergeDialog.vue. The functions are pure.
-// skills/phenix/references/builder/saving.md has the merge rules.
+// docs/content/builder/details/drafts.md (Draft merging) has the merge rules.
 
 import { count, listOf } from './announce.js';
 import { iconLabel } from './iconLabels.js';

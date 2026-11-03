@@ -82,6 +82,33 @@ nav:
     - VMs: vms.md
     - VM Actions: vm-multi-action.md
     - Images: image.md
+  - Builder:
+    - Overview: builder/index.md
+    - Tutorial: builder/tutorial.md
+    - Drafts: builder/drafts.md
+    - The Editor: builder/editor.md
+    - Diagrams: builder/diagrams.md
+    - Templates and Icons: builder/templates.md
+    - Import, Upload and Download: builder/import-upload-download.md
+    - Publishing: builder/publishing.md
+    - Troubleshooting: builder/troubleshooting.md
+    - Reference: builder/reference.md
+    - Advanced:
+      - Administration: builder/administration.md
+      - Legacy Builder: builder/legacy.md
+      - Details:
+        - Drafts: builder/details/drafts.md
+        - The Editor: builder/details/editor.md
+        - Checks and Preflight: builder/details/checks.md
+        - Command Palette and Shortcuts: builder/details/palette-and-shortcuts.md
+        - Diagrams: builder/details/diagrams.md
+        - Layers: builder/details/layers.md
+        - Icons: builder/details/icons.md
+        - Scenarios and Included Topologies: builder/details/scenarios.md
+        - Templates and Icons: builder/details/templates.md
+        - Import, Upload and Download: builder/details/import-upload-download.md
+        - Publishing: builder/details/publishing.md
+        - Administration: builder/details/administration.md
   - Apps:
     - Overview: apps.md
     - Examples: examples.md
