@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand/v2"
 	"net"
 	"os"
@@ -25,6 +26,7 @@ import (
 
 const (
 	appName       = "soh"
+	expKey        = "exp"
 	hostKey       = "host"
 	typeKey       = "type"
 	protoKey      = "proto"
@@ -356,7 +358,7 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 		return false
 	}
 
-	logger := plog.LoggerFromContext(ctx, plog.TypeSoh)
+	logger := sohLogger(ctx, ns)
 
 	var (
 		icmpDisabled   = strings.EqualFold(s.md.Reachability, "off") || !checks["reachability"]
@@ -534,6 +536,7 @@ func (s *SOH) waitForReachabilityTest(ctx context.Context, ns string, checks map
 
 	cancel := periodicallyNotify(
 		ctx,
+		logger,
 		"waiting for reachability tests to complete...",
 		notifyInterval,
 	)
@@ -630,7 +633,7 @@ func (s *SOH) waitForFileExistenceTest(
 	assign func(*HostState, State),
 ) bool {
 	var (
-		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
+		logger = sohLogger(ctx, ns)
 		wg     = new(mm.StateGroup)
 	)
 
@@ -647,7 +650,7 @@ func (s *SOH) waitForFileExistenceTest(
 		}
 	}
 
-	cancel := periodicallyNotify(ctx, waitMsg, notifyInterval)
+	cancel := periodicallyNotify(ctx, logger, waitMsg, notifyInterval)
 
 	wg.Wait()
 	cancel()
@@ -719,7 +722,7 @@ func (s *SOH) waitForFileAbsentTest(ctx context.Context, ns string) bool {
 //nolint:dupl // similar to waitForContainerTest
 func (s *SOH) waitForServiceTest(ctx context.Context, ns string) bool {
 	var (
-		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
+		logger = sohLogger(ctx, ns)
 		wg     = new(mm.StateGroup)
 	)
 
@@ -736,7 +739,7 @@ func (s *SOH) waitForServiceTest(ctx context.Context, ns string) bool {
 		}
 	}
 
-	cancel := periodicallyNotify(ctx, "waiting for service tests to complete...", notifyInterval)
+	cancel := periodicallyNotify(ctx, logger, "waiting for service tests to complete...", notifyInterval)
 
 	wg.Wait()
 	cancel()
@@ -780,7 +783,7 @@ func (s *SOH) waitForServiceTest(ctx context.Context, ns string) bool {
 //nolint:dupl // similar to waitForServiceTest
 func (s *SOH) waitForContainerTest(ctx context.Context, ns string) bool {
 	var (
-		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
+		logger = sohLogger(ctx, ns)
 		wg     = new(mm.StateGroup)
 	)
 
@@ -799,6 +802,7 @@ func (s *SOH) waitForContainerTest(ctx context.Context, ns string) bool {
 
 	cancel := periodicallyNotify(
 		ctx,
+		logger,
 		"waiting for docker container tests to complete...",
 		notifyInterval,
 	)
@@ -851,7 +855,7 @@ func (s *SOH) waitForContainerTest(ctx context.Context, ns string) bool {
 //nolint:dupl // similar to waitForPortTest
 func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 	var (
-		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
+		logger = sohLogger(ctx, ns)
 		wg     = new(mm.StateGroup)
 	)
 
@@ -909,7 +913,7 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 		}
 	}
 
-	cancel := periodicallyNotify(ctx, "waiting for process tests to complete...", notifyInterval)
+	cancel := periodicallyNotify(ctx, logger, "waiting for process tests to complete...", notifyInterval)
 
 	wg.Wait()
 	cancel()
@@ -953,7 +957,7 @@ func (s *SOH) waitForProcTest(ctx context.Context, ns string) bool {
 //nolint:dupl // similar to waitForProcTest
 func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 	var (
-		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
+		logger = sohLogger(ctx, ns)
 		wg     = new(mm.StateGroup)
 	)
 
@@ -1011,7 +1015,7 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 		}
 	}
 
-	cancel := periodicallyNotify(ctx, "waiting for listener tests to complete...", notifyInterval)
+	cancel := periodicallyNotify(ctx, logger, "waiting for listener tests to complete...", notifyInterval)
 
 	wg.Wait()
 	cancel()
@@ -1054,7 +1058,7 @@ func (s *SOH) waitForPortTest(ctx context.Context, ns string) bool {
 
 func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 	var (
-		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
+		logger = sohLogger(ctx, ns)
 		wg     = new(mm.StateGroup)
 	)
 
@@ -1112,7 +1116,7 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 		}
 	}
 
-	cancel := periodicallyNotify(ctx, "waiting for custom tests to complete...", notifyInterval)
+	cancel := periodicallyNotify(ctx, logger, "waiting for custom tests to complete...", notifyInterval)
 
 	wg.Wait()
 	cancel()
@@ -1155,7 +1159,7 @@ func (s *SOH) waitForCustomTest(ctx context.Context, ns string) bool {
 
 func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:funlen // complex logic
 	var (
-		logger = plog.LoggerFromContext(ctx, plog.TypeSoh)
+		logger = sohLogger(ctx, ns)
 		wg     = new(mm.StateGroup)
 	)
 
@@ -1248,7 +1252,7 @@ func (s *SOH) waitForCPULoad(ctx context.Context, ns string) bool { //nolint:fun
 		}(host)
 	}
 
-	cancel := periodicallyNotify(ctx, "waiting for CPU load details...", notifyInterval)
+	cancel := periodicallyNotify(ctx, logger, "waiting for CPU load details...", notifyInterval)
 
 	// Wait for CPU load requests to complete.
 	wg.Wait()
@@ -2151,13 +2155,18 @@ func trim(str string) []string {
 	return trimmed
 }
 
+// sohLogger returns the soh logger from ctx with the experiment name added.
+func sohLogger(ctx context.Context, exp string) *slog.Logger {
+	return plog.LoggerFromContext(ctx, plog.TypeSoh).With(expKey, exp)
+}
+
 func periodicallyNotify(
 	ctx context.Context,
+	logger *slog.Logger,
 	msg string,
 	d time.Duration, //nolint:unparam // utility function
 ) context.CancelFunc {
 	var (
-		logger       = plog.LoggerFromContext(ctx, plog.TypeSoh)
 		cctx, cancel = context.WithCancel(ctx)
 		ticker       = time.NewTicker(d)
 	)

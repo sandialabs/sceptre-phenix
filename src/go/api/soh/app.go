@@ -16,7 +16,6 @@ import (
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/util/mm"
-	"phenix/util/plog"
 )
 
 func init() { //nolint:gochecknoinits // app registration
@@ -122,7 +121,7 @@ func (s *SOH) PreStart(ctx context.Context, exp *types.Experiment) error {
 }
 
 func (s *SOH) PostStart(ctx context.Context, exp *types.Experiment) error {
-	logger := plog.LoggerFromContext(ctx, plog.TypeSoh)
+	logger := sohLogger(ctx, exp.Metadata.Name)
 
 	err := s.decodeMetadata(exp)
 	if err != nil {
@@ -185,7 +184,7 @@ func (SOH) Cleanup(ctx context.Context, exp *types.Experiment) error {
 
 //nolint:cyclop,funlen,gocyclo,maintidx // complex logic
 func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
-	logger := plog.LoggerFromContext(ctx, plog.TypeSoh)
+	logger := sohLogger(ctx, exp.Metadata.Name)
 
 	logger.Info("starting SOH checks")
 
@@ -359,6 +358,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 
 	cancel := periodicallyNotify(
 		ctx,
+		logger,
 		"waiting for initial network configurations to be validated...",
 		notifyInterval,
 	)
@@ -528,6 +528,8 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 }
 
 func (s *SOH) getFlows(ctx context.Context, exp *types.Experiment) { //nolint:funlen // complex logic
+	logger := sohLogger(ctx, exp.Metadata.Name)
+
 	node := exp.Spec.Topology().FindNodesWithLabels("soh-elastic-server")
 
 	if len(node) == 0 {
@@ -559,7 +561,7 @@ func (s *SOH) getFlows(ctx context.Context, exp *types.Experiment) { //nolint:fu
 				continue
 			}
 
-			plog.Error(plog.TypeSoh, "error executing command 'query-flows.sh'", "err", err)
+			logger.Error("error executing command 'query-flows.sh'", "err", err)
 
 			return
 		}
@@ -573,7 +575,7 @@ func (s *SOH) getFlows(ctx context.Context, exp *types.Experiment) { //nolint:fu
 
 	resp, err := mm.WaitForC2Response(opts...)
 	if err != nil {
-		plog.Error(plog.TypeSoh, "error getting response for command 'query-flows.sh'", "err", err)
+		logger.Error("error getting response for command 'query-flows.sh'", "err", err)
 
 		return
 	}
@@ -581,19 +583,19 @@ func (s *SOH) getFlows(ctx context.Context, exp *types.Experiment) { //nolint:fu
 	var result elastic.SearchResult
 
 	if err = json.Unmarshal([]byte(resp), &result); err != nil {
-		plog.Error(plog.TypeSoh, "error parsing Elasticsearch results", "err", err)
+		logger.Error("error parsing Elasticsearch results", "err", err)
 
 		return
 	}
 
 	if result.Hits == nil {
-		plog.Info(plog.TypeSoh, "no flow data found")
+		logger.Info("no flow data found")
 
 		return
 	}
 
 	if len(result.Hits.Hits) == 0 {
-		plog.Info(plog.TypeSoh, "no flow data found")
+		logger.Info("no flow data found")
 
 		return
 	}
@@ -605,7 +607,7 @@ func (s *SOH) getFlows(ctx context.Context, exp *types.Experiment) { //nolint:fu
 
 		err = json.Unmarshal(hit.Source, &fields)
 		if err != nil {
-			plog.Error(plog.TypeSoh, "unable to parse hit source", "err", err)
+			logger.Error("unable to parse hit source", "err", err)
 
 			return
 		}
