@@ -49,7 +49,7 @@ to start the experiment. Click the `started` button, or the red stop button,
 to stop it. The status button shows a play icon when it starts the experiment
 and a stop icon when it stops it. If your role cannot start or stop the
 experiment, the status is a plain tag that you cannot click. phēnix asks you
-to confirm a stop. A progress bar and a label show the step of
+to confirm a start or a stop. A progress bar and a label show the step of
 the start or the stop, such as `Launching VMs 12/40`. While the post-start
 apps or the delayed VMs of a running experiment show progress, the stop
 button stays beside the progress bar. While the experiment starts or stops,
@@ -64,7 +64,7 @@ on. One confirmation names the experiments it acts on and the ones it skips.
 When they are done, one message sums up the result and offers to retry the
 experiments that failed.
 
-![Experiments table with two experiments checked and the Start (2), Stop (2) and Delete (2) buttons above it.](images/experiments_selected.png){: width=800 .center}
+![Experiments table with two experiments checked and the Start (1), Stop (1) and Delete (1) buttons and a clear selection button above it.](images/experiments_selected.png){: width=800 .center}
 
 ### From the Command Line Binary
 
@@ -184,6 +184,10 @@ Error: unable to start the foo experiment: qemu cannot open 2 disks on 1 VM: 2 e
     * VM host-01: disk kali.qc2: backing file /phenix/images/ro_kali.qc2 is missing
 ```
 
+The Web-UI shows the same problems in an error message:
+
+![Error message for a refused start of grid-training that lists a missing backing file for the attacker VM and a missing CD-ROM image for the hmi-02 VM.](images/exp_start_broken_disks.png){: width=600 .center}
+
 An old or unusual image format, and a file phēnix cannot read, do not refuse
 the start. The command line shows each one as a warning. A start from the
 Web-UI or the API writes the warnings to the server log.
@@ -241,9 +245,10 @@ or draw and publish one, with its experiment, in the
 [Builder](builder/publishing.md).
 
 Click `Create Experiment`, or `Create and Start` to also start the experiment
-as soon as it is created. If the experiment cannot be created, the card shows
-why and keeps what you entered, so you can correct it and try again. Hover
-over the help icon after a field's label to see what the field does.
+as soon as it is created. `Create and Start` does not ask you to confirm the
+start. If the experiment cannot be created, the card shows why and keeps what
+you entered, so you can correct it and try again. Hover over the help icon
+after a field's label to see what the field does.
 
 Expand `Advanced Options` for the remaining settings:
 
@@ -262,8 +267,8 @@ Expand `Advanced Options` for the remaining settings:
 
 You can create an experiment entirely through the Web-UI using custom topology and scenario files without needing to use the CLI:
 
-1. **Upload Configurations in the Configs Tab**:
-    * Navigate to the **Configs** tab.
+1. **Upload Configurations on the Configs Page**:
+    * Navigate to the **Configs** page in the **Resources** menu.
     * Click the **Upload** button to upload your topology file (`.yaml`).
     * (Optional) Click **Upload** again to upload your scenario file (`.yaml`).
     * Verify that your uploaded configurations appear in the table (e.g., `topology/my-topology` and `scenario/my-scenario`).
@@ -383,6 +388,8 @@ The experiment must be stopped before it can be deleted; its trash can icon is
 disabled while it runs. Click the trash can icon next to the experiment to
 delete it. phēnix asks you to confirm first.
 
+![Delete the Experiment dialog that asks to confirm the deletion of grid-training, with Cancel and Delete buttons.](images/delete_exp.png){: width=500 .center}
+
 ### From the Command Line Binary
 
 An experiment must be stopped before it can be deleted:
@@ -460,10 +467,11 @@ phēnix has these built-in schedulers:
 The experiment must be stopped; click on the experiment name to enter the
 Stopped Experiment component. Click the `Schedule` button to the right of the
 start button. The menu tells how many VMs have a host, and lists the
-schedulers of the server. Click a scheduler, then confirm. The scheduler
-assigns hosts as [Schedulers](#schedulers) tells.
+schedulers of the server. Hover over a scheduler to see what it does. Click a
+scheduler, then confirm. The scheduler assigns hosts as
+[Schedulers](#schedulers) tells.
 
-![Scheduling menu button circled in red on a stopped experiment's toolbar, open to the isolate_experiment and round_robin algorithms.](images/schedule.png){: width=400 .center}
+![Schedule menu of a stopped experiment, open below the Schedule button beside the start button, with the note 9 of 9 VMs have a host and the built-in isolate-experiment, round-robin and subnet-compute schedulers.](images/schedule.png){: width=400 .center}
 
 ### From the Command Line Binary
 
@@ -471,6 +479,19 @@ The list of available schedules can be found by running the following command.
 
 ```bash
 phenix experiment schedulers
+```
+
+The command prints the name and kind of each scheduler, with what it does
+below the name:
+
+```text
+isolate-experiment (built-in)
+    Puts all VMs on one host that has no VMs: the host that you set for the
+    first VM if that host is empty, else the empty host with the most free
+    memory. Replaces the hosts that you set.
+round-robin (built-in)
+    Puts each VM that has no host on the host that has the fewest VMs at
+    that time, so that the VMs spread evenly. Keeps the hosts that you set.
 ```
 
 Then apply the desired schedule with the following command.

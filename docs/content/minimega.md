@@ -60,6 +60,8 @@ phēnix quotes each argument for minimega as needed, so empty arguments and argu
 
 If minimega errors or the minimega daemon is unreachable, `phenix mm` will exit with a non-zero status and record the error in the phēnix log.
 
+The REST API sends one minimega command with `POST /api/v1/minimega/commands`, as `phenix mm` does. It needs the `minimega/commands` `create` permission, which only `Global Admin` has of the built-in roles, and each command is audited as `minimega-command`.
+
 ### Namespace Scoping
 
 When working with experiment-specific VMs or VLANs, use the `--namespace` (`-n`) flag to target a specific minimega namespace. Each running experiment has a minimega namespace with the same name as the experiment.
@@ -97,9 +99,9 @@ To exit the attached console session, type `disconnect` or press `Ctrl+D`.
 ### From the Web-UI
 
 When the phēnix server is started with `phenix ui --minimega-console` (or
-`PHENIX_UI_MINIMEGA_CONSOLE=true`), the `Console` tab in the banner opens a
-minimega console in the browser. The tab is shown to roles with `post` on
-`miniconsole`.
+`PHENIX_UI_MINIMEGA_CONSOLE=true`), the `Console` link in the `Admin` menu
+opens a minimega console in the browser. The link is shown to roles with
+`post` on `miniconsole`.
 
 The console belongs to the user who started it, and keeps running while you
 use other pages or reload. It ends when you press `Ctrl+D` or type
@@ -134,7 +136,7 @@ When you enter `quit`, the page shows a warning. The page does not stop the comm
 
 If the connection to the console stops, the page tries to connect again after 1, 2, 4, 8, and 15 seconds. Select **Reconnect now** to try immediately, or **Cancel** to stop.
 
-![minimega console in the bennu namespace showing the output of vm info with each VM's host, name, state and IP addresses.](images/console_tab.png){: width=800 .center}
+![Console page with its toolbar (Connected, the bennu namespace, Commands, Search, text size, Clear, Copy all and Download, with End console at the right) above a minimega session in the bennu namespace that shows the output of vm info with each VM's host, name, state and IP addresses.](images/console_tab.png){: width=800 .center}
 
 ## minimega Command and Control (`miniccc`)
 

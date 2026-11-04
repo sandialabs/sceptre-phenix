@@ -35,6 +35,23 @@ The top left of the card shows a live, view-only console of the VM (see
 in a new browser tab. When the VM is not running, the card says so instead,
 such as `No screen: the VM is shut down`.
 
+When a VM has no screenshot, the card, the VM table and the VM tiles show a
+picture instead. The picture has a large icon and a label in the color of the
+VM's state. The colors are the same as the colors of the
+[State of Health](state-of-health.md) graph.
+
+| Label | Icon | Color | Shows for |
+| :--- | :--- | :--- | :--- |
+| `EXTERNAL NODE` | A plug | Blue | An external node |
+| `DELAYED START` | An hourglass | Yellow | A VM that waits for its delayed start. When phēnix knows the delay, a second line shows `starts after <delay>`. |
+| `NOT RUNNING` | A stop sign | Red | A VM that is not running |
+| `DO NOT BOOT` | A ban sign | Purple | A VM that is flagged not to boot |
+| `NO SCREENSHOT` | An eye with a slash | Gray | A running VM that has no screenshot |
+| `BUSY` | Gears | Gray | A VM that is busy |
+
+When the VM has an `os_type`, a chip at the top left of the picture shows the
+icon and the name of the guest operating system.
+
 #### Power
 
 The `Power` section holds the VM's power buttons:
@@ -167,6 +184,9 @@ phenix vm info my-exp --host compute1 --host compute2
 phenix vm info my-exp --host compute1 --label role-web
 ```
 
+`-o json` and `-o yaml` print each VM with the fields of the API, as
+`GET /api/v1/experiments/{exp}/vms` gives them.
+
 ## Filtering and Sorting the VM Table
 
 On the running experiment's `VMs` tab, the `Hosts`, `Labels` and `Paginate`
@@ -186,6 +206,11 @@ Click the `Labels` heading to sort the VMs by how many labels they have, the
 `Taps` heading to sort them by tap name. VMs with no VLAN ID or tap, such as
 VMs that are not running, come last. The `Uptime` column shows a dash for a
 VM that is not running and `unknown` for an external node.
+
+Click the `IP` heading to sort the VMs by the IP addresses of their
+interfaces, as numbers. The addresses of one subnet are then together, so
+`10.0.0.9` comes before `10.0.0.10`. VMs with no IP address come last. The VM
+table of a stopped experiment also sorts by `IP`.
 
 The same filters and sort columns are available through the [API](api.md).
 
@@ -226,6 +251,8 @@ have snapshots enabled.
 phēnix shuts down the VM while it makes the image, and then starts the VM
 again. It also starts the VM again if the operation fails.
 
+![Create a Disk Image dialog for site-1-hmi with a suggested file name, and Cancel and Create buttons.](images/vm_backing_image.png){: width=500 .center}
+
 ### From the Command Line Binary
 
 To create a backing image from the first disk of a running VM, run the
@@ -254,6 +281,8 @@ card, then click `Memory snapshot` in `More actions`. Type the file name and
 click `Create`, or click `Cancel` to stop. The button is disabled
 when the VM is not running.
 
+![Create memory snapshot dialog for site-1-hmi with a suggested file name, and Cancel and Create buttons.](images/vm_memory_snapshot.png){: width=500 .center}
+
 ### From the Command Line Binary
 
 To create an ELF memory dump, run the following command.
@@ -281,6 +310,8 @@ bar of the console page also ask you to confirm. Once a snapshot exists, the
 card's `Snapshots` section lists it, and the play button next to its name
 restores it.
 
+![Create a VM Snapshot dialog that asks to confirm a snapshot of site-1-hmi, with Cancel and Create buttons.](images/vm_snapshot_confirm.png){: width=500 .center}
+
 ### From the Command Line Binary
 
 A VM snapshot holds the disk and the memory state of a VM. For an ELF memory
@@ -305,6 +336,11 @@ running VM, do the steps that follow.
     ```shell
     phenix vm snapshot restore <experiment name> <vm name> <snapshot name>
     ```
+
+To delete a snapshot from every cluster node, use
+`phenix vm snapshot delete <experiment name> <vm name> <snapshot name>`. The
+experiment does not have to run. phēnix refuses a snapshot whose disk a
+running VM uses.
 
 The VM must have its snapshot flag set and only one disk. phēnix refuses a VM
 with more than one disk, because a snapshot holds only the first disk
@@ -335,8 +371,11 @@ The role must have the `create` verb on the `vms/screenshot` resource (see
 
 ### From the Command Line Binary
 
-There is currently no CLI subcommand to save a VM screenshot. Use the Web-UI
-or the REST API (`POST /api/v1/experiments/<exp>/vms/<vm>/screenshots`).
+There is currently no CLI subcommand that saves a VM screenshot in the
+experiment files. Use the Web-UI or the REST API
+(`POST /api/v1/experiments/<exp>/vms/<vm>/screenshots`). To write a PNG image
+of the screen to a local file, use `phenix vm screenshot` (see
+[VM VNC Access](#vm-vnc-access)).
 
 ## VM VNC Access
 
@@ -556,6 +595,8 @@ phēnix adds two settings to the minimega script of an experiment:
     on each compute node. When phēnix cannot connect, the console shows
     `phēnix cannot connect to the VNC port of <vm> on <host> (port <n>)`.
 
+![Screenshot of site-1-hmi on its details card, with an Open console label in the corner.](images/vm_console_link.png){: width=400 .center}
+
 #### VNC Banners
 
 Each pane of the console page and the console of the details window show a
@@ -591,7 +632,24 @@ Banner text is shown exactly as written, so HTML in it appears as text.
 
 ### From the Command Line Binary
 
-Not applicable.
+To reach the VNC console from your computer, add a port forward to it. The
+`vnc` value forwards to the VNC console of the VM. Then use
+[phenix-tunneler](tunneler.md) to open the forward. The command needs a
+running `phenix ui`.
+
+```shell
+phenix vm forward add <experiment name> <vm name> vnc
+```
+
+`phenix vm forward list` and `phenix vm forward remove` show and remove the
+forwards. A forward from the command line has the owner `global-admin`.
+
+To save a PNG image of the screen of a running VM, use the following command.
+The command refuses to write the image to a terminal.
+
+```shell
+phenix vm screenshot <experiment name> <vm name> -O screen.png
+```
 
 ## Mount a VM
 
@@ -635,6 +693,8 @@ The mount browser modal presents two panes:
   into the VM. This option is only available when the
   [experiment file server](settings.md#settings-reference) is enabled (see
   below).
+
+![site-1-hmi Mount dialog that lists the folders and files at the root of the VM, with the Upload Local File and Copy experiment file controls.](images/vm_mount_browser.png){: width=600 .center}
 
 Every path stays inside the VM's file system, so a symbolic link that points
 outside it cannot be browsed or written through. Several users can have the
@@ -683,20 +743,18 @@ accessed directly on the headnode's filesystem rather than through the
 browser.
 
 ```shell
-phenix vm mount <experiment name> <vm name> [host path]
+phenix vm mount <experiment name> <vm name>
 ```
 
-If `host path` is omitted, the VM is mounted to a default path of
-`<mount-dir>/<experiment name>/<vm name>`, where `<mount-dir>` defaults to
-`<base-dir.phenix>/mounts` (see [`mount-dir`](settings.md#settings-reference)).
-The command prints the resolved host path once the mount succeeds.
+The VM is mounted at `<mount-dir>/<experiment name>/<vm name>`, where
+`<mount-dir>` defaults to `<base-dir.phenix>/mounts` (see
+[`mount-dir`](settings.md#settings-reference)). To use another folder, set
+the global `--mount-dir` flag or the `PHENIX_MOUNT_DIR` environment variable.
+The command prints the host path once the mount succeeds.
 
 ```shell
 phenix vm mount my-exp my-vm
 # VM my-vm in experiment my-exp mounted at: /phenix/mounts/my-exp/my-vm
-
-phenix vm mount my-exp my-vm /tmp/my-vm-files
-# VM my-vm in experiment my-exp mounted at: /tmp/my-vm-files
 ```
 
 To unmount the VM's filesystem, run:
@@ -711,6 +769,39 @@ phenix vm unmount <experiment name> <vm name>
     when the owning experiment is stopped or deleted, so mounts do not
     outlive their experiment.
 
+## Run a Command or Copy a File
+
+### From the Command Line Binary
+
+`phenix vm exec` runs a command in a running VM through its miniccc agent. It
+prints the output of the command, and exits with the exit code of the command
+when minimega reports it.
+
+```shell
+phenix vm exec <experiment name> <vm name> [--] <command> [args...]
+```
+
+miniccc runs the command without a shell. To use pipes or redirects, run a
+shell. Put `--` before a command that has flags:
+
+```shell
+phenix vm exec my-exp host-01 -- sh -c 'ps aux | grep nginx'
+```
+
+`phenix vm cp` copies one file into or out of a running VM. Give the VM side
+as `<vm name>:<absolute path>`. A path that ends with `/` is a folder.
+
+```shell
+phenix vm cp my-exp ./setup.sh host-01:/root/
+phenix vm cp my-exp host-01:/var/log/syslog ./syslog
+```
+
+Both commands need the miniccc agent in the VM, and wait one minute by
+default (`--timeout`). A copy out of the VM works only for a VM on the head
+node, and the copy gets the permissions `0600`. phēnix refuses an argument
+with a `$` variable or a `file:`, `http:`, `https:` or `tar:` URL, because
+minimega would change it on the host.
+
 ## Packet Capture
 
 ### From the Web-UI
@@ -719,6 +810,8 @@ Click on the name of the network tap, or on the IP address, of a running VM in a
 started experiment to start a packet capture on that interface. The name of the
 network tap will turn green once a packet capture has started. Each interface in
 the VM's details card has its own shark-fin button that does the same thing.
+
+![VM table row of site-1-hmi whose first IP address and tap are green because a packet capture runs on that interface.](images/vm_capture_taps.png){: width=800 .center}
 
 phēnix starts the capture, or stops a running one, without asking you to
 confirm. A capture started from the web UI is written to the experiment's
@@ -767,6 +860,15 @@ the VM's other captures running.
 phenix vm capture stop <experiment name> <vm name> [iface name/index]
 ```
 
+To list the running captures of an experiment, or of one VM, use the following
+command. `phenix exp captures <experiment name>` gives the same list.
+
+```shell
+phenix vm capture list <experiment name> [vm name]
+```
+
+A capture continues while its VM is paused.
+
 !!! note
     Stopping the capture on a single interface, from the Web-UI or the command
     line, requires minimega 3.3.0 or later.
@@ -794,12 +896,15 @@ Click on the name of a running VM in a started experiment to open its details
 card, then click `Kill` in the `Power` section and confirm. The bar of a live
 tile and the selection toolbar also ask you to confirm.
 
+![Kill the VM dialog that warns that site-1-hmi cannot be restored until the experiment restarts, with Cancel and KILL IT! buttons.](images/vm_kill_confirm.png){: width=500 .center}
+
 _Note_: if you stop and then start the experiment again, that VM will run again
 per the experiment configuration.
 
 ### From the Command Line Binary
 
-To kill a VM, run the following command.
+To kill a VM, run the following command. Add `--dry-run` to show the VMs
+that the command would kill.
 
 ```shell
 phenix vm kill <experiment name> [vm name] [--label <label>]
@@ -813,6 +918,8 @@ Click on the network for the desired VM in the Running Component to modify the
 settings. Select from a pull down what network you want to switch the VM interface
 you clicked on to. To revert back to previous setting, simply repeat selecting the
 network interface you wish to change, and select the previous network setting.
+
+![Change the VLAN dialog that moves interface 0 of site-1-hmi from scada to control (102), with a Change button.](images/vm_change_vlan.png){: width=500 .center}
 
 ### From the Command Line Binary
 
@@ -828,6 +935,33 @@ To disconnect a VM network interface, run the following command.
 phenix vm net disconnect <experiment name> <vm name> <iface index>
 ```
 
+`phenix vm set` with `--interface <index>=<vlan>` also connects an
+interface, and `--interface <index>=` disconnects it.
+
+## Link Quality
+
+### From the Web-UI
+
+See `Set link quality…` in
+[Starting/Stopping Packet Captures](vm-multi-action.md#startingstopping-packet-captures).
+
+### From the Command Line Binary
+
+`phenix vm qos` shows and changes the packet loss, the delay or the rate limit
+that minimega applies to the traffic that a VM interface receives. The
+experiment must run. Give the interface as an index from 0 or as its name in
+the topology.
+
+```shell
+phenix vm qos get <experiment name> <vm name> [<interface>]
+phenix vm qos set <experiment name> <vm name> <interface> --loss 0.5 --delay 100ms
+phenix vm qos set <experiment name> <vm name> <interface> --rate 10mbit
+phenix vm qos clear <experiment name> <vm name> [<interface>]
+```
+
+A rate cannot go with a loss or a delay. `set` replaces the link quality of
+the interface. `clear` without an interface clears each interface.
+
 ## Pause a VM
 
 ### From the Web-UI
@@ -836,6 +970,8 @@ Click on the name of a running VM in a started experiment to open its details
 card, then click `Pause` in the `Power` section and confirm. The bar of a live
 tile, the selection toolbar and the top bar of the console page also ask you
 to confirm.
+
+![Power section of the site-1-hmi details card with the Pause button circled in red.](images/vm_power_pause.png){: width=600 .center}
 
 ### From the Command Line Binary
 
@@ -862,6 +998,8 @@ replicated, before it is deployed again. Its `Disk` menu works as described in
 [Disk Menu](#disk-menu), and the disk changes only when you pick a different
 one.
 
+![Redeploy the VM dialog for site-1-hmi with 4 CPUs, 8 GB of memory, its disk and the Replicate Original Injection(s) menu, and Cancel and Redeploy buttons.](images/vm_redeploy.png){: width=500 .center}
+
 ### From the Command Line Binary
 
 To redeploy a VM, run the following command.
@@ -887,6 +1025,8 @@ disabled when the VM is paused or does not have snapshots enabled, with the
 reason in its tooltip, such as `Cannot reset disk: the VM is paused. Resume
 paused VMs first`.
 
+![Reset the VM's Disk dialog that asks to confirm a reset of the disk state of site-1-hmi, with Cancel and Reset buttons.](images/vm_reset_disk_confirm.png){: width=500 .center}
+
 ### From the Command Line Binary
 
 To reset the first disk to the initial pre-boot state, run the following command.
@@ -907,6 +1047,8 @@ of a live tile, the selection toolbar and the console page also ask you to
 confirm a restart. Restarting a selection of VMs from the table's toolbar
 skips the ones that are not running.
 
+![Power section of the site-1-hmi details card with the Restart button circled in red.](images/vm_power_restart.png){: width=600 .center}
+
 ### From the Command Line Binary
 
 To restart a VM, run the following command.
@@ -921,6 +1063,8 @@ phenix vm restart <experiment name> [vm name] [--label <label>]
 
 Click on the name of the paused VM in a started experiment to open its details
 card, then click `Resume` in the `Power` section.
+
+![Power section of the paused ot-sim-2 details card with the Resume button circled in red.](images/vm_power_resume.png){: width=600 .center}
 
 phēnix refuses to start a VM that the topology sets to not boot
 (`general.do_not_boot`), because minimega did not launch it. To launch the VM,
@@ -943,6 +1087,8 @@ card, then click `Shut down` in the `Power` section and confirm. `Shut down` is
 also in the VM table's [Actions column](#vm-actions-column), the selection
 toolbar, the bar of a live tile and the top bar of the console page. Each one
 asks you to confirm.
+
+![Power section of the site-1-hmi details card with the Shut down button circled in red.](images/vm_power_shutdown.png){: width=600 .center}
 
 ### From the Command Line Binary
 
@@ -989,6 +1135,8 @@ shows each VM's host and IP address, and lets you edit the following:
     * Disk
     * Replicate Original Injection(s)
 
+![VM table of the stopped grid-training experiment with the host, IP address, CPUs, memory, disk, partition, labels, boot and persistence settings of each VM.](images/vm_settings_stopped.png){: width=800 .center}
+
 ### Disk Menu
 
 The stopped experiment's `Disk` column and the `Redeploy` dialog pick a VM's
@@ -1020,6 +1168,10 @@ ISO images the [Disks](disks.md) page knows, with those outside the minimega
 files directory in a group of their own. If there are none, it says so and
 links to the Disks page, where an `.iso` file can be uploaded. `Insert` (or
 `Change`) inserts the selected image, and `Eject` removes the inserted one.
+From the command line, use
+`phenix vm cdrom insert <experiment name> <vm name> <iso path>` and
+`phenix vm cdrom eject <experiment name> <vm name>`. minimega reads the ISO
+path on the cluster node that runs the VM.
 
 ![Change the CD-ROM dialog for site-1-hmi showing the inserted ISO and an ISO image drop-down, with Cancel, Eject and Change buttons.](images/vm_cdrom_picker.png){: width=500 .center}
 
@@ -1040,7 +1192,10 @@ flag is omitted is left unchanged. The following flags are supported:
 | `-c, --cpu`           | Number of VM CPUs (1-16 is valid).                                                                                |
 | `-m, --mem`           | Amount of memory in megabytes (a multiple of 512 from 512 to 131072).                                             |
 | `-d, --disk`          | VM backing disk image.                                                                                            |
-| `-p, --partition`     | Partition of disk to inject files into.                                                                           |
+| `-p, --partition`     | Partition of the first disk to inject files into. `0` turns off disk injection, so the startup app sends its scripts through miniccc. |
+| `--host`              | Cluster host to run the VM on. An empty value lets the scheduler choose the host.                                |
+| `--annotation key=value` | VM annotation. May be repeated. Replaces all of the annotations of the VM.                                     |
+| `--interface <index>=<vlan>` | Connect the interface to a VLAN alias or ID, or disconnect it with `<index>=`. Running experiments only.   |
 | `--do-not-boot`       | Set the do-not-boot flag for the VM.                                                                              |
 | `--snapshot`          | Set the snapshot (non-persistent) flag for the VM.                                                                |
 | `-L, --label-changes key=value` | VM label to set, in `key=value` form. May be repeated to set multiple labels.                                         |
@@ -1073,11 +1228,12 @@ phenix vm set my-exp my-vm -L val1=true -L val2=roger
 ```
 
 !!! note
-    Only label updates and interface VLAN connections can be modified while an
-    experiment is running. To change CPU, memory, disk, partition, do-not-boot,
-    or snapshot settings, the experiment must be stopped. Use
-    [`phenix vm net`](#modify-the-network-connectivity) to modify interface
-    VLAN connections on a running experiment.
+    Only labels, annotations and interface VLAN connections can be modified
+    while an experiment is running. Apps read the new annotations when the
+    experiment starts again. To change CPU, memory, disk, partition, host,
+    do-not-boot, or snapshot settings, the experiment must be stopped. Use
+    `--interface` or [`phenix vm net`](#modify-the-network-connectivity) to
+    modify interface VLAN connections on a running experiment.
 
 ## Applying Actions to Multiple VMs
 

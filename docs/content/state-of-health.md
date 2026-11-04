@@ -76,7 +76,7 @@ Expand the row of an experiment with problems to list them by `Host`, `Check`,
 down. The detail has `Open topology graph` and `Run SOH` buttons, and a
 `Show all N problems` link when it lists only some of them.
 
-![Expanded ics-water-plant row listing 6 of its 9 problems by host, check type, target and result, with Open topology graph and Run SOH buttons and a Show all 9 problems link.](images/soh_overview_detail.png){: width=800 .center}
+![Expanded bennu row listing its 5 problems by host, check type, target, result and check time, with Open topology graph and Run SOH buttons.](images/soh_overview_detail.png){: width=800 .center}
 
 A legend under the table names the colors of the `VM Health` bar. A VM counts
 as down only when it should be up: a VM marked Do Not Boot, an external
@@ -186,22 +186,22 @@ example of no SoH information with the VNC button disabled.
 The `Layout` picker in the bar above the graph decides how the nodes are
 arranged. The hint for the layout you picked is shown beside the picker.
 
-![Layout picker with the Force, Radial, Layered, VLANs and ELK buttons, Force selected as the default physics simulation.](images/soh_layout_picker.png){: width=800 .center}
+![Layout picker with the Force, Radial, Layered, VLANs and ELK buttons, VLANs selected as the default, and the hint Hosts boxed by VLAN.](images/soh_layout_picker.png){: width=800 .center}
 
 | Layout | What it draws |
 |---|---|
-| `Force` | `Physics simulation (default)`: nodes repel each other and their links pull them together |
+| `Force` | `Physics simulation`: nodes repel each other and their links pull them together |
 | `Radial tree` | `Rings out from the core router`: the most central router or firewall in the middle, everything else in rings by hop distance |
 | `Layered` | `Top-down tiers (dagre)`: the core on top, VLANs under their routers, hosts below |
-| `VLAN groups` | `Hosts boxed by VLAN (cola.js)`: a labeled box per VLAN around the hosts on it |
+| `VLAN groups` | `Hosts boxed by VLAN (cola.js, default)`: a labeled box per VLAN around the hosts on it |
 | `ELK layered` | `Top-down tiers with host blocks (ELK)`: tiers like `Layered`, arranged by the ELK engine |
 
 ![State of Health graph in the Layered layout, with the router at the top and VLAN segments grouping their VMs in tiers below.](images/soh_layout_layered.png){: width=800 .center}
 
-Your choice is remembered in the browser. `VLAN groups` is disabled on graphs
-of more than 300 nodes, and a layout that fails to load falls back to `Force`
-with an error notification. Hovering, clicking and the status colors work the
-same in every layout.
+Your choice is remembered in the browser. `VLAN groups` is the default. It is
+disabled on graphs of more than 300 nodes, which then use `Force`, and a layout
+that fails to load falls back to `Force` with an error notification. Hovering,
+clicking and the status colors work the same in every layout.
 
 The `Fit` button zooms the whole graph into view. The graph refits itself when
 the window is resized, unless you have zoomed or panned it.

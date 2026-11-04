@@ -161,7 +161,7 @@ see [Filtering and Sorting the VM Table](vms.md#filtering-and-sorting-the-vm-tab
 
 Multiple search terms
 
-![VM table filtered by the search shutdown or capturing, showing two capturing VMs and one VM that is not running.](images/vms_multi_running_combined_terms.png)
+![VM table filtered by the search shutdown or capturing, showing the capturing site-1-hmi and the shut-down historian.](images/vms_multi_running_combined_terms.png)
 
 ### From the Command Line Binary
 
@@ -218,6 +218,8 @@ The menu also has these items:
   receives on the interface. Enter a loss in percent (less than 100), a delay
   in us, ms, or s (such as `100ms`), or a rate of 1 to 999999999 kbit, mbit,
   or gbit. You cannot set a rate with a loss or a delay. `Clear` removes the link quality from the interface.
+  The command line equivalent is `phenix vm qos` (see
+  [Link Quality](vms.md#link-quality)).
 * `Show VMs on VLAN <alias>` shows only the VMs on that VLAN. It puts the
   network name and its VLAN ID in the search box, for example `"exp_1 (101)"`.
 
@@ -226,23 +228,23 @@ The VM must be running to use `Change VLAN…`, `Disconnect`, or
 as text. A VLAN request shows one message for all of its captures.
 
 The Web-UI has no single control for a subnet's captures. Enter the subnet in
-the search box, such as `10.1.5.20/30`, to list the VMs in it. Then click an
+the search box, such as `10.1.2.0/29`, to list the VMs in it. Then click an
 address in a VM's `IP` column, or a tap in its `Taps` column, to start a
 capture on that interface (see [Packet Capture](vms.md#packet-capture)).
 
-![VM table filtered to 10.1.5.20/30 with the start packet capture tooltip shown over a VM's address.](images/vms_multi_capture_start.png)
+![VM table filtered to 10.1.2.0/29 with the start packet capture tooltip shown over a VM's address.](images/vms_multi_capture_start.png)
 
 The `Capture all interfaces` button in a VM's `Actions` column starts a capture
 on every connected interface of that VM. While the VM is capturing, the button
 becomes `Stop all packet captures`, which stops them all (see
 [Capture All Interfaces](vms.md#capture-all-interfaces)).
 
-![VM table filtered to 10.1.5.20/30 with both VMs capturing, their captured IPs and taps in green and stop capture buttons in red.](images/vms_multi_capture_stop.png)
+![VM table filtered to 10.1.2.0/29 with both VMs capturing, their captured IPs and taps in green and stop capture buttons in red.](images/vms_multi_capture_stop.png)
 
 To find every VM with a running packet capture, enter `capturing` in the search
 box.
 
-![VM table filtered by the search capturing, listing the two VMs that have packet captures running.](images/vms_multi_captures_stop_all.png)
+![VM table filtered by the search capturing, listing the three VMs that have packet captures running.](images/vms_multi_captures_stop_all.png)
 
 ### From the Command Line Binary
 
@@ -273,7 +275,9 @@ phenix vm capture stop-vlan <experiment name> <vlan alias>
 ```
 
 The `--filter` flag of these four commands limits them to the VMs that the
-filter matches.
+filter matches. The filter has the syntax of the VM search box (see
+[Searching for VMs](#searching-for-vms)), such as `running and web`. It is not
+a minimega filter.
 
 The `--format` flag of `start-subnet` and `start-vlan` sets the capture file
 format, `pcapng` (the default) or `pcap`.

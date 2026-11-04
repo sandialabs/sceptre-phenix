@@ -221,6 +221,67 @@
         "format": "qcow2",
         "formatVersion": 3,
         "formatIssue": null
+      },
+      {
+        "kind": "VM",
+        "name": "win10-golden.qcow2",
+        "fullPath": "/data/vms/win10-golden.qcow2",
+        "relativePath": "",
+        "outsideFilesDir": true,
+        "readOnly": true,
+        "size": "21 GiB",
+        "virtualSize": "60 GiB",
+        "experiments": [
+          {
+            "name": "grid-training",
+            "running": false
+          }
+        ],
+        "backingImages": [],
+        "inUse": false,
+        "format": "qcow2",
+        "formatVersion": 3,
+        "formatIssue": null
+      },
+      {
+        "kind": "VM",
+        "name": "kali-lab.qc2",
+        "fullPath": "/phenix/images/kali-lab.qc2",
+        "relativePath": "kali-lab.qc2",
+        "outsideFilesDir": false,
+        "readOnly": false,
+        "size": "3.6 GiB",
+        "virtualSize": "80 GiB",
+        "experiments": [
+          {
+            "name": "grid-training",
+            "running": false
+          }
+        ],
+        "backingImages": [],
+        "inUse": false,
+        "format": "qcow2",
+        "formatVersion": 3,
+        "formatIssue": null,
+        "brokenChain": true,
+        "chainProblem": "backing file /phenix/images/ro_kali.qc2 is missing",
+        "missingBacking": "/phenix/images/ro_kali.qc2"
+      },
+      {
+        "kind": "VM",
+        "name": "ubuntu-22.04-dev.qc2",
+        "fullPath": "/phenix/images/ubuntu-22.04-dev.qc2",
+        "relativePath": "ubuntu-22.04-dev.qc2",
+        "outsideFilesDir": false,
+        "readOnly": false,
+        "size": "740 MiB",
+        "virtualSize": "20 GiB",
+        "experiments": [],
+        "backingImages": ["/phenix/images/ubuntu-22.04-base.qc2"],
+        "inUse": false,
+        "format": "qcow2",
+        "formatVersion": 3,
+        "formatIssue": null
       }
     ]
   },
@@ -1328,6 +1389,1668 @@
         "min": 100,
         "max": 200
       }
+    }
+  },
+  "GET /experiments/bennu": {
+    "name": "bennu",
+    "topology": "bennu",
+    "scenario": "bennu-soh",
+    "scenarios": ["bennu-soh"],
+    "apps": ["soh"],
+    "start_time": "2026-09-29T09:31:00Z",
+    "running": true,
+    "vm_count": 11,
+    "vlan_min": 100,
+    "vlan_max": 200,
+    "vlan_count": 5,
+    "vlans": [
+      {
+        "vlan": 101,
+        "alias": "SCADA"
+      },
+      {
+        "vlan": 102,
+        "alias": "CONTROL"
+      },
+      {
+        "vlan": 103,
+        "alias": "CORPORATE"
+      },
+      {
+        "vlan": 104,
+        "alias": "DMZ"
+      },
+      {
+        "vlan": 110,
+        "alias": "MGMT"
+      }
+    ],
+    "vms": []
+  },
+  "GET /experiments/bennu/vms": {
+    "vms": [
+      {
+        "name": "site-1-hmi",
+        "host": "compute2",
+        "ipv4": ["10.1.1.21", "172.16.10.21"],
+        "cpus": 2,
+        "ram": 4096,
+        "disk": "/phenix/images/bennu-hmi.qc2",
+        "dnb": false,
+        "networks": ["SCADA (101)", "MGMT (110)"],
+        "taps": ["mega_tap12", "mega_tap13"],
+        "captures": [
+          {
+            "vm": "site-1-hmi",
+            "interface": 0,
+            "filepath": "/phenix/experiments/bennu/files/site-1-hmi_0_20260929103512_9f2c.pcap"
+          }
+        ],
+        "running": true,
+        "busy": false,
+        "state": "RUNNING",
+        "tags": {
+          "role": "hmi",
+          "site": "1"
+        },
+        "ccActive": true,
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "windows",
+        "uptime": 22566,
+        "cdRom": "/phenix/images/example-tools.iso",
+        "description": "Operator HMI for site 1",
+        "experiment": "bennu"
+      },
+      {
+        "name": "elasticsearch",
+        "host": "compute1",
+        "ipv4": ["172.16.10.5"],
+        "cpus": 4,
+        "ram": 8192,
+        "disk": "/phenix/images/PHENIX-elasticsearch.qc2",
+        "dnb": false,
+        "networks": ["MGMT (110)"],
+        "taps": ["mega_tap3"],
+        "captures": [],
+        "running": true,
+        "busy": false,
+        "state": "RUNNING",
+        "tags": {
+          "role": "logging"
+        },
+        "ccActive": true,
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "linux",
+        "uptime": 22566,
+        "experiment": "bennu"
+      },
+      {
+        "name": "fep",
+        "host": "compute1",
+        "ipv4": ["10.1.1.10", "10.1.2.10"],
+        "cpus": 1,
+        "ram": 2048,
+        "disk": "/phenix/images/ubuntu-22.04-ot-sim.qc2",
+        "dnb": false,
+        "networks": ["SCADA (101)", "CONTROL (102)"],
+        "taps": ["mega_tap4", "mega_tap5"],
+        "captures": [],
+        "running": true,
+        "busy": false,
+        "state": "RUNNING",
+        "tags": {
+          "role": "fep"
+        },
+        "ccActive": true,
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "linux",
+        "uptime": 22566,
+        "experiment": "bennu"
+      },
+      {
+        "name": "historian",
+        "host": "compute2",
+        "ipv4": ["10.1.1.30"],
+        "cpus": 2,
+        "ram": 4096,
+        "disk": "/phenix/images/bennu-historian.qc2",
+        "dnb": false,
+        "networks": ["SCADA (101)"],
+        "taps": [],
+        "captures": [],
+        "running": false,
+        "busy": false,
+        "state": "QUIT",
+        "tags": {
+          "role": "historian"
+        },
+        "ccActive": false,
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "linux",
+        "uptime": 0,
+        "experiment": "bennu"
+      },
+      {
+        "name": "kali",
+        "host": "compute1",
+        "ipv4": ["10.1.3.66"],
+        "cpus": 2,
+        "ram": 4096,
+        "disk": "/phenix/images/PHENIX-kali.qc2",
+        "dnb": false,
+        "networks": ["CORPORATE (103)"],
+        "taps": ["mega_tap6"],
+        "captures": [],
+        "running": true,
+        "busy": false,
+        "state": "RUNNING",
+        "tags": {
+          "team": "red"
+        },
+        "ccActive": true,
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "linux",
+        "uptime": 22566,
+        "experiment": "bennu"
+      },
+      {
+        "name": "ot-sim-1",
+        "host": "compute1",
+        "ipv4": ["10.1.2.21"],
+        "cpus": 1,
+        "ram": 1024,
+        "disk": "/phenix/images/ubuntu-22.04-ot-sim.qc2",
+        "dnb": false,
+        "networks": ["CONTROL (102)"],
+        "taps": ["mega_tap7"],
+        "captures": [],
+        "running": true,
+        "busy": false,
+        "state": "RUNNING",
+        "tags": {
+          "role": "plc",
+          "site": "1"
+        },
+        "ccActive": true,
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "linux",
+        "uptime": 22566,
+        "experiment": "bennu"
+      },
+      {
+        "name": "ot-sim-2",
+        "host": "compute2",
+        "ipv4": ["10.1.2.22"],
+        "cpus": 1,
+        "ram": 1024,
+        "disk": "/phenix/images/ubuntu-22.04-ot-sim.qc2",
+        "dnb": false,
+        "networks": ["CONTROL (102)"],
+        "taps": ["mega_tap14"],
+        "captures": [],
+        "running": false,
+        "busy": false,
+        "state": "PAUSED",
+        "tags": {
+          "role": "plc",
+          "site": "2"
+        },
+        "ccActive": true,
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "linux",
+        "uptime": 22566,
+        "experiment": "bennu"
+      },
+      {
+        "name": "power-provider",
+        "host": "compute2",
+        "ipv4": ["10.1.2.5"],
+        "cpus": 2,
+        "ram": 2048,
+        "disk": "/phenix/images/bennu-power-provider.qc2",
+        "dnb": false,
+        "networks": ["CONTROL (102)"],
+        "taps": ["mega_tap15"],
+        "captures": [],
+        "running": true,
+        "busy": false,
+        "state": "RUNNING",
+        "tags": {
+          "role": "simulator"
+        },
+        "ccActive": true,
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "linux",
+        "uptime": 22566,
+        "experiment": "bennu"
+      },
+      {
+        "name": "relay-1",
+        "host": "",
+        "ipv4": ["10.1.2.50"],
+        "networks": ["CONTROL (102)"],
+        "running": false,
+        "busy": false,
+        "state": "",
+        "external": true,
+        "tags": {},
+        "experiment": "bennu"
+      },
+      {
+        "name": "router",
+        "host": "compute1",
+        "ipv4": ["10.1.1.1", "10.1.2.1", "10.1.3.1", "10.1.4.1"],
+        "cpus": 1,
+        "ram": 1024,
+        "disk": "/phenix/images/vyos-1.3.qc2",
+        "dnb": false,
+        "networks": [
+          "SCADA (101)",
+          "CONTROL (102)",
+          "CORPORATE (103)",
+          "DMZ (104)"
+        ],
+        "taps": ["mega_tap8", "mega_tap9", "mega_tap10", "mega_tap11"],
+        "captures": [],
+        "running": true,
+        "busy": false,
+        "state": "RUNNING",
+        "tags": {},
+        "ccActive": true,
+        "external": false,
+        "snapshot": false,
+        "inject_partition": 1,
+        "os_type": "vyos",
+        "uptime": 22566,
+        "experiment": "bennu"
+      },
+      {
+        "name": "web",
+        "host": "compute2",
+        "ipv4": ["10.1.4.80"],
+        "cpus": 1,
+        "ram": 1024,
+        "disk": "/phenix/images/ubuntu-22.04-ot-sim.qc2",
+        "dnb": false,
+        "networks": ["DMZ (104)"],
+        "taps": ["mega_tap16"],
+        "captures": [],
+        "running": true,
+        "busy": false,
+        "state": "RUNNING",
+        "tags": {
+          "role": "web"
+        },
+        "ccActive": true,
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "linux",
+        "uptime": 22566,
+        "experiment": "bennu"
+      }
+    ],
+    "total": 11,
+    "labels": [
+      {
+        "key": "role",
+        "value": "fep"
+      },
+      {
+        "key": "role",
+        "value": "historian"
+      },
+      {
+        "key": "role",
+        "value": "hmi"
+      },
+      {
+        "key": "role",
+        "value": "logging"
+      },
+      {
+        "key": "role",
+        "value": "plc"
+      },
+      {
+        "key": "role",
+        "value": "simulator"
+      },
+      {
+        "key": "role",
+        "value": "web"
+      },
+      {
+        "key": "site",
+        "value": "1"
+      },
+      {
+        "key": "site",
+        "value": "2"
+      },
+      {
+        "key": "team",
+        "value": "red"
+      }
+    ],
+    "hosts": ["compute1", "compute2"],
+    "running": 8
+  },
+  "GET /experiments/bennu/apps": {
+    "soh": false
+  },
+  "GET /experiments/bennu/vms/site-1-hmi": {
+    "name": "site-1-hmi",
+    "host": "compute2",
+    "ipv4": ["10.1.1.21", "172.16.10.21"],
+    "cpus": 2,
+    "ram": 4096,
+    "disk": "/phenix/images/bennu-hmi.qc2",
+    "dnb": false,
+    "networks": ["SCADA (101)", "MGMT (110)"],
+    "taps": ["mega_tap12", "mega_tap13"],
+    "captures": [
+      {
+        "vm": "site-1-hmi",
+        "interface": 0,
+        "filepath": "/phenix/experiments/bennu/files/site-1-hmi_0_20260929103512_9f2c.pcap"
+      }
+    ],
+    "running": true,
+    "busy": false,
+    "state": "RUNNING",
+    "tags": {
+      "role": "hmi",
+      "site": "1"
+    },
+    "ccActive": true,
+    "external": false,
+    "snapshot": true,
+    "inject_partition": 1,
+    "os_type": "windows",
+    "uptime": 22566,
+    "cdRom": "/phenix/images/example-tools.iso",
+    "description": "Operator HMI for site 1",
+    "experiment": "bennu",
+    "annotations": {
+      "phenix/startup-autotunnel": "8080:80"
+    }
+  },
+  "GET /experiments/bennu/vms/site-1-hmi/snapshots": {
+    "snapshots": ["site-1-hmi_2026-09-29_1012"]
+  },
+  "GET /experiments/bennu/vms/site-1-hmi/forwards": {
+    "listeners": [
+      {
+        "exp": "bennu",
+        "vm": "site-1-hmi",
+        "srcPort": 18080,
+        "dstHost": "127.0.0.1",
+        "dstPort": 80,
+        "owner": "admin@example.com"
+      }
+    ]
+  },
+  "GET /experiments/bennu/vms/ot-sim-2": {
+    "name": "ot-sim-2",
+    "host": "compute2",
+    "ipv4": ["10.1.2.22"],
+    "cpus": 1,
+    "ram": 1024,
+    "disk": "/phenix/images/ubuntu-22.04-ot-sim.qc2",
+    "dnb": false,
+    "networks": ["CONTROL (102)"],
+    "taps": ["mega_tap14"],
+    "captures": [],
+    "running": false,
+    "busy": false,
+    "state": "PAUSED",
+    "tags": {
+      "role": "plc",
+      "site": "2"
+    },
+    "ccActive": true,
+    "external": false,
+    "snapshot": true,
+    "inject_partition": 1,
+    "os_type": "linux",
+    "uptime": 22566,
+    "experiment": "bennu",
+    "annotations": {}
+  },
+  "GET /experiments/bennu/vms/ot-sim-2/snapshots": {
+    "snapshots": []
+  },
+  "GET /experiments/bennu/vms/ot-sim-2/forwards": {
+    "listeners": null
+  },
+  "GET /experiments/bennu/vms/site-1-hmi/files": {
+    "error": "",
+    "files": [
+      {
+        "name": "$Recycle.Bin",
+        "path": "/$Recycle.Bin",
+        "date": "2026-08-14T15:47:52Z",
+        "size": 0,
+        "categories": [],
+        "plainText": false,
+        "isDir": true
+      },
+      {
+        "name": "PerfLogs",
+        "path": "/PerfLogs",
+        "date": "2026-08-14T15:47:52Z",
+        "size": 0,
+        "categories": [],
+        "plainText": false,
+        "isDir": true
+      },
+      {
+        "name": "phenix",
+        "path": "/phenix",
+        "date": "2026-09-29T09:33:41Z",
+        "size": 0,
+        "categories": [],
+        "plainText": false,
+        "isDir": true
+      },
+      {
+        "name": "Program Files",
+        "path": "/Program Files",
+        "date": "2026-08-14T16:02:10Z",
+        "size": 0,
+        "categories": [],
+        "plainText": false,
+        "isDir": true
+      },
+      {
+        "name": "Program Files (x86)",
+        "path": "/Program Files (x86)",
+        "date": "2026-08-14T16:02:10Z",
+        "size": 0,
+        "categories": [],
+        "plainText": false,
+        "isDir": true
+      },
+      {
+        "name": "ProgramData",
+        "path": "/ProgramData",
+        "date": "2026-09-29T09:34:05Z",
+        "size": 0,
+        "categories": [],
+        "plainText": false,
+        "isDir": true
+      },
+      {
+        "name": "Recovery",
+        "path": "/Recovery",
+        "date": "2026-08-14T15:47:52Z",
+        "size": 0,
+        "categories": [],
+        "plainText": false,
+        "isDir": true
+      },
+      {
+        "name": "Users",
+        "path": "/Users",
+        "date": "2026-09-29T09:34:05Z",
+        "size": 0,
+        "categories": [],
+        "plainText": false,
+        "isDir": true
+      },
+      {
+        "name": "Windows",
+        "path": "/Windows",
+        "date": "2026-08-14T15:47:52Z",
+        "size": 0,
+        "categories": [],
+        "plainText": false,
+        "isDir": true
+      },
+      {
+        "name": "hmi-config.xml",
+        "path": "/hmi-config.xml",
+        "date": "2026-09-29T09:33:41Z",
+        "size": 18432,
+        "categories": [],
+        "plainText": true,
+        "isDir": false
+      },
+      {
+        "name": "hmi-trends.csv",
+        "path": "/hmi-trends.csv",
+        "date": "2026-09-29T15:46:58Z",
+        "size": 734003,
+        "categories": [],
+        "plainText": true,
+        "isDir": false
+      },
+      {
+        "name": "pagefile.sys",
+        "path": "/pagefile.sys",
+        "date": "2026-09-29T09:31:22Z",
+        "size": 1476395008,
+        "categories": [],
+        "plainText": false,
+        "isDir": false
+      },
+      {
+        "name": "startup.ps1",
+        "path": "/startup.ps1",
+        "date": "2026-09-29T09:33:40Z",
+        "size": 2311,
+        "categories": [],
+        "plainText": true,
+        "isDir": false
+      }
+    ]
+  },
+  "GET /experiments/bennu/files": {
+    "files": [
+      {
+        "name": "site-1-hmi_0_20260929103512_9f2c.pcap",
+        "path": "site-1-hmi_0_20260929103512_9f2c.pcap",
+        "date": "2026-09-29 10:41:07",
+        "size": 7340032,
+        "categories": ["Packet Capture"],
+        "plainText": false,
+        "isDir": false
+      },
+      {
+        "name": "hmi-patch.msi",
+        "path": "uploads/hmi-patch.msi",
+        "date": "2026-09-29 09:12:44",
+        "size": 48234496,
+        "categories": [],
+        "plainText": false,
+        "isDir": false
+      }
+    ],
+    "total": 2
+  },
+  "GET /experiments/bennu/captures": {
+    "captures": [
+      {
+        "vm": "site-1-hmi",
+        "interface": 0,
+        "filepath": "/phenix/experiments/bennu/files/site-1-hmi_0_20260929103512_9f2c.pcap"
+      }
+    ]
+  },
+  "POST /experiments/bennu/webshark": {
+    "capture": "site-1-hmi-k2j4m6n8p1q3r5s7t9v2w4x6y8.pcap",
+    "live": true,
+    "title": "site-1-hmi interface 0 (live)",
+    "id": "3f9a0c51d2e47b86",
+    "expires": "2026-09-30T03:47:06Z"
+  },
+  "GET /experiments/grid-training": {
+    "name": "grid-training",
+    "topology": "grid-training",
+    "scenario": "grid-soh",
+    "scenarios": ["grid-soh"],
+    "apps": ["soh"],
+    "running": false,
+    "vm_count": 9,
+    "vlan_count": 3,
+    "vlans": [],
+    "vms": [
+      {
+        "name": "attacker",
+        "experiment": "grid-training",
+        "host": "compute1",
+        "ipv4": ["10.2.3.66"],
+        "cpus": 2,
+        "ram": 4096,
+        "disk": "/phenix/images/kali-lab.qc2",
+        "dnb": false,
+        "networks": ["CORPORATE"],
+        "running": false,
+        "busy": false,
+        "state": "",
+        "tags": {
+          "team": "red"
+        },
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "linux"
+      },
+      {
+        "name": "eng-ws",
+        "experiment": "grid-training",
+        "host": "compute2",
+        "ipv4": ["10.2.3.20"],
+        "cpus": 2,
+        "ram": 4096,
+        "disk": "/data/vms/win10-golden.qcow2",
+        "dnb": false,
+        "networks": ["CORPORATE"],
+        "running": false,
+        "busy": false,
+        "state": "",
+        "tags": {},
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "windows"
+      },
+      {
+        "name": "historian",
+        "experiment": "grid-training",
+        "host": "compute2",
+        "ipv4": ["10.2.1.30"],
+        "cpus": 2,
+        "ram": 4096,
+        "disk": "/phenix/images/bennu-historian.qc2",
+        "dnb": false,
+        "networks": ["CONTROL"],
+        "running": false,
+        "busy": false,
+        "state": "",
+        "tags": {},
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "linux"
+      },
+      {
+        "name": "hmi-01",
+        "experiment": "grid-training",
+        "host": "compute2",
+        "ipv4": ["10.2.1.21"],
+        "cpus": 2,
+        "ram": 4096,
+        "disk": "/phenix/images/bennu-hmi.qc2",
+        "dnb": false,
+        "networks": ["CONTROL"],
+        "running": false,
+        "busy": false,
+        "state": "",
+        "tags": {
+          "role": "hmi"
+        },
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "windows"
+      },
+      {
+        "name": "hmi-02",
+        "experiment": "grid-training",
+        "host": "compute2",
+        "ipv4": ["10.2.1.22"],
+        "cpus": 2,
+        "ram": 4096,
+        "disk": "/phenix/images/bennu-hmi.qc2",
+        "dnb": false,
+        "networks": ["CONTROL"],
+        "running": false,
+        "busy": false,
+        "state": "",
+        "tags": {
+          "role": "hmi"
+        },
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "windows"
+      },
+      {
+        "name": "plc-1",
+        "experiment": "grid-training",
+        "host": "compute1",
+        "ipv4": ["10.2.2.11"],
+        "cpus": 1,
+        "ram": 1024,
+        "disk": "/phenix/images/ubuntu-22.04-ot-sim.qc2",
+        "dnb": false,
+        "networks": ["FIELD"],
+        "running": false,
+        "busy": false,
+        "state": "",
+        "tags": {
+          "role": "plc"
+        },
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "linux"
+      },
+      {
+        "name": "plc-2",
+        "experiment": "grid-training",
+        "host": "compute1",
+        "ipv4": ["10.2.2.12"],
+        "cpus": 1,
+        "ram": 1024,
+        "disk": "/phenix/images/ubuntu-22.04-ot-sim.qc2",
+        "dnb": true,
+        "networks": ["FIELD"],
+        "running": false,
+        "busy": false,
+        "state": "",
+        "tags": {
+          "role": "plc"
+        },
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "linux"
+      },
+      {
+        "name": "router",
+        "experiment": "grid-training",
+        "host": "compute1",
+        "ipv4": ["10.2.1.1", "10.2.2.1", "10.2.3.1"],
+        "cpus": 1,
+        "ram": 1024,
+        "disk": "/phenix/images/vyos-1.3.qc2",
+        "dnb": false,
+        "networks": ["CONTROL", "FIELD", "CORPORATE"],
+        "running": false,
+        "busy": false,
+        "state": "",
+        "tags": {},
+        "external": false,
+        "snapshot": false,
+        "inject_partition": 1,
+        "os_type": "vyos"
+      },
+      {
+        "name": "rtu-1",
+        "experiment": "grid-training",
+        "host": "compute1",
+        "ipv4": ["10.2.2.31"],
+        "cpus": 1,
+        "ram": 512,
+        "disk": "/phenix/images/ubuntu-22.04-ot-sim.qc2",
+        "dnb": false,
+        "networks": ["FIELD"],
+        "running": false,
+        "busy": false,
+        "state": "",
+        "tags": {},
+        "external": false,
+        "snapshot": true,
+        "inject_partition": 1,
+        "os_type": "linux"
+      }
+    ]
+  },
+  "GET /experiments/grid-training/schedule": {
+    "schedule": [
+      {
+        "vm": "attacker",
+        "host": "compute1"
+      },
+      {
+        "vm": "eng-ws",
+        "host": "compute2"
+      },
+      {
+        "vm": "historian",
+        "host": "compute2"
+      },
+      {
+        "vm": "hmi-01",
+        "host": "compute2"
+      },
+      {
+        "vm": "hmi-02",
+        "host": "compute2"
+      },
+      {
+        "vm": "plc-1",
+        "host": "compute1"
+      },
+      {
+        "vm": "plc-2",
+        "host": "compute1"
+      },
+      {
+        "vm": "router",
+        "host": "compute1"
+      },
+      {
+        "vm": "rtu-1",
+        "host": "compute1"
+      }
+    ]
+  },
+  "GET /schedulers": {
+    "schedulers": [
+      {
+        "name": "isolate-experiment",
+        "builtin": true,
+        "description": "Puts all VMs on one host that has no VMs: the host that you set for the first VM if that host is empty, else the empty host with the most free memory. Replaces the hosts that you set."
+      },
+      {
+        "name": "round-robin",
+        "builtin": true,
+        "description": "Puts each VM that has no host on the host that has the fewest VMs at that time, so that the VMs spread evenly. Keeps the hosts that you set."
+      },
+      {
+        "name": "subnet-compute",
+        "builtin": true,
+        "description": "Puts VMs whose first interface is on the same VLAN on the same host while it has free memory, and starts each new VLAN on the host with the least committed memory. Keeps the hosts that you set."
+      }
+    ]
+  },
+  "GET /experiments/ics-water-plant/scorch/pipelines": {
+    "pipelines": [
+      {
+        "name": "baseline",
+        "hasCleanup": true,
+        "pipeline": [
+          {
+            "name": "configure",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 5,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 0,
+            "stage": "",
+            "loop": 0
+          },
+          {
+            "name": "start",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 6,
+                "weight": 2
+              },
+              {
+                "index": 7,
+                "weight": 2
+              },
+              {
+                "index": 8,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 0,
+            "stage": "",
+            "loop": 0
+          },
+          {
+            "name": "stop",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 9,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 0,
+            "stage": "",
+            "loop": 0
+          },
+          {
+            "name": "cleanup",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 10,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 0,
+            "stage": "",
+            "loop": 0
+          },
+          {
+            "name": "done",
+            "hint": "",
+            "status": "success",
+            "next": null,
+            "exp": "ics-water-plant",
+            "run": 0,
+            "stage": "",
+            "loop": 0
+          },
+          {
+            "name": "tap",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 1,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 0,
+            "stage": "configure",
+            "loop": 0
+          },
+          {
+            "name": "tap",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 2,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 0,
+            "stage": "start",
+            "loop": 0
+          },
+          {
+            "name": "pcap-scada",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 2,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 0,
+            "stage": "start",
+            "loop": 0
+          },
+          {
+            "name": "soh",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 2,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 0,
+            "stage": "start",
+            "loop": 0
+          },
+          {
+            "name": "pcap-scada",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 3,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 0,
+            "stage": "stop",
+            "loop": 0
+          },
+          {
+            "name": "tap",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 4,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 0,
+            "stage": "cleanup",
+            "loop": 0
+          }
+        ]
+      },
+      {
+        "name": "attack",
+        "hasCleanup": true,
+        "pipeline": [
+          {
+            "name": "configure",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 5,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 1,
+            "stage": "",
+            "loop": 0
+          },
+          {
+            "name": "start",
+            "hint": "",
+            "status": "failure",
+            "next": [
+              {
+                "index": 6,
+                "weight": 2
+              },
+              {
+                "index": 7,
+                "weight": 2
+              },
+              {
+                "index": 8,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 1,
+            "stage": "",
+            "loop": 0
+          },
+          {
+            "name": "stop",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 9,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 1,
+            "stage": "",
+            "loop": 0
+          },
+          {
+            "name": "cleanup",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 10,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 1,
+            "stage": "",
+            "loop": 0
+          },
+          {
+            "name": "done",
+            "hint": "",
+            "status": "success",
+            "next": null,
+            "exp": "ics-water-plant",
+            "run": 1,
+            "stage": "",
+            "loop": 0
+          },
+          {
+            "name": "tap",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 1,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 1,
+            "stage": "configure",
+            "loop": 0
+          },
+          {
+            "name": "tap",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 2,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 1,
+            "stage": "start",
+            "loop": 0
+          },
+          {
+            "name": "pcap-scada",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 2,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 1,
+            "stage": "start",
+            "loop": 0
+          },
+          {
+            "name": "soh",
+            "hint": "",
+            "status": "failure",
+            "next": [
+              {
+                "index": 2,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 1,
+            "stage": "start",
+            "loop": 0
+          },
+          {
+            "name": "pcap-scada",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 3,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 1,
+            "stage": "stop",
+            "loop": 0
+          },
+          {
+            "name": "tap",
+            "hint": "",
+            "status": "success",
+            "next": [
+              {
+                "index": 4,
+                "weight": 2
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 1,
+            "stage": "cleanup",
+            "loop": 0
+          }
+        ]
+      },
+      {
+        "name": "recovery",
+        "hasCleanup": true,
+        "pipeline": [
+          {
+            "name": "configure",
+            "hint": "",
+            "status": "unknown",
+            "next": [
+              {
+                "index": 5,
+                "weight": 0
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 2,
+            "stage": "",
+            "loop": 0
+          },
+          {
+            "name": "start",
+            "hint": "",
+            "status": "unknown",
+            "next": [
+              {
+                "index": 6,
+                "weight": 0
+              },
+              {
+                "index": 7,
+                "weight": 0
+              },
+              {
+                "index": 8,
+                "weight": 0
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 2,
+            "stage": "",
+            "loop": 0
+          },
+          {
+            "name": "stop",
+            "hint": "",
+            "status": "unknown",
+            "next": [
+              {
+                "index": 9,
+                "weight": 0
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 2,
+            "stage": "",
+            "loop": 0
+          },
+          {
+            "name": "cleanup",
+            "hint": "",
+            "status": "unknown",
+            "next": [
+              {
+                "index": 10,
+                "weight": 0
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 2,
+            "stage": "",
+            "loop": 0
+          },
+          {
+            "name": "done",
+            "hint": "",
+            "status": "unknown",
+            "next": null,
+            "exp": "ics-water-plant",
+            "run": 2,
+            "stage": "",
+            "loop": 0
+          },
+          {
+            "name": "tap",
+            "hint": "",
+            "status": "unknown",
+            "next": [
+              {
+                "index": 1,
+                "weight": 0
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 2,
+            "stage": "configure",
+            "loop": 0
+          },
+          {
+            "name": "tap",
+            "hint": "",
+            "status": "unknown",
+            "next": [
+              {
+                "index": 2,
+                "weight": 0
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 2,
+            "stage": "start",
+            "loop": 0
+          },
+          {
+            "name": "pcap-scada",
+            "hint": "",
+            "status": "unknown",
+            "next": [
+              {
+                "index": 2,
+                "weight": 0
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 2,
+            "stage": "start",
+            "loop": 0
+          },
+          {
+            "name": "soh",
+            "hint": "",
+            "status": "unknown",
+            "next": [
+              {
+                "index": 2,
+                "weight": 0
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 2,
+            "stage": "start",
+            "loop": 0
+          },
+          {
+            "name": "pcap-scada",
+            "hint": "",
+            "status": "unknown",
+            "next": [
+              {
+                "index": 3,
+                "weight": 0
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 2,
+            "stage": "stop",
+            "loop": 0
+          },
+          {
+            "name": "tap",
+            "hint": "",
+            "status": "unknown",
+            "next": [
+              {
+                "index": 4,
+                "weight": 0
+              }
+            ],
+            "exp": "ics-water-plant",
+            "run": 2,
+            "stage": "cleanup",
+            "loop": 0
+          }
+        ]
+      }
+    ],
+    "running": -1,
+    "app_running": false,
+    "experiment": {
+      "status": "started"
+    }
+  },
+  "GET /experiments/ics-water-plant/files": {
+    "files": [
+      {
+        "name": "scorch-run-0_2026-09-29T10-15-00Z.tgz",
+        "path": "scorch-run-0_2026-09-29T10-15-00Z.tgz",
+        "date": "2026-09-29 10:22:41",
+        "size": 18874368,
+        "categories": [],
+        "plainText": false,
+        "isDir": false
+      },
+      {
+        "name": "scorch-run-1_2026-09-29T10-30-00Z.tgz",
+        "path": "scorch-run-1_2026-09-29T10-30-00Z.tgz",
+        "date": "2026-09-29 10:36:12",
+        "size": 9437184,
+        "categories": [],
+        "plainText": false,
+        "isDir": false
+      }
+    ],
+    "total": 2
+  },
+  "GET /experiments/bennu/soh": {
+    "started": true,
+    "soh_disabled": false,
+    "soh_initialized": true,
+    "soh_running": false,
+    "nodes": [
+      {
+        "id": 0,
+        "label": "site-1-hmi",
+        "image": "windows",
+        "tags": {},
+        "status": "running",
+        "soh": null
+      },
+      {
+        "id": 12,
+        "label": "SCADA",
+        "image": "switch",
+        "tags": {},
+        "status": "ignore",
+        "soh": null
+      },
+      {
+        "id": 1,
+        "label": "elasticsearch",
+        "image": "linux",
+        "tags": {},
+        "status": "running",
+        "soh": null
+      },
+      {
+        "id": 2,
+        "label": "fep",
+        "image": "linux",
+        "tags": {},
+        "status": "running",
+        "soh": null
+      },
+      {
+        "id": 13,
+        "label": "CONTROL",
+        "image": "switch",
+        "tags": {},
+        "status": "ignore",
+        "soh": null
+      },
+      {
+        "id": 3,
+        "label": "historian",
+        "image": "linux",
+        "tags": {},
+        "status": "notrunning",
+        "soh": null
+      },
+      {
+        "id": 4,
+        "label": "kali",
+        "image": "linux",
+        "tags": {},
+        "status": "running",
+        "soh": null
+      },
+      {
+        "id": 14,
+        "label": "CORPORATE",
+        "image": "switch",
+        "tags": {},
+        "status": "ignore",
+        "soh": null
+      },
+      {
+        "id": 5,
+        "label": "ot-sim-1",
+        "image": "linux",
+        "tags": {},
+        "status": "running",
+        "soh": null
+      },
+      {
+        "id": 6,
+        "label": "ot-sim-2",
+        "image": "linux",
+        "tags": {},
+        "status": "notrunning",
+        "soh": null
+      },
+      {
+        "id": 7,
+        "label": "power-provider",
+        "image": "linux",
+        "tags": {},
+        "status": "running",
+        "soh": null
+      },
+      {
+        "id": 8,
+        "label": "relay-1",
+        "image": "linux",
+        "tags": {},
+        "status": "external",
+        "soh": null
+      },
+      {
+        "id": 9,
+        "label": "router",
+        "image": "Router",
+        "tags": {},
+        "status": "running",
+        "soh": null
+      },
+      {
+        "id": 15,
+        "label": "DMZ",
+        "image": "switch",
+        "tags": {},
+        "status": "ignore",
+        "soh": null
+      },
+      {
+        "id": 10,
+        "label": "web",
+        "image": "linux",
+        "tags": {},
+        "status": "running",
+        "soh": null
+      }
+    ],
+    "edges": [
+      {
+        "id": 0,
+        "source": 0,
+        "target": 12,
+        "length": 150
+      },
+      {
+        "id": 1,
+        "source": 2,
+        "target": 12,
+        "length": 150
+      },
+      {
+        "id": 2,
+        "source": 2,
+        "target": 13,
+        "length": 150
+      },
+      {
+        "id": 3,
+        "source": 3,
+        "target": 12,
+        "length": 150
+      },
+      {
+        "id": 4,
+        "source": 4,
+        "target": 14,
+        "length": 150
+      },
+      {
+        "id": 5,
+        "source": 5,
+        "target": 13,
+        "length": 150
+      },
+      {
+        "id": 6,
+        "source": 6,
+        "target": 13,
+        "length": 150
+      },
+      {
+        "id": 7,
+        "source": 7,
+        "target": 13,
+        "length": 150
+      },
+      {
+        "id": 8,
+        "source": 8,
+        "target": 13,
+        "length": 150
+      },
+      {
+        "id": 9,
+        "source": 9,
+        "target": 12,
+        "length": 150
+      },
+      {
+        "id": 10,
+        "source": 9,
+        "target": 13,
+        "length": 150
+      },
+      {
+        "id": 11,
+        "source": 9,
+        "target": 14,
+        "length": 150
+      },
+      {
+        "id": 12,
+        "source": 9,
+        "target": 15,
+        "length": 150
+      },
+      {
+        "id": 13,
+        "source": 10,
+        "target": 15,
+        "length": 150
+      }
+    ],
+    "hosts": [],
+    "host_flows": []
+  },
+  "POST /console": {
+    "pid": 4242,
+    "namespace": "bennu"
+  },
+  "POST /experiments/grid-training/start 400": {
+    "message": "unable to start experiment grid-training",
+    "cause": "qemu cannot open 2 disks on 2 VMs",
+    "code": "broken_disks",
+    "details": {
+      "disks": [
+        {
+          "vm": "attacker",
+          "drive": "disk",
+          "image": "kali-lab.qc2",
+          "path": "/phenix/images/kali-lab.qc2",
+          "missing": "/phenix/images/ro_kali.qc2",
+          "problem": "backing file /phenix/images/ro_kali.qc2 is missing"
+        },
+        {
+          "vm": "hmi-02",
+          "drive": "cdrom",
+          "image": "training-tools.iso",
+          "path": "/phenix/images/training-tools.iso",
+          "missing": "/phenix/images/training-tools.iso",
+          "problem": "/phenix/images/training-tools.iso is missing"
+        }
+      ]
     }
   }
 }

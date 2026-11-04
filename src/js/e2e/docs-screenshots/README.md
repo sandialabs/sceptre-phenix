@@ -6,8 +6,14 @@ only on demand, never in CI.
 
 The pages read the sample data in `fixtures.json` instead of the server's: the
 script answers the API requests named there (`"GET /hosts"` is
-`GET /api/v1/hosts`) and lets every other request through. Any `phenix ui`
-built with `VITE_AUTH=disabled` works, with an empty store and no minimega.
+`GET /api/v1/hosts`) and lets every other request through. A key can end in
+a status for an error answer, as in
+`"POST /experiments/grid-training/start 400"`. The pages of a running
+experiment get their VM list over the websocket, so the script also answers
+that request, from `"GET /experiments/<name>/vms"`. The server applies the
+VM search, so a test that searches gives the VMs that the search finds. Any
+`phenix ui` built with `VITE_AUTH=disabled` works, with an empty store and no
+minimega.
 `TestDocsScreenshotFixturesMatchOpenAPI` in `src/go/web` checks each sample
 response against its route's schema in `openapi.yml`, so a field renamed in the
 API fails that test instead of drawing an empty column.
@@ -49,7 +55,9 @@ images, and the alt text of each one in the docs, before committing them.
 
 Add a test named after the image file, without `.png`. Put the responses the
 page needs in `fixtures.json`, or pass a variant to `open()`, as `empty_table`
-does. Images of a running experiment, the console, WebShark and the State of
-Health graph need live minimega data or websockets, so they are still taken by
-hand. The VNC images (`vnc_console_split` and `vnc_tiles`) are the exception:
-they use the stand-in experiment and RFB servers of `tests/vnc-support.js`.
+does. Set `DOCS_SCREENSHOTS_DEBUG=1` to log each API request and websocket
+message that no sample answers. `console_tab` answers the console requests and
+the console websocket in its own test. The VNC images (`vnc_console_split` and
+`vnc_tiles`) use the stand-in experiment and RFB servers of
+`tests/vnc-support.js`. Images of WebShark and of the State of Health graph
+itself need live data, so they are still taken by hand.

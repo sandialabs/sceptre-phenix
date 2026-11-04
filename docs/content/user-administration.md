@@ -129,7 +129,7 @@ The `Users` link in the `Admin` menu shows for a role with
 
 ### Updating Users
 
-An administrator is able to click on the username on the table in the Users tab
+An administrator is able to click on the username on the table on the Users page
 to update a user. They can update `First Name` or `Last Name`, `Role`,
 `Experiment Names`, and `Resource Name(s)`.
 
@@ -732,7 +732,7 @@ config. An update that renames a config or changes its kind also needs
 
 A `User` config read or written through the configs API never carries the
 user's password hash or API tokens, and an update keeps the stored ones.
-Change a password or a token from the `Users` tab or the users API.
+Change a password or a token from the `Users` page or the users API.
 
 #### Resource: `builder`
 

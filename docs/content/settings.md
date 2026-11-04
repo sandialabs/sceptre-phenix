@@ -188,6 +188,7 @@ phēnix refuses another value. JSON and YAML output, and the output of
 | `ui.shutdown-grace-period` | `PHENIX_UI_SHUTDOWN_GRACE_PERIOD` | `5` | How many seconds stopping `phenix ui` may take to finish requests and jobs and close connections, as a whole number such as `10`. `0` closes everything without waiting; a negative value, or one that is not a whole number of seconds (such as `10s` or `1.5`), is refused at startup. Also `phenix ui --shutdown-grace-period`. See [Stopping the Server](#stopping-the-server). **(Restart Required)** |
 | `ui.netflow.max-size` | `PHENIX_UI_NETFLOW_MAX_SIZE` | `100` | Maximum size in megabytes of each recorded netflow capture, as a whole number. A capture that reaches it stops recording and is marked truncated, while the live view goes on. `0` does not record captures; a negative value, or one that is not a whole number, is refused at startup. Also `phenix ui --netflow.max-size`. See [Recorded Captures](netflow.md#recorded-captures). **(Restart Required)** |
 | `ui.captures.max-size` | `PHENIX_UI_CAPTURES_MAX_SIZE` | `10240` | Maximum size in megabytes of each packet capture file that minimega writes, as a whole number. `0` sets no limit; a negative value, or one that is not a whole number, is refused at startup. Also `phenix ui --captures.max-size`. See [Capture Options](packet-captures.md#capture-options). **(Restart Required)** |
+| `ui.unix-socket-gid` | `PHENIX_UI_UNIX_SOCKET_GID` | `-1` | ID of a group that may write to the unix socket of `phenix ui`. `-1` does not change the group. Also `phenix ui --unix-socket-gid`. The deprecated key `unix-socket-gid` (`PHENIX_UNIX_SOCKET_GID`) still works when this key is not set, and `phenix ui` then writes a warning to standard error. See [Deprecations](deprecations.md#deprecated-settings). **(Restart Required)** |
 | `mount-dir` | `PHENIX_MOUNT_DIR` | `<base-dir.phenix>/mounts` | Base directory used for VM filesystem mounts created via `phenix vm mount`. See [Mount a VM](vms.md#mount-a-vm). |
 | `base-dir.injects` | `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Directory that `phenix workflow apply` stages a topology directory's `phenix-injects/` into, as `<base-dir.injects>/<name>`. The phēnix server's value is used unless `--base-dir.injects` is given; see [Workflow](workflow.md#settings). Use an absolute path. **(Restart Required)** |
 | `base-dir.topologies` | `PHENIX_BASE_DIR_TOPOLOGIES` | `<base-dir.phenix>/topologies` | Directory where `phenix workflow apply NAME` looks for `NAME` when `NAME` isn't an existing path. Use an absolute path. See [Workflow](workflow.md). |
@@ -214,9 +215,13 @@ A second `SIGINT` or `SIGTERM` stops the server at once. `docker stop` waits
 
 ## The Settings Page
 
-The web UI's `Settings` tab needs `update` on `settings`. Unlike the settings
-above, these are kept in the data store and take effect as soon as they are
-saved, with no `config.yaml` change or restart.
+The web UI's `Settings` page (in the `Admin` menu) needs `update` on
+`settings`. Its password and timeout settings are kept in the data store and
+take effect as soon as they are saved, with no `config.yaml` change or
+restart. Its file logging fields change the runtime settings
+`log.system.max-size`, `log.system.max-backups` and `log.system.max-age` of
+`phenix ui`. A change applies at once, and phēnix writes it to the config
+file, as `phenix settings set` does.
 
 ![Settings page with its Password, Timeout and File Logging settings and the Reset Form and Save Changes buttons.](images/settings_page.png){: width=800 .center}
 
@@ -229,13 +234,20 @@ saved, with no `config.yaml` change or restart.
 | `Timeout Settings` | `Time (minutes) to log out users after idle for` | `30` |
 | `Timeout Settings` | `Display idle user logout with (minutes) left` | `3` |
 | `File Logging Settings` | `Max log file size (MiB)` of the system log | `100` |
-| `File Logging Settings` | `Max number of file rotations (0 for infinite)` | `0` |
+| `File Logging Settings` | `Max number of file rotations (0 for infinite)` | `3` |
 | `File Logging Settings` | `Max rotated log file age (0 for infinite)`, in days | `90` |
 
 The two idle timeout boxes are grayed out until the timeout is turned on. The
 idle time must be at least `0.5` minutes, and the warning time must be less
 than the idle time. `Reset Form` puts the loaded settings back, and
-`Save Changes` saves them.
+`Save Changes` saves them. phēnix refuses a changed log file limit that a flag
+or a `PHENIX_` environment variable of `phenix ui` sets, and a change when
+`phenix ui` has no YAML config file. Then it changes no setting.
+
+`phenix settings db edit` changes the password and timeout settings from the
+command line. It does not change the log settings: use
+`phenix settings set log.system.max-size <value>` and the other
+`log.system.*` keys.
 
 ## phēnix Apps Environment Variables
 
