@@ -172,18 +172,20 @@ To view detailed HTTP request logs (method, path, status, duration), start the U
 
 ## The Logs Page
 
-The web UI's `Logs` tab shows the system log's entries, oldest first, and
-follows new entries as the server logs them. It needs `get` on `logs`.
+The web UI's `Logs` page (in the `Admin` menu) shows the system log's
+entries, oldest first, and follows new entries as the server logs them. It
+needs `get` on `logs`.
 
-![Logs page with its Logs shown count, the level and type filters, a table of entries with colored level badges, and the phēnix log and minimega log download buttons.](images/logs_page.png){: width=800 .center}
+![Logs page with its Logs shown count, the level and type filters, a table of entries with colored level badges, and the Download button at the top right.](images/logs_page.png){: width=800 .center}
 
 * The `Logs shown` box at the top left counts the entries that pass the date
   range, level, type and search filters, such as `Logs shown 120 of 4,000`.
 * The `Level` column shows each entry's level as a colored badge: `DBG`,
   `INFO`, `WRN` or `ERR`. Hold the pointer over a badge to see the full level
   name.
-* The `phēnix log` and `minimega log` buttons at the top right download the
-  log files themselves (see [Downloading Log Files](#downloading-log-files)).
+* The `Download` button at the top right opens a menu with `phēnix log` and
+  `minimega log`. Each item downloads that log file (see
+  [Downloading Log Files](#downloading-log-files)).
 
 ### Downloading Log Files
 
@@ -191,11 +193,30 @@ follows new entries as the server logs them. It needs `get` on `logs`.
 the download starts, without its rotated files. `minimega log` downloads the
 file that `ui.logs.minimega-path` names, which the `phenix ui` server must be
 able to read. In a container deployment, mount minimega's log into the phēnix
-container. A file that cannot be downloaded has its button grayed out, and
-the button's tooltip says why. Both downloads need `get` on `logs`, and each
+container. When a file cannot be downloaded, its menu item is disabled. The
+reason shows under the name of the item. Both downloads need `get` on `logs`, and each
 is audited as `log-download`. The [API](api.md) serves the same files at
 `GET /logs/files/{name}`, and a download can be resumed (see
 [Downloads](api.md#downloads)).
+
+### From the Command Line Binary
+
+The `phenix logs` commands get the same data from the running `phenix ui`
+server, through its unix socket (see [phenix logs](cli/logs.md)).
+
+```bash
+# The entries of the last 10 minutes
+phenix logs --since 10m
+
+# The log files and whether the server can read them
+phenix logs files
+
+# Write the minimega log to a file
+phenix logs download minimega -O minimega.log
+```
+
+`phenix logs` shows the entries of the last hour by default. `--start` and
+`--end` give a time range in RFC 3339 format.
 
 ## Audit Events
 

@@ -3,8 +3,10 @@ package web
 import (
 	"encoding/json"
 	"maps"
+	"net/http"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -13,11 +15,12 @@ import (
 )
 
 // screenshotFixtures holds the API responses the docs screenshot script stands in for, keyed
-// by method and /api/v1 path.
+// by method and /api/v1 path, and by a status after them for a response other than 200.
 const screenshotFixtures = "../../js/e2e/docs-screenshots/fixtures.json"
 
 // TestDocsScreenshotFixturesMatchOpenAPI checks each docs screenshot stand-in response against
-// its route's 200 schema and rejects undocumented fields, so no page shows data the server lacks.
+// its route's schema for its status (200 unless the key names one) and rejects undocumented
+// fields, so no page shows data the server lacks.
 func TestDocsScreenshotFixturesMatchOpenAPI(t *testing.T) {
 	raw, err := os.ReadFile(screenshotFixtures)
 	if err != nil {
@@ -33,15 +36,15 @@ func TestDocsScreenshotFixturesMatchOpenAPI(t *testing.T) {
 
 	for key, body := range fixtures {
 		t.Run(key, func(t *testing.T) {
-			method, path, ok := strings.Cut(key, " ")
+			method, path, status, ok := fixtureKey(key)
 			if !ok {
-				t.Fatalf("fixture key %q is not METHOD /path", key)
+				t.Fatalf("fixture key %q is not METHOD /path [STATUS]", key)
 			}
 
-			schema := responseSchema(t, doc, method, path)
+			schema := responseSchema(t, doc, method, path, status)
 
 			if err := schema.VisitJSON(body); err != nil {
-				t.Errorf("does not match the 200 response schema: %v", err)
+				t.Errorf("does not match the %d response schema: %v", status, err)
 			}
 
 			for _, field := range undocumentedFields("", schema, body) {
@@ -51,9 +54,29 @@ func TestDocsScreenshotFixturesMatchOpenAPI(t *testing.T) {
 	}
 }
 
-// responseSchema returns the JSON schema of the 200 response of the operation serving the
+// fixtureKey splits a fixture key, "METHOD /path" or "METHOD /path STATUS", into its parts. The
+// status is 200 when the key names none.
+func fixtureKey(key string) (string, string, int, bool) {
+	parts := strings.Split(key, " ")
+	if len(parts) < 2 || len(parts) > 3 || !strings.HasPrefix(parts[1], "/") {
+		return "", "", 0, false
+	}
+
+	status := http.StatusOK
+
+	if len(parts) == 3 {
+		var err error
+		if status, err = strconv.Atoi(parts[2]); err != nil {
+			return "", "", 0, false
+		}
+	}
+
+	return parts[0], parts[1], status, true
+}
+
+// responseSchema returns the JSON schema of the status response of the operation serving the
 // /api/v1 path, chosen as specOperation chooses it.
-func responseSchema(t *testing.T, doc *openapi3.T, method, path string) *openapi3.Schema {
+func responseSchema(t *testing.T, doc *openapi3.T, method, path string, status int) *openapi3.Schema {
 	t.Helper()
 
 	template, op := specOperation(doc, method, "/api/v1"+path)
@@ -61,14 +84,14 @@ func responseSchema(t *testing.T, doc *openapi3.T, method, path string) *openapi
 		t.Fatalf("openapi.yml documents no %s matching %s", method, path)
 	}
 
-	resp := op.Responses.Get(200)
+	resp := op.Responses.Get(status)
 	if resp == nil || resp.Value == nil {
-		t.Fatalf("openapi.yml has no 200 response for %s %s", method, template)
+		t.Fatalf("openapi.yml has no %d response for %s %s", status, method, template)
 	}
 
 	media := resp.Value.Content.Get("application/json")
 	if media == nil || media.Schema == nil {
-		t.Fatalf("openapi.yml has no JSON 200 response for %s %s", method, template)
+		t.Fatalf("openapi.yml has no JSON %d response for %s %s", status, method, template)
 	}
 
 	return media.Schema.Value
@@ -174,6 +197,40 @@ func TestUndocumentedFields(t *testing.T) {
 
 			if diff := cmp.Diff(tc.want, undocumentedFields("", tc.schema, body)); diff != "" {
 				t.Errorf("undocumentedFields(%s) mismatch (-want +got):\n%s", tc.body, diff)
+			}
+		})
+	}
+}
+
+// fixtureKey reads a fixture key's method, path and optional status, and
+// rejects a key of another form.
+func TestFixtureKey(t *testing.T) {
+	t.Parallel()
+
+	type parts struct {
+		Method, Path string
+		Status       int
+		OK           bool
+	}
+
+	tests := map[string]parts{
+		"GET /hosts":                    {"GET", "/hosts", 200, true},
+		"POST /experiments/x/start 400": {"POST", "/experiments/x/start", 400, true},
+		"GET":                           {},
+		"GET hosts":                     {},
+		"GET /hosts abc":                {},
+		"GET /hosts 400 extra":          {},
+	}
+
+	for key, want := range tests {
+		t.Run(key, func(t *testing.T) {
+			t.Parallel()
+
+			var got parts
+			got.Method, got.Path, got.Status, got.OK = fixtureKey(key)
+
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("fixtureKey(%q) mismatch (-want +got):\n%s", key, diff)
 			}
 		})
 	}

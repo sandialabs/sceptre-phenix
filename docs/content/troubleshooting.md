@@ -392,7 +392,7 @@ fails with one of these errors:
 
 The `inject-partitions` check of `phenix doctor` reads the partition table of
 each image that gets injects, and gives the largest Linux or NTFS partition
-as the number to try. The `Disks` tab of the UI shows the partitions of an
+as the number to try. The `Disks` page of the UI shows the partitions of an
 image too (see [The Details Card](disks.md#the-details-card)). To fix the
 partition, do these steps:
 

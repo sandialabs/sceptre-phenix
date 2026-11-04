@@ -1,74 +1,97 @@
 # Using the Web UI
 
 The phēnix web UI is a single page in the browser. Whichever tab you are on,
-the banner at the top holds the tabs and the page's freshness status, and the
-footer holds a book button that opens this documentation. This page describes
-the behavior that is the same everywhere. The pages themselves are described
+the banner at the top holds the page links and menus, the refresh button, and
+a `Docs` button that opens this documentation. This page describes the
+behavior that is the same everywhere. The pages themselves are described
 under [Experiments](experiments.md), [VMs](vms.md), [Disks](disks.md),
 [Hosts](hosts.md), and the rest.
 
 ## The Navbar
 
-![The navbar with the Experiments, Configs, Disks, Hosts, Users, Logs, SCORCH, State of Health, Console and Settings tabs, the refresh status, and the background jobs and logout buttons.](images/navbar.png){: width=800 .center}
+![The navbar with the Experiments, Builder, SCORCH and SoH links, the Resources and Admin menus, and the Docs, refresh, background jobs and logout buttons.](images/navbar.png){: width=800 .center}
 
-The tabs appear in this order, and only when your role and the server allow
-them:
+The links and menus appear in this order, and only when your role and the
+server allow them. Each link has an icon and a tooltip.
 
-| Tab | Needs |
+| Link | Needs |
 | :--- | :--- |
 | `Experiments` | `list` on `experiments` |
-| `Configs` | `list` on `configs` |
-| `Disks` | `list` on `disks` |
-| `Hosts` | `list` on `hosts` |
-| `Users` | any role other than `Disabled` |
-| `Logs` | `get` on `logs` |
+| `Builder` | `use` on `builder` |
 | `SCORCH` | `list` on `experiments` |
-| `State of Health` | `list` on `experiments` |
-| `Console` | `post` on `miniconsole` |
+| `SoH` (State of Health) | `list` on `experiments` |
 | `WebShark` | the `webshark` feature, plus `get` on `experiments/files` or `list` on `vms/captures` |
-| `Settings` | `update` on `settings` |
+| `Resources` menu: `Configs` | `list` on `configs` |
+| `Resources` menu: `Disks` | `list` on `disks` |
+| `Resources` menu: `Hosts` | `list` on `hosts` |
+| `Admin` menu: `Users` | any role other than `Disabled` |
+| `Admin` menu: `Logs` | `get` on `logs` |
+| `Admin` menu: `Settings` | `update` on `settings` |
+| `Admin` menu: `Console` | `post` on `miniconsole` |
+
+A menu shows only the links that your role may open. When your role may open
+none of them, the menu does not appear.
 
 A feature is something the server found at startup, not a permission: a
 WebShark build for `webshark` (see [WebShark](webshark.md)), or a
 `downloads/tunneler` directory for `tunneler-download`. With the
-`tunneler-download` feature, a `Tunneler` button at the right-hand end of the
-navbar opens the [Tunneler](tunneler.md) download page. The `Console` tab
-works only when the server runs with `phenix ui --minimega-console` (see
-[minimega](minimega.md#from-the-web-ui)).
+`tunneler-download` feature, a `Tunneler` button (a download icon) at the
+right-hand end of the navbar opens the [Tunneler](tunneler.md) download page.
+The `Console` page works only when the server runs with
+`phenix ui --minimega-console` (see [minimega](minimega.md#from-the-web-ui)).
+
+The right-hand end of the navbar holds these buttons, in this order:
+`Tunneler`, `Docs`, the refresh button, the
+[background jobs menu](#background-jobs-menu), and `Logout`. Each button shows
+only its icon, and its tooltip gives its name. `Docs` (a book icon) opens this
+documentation in a new browser tab. With proxy authentication, `Logout` is
+`Reauthorize` (a user-shield icon), with the tooltip
+`Reauthorize (reload your session and role)`.
+
+The navbar stays on one row in a narrow window:
+
+* Below 1400 pixels wide, the links and menus show only their icons. Hover
+  over an icon, or move the focus to it, to see its name in the tooltip.
+* Below 1024 pixels wide, a menu button holds all of the links, menus and
+  buttons. The links and menus show their icons and text.
 
 ## Page Freshness and Refresh
 
 Each page shows the data it last loaded straight away, and loads a fresh copy
-behind it. The right-hand end of the navbar says how old the data on screen
-is, with a button beside it (`Refresh this page's data`) that reloads only the
-page's data.
+behind it. The refresh button (`Refresh this page's data`) at the right-hand
+end of the navbar reloads only the page's data. Its color shows how old the
+data on screen is. Hover over the button, or move the focus to it, to see
+when the data was updated.
 
-![Header refresh control reading Updated just now beside a refresh button with a green icon.](images/header_refresh.png){: width=500 .center}
+![Refresh button with a green icon, and its tooltip that reads Updated just now.](images/header_refresh.png){: width=200 .center}
 
-The status reads:
+The tooltip reads:
 
-* `Loading…` while the page's first load runs
-* `Refreshing…` while a later load runs
+* `Refreshing…` while a load runs
 * `Updated just now`, then `Updated 3 min ago`, and the time of day once the
   data is an hour old
 * `Refresh failed` when the last load failed. The page keeps what it had.
-* `· may be out of date` after the age, when the data may no longer be
-  current
+* `· may be out of date:` and the reason after the age, when the data may no
+  longer be current
 
-Hover over `may be out of date` to see why: minimega was busy, the data
-changed while you were on another page, live updates disconnected, or the
-page has not reloaded for longer than it expects.
+The reason tells why: minimega was busy, the data changed while you were on
+another page, live updates disconnected, the phēnix server is shutting down
+or restarting, or the page has not reloaded for longer than it expects.
 
-![The refresh status reading Updated 3 min ago · may be out of date, beside a refresh button with an orange icon](images/header_refresh_stale.png){: width=600 .center}
+![Refresh button with an orange icon, and its tooltip that reads Updated 3 min ago · may be out of date: older than 90 s.](images/header_refresh_stale.png){: width=400 .center}
 
-The button's icon is yellow while a load runs, green after a load succeeded,
-orange while the data may be out of date, and red after a load failed. Pages
-keep the data they last loaded, so returning to a page opens it filled in
-while a fresh copy loads. The kept data is cleared when you log out.
+The button's icon is green while the data is fresh. It is yellow while the
+data ages: after half of the page's age limit, or after 1 minute on a page
+with no limit. It is orange when the data may be out of date, or after 5
+minutes on a page with no limit. It is red after a load failed. The icon
+spins while a load runs.
+
+Pages keep the data they last loaded, so returning to a page opens it filled
+in while a fresh copy loads. The kept data is cleared when you log out.
 
 ## Background Jobs Menu
 
-Next to the refresh status, a button with a checklist icon opens the
+Next to the refresh button, a button with a checklist icon opens the
 [background jobs](jobs.md) you started, such as bulk VM actions, file archives
 and disk clones, along with the jobs of other users your role may see. A badge
 on the button counts the jobs still running. When jobs have finished since you

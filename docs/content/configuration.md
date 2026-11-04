@@ -64,6 +64,26 @@ metadata:
 the config before you close the editor, it refuses to save your edits with
 `<kind/name> changed while you edited it, so run phenix config edit again`.
 
+## Applying Files
+
+`phenix config apply` creates each config in the given files that is not
+stored, and updates each stored config that is different. `phenix config diff`
+shows the differences first, as a unified diff, and changes nothing. Both
+compare the `apiVersion`, `kind`, name, annotations and `spec`. They ignore
+the fields that phēnix sets, such as the revision.
+
+```bash
+phenix config diff ./configs
+phenix config apply -f ./configs --dry-run
+phenix config apply -f ./configs
+```
+
+`apply` does not apply `User` configs, because their files do not hold the
+password hash and the tokens. An update goes through the checks of
+`phenix config edit`, and phēnix refuses to update the config of a running
+experiment. `diff` exits with `0` when no config differs, `1` when one or more
+differ, and `2` when it cannot compare a config.
+
 ## Topology
 
 The `Topology` configuration is one of the core configuration types for
@@ -569,7 +589,10 @@ spec:
 
 The experiment configuration has the topology and scenario configurations
 embedded in it, as well as additional details like cluster host schedules for
-VMs, VLAN ranges, etc. The advantage of embedding the topology and scenario
+VMs, VLAN ranges, etc. When you create or change an experiment configuration
+through the Web-UI or the API, its `spec.baseDir` must be a folder in
+`<base-dir.phenix>/experiments`. An update can keep a stored base directory
+that is outside that folder. `phenix config create` has no such limit. The advantage of embedding the topology and scenario
 into the experiment is that they can be modified in the experiment without
 modifying the originals.
 
@@ -742,9 +765,10 @@ There are two ways to view a specific config:
    its title. Above the text, the viewer shows the kind, name, creation time
    and update time of the config. Use the `YAML` and `JSON` buttons to change the format of the
    text. Use `Wrap lines` to wrap long lines, and `Copy` to copy the text.
-   The viewer of an experiment config has a link to the experiment page. The
+   The viewer of an experiment config has a flask button to the right of its
+   title. The button closes the viewer and opens the experiment page. The
    viewer of a topology or scenario lists the experiments that use it.
-  ![Config viewer dialog showing the YAML of Role/vm-viewer, with Edit Config, download and Exit buttons.](images/view.png){: width=800 .center}
+  ![Config viewer dialog of Role/vm-viewer with its kind, name, creation and update times, the YAML, JSON, Wrap lines, Copy, Download and Edit controls, and its YAML.](images/view.png){: width=800 .center}
 2. Selecting the `Edit` button for a given config will open the editor window.
    It is possible to edit the config in this window and save the update to the
    phēnix store. The config will be validated against the schema, and if
@@ -828,7 +852,10 @@ nothing will be saved.
 
 Selecting the delete icon will delete a config. A confirmation dialog will be
 presented to confirm the selection. Once the config is deleted, it cannot be
-restored to the store. If an experiment config is deleted, the corresponding
+restored to the store. From the command line, `phenix config delete all
+[kind]` deletes every config, or every config of one kind, except the config
+of a running experiment. Add `--dry-run` to show the configs that it would
+delete. If an experiment config is deleted, the corresponding
 experiment will not longer be presented in the `Experiments` tab.
 
   ![Edit, download and delete icon buttons from a config row.](images/actions.png){: width=150 .center}

@@ -1,6 +1,7 @@
 # Disks
 
-The `Disks` tab lists the disk images phēnix knows about:
+The `Disks` page (in the `Resources` menu) lists the disk images phēnix
+knows about:
 
 * the images with a known extension (`.qcow2`, `.qc2`, `.qcow`, `_rootfs.tgz`,
   `.hdd`, `.iso`) in the minimega files directory and the folders under it
@@ -83,6 +84,8 @@ image stays available for snapshots while VMs run off its children. The
 `Used by` section of the [details card](#the-details-card) lists every
 experiment whose topology names the image, running or stopped.
 
+![Disks table rows whose In Use column marks the images that running VMs hold open, with the In use by bennu tooltip of bennu-hmi.qc2.](images/disks_in_use.png){: width=600 .center}
+
 ## Images in Folders
 
 Images can sit in folders under the minimega files directory. A topology names
@@ -106,6 +109,8 @@ warning icon whose tooltip reads:
 > Outside the standard images directory (/phenix/images). minimega does not
 > copy this image to other cluster nodes. On a multi-node cluster, every node
 > that may run a VM with this image needs the same file at this path.
+
+![Disks table name of /data/vms/win10-golden.qcow2 with its warning icon and the tooltip about images outside the standard images directory.](images/disks_outside.png){: width=500 .center}
 
 The same icon marks the image on the experiment pages. phēnix lists outside
 images but does not change them: every action, `Download` included, is
@@ -143,6 +148,8 @@ The `Actions` column offers `Snapshot`, `Clone`, `Download`, `Rename` and
 * `Download`: saves the image file to this computer
 * `Rename`: gives the image a new name
 * `Delete`: removes the image file
+
+![Actions section of the ubuntu-22.04-dev.qc2 details card with the Snapshot, Commit, Rebase, Clone, Resize, Download, Rename and Delete buttons.](images/disks_actions.png){: width=500 .center}
 
 An action you cannot use stays visible but is disabled, and its tooltip says
 why, such as `Cannot rename: the disk is in use by foo`. An image a running VM
@@ -223,12 +230,16 @@ These are the causes:
 * the chain names one of its own images again (a loop)
 * the chain has more than 64 images
 
+![Disks table name of kali-lab.qc2 with its Broken chain tag and a tooltip that says the backing file /phenix/images/ro_kali.qc2 is missing.](images/disks_broken_chain.png){: width=500 .center}
+
 In the details card, the `Backing chain` section shows a box for each backing
 image, and a red box marked `(missing)` for the missing file. On the
 experiment pages, a VM disk with a broken chain shows a red icon with a cross.
 Before each start, phēnix checks the backing chain of each VM disk and refuses
 the start when a file is missing (see
 [Disk Check Before a Start](experiments.md#disk-check-before-a-start)).
+
+![Backing chain section of the kali-lab.qc2 details card that says a VM cannot start from the image and shows /phenix/images/ro_kali.qc2 (missing) in a red box.](images/disks_broken_chain_card.png){: width=500 .center}
 
 To repair the image, do one of these steps:
 
@@ -276,4 +287,29 @@ curl -C - -o win.qc2 -H 'X-Phenix-Auth-Token: Bearer <token>' \
 ```
 
 To verify a download, compare its `sha256sum` with the checksum the
-[API](api.md#downloads) returns for the image.
+[API](api.md#downloads) returns for the image, or that
+`phenix disk checksum <disk>` prints.
+
+## From the Command Line Binary
+
+The `phenix disk` commands do the actions of this page in the `phenix`
+process. They do not need a running `phenix ui`. Give a disk as a path
+relative to the minimega files directory, or as an absolute path in it. See
+[phenix disk](cli/disk.md) for each flag.
+
+| Command | What it does |
+| :--- | :--- |
+| `phenix disk list` | Lists the images. `--type` and `--experiment` filter the list, and `--refresh` reads each image again. |
+| `phenix disk details <disk>` | Shows what the [details card](#the-details-card) shows. |
+| `phenix disk checksum <disk>` | Prints the SHA-256 checksum of the image. |
+| `phenix disk snapshot <disk> <new>` | Creates a qcow2 snapshot backed by the image. |
+| `phenix disk clone <disk> <new>` | Copies the image to a new file. |
+| `phenix disk rename <disk> <new>` | Renames the image. |
+| `phenix disk commit <disk>` | Writes the image into its backing image. |
+| `phenix disk rebase <disk> [<backing>]` | Changes the backing image. `--unsafe` changes only the name, and `--independent` removes the backing image. |
+| `phenix disk resize <disk> <size>` | Changes the virtual size, such as `+10G`. |
+| `phenix disk delete <disk>` | Deletes the image. It refuses an image that other images or experiments use, unless you add `--force`. |
+
+`-o json` and `-o yaml` print the body of the matching API endpoint. Add
+`--dry-run` to `delete`, `commit`, `rebase`, `rename` or `resize` to show the
+change and make none.

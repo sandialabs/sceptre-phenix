@@ -1,8 +1,8 @@
 # Hosts
 
-The `Hosts` tab lists the nodes in the minimega mesh and what each one is
-carrying. It needs `list` on `hosts`, and only the hosts your role may list
-appear.
+The `Hosts` page (in the `Resources` menu) lists the nodes in the minimega
+mesh and what each one is carrying. It needs `list` on `hosts`, and only the
+hosts your role may list appear.
 
 ![Hosts table listing each cluster node's CPUs, 1, 5 and 15 minute load, RAM used and total, disk use, bandwidth, VM count and uptime.](images/hosts_table.png){: width=800 .center}
 
@@ -40,3 +40,10 @@ screen are (see
 [Page Freshness and Refresh](web-ui.md#page-freshness-and-refresh)). The
 server reuses a host list it read in the last few seconds, so the age counts
 from when the server read the figures.
+
+## From the Command Line Binary
+
+`phenix host list` shows each node with its CPUs, load, memory, VMs and
+network traffic. It asks minimega in the `phenix` process, so it does not
+need a running `phenix ui`. `-o json` and `-o yaml` print each node with the
+fields of `GET /api/v1/hosts`. See [phenix host](cli/host.md).
