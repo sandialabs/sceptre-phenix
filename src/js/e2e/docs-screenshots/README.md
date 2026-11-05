@@ -48,6 +48,10 @@ E2E_BASE_URL=http://127.0.0.1:3081 npm run docs-screenshots -- -g 'login_create|
 `settings_page` shows the server's own default settings, so it needs no
 sample data.
 
+`vlans_cards` and `vlans_grid` read the sample cluster in
+`src/js/test/helpers/vlansFixture.json`, which the VLANs page's own tests
+use. The Go tests of `api/vlan` write that file from `vlan.Merge`.
+
 Pages render at 1600 by 900 pixels at twice the pixel density. Review the new
 images, and the alt text of each one in the docs, before committing them.
 
@@ -57,7 +61,8 @@ Add a test named after the image file, without `.png`. Put the responses the
 page needs in `fixtures.json`, or pass a variant to `open()`, as `empty_table`
 does. Set `DOCS_SCREENSHOTS_DEBUG=1` to log each API request and websocket
 message that no sample answers. `console_tab` answers the console requests and
-the console websocket in its own test. The VNC images (`vnc_console_split` and
-`vnc_tiles`) use the stand-in experiment and RFB servers of
-`tests/vnc-support.js`. Images of WebShark and of the State of Health graph
-itself need live data, so they are still taken by hand.
+the console websocket in its own test. `webshark_empty` answers the features
+request and `/webshark/watch` in its own test. The VNC images
+(`vnc_console_split` and `vnc_tiles`) use the stand-in experiment and RFB
+servers of `tests/vnc-support.js`. Other images of WebShark and the State of
+Health graph itself need live data, so they are still taken by hand.

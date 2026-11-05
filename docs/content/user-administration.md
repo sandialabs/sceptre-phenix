@@ -122,6 +122,15 @@ This token can be used to authenticate when using the Phenix API. Specifically, 
 X-Phenix-Auth-Token: Bearer ******
 ```
 
+On the phēnix server, `phenix admin token create` creates a token for a user.
+The running `phenix ui` signs the token with its JWT signing key. The command
+writes the token to standard output and its expiry to standard error.
+`--lifetime` is a duration, such as `12h`, or a whole number of days.
+
+```shell
+TOKEN=$(phenix admin token create ci-bot --lifetime 30 --description "CI runner")
+```
+
 ## User Administration
 
 The `Users` link in the `Admin` menu shows for a role with
@@ -174,6 +183,29 @@ Global Viewer does not have `builder` `use`. See the policies in
 The web UI hides or disables what your role cannot do, using the same
 permissions the server checks. If you open a page your role cannot use, phēnix
 sends you to the first page your role can use.
+
+### From the Command Line Binary
+
+The `phenix admin` commands manage users, custom roles and API tokens on the
+phēnix server (see [phenix admin](cli/admin.md)). The `list` and `get`
+commands read the store. The commands that make a change call the running
+`phenix ui` through its unix socket, as the user `global-admin`.
+
+```shell
+# Create a user. The command asks for the password two times.
+phenix admin user create alice --role experiment-user --resource-names 'lab-*'
+
+# Give the user another role
+phenix admin user update alice --role experiment-admin
+
+# Create a custom role
+phenix admin role create "Lab Viewer" --policy 'resources=experiments,vms;verbs=list,get;names=lab-*'
+```
+
+`--password-stdin` reads the password from standard input. A password change
+with `phenix admin user update --password` needs the current password. With
+`--dry-run`, `phenix admin user delete` and `phenix admin role delete` read
+only the store, and do not call the server.
 
 ### Manage Custom Roles Through the API
 
@@ -525,6 +557,13 @@ role.
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | delete a snapshot of a specific experiment VM |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
+
 #### Resource: `vms/commit`
 
 |      |      |
@@ -609,6 +648,51 @@ directory. See [Disks](disks.md#permissions).
 | Exp. Scoped | no |
 | Res. Scoped | yes (list is filtered to only include hosts in scope) |
 
+#### Resource: `vlans`
+
+A `vlans` resource name is an experiment name. The blacklist and the
+minimega namespaces that no experiment owns need the resource name `*`. See
+[VLANs](vlans.md#permissions).
+
+|      |      |
+|------|------|
+| Verb | list |
+| Desc | get the VLAN IDs of the cluster, find free IDs, and check proposed IDs (with `*`, also the blacklist and the unowned namespaces) |
+| Exp. Scoped | yes (list is filtered to only include experiments in scope) |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | get one VLAN ID with its VMs, or the VLANs of a specific experiment |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+A change to the VLAN pins or the range of an experiment needs `experiments`
+`patch` on that experiment.
+
+#### Resource: `vlans/blacklist`
+
+|      |      |
+|------|------|
+| Verb | create, delete |
+| Desc | add a VLAN ID to, or remove one from, the minimega VLAN blacklist (needs the resource name `*`) |
+| Exp. Scoped | no |
+| Res. Scoped | no |
+
+By default only `Global Admin` has this permission.
+
+#### Resource: `vlans/allocations`
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | release the VLAN IDs of a minimega namespace that no experiment owns (needs the resource name `*`) |
+| Exp. Scoped | no |
+| Res. Scoped | no |
+
+By default only `Global Admin` has this permission.
+
 #### Resource: `users`
 
 |      |      |
@@ -684,7 +768,9 @@ By default only `Global Admin` has this permission. A user with `users`
 | Res. Scoped | yes (the name in the request) |
 
 Add `?permissions=true` to either request to also get the permissions that
-each role gives.
+each role gives. The `list` verb also allows `GET /permissions`, which lists
+each resource that phēnix checks and its verbs, as `phenix util role-table`
+does.
 
 |      |      |
 |------|------|
@@ -751,6 +837,28 @@ Change a password or a token from the `Users` page or the users API.
 | Desc | update phēnix system settings |
 | Exp. Scoped | no |
 | Res. Scoped | no |
+
+#### Resource: `runtimeSettings`
+
+|      |      |
+|------|------|
+| Verb | read, update |
+| Desc | read and change the runtime settings of `phenix ui` (`/runtimeSettings`), as `phenix settings` does |
+| Exp. Scoped | no |
+| Res. Scoped | no |
+
+By default only `Global Admin` has this permission.
+
+#### Resource: `minimega/commands`
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | send one command to minimega (`POST /minimega/commands`), as `phenix mm` does |
+| Exp. Scoped | no |
+| Res. Scoped | no |
+
+By default only `Global Admin` has this permission.
 
 #### Resource: `vms/mount`
 
@@ -973,6 +1081,11 @@ spec:
     - update
     - delete
   - resources:
+    - vlans
+    verbs:
+    - list
+    - get
+  - resources:
     - hosts
     resourceNames:
     - "*"
@@ -984,6 +1097,8 @@ spec:
     On startup the UI server adds `experiments/files` `delete` to stored
     `Experiment Admin` roles, and a `jobs` policy scoped to each user's
     experiments. `Experiment User` can upload but not delete experiment files.
+    It also adds `vlans` `list` and `get` to stored `Experiment Admin`,
+    `Experiment User` and `Experiment Viewer` roles.
 
 #### Experiment User (`experiment-user`)
 
@@ -1032,6 +1147,11 @@ spec:
     verbs:
     - create
   - resources:
+    - vlans
+    verbs:
+    - list
+    - get
+  - resources:
     - hosts
     resourceNames:
     - "*"
@@ -1054,6 +1174,11 @@ spec:
     - "experiments/*"
     - vms
     - "vms/*"
+    verbs:
+    - list
+    - get
+  - resources:
+    - vlans
     verbs:
     - list
     - get

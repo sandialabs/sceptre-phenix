@@ -5,7 +5,7 @@ the banner at the top holds the page links and menus, the refresh button, and
 a `Docs` button that opens this documentation. This page describes the
 behavior that is the same everywhere. The pages themselves are described
 under [Experiments](experiments.md), [VMs](vms.md), [Disks](disks.md),
-[Hosts](hosts.md), and the rest.
+[Hosts](hosts.md), [VLANs](vlans.md), and the rest.
 
 ## The Navbar
 
@@ -24,6 +24,7 @@ server allow them. Each link has an icon and a tooltip.
 | `Resources` menu: `Configs` | `list` on `configs` |
 | `Resources` menu: `Disks` | `list` on `disks` |
 | `Resources` menu: `Hosts` | `list` on `hosts` |
+| `Resources` menu: `VLANs` | `list` on `vlans` |
 | `Admin` menu: `Users` | any role other than `Disabled` |
 | `Admin` menu: `Logs` | `get` on `logs` |
 | `Admin` menu: `Settings` | `update` on `settings` |
@@ -32,10 +33,14 @@ server allow them. Each link has an icon and a tooltip.
 A menu shows only the links that your role may open. When your role may open
 none of them, the menu does not appear.
 
+With a mouse on a wide window, a menu opens when the pointer is on it. It
+closes a short time after the pointer leaves it. A click also opens a menu,
+and the menu then stays open.
+
 A feature is something the server found at startup, not a permission: a
 WebShark build for `webshark` (see [WebShark](webshark.md)), or a
 `downloads/tunneler` directory for `tunneler-download`. With the
-`tunneler-download` feature, a `Tunneler` button (a download icon) at the
+`tunneler-download` feature, a `Tunneler` button (an archway icon) at the
 right-hand end of the navbar opens the [Tunneler](tunneler.md) download page.
 The `Console` page works only when the server runs with
 `phenix ui --minimega-console` (see [minimega](minimega.md#from-the-web-ui)).
@@ -92,8 +97,9 @@ in while a fresh copy loads. The kept data is cleared when you log out.
 ## Background Jobs Menu
 
 Next to the refresh button, a button with a checklist icon opens the
-[background jobs](jobs.md) you started, such as bulk VM actions, file archives
-and disk clones, along with the jobs of other users your role may see. A badge
+[background jobs](jobs.md) you started, such as bulk VM actions, file archives,
+disk clones and the scheduled runs of the apps of a started experiment, along
+with the jobs of other users your role may see. A badge
 on the button counts the jobs still running. When jobs have finished since you
 last opened the menu, the button turns red if any of them failed, and green if
 they all succeeded.
