@@ -19,13 +19,24 @@ page. Both buttons need `get` on the experiment.
 
 ![The Actions column of the Experiments table, where each row has start, stop, delete, State of Health heartbeat and SCORCH fire buttons, grayed out where they do not apply.](images/exps_soh.png){: width=200 .center}
 
-On an experiment's SoH page, `Go to experiment` returns to the experiment, a
+On an experiment's SoH page, `Go to experiment` (a flask icon) returns to the experiment, a
 book button opens this documentation page, and a flame button opens the
 experiment's [SCORCH](scorch.md) runs. Two counters above the graph show how
 many VMs and VLANs the current filter is showing, and the status legend is in
 a column to the left of the graph. The refresh control in the header reloads
 either page (see
 [Page Freshness and Refresh](web-ui.md#page-freshness-and-refresh)).
+
+From the command line, `phenix exp soh` shows the same summary of each
+experiment. `phenix exp soh <experiment name>` shows each VM of the
+experiment with its status and failing checks, then the failing checks of
+the latest run. `--status` shows only the VMs with one status, such as
+`notrunning`.
+
+```bash
+phenix exp soh
+phenix exp soh <experiment name> --status notrunning
+```
 
 ## State of Health Overview
 
@@ -153,6 +164,10 @@ graph uses the `Force` layout when the `VLAN groups` layout cannot draw it: the
 graph has more than 300 nodes, or the layout fails. A note above the graph
 tells you when the graph is too large for the layout. When a layout that you
 selected fails, the page does not remember it.
+
+In the `VLAN groups` layout, the heading of a VLAN box links to the VLAN ID
+on the [VLANs](vlans.md) page. The link needs `get` on `vlans` for the
+experiment. Without it, the heading is plain text.
 
 Hovering over a node in the graph will cause it to expand to show what operating
 system the node is running. An orange border around a node is indicative of the
@@ -298,8 +313,10 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
 
 * `c2Timeout`: a [Golang duration
   string](https://golang.org/pkg/time/#ParseDuration) specifying how long to
-  wait for the `miniccc` C2 client to become active in a VM before moving on and
-  marking the VM as not to be monitored. The default is `5m`.
+  wait for the `miniccc` C2 client to become active in a VM. If the client does
+  not become active in this time, SoH sends no more checks to the VM during that
+  SoH run. SoH records each of these checks as failed with the error
+  `c2 not active on host`. The default is `5m`.
 
 * `c2AppearGrace`: a [Golang duration
   string](https://golang.org/pkg/time/#ParseDuration) specifying how long a
@@ -328,8 +345,8 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
   when some processes are not healthy immediately at experiment start. This
   only delays SoH when it first runs at the experiment start. It will not delay
   SoH when run manually later by clicking the `Run SOH` button in the UI or
-  running `phenix exp trigger running` (or the deprecated `trigger-running`
-  command) from the command line. The default is no delay.
+  running `phenix exp trigger <experiment name> running` (or the deprecated
+  `trigger-running` command) from the command line. The default is no delay.
 
 * `hostCustomTests`: If present, a map of custom tests to run on the given
   hosts.
@@ -478,8 +495,12 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
           be deployed it must be provided.
 
     * `captureHosts`: a map of VMs, each specifying a list of network interface
-      names to monitor. One Packetbeat VM will be deployed for each VM interface
-      specified. The default is `nil`.
+      names to monitor. One Packetbeat VM will be deployed for each listed VM
+      that boots, and it monitors each interface listed for that VM. SoH does
+      not deploy a Packetbeat VM for a listed VM that is not in the topology, is
+      an external node, or will not boot (for example, because its disk image is
+      missing). SoH logs a warning that names each of these VMs. The default is
+      `nil`.
 
 * `skipInitialNetworkConfigTests`: by default, a set of tests will be run on
   each VM to ensure the VM was assigned the correct IP address and can reach its
@@ -531,7 +552,9 @@ Testing network reachability for a VM requires that the VM has minimega's
 command and control (C2) layer active (ie., the `miniccc` agent is running in
 the VM), has the correct IP address configured, and can ping its default route
 if one is configured. If C2 is not active for a VM after the `c2Timeout`
-duration has passed, then the VM will be excluded from reachability testing.
+duration has passed, then SoH does not run reachability tests from the VM.
+SoH records each of these tests as failed with the error `c2 not active on host`.
+SoH also records the later checks and the CPU load of the VM in the same way.
 Once C2 is up for a VM, the VM is queried to confirm its IP address is
 configured and its gateway is reachable for a maximum of 5 minutes. Once all the
 VMs with C2 detected have their IP address configured and their gateways are
@@ -569,7 +592,7 @@ to Elasticsearch.
 
 When enabled, an Elasticsearch/Kibana VM is added to the experiment's topology so it
 can be accessed via the phenix UI. Packetbeat VMs are deployed in minimega for
-each experiment VM interface that's configured to be monitored, but are not
+each experiment VM that is configured to be monitored and boots, but are not
 added to the experiment topology so they do not clutter the phenix UI.
 
 When packet capture is enabled, the phenix UI SoH tab will include a Network

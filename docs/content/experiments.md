@@ -38,6 +38,10 @@ user.
 phenix exp list
 ```
 
+Add `-o json` or `-o yaml` to print each experiment with the fields of the
+API. The [CLI reference](cli/index.md) tells which commands take `-o`,
+`--dry-run` and `-O/--output-file`.
+
 <br>
 
 ## Starting / Stopping Experiments
@@ -62,6 +66,24 @@ on. One confirmation names the experiments it acts on and the ones it skips.
 When they are done, one message sums up the result and offers to retry the
 experiments that failed.
 
+The start dialog has the options of `phenix exp start`:
+
+| Option | Result |
+| :--- | :--- |
+| `Dry run (do not call minimega)` | phēnix does all of the start, but does not call minimega. The experiment stays stopped, and a message shows the warnings. |
+| `Treat minimega errors as warnings` | A minimega error does not stop the start. A message shows each error as a warning. |
+| `Run the apps' running stage on its schedule` | phēnix runs the `running` stage of each app that has `runPeriodically` in its scenario. This option is on by default. |
+| `VLAN range minimum`, `VLAN range maximum` | The VLAN range of this start only, from 1 to 4094. An empty field uses the range of the experiment. |
+
+![Start the Experiment dialog for grid-training with the dry run, minimega errors as warnings and scheduled app run checkboxes, the VLAN range minimum and maximum fields, and Cancel and Start buttons.](images/experiment_start_dialog.png){: width=500 .center}
+
+The scheduled runs of the apps are a [background job](jobs.md) of the user
+who started the experiment. The job ends when the experiment stops, or when
+you cancel it in the jobs menu. The Stopped Experiment page and the
+[SCORCH](scorch.md) table open the same dialog. The REST API takes the same
+options as the JSON body of `POST /api/v1/experiments/{name}/start` (see the
+[API docs](api.md)).
+
 ![Experiments table with two experiments checked and the Start (1), Stop (1) and Delete (1) buttons and a clear selection button above it.](images/experiments_selected.png){: width=800 .center}
 
 ### From the Command Line Binary
@@ -83,7 +105,9 @@ phenix exp restart <experiment name>
 ```
 
 Optionally, you can use the `--dry-run` flag to do everything except call out to
-minimega.
+minimega. `--vlan-min` and `--vlan-max` set the VLAN range of one start.
+`phenix exp restart` takes the flags of `phenix exp start` and of
+`phenix exp stop`.
 
 While `phenix exp start` runs, the Experiments page of the web UI shows the
 experiment as `starting` after a page refresh. phēnix refuses a second start of
@@ -97,8 +121,8 @@ created for file injection. To keep these snapshots for debugging, use
 phenix exp stop --keep-injection-snapshots <experiment name>
 ```
 
-Only `phenix exp stop` accepts this option. Stopping an experiment from the
-Web-UI, or with `phenix exp restart`, always deletes the snapshots.
+`phenix exp stop` and `phenix exp restart` accept this option. Stopping an
+experiment from the Web-UI always deletes the snapshots.
 
 If minimega cannot kill an experiment's VMs, for example because it is not
 answering, the stop fails and the experiment stays running. Stop it again once
@@ -132,16 +156,20 @@ Aliases:
   experiment, exp
 
 Available Commands:
-  apps            List of available apps to assign an experiment
+  apps            List the apps that a scenario can add to an experiment
+  captures        List the running packet captures of an experiment
   create          Create an experiment
   delete          Delete an experiment
   edit            Edit an experiment
+  files           Experiment file management
   list            Display a table of available experiments
+  netflow         Netflow capture management
   reconfigure     Reconfigure an experiment
   restart         Restart an experiment
   schedule        Schedule an experiment
-  schedulers      List of available schedulers to assign an experiment
+  schedulers      List the schedulers that put the VMs of an experiment on cluster hosts
   scorch          Start a Scorch run for experiment
+  soh             Show the state of health of experiments
   start           Start an experiment
   stop            Stop an experiment
   trigger         Trigger lifecycle stage for app(s) in experiment
@@ -205,12 +233,20 @@ the experiment, and refuses the restart if the start would fail. The bulk
 `Start` and `Restart` of VMs check the selected VMs that minimega launches
 again. A VM with a broken image fails, and the other VMs start.
 
+### VLAN In Use at a Start
+
+A start fails when minimega gives a pinned VLAN ID of the experiment to
+another alias. In the Web-UI, the error message then has a
+`Show the conflict` link. The link opens the [VLANs](vlans.md) page with the
+details of that ID, and needs `list` on `vlans`.
+
 ## The Running Experiment Page
 
 Click a running experiment's name to open its page. The card at the top left
 names the experiment and shows its scenario, its topology, how many VMs and
 VLANs it has, and when it started. The `VMs` tile also counts the VMs that
-are running. If your role may read the scenario or topology config, its name
+are running. The arrow button of the `VLANs` tile opens the
+[VLANs](vlans.md) page for the experiment. It needs `list` on `vlans`. If your role may read the scenario or topology config, its name
 opens it on the Configs page. Beside the `Running` status, the heartbeat
 button opens the experiment's [State of Health](state-of-health.md) and the
 fire button opens its [SCORCH runs](scorch.md).
@@ -292,6 +328,11 @@ phenix experiment create <experiment name> -t /path/to/topology.yaml -s /path/to
 # Adding annotations to every VM and to the experiment (see Adding Annotations below)
 phenix experiment create <experiment name> -t <topology name> --node-annotation phenix/startup-via-cc=true --annotation phenix.workflow/tags=team=red
 ```
+
+phēnix refuses the experiment names `all`, `minimega` and `__phenix__` in any
+letter case, and the names `.` and `..`. Through the Web-UI and the API, the
+base directory (`spec.baseDir`) must be a folder in
+`<base-dir.phenix>/experiments`. The command line has no such limit.
 
 The `phenix exp create --help` command will output:
 
@@ -405,6 +446,11 @@ whether they are running).
 
 When phēnix cannot stop or delete an experiment, it continues with the other
 experiments. Then the command exits with an error that names each failure.
+With `--dry-run`, the command shows the experiments that it would stop and
+delete, and changes nothing.
+
+A delete through the Web-UI or the API does not remove a base directory that
+is outside `<base-dir.phenix>/experiments`. phēnix writes a warning to its log.
 
 The `phenix exp delete --help` command will output:
 
@@ -418,6 +464,8 @@ Delete an experiment
 
   When phenix cannot stop or delete an experiment, it continues with the
   other experiments. Then it exits with an error that names each failure.
+  With --dry-run, phenix shows the experiments that it would stop and
+  delete, and changes nothing.
 
 Usage:
   phenix experiment delete <experiment name> [flags]
@@ -426,8 +474,9 @@ Aliases:
   delete, del
 
 Flags:
-  -f, --force   Stop a running experiment before deleting it
-  -h, --help    help for delete
+      --dry-run   Show what the command would change, and change nothing
+  -f, --force     Stop a running experiment before deleting it
+  -h, --help      help for delete
 ```
 
 ## Scheduling an Experiment
@@ -502,7 +551,7 @@ stopping and restarting it.
 The `phenix exp trigger` command runs one app lifecycle stage on demand:
 
 ```bash
-phenix exp trigger <lifecycle> <experiment name> [<app name> ...]
+phenix exp trigger <experiment name> <lifecycle> [<app name> ...]
 ```
 
 Where `<lifecycle>` is one of the following stages, or its shorthand:
@@ -517,33 +566,49 @@ Providing no app names triggers the stage for every app in the experiment. Use
 `all` instead of an experiment name to trigger the stage in every experiment.
 The `running` stage is skipped for experiments that are not running.
 
+The command runs the stage in its own process. Press Ctrl+C to stop it.
+
 **Examples:**
 
 Trigger the running stage for all apps in an experiment:
 
 ```bash
-phenix exp trigger running my-experiment
+phenix exp trigger my-experiment running
 ```
 
 Trigger the running stage for a specific app:
 
 ```bash
-phenix exp trigger running my-experiment soh
+phenix exp trigger my-experiment running soh
 ```
 
 Trigger the configure stage for all experiments:
 
 ```bash
-phenix exp trigger configure all
+phenix exp trigger all configure
+```
+
+`--cancel` stops the triggers that `phenix ui` runs, which the Web-UI or the
+REST API started. Give app names to stop only those apps. Without app names,
+`--cancel` also ends the scheduled runs of the `running` stage after a start
+(see [Starting / Stopping Experiments](#starting-stopping-experiments)).
+`--cancel` needs a running `phenix ui`. Add `--dry-run` to show the cancels
+and request none.
+
+```bash
+phenix exp trigger my-experiment --cancel soh
 ```
 
 ### From the REST API
 
 `POST /api/v1/experiments/<experiment name>/trigger?apps=<app,...>&stage=<stage>`
 runs one stage for the apps that `apps` names. The `stage` value is one of the
-full stage names above. Without `stage`, the request runs the `running` stage.
-The request returns before the apps run. The `/ws` websocket reports the
-progress of each app.
+stage names above, or its shorthand, in any letter case. Without `stage`, the
+request runs the `running` stage. The request returns before the apps run.
+The `/ws` websocket reports the progress of each app. The experiment name
+`all` starts a [background job](jobs.md) that runs the stage in each
+experiment. `DELETE` on the same path cancels the triggers of the apps that
+`apps` names, or of all apps when `apps` is absent.
 
 ### From the Web-UI
 
@@ -561,7 +626,7 @@ experiment. The `configure` stage rewrites the experiment spec.
 the `configure` lifecycle stage, but they serve different purposes and are not
 interchangeable:
 
-| | `phenix exp trigger configure` | `phenix experiment reconfigure` |
+| | `phenix exp trigger <experiment name> configure` | `phenix experiment reconfigure` |
 |---|---|---|
 | Use case | Manually re-run a specific app's (or apps') configure hook on demand, e.g. for debugging | Re-apply configuration after editing an experiment's stored topology, scenario, or deployment settings |
 | Targets specific apps | Yes, via `[<app name> ...]` | No, always applies to every app |
@@ -570,15 +635,15 @@ interchangeable:
 | Guards against running experiments | No | Yes (refuses to run if the experiment is running) |
 
 Use `phenix experiment reconfigure` after changing an experiment's stored
-settings. Use `phenix exp trigger configure` for targeted, on-demand
+settings. Use `phenix exp trigger <experiment name> configure` for targeted, on-demand
 re-invocation of one or more apps' configure hooks, such as when debugging an
 app.
 
 ### Deprecated Command
 
 The `phenix exp trigger-running` command, and its `trig` alias, are deprecated
-and will be removed in a future release. Use `phenix exp trigger running`
-instead. The deprecated command:
+and will be removed in a future release. Use `phenix exp trigger` instead.
+The deprecated command:
 
 ```bash
 phenix exp trigger-running my-experiment [<app name> ...]
@@ -587,8 +652,11 @@ phenix exp trigger-running my-experiment [<app name> ...]
 Is equivalent to:
 
 ```bash
-phenix exp trigger running my-experiment [<app name> ...]
+phenix exp trigger my-experiment running [<app name> ...]
 ```
+
+The old argument order of `phenix exp trigger`, with the lifecycle before the
+experiment name, is also deprecated. See [Deprecations](deprecations.md).
 
 ## VLAN Aliases
 
@@ -600,6 +668,17 @@ which is mapped by phēnix to a numerical VLAN ID.
 On a stopped experiment, click the `VLAN IDs` button. The menu lists each
 alias with its VLAN ID. Enter an ID from 1 to 4094, or 0 to let minimega
 pick an ID when the experiment starts. Then click `Save VLAN IDs`.
+
+Before the save, phēnix checks the IDs in the cluster. When it finds an
+issue, such as an ID that another experiment pins, the `VLAN Conflicts`
+dialog lists the issues. Click `Save anyway` to save, or `Cancel` to keep the
+old IDs. A save of an `Experiment` config in the config editor does the same
+check (see
+[Conflict Check Before a Save](vlans.md#conflict-check-before-a-save)).
+
+The `See all VLANs in the cluster` link below the table opens the
+[VLANs](vlans.md) page for the experiment. The link and the check need
+`list` on `vlans`.
 
 ### From the Command Line Binary
 
@@ -615,11 +694,19 @@ phenix vlan alias <experiment name>
 # Print the VLAN ID of a specific alias for an experiment
 phenix vlan alias <experiment name> <alias name>
 
-# Set the alias to a VLAN ID (add -f to overwrite an existing alias)
+# Pin the alias to a VLAN ID
 phenix vlan alias <experiment name> <alias name> <vlan id>
+
+# Clear the pin, so minimega gives the alias an ID at the start
+phenix vlan alias <experiment name> <alias name> --unpin
 ```
 
-The VLAN ID must be a whole number from 1 to 4094.
+The VLAN ID must be a whole number from 1 to 4094. To pin or unpin an alias,
+the experiment must be stopped, and the alias must be in the experiment.
+phēnix refuses a pin when another experiment or a minimega namespace uses the
+ID, when minimega blacklists the ID, or when minimega does not answer. Add
+`--force` to pin it anyway. See [VLANs](vlans.md) for the other `phenix vlan`
+commands.
 
 For example, if the `MYVLAN` alias of `my-experiment` maps to VLAN 105:
 

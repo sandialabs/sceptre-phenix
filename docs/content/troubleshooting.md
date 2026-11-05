@@ -515,6 +515,9 @@ these problems before a start:
   experiments, or set a larger range with
   `phenix vlan range <experiment> <min> <max> --force`.
 
+The [VLANs](vlans.md) page shows the same conflicts for all experiments in
+the cluster.
+
 ### VMs on Different Nodes Cannot Reach Each Other
 
 In a mesh of more than one node, each experiment bridge needs a trunk port or

@@ -5,6 +5,7 @@ const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { pageDataLoaded } = require('../tests/helpers');
 const fixtures = require('./fixtures.json');
+const vlansCluster = require('../../test/helpers/vlansFixture.json');
 
 const IMAGES =
   process.env.DOCS_IMAGES_DIR ??
@@ -990,6 +991,172 @@ test('vm_settings_stopped', async ({ page }) => {
   await shoot(table, 'vm_settings_stopped');
 });
 
+// The Files tab of bennu: captures, SCORCH archives and other files, newest
+// first, as the server sorts them by date.
+const BENNU_FILES = {
+  files: [
+    [
+      'ids-sensor_1_20260929154512_7c1d.pcap',
+      40265318,
+      ['Packet Capture'],
+      '2026-09-29T15:46:58Z',
+    ],
+    ['soh-report.json', 186368, [], '2026-09-29T15:46:00Z', true],
+    [
+      'historian_0_20260929153001_2b8e.pcap',
+      12687769,
+      ['Packet Capture'],
+      '2026-09-29T15:36:44Z',
+    ],
+    [
+      'scorch-run-1_2026-09-29T15-00-00Z.tgz',
+      18874368,
+      ['Scorch Artifact'],
+      '2026-09-29T15:15:31Z',
+    ],
+    [
+      'scorch-run-1_2026-09-29T09-00-00Z.tgz',
+      9437184,
+      ['Scorch Artifact'],
+      '2026-09-29T09:21:09Z',
+    ],
+    [
+      'scorch-run-0_2026-09-29T08-30-05Z.tgz',
+      3145728,
+      ['Scorch Artifact'],
+      '2026-09-29T08:44:50Z',
+    ],
+    ['uploads/hmi-patch.msi', 48234496, [], '2026-09-29T08:12:44Z'],
+    [
+      'scorch-run-0_2026-09-28T16-10-00Z.tgz',
+      2097152,
+      ['Scorch Artifact'],
+      '2026-09-28T16:25:13Z',
+    ],
+  ].map(([path, size, categories, date, plainText = false]) => ({
+    name: path.split('/').pop(),
+    path,
+    date,
+    size,
+    categories,
+    plainText,
+    isDir: false,
+  })),
+  total: 8,
+};
+
+// opens bennu's Files tab with BENNU_FILES and returns its table
+async function filesTab(page) {
+  await openRunning(page, 1000);
+  await standIn(page, { 'GET /experiments/bennu/files': BENNU_FILES });
+  await page.locator('.tabs a', { hasText: 'Files' }).click();
+  const table = page.locator('.b-table').filter({ hasText: 'soh-report.json' });
+  await expect(table.locator('tbody tr')).toHaveCount(8);
+  return table;
+}
+
+test('exp_files_tab', async ({ page }) => {
+  const table = await filesTab(page);
+  await shoot(table, 'exp_files_tab');
+});
+
+// Three files checked, so the actions on them show above the table.
+test('exp_files_selected', async ({ page }) => {
+  const table = await filesTab(page);
+  for (const name of [
+    'ids-sensor_1_20260929154512_7c1d.pcap',
+    'soh-report.json',
+    'historian_0_20260929153001_2b8e.pcap',
+  ]) {
+    await table
+      .locator('tbody tr', { hasText: name })
+      .locator('label.b-checkbox')
+      .click();
+  }
+  const bar = page.locator('.files-bar');
+  await expect(bar).toContainText('(3)');
+  await shootCells(
+    table,
+    [bar, table.locator('tbody tr').nth(4)],
+    'exp_files_selected',
+  );
+});
+
+// The Tunneler page, opened from the Tunneler button in the header, with each
+// build the server offers.
+test('tunneler_page', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1600 });
+  await page.route(
+    (url) => url.pathname.endsWith('/features'),
+    (route) => route.fulfill({ json: { features: ['tunneler-download'] } }),
+  );
+  await page.route(
+    (url) => url.pathname.endsWith('/downloads/tunneler'),
+    (route) =>
+      route.fulfill({
+        json: {
+          files: [
+            'phenix-tunneler-darwin-amd64',
+            'phenix-tunneler-darwin-arm64',
+            'phenix-tunneler-linux-amd64',
+            'phenix-tunneler-windows-amd64.exe',
+          ],
+        },
+      }),
+  );
+  // the page has no page data to wait for
+  await standIn(page);
+  await page.goto('/tunneler');
+  // The docs button comes last, after the Quick Start text.
+  const docs = page.getByRole('link', { name: 'Tunneler Documentation' });
+  await expect(page.locator('a.tunneler-button')).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: /phenix-tunneler-windows/ }),
+  ).toBeVisible();
+  await shootRegion(page, [page.locator('.navbar'), docs], 'tunneler_page', 0);
+});
+
+// The WebShark page on site-1-hmi's live capture before it records a packet:
+// the stand-in turns on the webshark feature, and /webshark/watch gives a
+// size of 24 bytes, a pcap header alone. The window is short, so the frame
+// has its smallest height.
+test('webshark_empty', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 500 });
+  await page.route(
+    (url) => url.pathname.endsWith('/features'),
+    (route) => route.fulfill({ json: { features: ['webshark'] } }),
+  );
+  await page.route(
+    (url) => url.pathname.endsWith('/webshark/watch'),
+    (route) =>
+      route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+        body: 'event: capture-changed\ndata: {"size":24}\n\n',
+      }),
+  );
+  // the page has no page data to wait for
+  await standIn(page);
+  await page.goto('/packets?exp=bennu&vm=site-1-hmi&iface=0');
+  const frame = page.locator('.webshark-frame');
+  await expect(frame.locator('.webshark-empty-text')).toHaveText(
+    /^No packets yet\./,
+  );
+  await expect(page.locator('.webshark-spinner')).toHaveCount(0);
+  await expect(
+    page.getByRole('link', { name: 'Open the bennu experiment page' }),
+  ).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Capture' })).toHaveValue(
+    'live:0:site-1-hmi',
+  );
+  await shootRegion(
+    page,
+    [page.locator('.webshark-bar'), frame],
+    'webshark_empty',
+    0,
+  );
+});
+
 // The Schedule menu of the stopped grid-training experiment, open beside its
 // start button, with the server's schedulers.
 test('schedule', async ({ page }) => {
@@ -1035,9 +1202,9 @@ test('delete_exp', async ({ page }) => {
   await shoot(dialog, 'delete_exp');
 });
 
-// A start refused by the disk check: the sample answers grid-training's start
-// with the broken_disks error.
-test('exp_start_broken_disks', async ({ page }) => {
+// Opens the start dialog of the stopped grid-training experiment from its
+// row on the Experiments page.
+async function startDialog(page) {
   await open(page, '/experiments');
   await page
     .getByRole('button', {
@@ -1045,11 +1212,28 @@ test('exp_start_broken_disks', async ({ page }) => {
       exact: true,
     })
     .click();
-  await page
+  const dialog = page
     .locator('.dialog .modal-card')
-    .filter({ hasText: 'Start the Experiment' })
-    .getByRole('button', { name: 'Start', exact: true })
-    .click();
+    .filter({ hasText: 'Start the Experiment' });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+// The start dialog with its options at their defaults, once Start has focus.
+test('experiment_start_dialog', async ({ page }) => {
+  const dialog = await startDialog(page);
+  await expect(dialog.getByLabel('VLAN range maximum')).toBeVisible();
+  await expect(
+    dialog.getByRole('button', { name: 'Start', exact: true }),
+  ).toBeFocused();
+  await shoot(dialog, 'experiment_start_dialog');
+});
+
+// A start refused by the disk check: the sample answers grid-training's start
+// with the broken_disks error.
+test('exp_start_broken_disks', async ({ page }) => {
+  const dialog = await startDialog(page);
+  await dialog.getByRole('button', { name: 'Start', exact: true }).click();
   const notice = page
     .locator('.notification')
     .filter({ hasText: 'qemu cannot open 2 disks on 2 VMs' });
@@ -1135,4 +1319,55 @@ test('disks_broken_chain_card', async ({ page }) => {
   const chain = card.locator('.disk-chain-section');
   await expect(chain.getByText('(missing)')).toBeVisible();
   await shoot(chain, 'disks_broken_chain_card');
+});
+
+// GET /vlans and GET /vlans/{id} from the sample cluster that the VLANs
+// page's tests use, which the Go tests write from vlan.Merge.
+function vlansAnswers(id) {
+  return {
+    'GET /vlans': vlansCluster,
+    ...(id && {
+      [`GET /vlans/${id}`]: {
+        id,
+        vlans: vlansCluster.vlans.filter((row) => row.id === id),
+        vms: [],
+        issues: vlansCluster.issues.filter((issue) => issue.vlan === id),
+      },
+    }),
+  };
+}
+
+// The By experiment view: the totals, the issue banner, the filters and a
+// card for each owner. The window is tall enough for every card.
+test('vlans_cards', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1400 });
+  await open(page, '/vlans', vlansAnswers());
+  await expect(page.locator('.vlans-banner')).toContainText(
+    '7 issues: 3 conflicts, 2 differences, 2 warnings.',
+  );
+  await expect(
+    page.locator('[data-card="experiment:substation-a"]'),
+  ).toBeVisible();
+  await expect(page.locator('[data-card="blacklist"]')).toHaveCount(0);
+  await shoot(page.locator('.vlans-page'), 'vlans_cards');
+});
+
+// The Blacklist view: the blacklist card alone, with its remove buttons.
+test('vlans_blacklist', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await open(page, '/vlans?view=blacklist', vlansAnswers());
+  await expect(page.locator('[data-card="blacklist"]')).toBeVisible();
+  await shoot(page.locator('.vlans-page'), 'vlans_blacklist');
+});
+
+// The ID space view with the details of VLAN 102, which scratch and
+// substation-a both pin.
+test('vlans_grid', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1400 });
+  await open(page, '/vlans?view=grid&vlan=102', vlansAnswers(102));
+  const panel = page.getByRole('complementary', { name: 'VLAN 102' });
+  await expect(panel).toContainText('Also pinned by');
+  await expect(page.locator('.vlan-grid-status')).toHaveText(/^ID 102: /);
+  await page.evaluate(() => document.activeElement?.blur());
+  await shoot(page.locator('.vlans-page'), 'vlans_grid');
 });

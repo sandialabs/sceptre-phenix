@@ -97,6 +97,7 @@ nav:
     - Netflow: netflow.md
     - WebShark: webshark.md
     - Tunneler: tunneler.md
+    - VLANs: vlans.md
   - Integrations:
     - API: api.md
     - Background Jobs: jobs.md
