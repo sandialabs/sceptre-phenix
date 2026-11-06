@@ -9,8 +9,9 @@
     4. Preventing the `_clipboardServerCapabilitiesFormats` flags from getting set in `core/rfb.js`.
        These flags represent support for the extended clipboard pseudo-encoding which minimega does
        not support
-    5. Add the banner and styling to this file
+    5. Add the banner and styling to this file (banner lines are text, escaped by the template)
     6. Remove title changing in `app/ui.js` since we set it with templating
+    7. Put the noVNC elements in `phenix_vnc_area`, between the banners, so the console fits between them
 -->
 <!DOCTYPE html>
 <html lang="en-US" class="noVNC_loading">
@@ -65,20 +66,55 @@
     <link rel="stylesheet" href="{{ .BasePath }}novnc/app/styles/base.css">
     <!-- PHENIX EDIT: STYLING FOR BANNER -->
     <style>
+        /* The banners take the height they need; the noVNC area gets the rest. */
+        body {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
         div.banner-top {
-            position: fixed;
-            display: block;
-            width: 100%;
+            flex: none;
             padding-top: 5px;
             background-color: {{ .TopBanner.BackgroundColor }};
         }
 
         div.banner-bottom {
-            position: fixed;
-            width: 100%;
-            bottom: 0px;
+            flex: none;
             padding-top: 5px;
             background-color: {{ .BottomBanner.BackgroundColor }};
+        }
+
+        /* A transform makes this area the box that noVNC's fixed elements
+           (control bar, dialogs, status) are placed in, so banners do not cover them. */
+        #phenix_vnc_area {
+            flex: 1 1 auto;
+            min-height: 0;
+            position: relative;
+            overflow: hidden;
+            transform: translateX(0);
+        }
+
+        #phenix_vnc_area #noVNC_container {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        /* noVNC limits these to 100vh, which is taller than the area under a banner. */
+        #phenix_vnc_area #noVNC_control_bar {
+            display: flex;
+            flex-direction: column;
+            max-height: 100%;
+        }
+
+        #phenix_vnc_area #noVNC_control_bar .noVNC_scroll {
+            min-height: 0;
+            max-height: none;
+        }
+
+        #phenix_vnc_area .noVNC_panel {
+            max-height: calc(100% - 34px);
         }
 
         h3.banner-top {
@@ -100,7 +136,7 @@
     <link rel="preload" as="image" href="{{ .BasePath }}novnc/app/images/warning.svg">
 
     <script src="{{ .BasePath }}novnc/app/error-handler.js"></script>
-    <script>
+    <script nonce="{{ .Nonce }}">
     <!-- PHENIX EDIT init script: just add correct path and autoconnect param to hash. noVNC will grab parameters from there -->
     {{- if .Token }}
         window.location.hash = `autoconnect=true&path=${window.location.pathname.substr(1)}/ws?token=` + "{{ .Token }}"
@@ -112,6 +148,13 @@
 </head>
 
 <body>
+
+    <!-- PHENIX EDIT: top banner, then the noVNC elements in phenix_vnc_area -->
+    {{- if .TopBanner.Lines }}
+    <div id="banner-top" class="banner-top"><h3 class="banner-top">{{ range $i, $line := .TopBanner.Lines }}{{ if $i }}<br>{{ end }}{{ $line }}{{ end }}</h3></div>
+    {{- end }}
+
+    <div id="phenix_vnc_area">
 
     <div id="noVNC_fallback_error" class="noVNC_center">
         <div>
@@ -354,14 +397,6 @@
         <div class="noVNC_spinner"></div>
     </div>
 
-    <!-- PHENIX EDIT: banner -->
-    {{- if .TopBanner.Banner }}
-        <div id="banner-top" class="banner-top"><h3 class="banner-top">{{ .TopBanner.Banner }}</h3></div>
-    {{- end }}
-    {{- if .BottomBanner.Banner }}
-        <div class="banner-bottom"><h3 class="banner-bottom">{{ .BottomBanner.Banner }}</h3></div>
-    {{- end }}
-
     <!-- This is where the RFB elements will attach -->
     <div id="noVNC_container">
         <!-- Note that Google Chrome on Android doesn't respect any of these,
@@ -376,5 +411,12 @@
         <source src="{{ .BasePath }}novnc/app/sounds/bell.oga" type="audio/ogg">
         <source src="{{ .BasePath }}novnc/app/sounds/bell.mp3" type="audio/mpeg">
     </audio>
+
+    </div> <!-- End of phenix_vnc_area -->
+
+    <!-- PHENIX EDIT: bottom banner -->
+    {{- if .BottomBanner.Lines }}
+    <div id="banner-bottom" class="banner-bottom"><h3 class="banner-bottom">{{ range $i, $line := .BottomBanner.Lines }}{{ if $i }}<br>{{ end }}{{ $line }}{{ end }}</h3></div>
+    {{- end }}
  </body>
 </html>

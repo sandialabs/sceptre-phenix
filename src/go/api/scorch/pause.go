@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/fatih/color"
 	"github.com/mitchellh/mapstructure"
 
 	"phenix/util"
+	"phenix/util/plog"
 	"phenix/web/scorch"
 )
 
@@ -96,8 +96,17 @@ func (p Pause) pause(ctx context.Context, stage Action) error {
 		return fmt.Errorf("invalid duration provided for pause component: %w", err)
 	}
 
-	printer := color.New(color.FgYellow)
-	_, _ = printer.Printf("pausing for %v\n", d)
+	plog.Info(
+		plog.TypeScorch,
+		"pausing",
+		"exp", p.options.Exp.Spec.ExperimentName(),
+		"component", p.options.Name,
+		"stage", stage,
+		"run", p.options.Run,
+		"loop", p.options.Loop,
+		"count", p.options.Count,
+		"duration", d,
+	)
 
 	update := scorch.ComponentUpdate{ //nolint:exhaustruct // partial update
 		Exp:     p.options.Exp.Spec.ExperimentName(),
@@ -112,11 +121,11 @@ func (p Pause) pause(ctx context.Context, stage Action) error {
 
 	start := time.Now()
 
-	for time.Since(start) < d {
+	for remaining := d; remaining > 0; remaining = d - time.Since(start) {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(1 * time.Second):
+		case <-time.After(min(time.Second, remaining)):
 			update.Output = []byte("pausing...\n")
 			scorch.UpdateComponent(update)
 		}

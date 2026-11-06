@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -14,7 +13,7 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "print version information",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintf(os.Stdout, "%s (commit %s) %s\n", version.Label(), version.Commit, version.Date)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s (commit %s) %s\n", version.Label(), version.Commit, version.Date)
 
 			return nil
 		},

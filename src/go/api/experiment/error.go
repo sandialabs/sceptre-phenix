@@ -1,6 +1,25 @@
 package experiment
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+
+	"phenix/store"
+)
+
+// ErrTeardownFailed is wrapped by the error Stop returns when minimega could
+// not kill the experiment's VMs, leaving the experiment running.
+var ErrTeardownFailed = errors.New("killing experiment VMs")
+
+// ErrStopNotRunning is the error Stop returns for an experiment that does not run.
+var ErrStopNotRunning = errors.New("experiment isn't running")
+
+// ErrDeleteRunning is the error Delete returns for an experiment that runs.
+var ErrDeleteRunning = errors.New("cannot delete a running experiment")
+
+// ErrDeleteCleanup is wrapped by the error Delete returns when it deleted the
+// experiment's config, but could not delete all of its files.
+var ErrDeleteCleanup = errors.New("cleaning up the deleted experiment")
 
 type DelayedVMError struct {
 	VM  string
@@ -18,4 +37,14 @@ func (e DelayedVMError) Error() string {
 
 func (e DelayedVMError) Unwrap() error {
 	return e.src
+}
+
+// notFound wraps a store error in ErrExperimentNotFound when the experiment's
+// config does not exist.
+func notFound(err error) error {
+	if errors.Is(err, store.ErrNotExist) {
+		return fmt.Errorf("%w: %w", ErrExperimentNotFound, err)
+	}
+
+	return err
 }

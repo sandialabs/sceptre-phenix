@@ -5,36 +5,20 @@
 ### From the Web-UI
 
 The experiment must be started; click on the experiment name to enter the
-Running Experiment component. Within that component, click on the VM name and
-you will be presented with a VM information modal.
+Running Experiment component. Within that component, click on the VM name (its
+tooltip reads `details and actions`) and you will be presented with the VM's
+details card. The URL `/experiment/<name>?vm=<vm>` opens the details card of
+that VM.
 
-![screenshot](images/vms_vm_info.png)
+![VM details for the running hmi-01, with its Windows OS box, power buttons, its screen, resource tiles, storage, a capturing interface, labels, annotations, snapshots and port forwards.](images/vm_details_card.png){: width=800 .center}
 
 Available commands
 
 * `restore` a snapshot by clicking the play button next to the desired snapshot name.
 
-Buttons from left to right:
-
-* `pause` a running VM
-* Create a `memory snapshot` of a running VM
-* Create a `backing image` of a running VM
-* Create a `snapshot` of a running VM
-* `record screenshot` of a running VM
-* `modify state` opens another toolbar of buttons
-
-#### Modify State Toolbar
-
-![screenshot](images/vms_modify_state_tlbar.png)
-
-Buttons from left to right:
-
-* `redeploy` a running VM
-* `reset disk state` of a running VM
-* `restart` a running VM
-* `shutdown` a running VM
-* `kill` a running VM
-* `close` modify state toolbar
+The `Power` section holds the `Start` (or `Resume`), `Pause`, `Restart`,
+`Shut down` and `Kill` buttons. `More actions`, under the screenshot, holds
+the other actions.
 
 ### From the Command Line Binary
 
@@ -48,17 +32,19 @@ phenix vm info <experiment name>
 Or, run the following to see the information for a specific VM in an experiment.
 
 ```shell
-phenix vm info <experiment name> [vm name] [--label <label>]
+phenix vm info <experiment name> [vm name] [--label <label>] [--host <host>]
 ```
 
 ## Create a Backing Image
 
 ### From the Web-UI
 
-Click on the name of a running VM in a started experiment to access the VM information
-modal. Click the `create backing image` button as shown in the screenshot below.
+Click on the name of a running VM in a started experiment to open its details
+card, then click `Backing image` in `More actions`. The button is disabled
+when the VM is not running or does not have snapshots enabled.
 
-![screenshot](images/vms_backing_image.png)
+phēnix shuts down the VM while it makes the image, and then starts the VM
+again. It also starts the VM again if the operation fails.
 
 ### From the Command Line Binary
 
@@ -68,10 +54,9 @@ There is currently no CLI subcommand to create backing images from running VMs. 
 
 ### From the Web-UI
 
-Click on the name of a running VM in a started experiment to access the VM information
-modal. Click the `memory snapshot` button as shown in the screenshot below.
-
-![screenshot](images/vms_memory_snapshot.png)
+Click on the name of a running VM in a started experiment to open its details
+card, then click `Memory snapshot` in `More actions`. The button is disabled
+when the VM is not running.
 
 ### From the Command Line Binary
 
@@ -81,14 +66,19 @@ To create an ELF memory dump, run the following command.
 phenix vm memory-snapshot <experiment name> <vm name> <snapshot file path>
 ```
 
+A relative path is in the experiment files directory,
+`<base-dir.phenix>/images/<experiment name>/files`. For a VM on a compute
+node, phēnix copies the dump to the head node from that directory only. Thus,
+for such a VM, phēnix refuses an absolute path outside that directory. Each
+memory snapshot stops after one hour if QEMU does not complete it.
+
 ## Create a VM Snapshot
 
 ### From the Web-UI
 
-Click on a running VM in a started experiment to access the VM information
-modal. Click the `vm snapshot` button as shown in the screenshot below.
-
-![screenshot](images/vms_snapshot.png)
+Click on a running VM in a started experiment to open its details card, then
+click `Snapshot` in `More actions` and confirm. The button is disabled when
+the VM is not running or does not have snapshots enabled.
 
 ### From the Command Line Binary
 
@@ -116,7 +106,7 @@ starting the phēnix UI with the `vm-mount` feature flag (see
 
     Mounting a VM requires the minimega command-and-control agent (`miniccc`)
     to be installed and actively running in the VM. If `cc` is not active for a
-    VM, the mount button is disabled.
+    VM, the `Mount disk` button is disabled and `phenix vm mount` fails.
 
 ### Enabling VM Mount
 
@@ -133,15 +123,16 @@ The feature can also be enabled via the `ui.features` configuration key or the
 
 ### From the Web-UI
 
-The experiment must be started. Click on the name of a running VM to access the
-VM information modal, then click the `mount vm` button (the hard-drive icon).
-
-![screenshot](images/vms_mount_vm.png)
+The experiment must be started. Click on the name of a running VM to open its
+details card, then click `Mount disk` (the hard-drive icon) in `More actions`.
+The button is disabled, with the reason in its tooltip, when the VM is not
+running or has no active miniccc agent.
 
 The mount browser modal presents two panes:
 
 * **Local file system** — browse to a file on your local machine and upload it
-  into the VM, or download a file from the VM to your local machine.
+  into the VM, or download a file from the VM to your local machine. An
+  interrupted download resumes when retried from the browser's downloads list.
 * **Experiment files** — copy files that already exist on the phēnix server
   into the VM. This option is only available when the
   [experiment file server](settings.md#settings-reference) is enabled (see
@@ -213,10 +204,6 @@ phenix vm unmount <experiment name> <vm name>
 
 !!! note
 
-    Mounting a VM requires the minimega command-and-control agent (`miniccc`)
-    to be installed and actively running in the VM; the command will fail if
-    the agent is not reachable.
-
     Mounts are automatically unmounted, and their mount directories removed,
     when the owning experiment is stopped or deleted, so mounts do not
     outlive their experiment.
@@ -225,13 +212,25 @@ phenix vm unmount <experiment name> <vm name>
 
 ### From the Web-UI
 
-Click on the name of the network tap on a running VM in a started experiment to
-start a packet capture. The name of the network tap will turn green once a packet
-capture has started. It is possible to start captures on multiple network taps.
+Click on the name of the network tap, or on the IP address, of a running VM in a
+started experiment to start a packet capture on that interface. The name of the
+network tap will turn green once a packet capture has started. Each interface in
+the VM's details card has its own shark-fin button that does the same thing. It
+is possible to start captures on multiple network taps.
 
-To stop a capture, click the name of a green network tap. If the VM has more
-than one capture running, phēnix asks whether to stop only that interface's
-capture or all packet captures for the VM.
+To stop a capture, click the name of a green network tap. Stopping the capture
+on one interface leaves the VM's other captures running; use
+`Stop all packet captures` to stop them all.
+
+A capture cannot be started on a disconnected interface; phēnix says
+`Cannot capture traffic on a disconnected interface.` instead of starting one.
+
+With minimega 3.4.0 or later, phēnix writes the capture file in pcapng format,
+and the file name ends in `.pcapng`. The network menu of the VM table can also
+start a capture in pcap format (see
+[Starting/Stopping Packet Captures](vm-multi-action.md#startingstopping-packet-captures)).
+To capture the traffic of all VMs into one file, see
+[Experiment Packet Captures](packet-captures.md).
 
 ### From the Command Line Binary
 
@@ -242,6 +241,12 @@ network interface by its name (as declared in the experiment topology, e.g.
 ```shell
 phenix vm capture start <experiment name> <vm name> <iface name/index> </path/to/out file>
 ```
+
+The `--format` flag sets the capture file format, `pcapng` (the default) or
+`pcap`. phēnix sets the extension of the output file name to match the format.
+minimega before 3.4.0 writes only pcap. With minimega 3.4.0 or later, the
+`ui.captures.max-size` setting limits the size of the file (see
+[Settings](settings.md)).
 
 To stop all packet captures on a running VM, use the following command.
 
@@ -254,7 +259,7 @@ any other captures running on the same VM, provide the interface name or
 index.
 
 ```shell
-phenix vm capture stop <experiment name> <vm name> <iface name/index>
+phenix vm capture stop <experiment name> <vm name> [iface name/index]
 ```
 
 !!! note
@@ -265,11 +270,8 @@ phenix vm capture stop <experiment name> <vm name> <iface name/index>
 
 ### From the Web-UI
 
-Click on the name of a running VM in a started experiment to access the VM information
-modal. Click the `modify state` button on the far right to open the modify state toolbar.
-Click the `kill` button as shown in the screenshot below.
-
-![screenshot](images/vms_kill.png)
+Click on the name of a running VM in a started experiment to open its details
+card, then click `Kill` in the `Power` section and confirm.
 
 _Note_: if you stop and then start the experiment again, that VM will run again
 per the experiment configuration.
@@ -309,12 +311,8 @@ phenix vm net disconnect <experiment name> <vm name> <iface index>
 
 ### From the Web-UI
 
-Click on the name of a running VM in a started experiment to access the VM information
-modal. To pause a VM, click on the `pause` button as shown in the screenshot below.
-To start a paused VM, that same button will become a green play button; simply
-click it to start.
-
-![screenshot](images/vms_pause.png)
+Click on the name of a running VM in a started experiment to open its details
+card, then click `Pause` in the `Power` section.
 
 ### From the Command Line Binary
 
@@ -334,29 +332,33 @@ phenix vm resume <experiment name> [vm name] [--label <label>]
 
 ### From the Web-UI
 
-Click on the name of a running VM in a started experiment to access the VM information
-modal. Click the `modify state` button on the far right to open the modify state toolbar.
-Click the `redeploy` button as shown in the screenshot below.
-
-![screenshot](images/vms_redeploy.png)
+Click on the name of a running VM in a started experiment to open its details
+card, then click `Redeploy` in `More actions`. The dialog that opens lets you
+change the VM's CPUs, memory and disk, and whether the original injections are
+replicated, before it is deployed again.
 
 ### From the Command Line Binary
 
-To redploy a VM, run the following command.
+To redeploy a VM, run the following command.
 
 ```shell
 phenix vm redeploy <experiment name> [vm name] [--label <label>]
 ```
 
+The `-c, --cpu` and `-m, --mem` flags change a value only when you set them.
+Without them, the VM keeps its current CPUs and memory. A new disk (`-d, --disk`)
+replaces only the first disk of the VM. The other disks do not change.
+The disk value is a minimega disk spec, `<path>[,<interface>][,<cache mode>]`,
+for example `new.qc2,virtio`. A field that you do not set keeps the value of
+the current first disk.
+
 ## Reset Disk State
 
 ### From the Web-UI
 
-Click on the name of a running VM in a started experiment to access the VM information
-modal. Click the `modify state` button on the far right to open the modify state toolbar.
-Click the `reset disk state` button as shown in the screenshot below.
-
-![screenshot](images/vms_reset_disk_state.png)
+Click on the name of a running VM in a started experiment to open its details
+card, then click `Reset disk` in `More actions` and confirm. The button is
+disabled when the VM is paused or does not have snapshots enabled.
 
 ### From the Command Line Binary
 
@@ -370,11 +372,9 @@ phenix vm reset-disk <experiment name> [vm name] [--label <label>]
 
 ### From the Web-UI
 
-Click on the name of a running VM in a started experiment to access the VM information
-modal. Click the `modify state` button on the far right to open the modify state toolbar.
-Click the `restart` button as shown in the screenshot below.
-
-![screenshot](images/vms_restart.png)
+Click on the name of a running VM in a started experiment to open its details
+card, then click `Restart` in the `Power` section. The button is disabled
+when the VM is not running.
 
 ### From the Command Line Binary
 
@@ -388,9 +388,12 @@ phenix vm restart <experiment name> [vm name] [--label <label>]
 
 ### From the Web-UI
 
-Click on the name of the paused VM in a started experiment to access the VM information
-modal. Click the green play button (previously the pause button, furthest button to the
-left).
+Click on the name of the paused VM in a started experiment to open its details
+card, then click `Resume` in the `Power` section.
+
+phēnix refuses to start a VM that the topology sets to not boot
+(`general.do_not_boot`), because minimega did not launch it. To launch the VM,
+redeploy it.
 
 ### From the Command Line Binary
 
@@ -404,11 +407,9 @@ phenix vm resume <experiment name> [vm name] [--label <label>]
 
 ### From the Web-UI
 
-Click on the name of a running VM in a started experiment to access the VM information
-modal. Click the `modify state` button on the far right to open the modify state toolbar.
-Click the `shutdown` button as shown in the screenshot below.
-
-![screenshot](images/vms_shutdown.png)
+Click on the name of a running VM in a started experiment to open its details
+card, then click `Shut down` in the `Power` section. `Shut down` is also in the
+VM table's `Actions` column.
 
 ### From the Command Line Binary
 
@@ -426,17 +427,31 @@ There are two ways to modify VM settings:
 
 1. Click on a stopped experiment to access the Stopped Component. You are able to edit the
 following:
-    * Host name
+    * Host
     * CPUs
     * Memory
     * Disk
+    * Inject partition
+    * Persistence (the `snapshot` flag)
     * Do not boot flag
-1. From a running experiment, click on the VM name and then the redeploy button (yellow
-power button, second from the right on the modal footer). You are able to edit the following:
-    * CPU
+
+    Edit a setting in the row of the VM, or click the VM name to open its
+    details card. The card has the same settings, and you can also edit the
+    labels and annotations of the VM there. A change saves at once, with no
+    dialog. The control spins and is disabled until the server answers. If
+    the change fails, an error message shows and the control shows the
+    previous value. A dot next to a setting tells that its value is
+    different from the topology value. `Reset settings` sets all of the
+    settings back to the topology values. The card also lists the port
+    forwards that the `phenix/startup-autotunnel` annotation opens when the
+    experiment starts. To change them, edit the annotation. The
+    `Select visible columns` button shows or hides the columns of the table.
+1. From a running experiment, click on the VM name and then `Redeploy` in
+`More actions` on its details card. You are able to edit the following:
+    * CPUs
     * Memory
     * Disk
-    * Replication of original injections
+    * Replicate Original Injection(s)
 
 ### From the Command Line Binary
 
@@ -453,13 +468,13 @@ flag is omitted is left unchanged. The following flags are supported:
 | Flag                  | Description                                                                                                       |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `-c, --cpu`           | Number of VM CPUs (1-8 is valid).                                                                                 |
-| `-m, --mem`           | Amount of memory in megabytes (512, 1024, 2048, 3072, 4096, 8192, 12288, 16384 are valid).                        |
+| `-m, --mem`           | Amount of memory in megabytes (a multiple of 512 from 512 to 16384).                                              |
 | `-d, --disk`          | VM backing disk image.                                                                                            |
 | `-p, --partition`     | Partition of disk to inject files into.                                                                           |
 | `--do-not-boot`       | Set the do-not-boot flag for the VM.                                                                              |
 | `--snapshot`          | Set the snapshot (non-persistent) flag for the VM.                                                                |
 | `-L, --label-changes key=value` | VM label to set, in `key=value` form. May be repeated to set multiple labels.                                         |
-| `--append-label`       | Append the provided labels to the VM's existing labels instead of replacing them.                                     |
+| `--append-labels`      | Append the provided labels to the VM's existing labels instead of replacing them.                                     |
 | `-l, --label`         | Apply the change to every VM whose label matches the provided label (supports glob patterns). Use `all` to select every VM in the experiment. May be repeated. |
 
 For example, to set the CPU count to 4 and memory to 2048 MB for a VM named

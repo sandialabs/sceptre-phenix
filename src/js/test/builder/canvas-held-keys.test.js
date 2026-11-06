@@ -4,15 +4,13 @@
 // the whole gesture one undo step, said once (holdNudge, holdResize and
 // endKeyGesture in store.js).
 
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import BuilderCanvas from '@/components/builder/BuilderCanvas.vue';
 import { findNode, sizeOf } from '@/builder/model.js';
 import { useBuilderStore } from '@/builder/store.js';
-
-enableAutoUnmount(afterEach);
 
 globalThis.ResizeObserver ??= class {
   observe() {}

@@ -12,6 +12,8 @@ import (
 	ft "phenix/web/forward/forwardtypes"
 )
 
+// The web page lists each listener, and its forms move, activate and
+// deactivate a listener.
 func TestWebInterfaceListsAndManagesListeners(t *testing.T) {
 	previousManager := localListeners
 	previousOrigin := origin
@@ -61,8 +63,8 @@ func TestWebInterfaceListsAndManagesListeners(t *testing.T) {
 	port := freeTCPPort(t)
 	response = serveWebRequest(t, handler, http.MethodPost, "/listeners/1/move", "port="+strconv.Itoa(port))
 
-	if response.Code != http.StatusSeeOther {
-		t.Fatalf("second move status = %d, want %d", response.Code, http.StatusSeeOther)
+	if response.Code != http.StatusSeeOther || listener.SrcPort != port {
+		t.Fatalf("second move response = (%d, port %d), want (%d, port %d)", response.Code, listener.SrcPort, http.StatusSeeOther, port)
 	}
 
 	response = serveWebRequest(t, handler, http.MethodPost, "/listeners/1/activate", "")

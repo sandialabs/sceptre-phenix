@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -30,13 +31,28 @@ type CreateTunnel struct {
 	User       string
 }
 
+// TriggerStateCanceled is the state published when a triggered app run is canceled.
+const TriggerStateCanceled = "canceled"
+
+// publishRunResult announces how an app's running stage ended: error or success, never both.
+func publishRunResult(expName, appName string, err error) {
+	pub := TriggerPublication{Experiment: expName, App: appName, State: "success"} //nolint:exhaustruct // partial initialization
+	if err != nil {
+		pub.State, pub.Error = "error", err
+	}
+
+	pubsub.Publish("trigger-app", pub)
+}
+
 type TriggerPublication struct {
 	Experiment string
 	Verb       string
 	App        string
 	Resource   string
-	State      string
-	Error      error
+	// Stage is the lifecycle stage that a trigger runs, when the publisher names it.
+	Stage string
+	State string
+	Error error
 }
 
 const (
@@ -49,6 +65,8 @@ const (
 	defaultAppsAnnotation = "phenix/default-apps"
 	osWindows             = "windows"
 	osLinux               = "linux"
+	osRHEL                = "rhel"
+	osCentOS              = "centos"
 )
 
 // Actions returns the supported experiment app lifecycle actions.
@@ -161,6 +179,23 @@ func List() []string {
 	}
 
 	names = append(names, shell.FindCommandsWithPrefix(UserAppPrefix)...)
+
+	return names
+}
+
+// BuiltinApps returns, sorted, the names of the apps built into phenix: the
+// default apps and the other apps that register themselves. phenix runs a
+// phenix-app-<name> on PATH for any other name.
+func BuiltinApps() []string {
+	names := make([]string, 0, len(apps))
+
+	for name := range apps {
+		if name != "user-shell" {
+			names = append(names, name)
+		}
+	}
+
+	slices.Sort(names)
 
 	return names
 }
@@ -278,6 +313,10 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 		err     error
 	)
 
+	// External apps in this run share one reading of the cluster's hosts and
+	// the experiment's VMs.
+	ctx = withStageRuntime(ctx)
+
 	if options.Stage == ActionPreStart && !options.Trigger {
 		// Reset status.apps for experiment. Note that this will get rid of any app
 		// status from previous experiment deployments. We do this in the pre-start
@@ -290,10 +329,16 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 
 	// Publish triggered app events so web broker can propagate the publish out to
 	// web clients. This was initially setup to help convey SOH status in the UI.
+	var triggeredStage string
+	if options.Trigger {
+		triggeredStage = string(options.Stage)
+	}
+
 	publish := func(app, state string, err error) {
 		pubsub.Publish("trigger-app", TriggerPublication{ //nolint:exhaustruct // partial initialization
 			Experiment: exp.Metadata.Name,
 			App:        app,
+			Stage:      triggeredStage,
 			State:      state,
 			Error:      err,
 		})
@@ -678,13 +723,6 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 
 							err = a.Running(ctx, exp)
 							if err != nil {
-								pubsub.Publish("trigger-app", TriggerPublication{ //nolint:exhaustruct // partial initialization
-									Experiment: exp.Spec.ExperimentName(),
-									App:        app.Name(),
-									State:      "error",
-									Error:      err,
-								})
-
 								plog.Error(
 									plog.TypePhenixApp,
 									"[✗] error periodically running app",
@@ -695,11 +733,7 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 								)
 							}
 
-							pubsub.Publish("trigger-app", TriggerPublication{ //nolint:exhaustruct // partial initialization
-								Experiment: exp.Spec.ExperimentName(),
-								App:        app.Name(),
-								State:      "success",
-							})
+							publishRunResult(exp.Spec.ExperimentName(), app.Name(), err)
 
 							exp.Status.SetAppRunning(app.Name(), false)
 

@@ -6,8 +6,9 @@ import vueDevTools from 'vite-plugin-vue-devtools';
 
 import builderAssets from './plugins/builder-assets.js';
 
-// Vitest leaves out the Playwright suite in e2e/, which has its own runner.
-const TEST_EXCLUDE = ['e2e/**', 'node_modules/**', 'dist/**'];
+// Vitest leaves out the Playwright suite in e2e/ and the perf/ tooling,
+// which have their own runners.
+const TEST_EXCLUDE = ['e2e/**', 'perf/**', 'node_modules/**', 'dist/**'];
 
 // Suites of pure functions that mock nothing and leave no state behind. They
 // share workers and run in any order (`--project contract --sequence.shuffle`).
@@ -28,18 +29,30 @@ export default defineConfig(({ mode }) => {
     plugins: [
       vue(),
       vueDevTools(),
-      // Compresses the files only Builder loads, for the server
-      // (src/go/web/builder_assets.go), and lists them.
+      // Compresses the files only Builder loads, and the ELK files it shares
+      // with State of Health, for the server (src/go/web/builder_assets.go).
       builderAssets({
         view: fileURLToPath(
           new URL('./src/views/Builder.vue', import.meta.url),
         ),
+        shared: /[\\/]node_modules[\\/]elkjs[\\/]/,
       }),
     ],
     resolve: {
-      alias: {
-        '@': fileURLToPath(new URL('./src', import.meta.url)),
-      },
+      alias: [
+        {
+          find: '@',
+          replacement: fileURLToPath(new URL('./src', import.meta.url)),
+        },
+        // buefy's "module" entry is a single pre-bundled file that rollup
+        // cannot tree-shake; its per-component ESM build can be
+        {
+          find: /^buefy$/,
+          replacement: fileURLToPath(
+            new URL('./node_modules/buefy/dist/esm/index.js', import.meta.url),
+          ),
+        },
+      ],
     },
     // applies to npm run dev
     server: {
@@ -59,6 +72,24 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           ws: true,
         },
+        // health endpoints, served from the server root
+        '/healthz': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+          logLevel: 'debug',
+        },
+        '/readyz': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+          logLevel: 'debug',
+        },
+        // WebShark, which the server serves when it is installed
+        '/webshark': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+          logLevel: 'debug',
+          ws: true,
+        },
       },
     },
     css: {
@@ -72,8 +103,11 @@ export default defineConfig(({ mode }) => {
     },
     // The contract tests share workers, and every other file gets its own.
     // A contract maxWorkers would make Vitest run the projects one by one.
+    // tests run in happy-dom unless a file starts `// @vitest-environment node`
     test: {
       exclude: TEST_EXCLUDE,
+      environment: 'happy-dom',
+      environmentOptions: { happyDOM: { url: 'http://phenix.test/' } },
       // A test that mounts the Inspector takes up to 5.4 s on a CI runner with
       // coverage, which is past the 5 s default.
       testTimeout: 20_000,
@@ -86,14 +120,19 @@ export default defineConfig(({ mode }) => {
       projects: [
         {
           extends: true,
-          test: { name: 'contract', include: CONTRACT_TESTS, isolate: false },
+          test: {
+            name: 'contract',
+            include: CONTRACT_TESTS,
+            isolate: false,
+            environment: 'node',
+          },
         },
         {
           extends: true,
           test: {
             name: 'unit',
             exclude: [...TEST_EXCLUDE, ...CONTRACT_TESTS],
-            setupFiles: ['test/unit-setup.js'],
+            setupFiles: ['test/setup.js', 'test/unit-setup.js'],
           },
         },
       ],

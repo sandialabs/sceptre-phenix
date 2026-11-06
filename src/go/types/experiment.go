@@ -147,18 +147,58 @@ func (e Experiment) FilesDir() string {
 	return filepath.Join(common.PhenixBase, "images", e.Metadata.Name, "files")
 }
 
+// ExperimentDecodeError is the error for a stored experiment config that
+// does not decode.
+type ExperimentDecodeError struct {
+	Name string // the name of the config
+	Err  error
+}
+
+func (e *ExperimentDecodeError) Error() string {
+	return fmt.Sprintf("decoding experiment %s from config: %v", e.Name, e.Err)
+}
+
+func (e *ExperimentDecodeError) Unwrap() error {
+	return e.Err
+}
+
+// Experiments returns the stored experiments, or only the running ones when
+// running is true. It returns an error when one stored config does not
+// decode. Use DecodableExperiments to skip such configs.
 func Experiments(running bool) ([]*Experiment, error) {
-	configs, err := store.List("Experiment")
+	experiments, failed, err := DecodableExperiments(running)
 	if err != nil {
-		return nil, fmt.Errorf("getting list of experiment configs from store: %w", err)
+		return nil, err
 	}
 
-	var experiments []*Experiment
+	if len(failed) > 0 {
+		return nil, failed[0]
+	}
+
+	return experiments, nil
+}
+
+// DecodableExperiments returns the stored experiments that decode, or only
+// the running ones when running is true. It also returns an error for each
+// stored config that does not decode, in store order. The last error is set
+// only when the store cannot list the configs.
+func DecodableExperiments(running bool) ([]*Experiment, []*ExperimentDecodeError, error) {
+	configs, err := store.List("Experiment")
+	if err != nil {
+		return nil, nil, fmt.Errorf("getting list of experiment configs from store: %w", err)
+	}
+
+	var (
+		experiments []*Experiment
+		failed      []*ExperimentDecodeError
+	)
 
 	for _, c := range configs {
 		exp, err := DecodeExperimentFromConfig(c)
 		if err != nil {
-			return nil, fmt.Errorf("decoding experiment %s from config: %w", c.Metadata.Name, err)
+			failed = append(failed, &ExperimentDecodeError{Name: c.Metadata.Name, Err: err})
+
+			continue
 		}
 
 		if running && !exp.Running() {
@@ -168,7 +208,7 @@ func Experiments(running bool) ([]*Experiment, error) {
 		experiments = append(experiments, exp)
 	}
 
-	return experiments, nil
+	return experiments, failed, nil
 }
 
 func DecodeExperimentFromConfig(c store.Config) (*Experiment, error) {

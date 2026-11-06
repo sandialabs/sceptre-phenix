@@ -4,8 +4,6 @@ package editor
 
 import (
 	"bytes"
-	"crypto/md5" //nolint:gosec // weak cryptographic primitive
-	"encoding/hex"
 	"errors"
 	"io"
 	"os"
@@ -30,7 +28,7 @@ func OpenFileInEditor(path string) error {
 		return err
 	}
 
-	cmd := exec.Command(executable, path) //nolint:noctx,gosec // interactive editor, Command injection via taint analysis
+	cmd := exec.Command(executable, path) //nolint:noctx,gosec // interactive editor; G702 the user's own EDITOR
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -48,7 +46,7 @@ func EditData(data []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	defer func() { _ = os.Remove(file.Name()) }() //nolint:gosec // Path traversal via taint analysis
+	defer func() { _ = os.Remove(file.Name()) }() //nolint:gosec // G703 the temporary file it created
 
 	if _, err := io.Copy(file, bytes.NewReader(data)); err != nil {
 		return nil, err
@@ -64,7 +62,7 @@ func EditData(data []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	bytes, err := os.ReadFile(file.Name()) //nolint:gosec // Path traversal via taint analysis
+	bytes, err := os.ReadFile(file.Name()) //nolint:gosec // G703 the temporary file it created
 	if err != nil {
 		return nil, err
 	}
@@ -77,17 +75,5 @@ func EditData(data []byte) ([]byte, error) {
 }
 
 func modified(old, newBytes []byte) bool {
-	hash := md5.New() //nolint:gosec // not used for security
-
-	_, _ = io.Copy(hash, bytes.NewReader(old))
-
-	oldHash := hex.EncodeToString(hash.Sum(nil)[:16])
-
-	hash.Reset()
-
-	_, _ = io.Copy(hash, bytes.NewReader(newBytes))
-
-	newHash := hex.EncodeToString(hash.Sum(nil)[:16])
-
-	return oldHash != newHash
+	return !bytes.Equal(old, newBytes)
 }

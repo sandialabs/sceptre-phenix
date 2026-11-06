@@ -3,14 +3,19 @@ package store
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
+	"pgregory.net/rapid"
+
+	"phenix/types/version"
 )
 
 func TestNewConfigKindCaseInsensitive(t *testing.T) {
@@ -782,14 +787,27 @@ func TestStoredJSONKeepsAnnotationsAsStrings(t *testing.T) {
 		}
 	}
 
-	// Every field of a config is stored.
-	if got, want := reflect.TypeFor[storedConfig]().NumField(), reflect.TypeFor[Config]().NumField(); got != want {
+	// Every serialized field of a config is stored.
+	if got, want := reflect.TypeFor[storedConfig]().NumField(), jsonFieldCount(reflect.TypeFor[Config]()); got != want {
 		t.Errorf("storedConfig has %d fields, want %d as Config has", got, want)
 	}
 
-	if got, want := reflect.TypeFor[storedMetadata]().NumField(), reflect.TypeFor[ConfigMetadata]().NumField(); got != want {
+	if got, want := reflect.TypeFor[storedMetadata]().NumField(), jsonFieldCount(reflect.TypeFor[ConfigMetadata]()); got != want {
 		t.Errorf("storedMetadata has %d fields, want %d as ConfigMetadata has", got, want)
 	}
+}
+
+// jsonFieldCount is the number of fields of the struct type typ that JSON encodes.
+func jsonFieldCount(typ reflect.Type) int {
+	count := 0
+
+	for i := range typ.NumField() {
+		if typ.Field(i).Tag.Get("json") != "-" {
+			count++
+		}
+	}
+
+	return count
 }
 
 // TestWorkflowIsNotAStoredKind proves the Workflow schema did not make
@@ -813,6 +831,142 @@ func TestWorkflowIsNotAStoredKind(t *testing.T) {
 
 	if got := ConfigFullName("Workflow", "wf"); got != "" {
 		t.Errorf(`ConfigFullName("Workflow", "wf") = %q, want empty`, got)
+	}
+}
+
+// Clients cannot set a config's revision: the store assigns it.
+func TestNewConfigClearsRevision(t *testing.T) {
+	body := `{"apiVersion":"phenix.sandia.gov/v1","kind":"Topology","metadata":{"name":"a","revision":7}}`
+
+	c, err := DecodeConfigJSON([]byte(body))
+	if err != nil {
+		t.Errorf("DecodeConfigJSON(revision 7) error = %v", err)
+	} else if c.Metadata.Revision != 0 {
+		t.Errorf("DecodeConfigJSON(revision 7) revision = %d, want 0", c.Metadata.Revision)
+	}
+
+	c, err = NewConfigFromYAML([]byte("apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: a\n  revision: 7\n"))
+	if err != nil {
+		t.Errorf("NewConfigFromYAML(revision 7) error = %v", err)
+	} else if c.Metadata.Revision != 0 {
+		t.Errorf("NewConfigFromYAML(revision 7) revision = %d, want 0", c.Metadata.Revision)
+	}
+}
+
+// genTypesKindSpelling spells a stored kind in any mix of cases.
+func genTypesKindSpelling(kind string) *rapid.Generator[string] {
+	return rapid.Custom(func(t *rapid.T) string {
+		var b strings.Builder
+
+		for _, r := range kind {
+			if rapid.Bool().Draw(t, "upper") {
+				b.WriteString(strings.ToUpper(string(r)))
+			} else {
+				b.WriteString(strings.ToLower(string(r)))
+			}
+		}
+
+		return b.String()
+	})
+}
+
+// NewConfig and ConfigFullName agree on which names are configs: a stored kind in any case,
+// "/", and a name with no "/" in it. Both name the config by its canonical kind.
+func TestConfigNameProperties(t *testing.T) {
+	t.Parallel()
+
+	kinds := slices.Sorted(maps.Keys(version.StoredVersion))
+
+	rapid.Check(t, func(t *rapid.T) {
+		kind := rapid.SampledFrom(kinds).Draw(t, "kind")
+		spelled := genTypesKindSpelling(kind).Draw(t, "spelled")
+
+		if rapid.IntRange(0, 4).Draw(t, "unknown") == 0 {
+			kind, spelled = "", spelled+rapid.SampledFrom([]string{"s", "x", "_"}).Draw(t, "suffix")
+		}
+
+		name := rapid.StringMatching(`[a-z/-]{0,4}`).Draw(t, "name")
+		full := spelled + "/" + name
+
+		want := ""
+		if kind != "" && !strings.Contains(name, "/") {
+			want = kind + "/" + name
+		}
+
+		if got := ConfigFullName(full); got != want {
+			t.Fatalf("ConfigFullName(%q) = %q, want %q", full, got, want)
+		}
+
+		if want != "" {
+			if got := ConfigFullName(spelled, name); got != kind+"/"+name {
+				t.Fatalf("ConfigFullName(%q, %q) = %q, want %q", spelled, name, got, kind+"/"+name)
+			}
+		}
+
+		c, err := NewConfig(full)
+		if (err == nil) != (want != "") {
+			t.Fatalf("NewConfig(%q) error = %v, want error %t", full, err, want == "")
+		}
+
+		if err == nil && (c.FullName() != want || c.APIVersion() != version.StoredVersion[kind] || c.APIGroup() != APIGroup) {
+			t.Fatalf("NewConfig(%q) = %s %s, want %s at %s/%s", full, c.FullName(), c.Version, want, APIGroup, version.StoredVersion[kind])
+		}
+	})
+}
+
+// NewConfigFromFile parses a config by its file's extension, expanding
+// environment placeholders, and clears the fields only the store sets.
+func TestNewConfigFromFile(t *testing.T) {
+	t.Parallel()
+
+	const (
+		jsonBody = `{"apiVersion":"phenix.sandia.gov/v1","kind":"Topology",` +
+			`"metadata":{"name":"${PHENIX_TYPES_TEST_UNSET:a}","created":"x","updated":"y","revision":7}}`
+		yamlBody = "apiVersion: phenix.sandia.gov/v1\nkind: Topology\n" +
+			"metadata:\n  name: ${PHENIX_TYPES_TEST_UNSET:a}\n  created: x\n  updated: y\n  revision: 7\n"
+	)
+
+	want := &Config{Version: "phenix.sandia.gov/v1", Kind: "Topology", Metadata: ConfigMetadata{Name: "a"}}
+
+	for name, tc := range map[string]struct {
+		file, body string
+		want       *Config
+		wantErr    error
+		wantMsg    string
+	}{
+		"json":         {file: "a.json", body: jsonBody, want: want},
+		"yaml":         {file: "a.yaml", body: yamlBody, want: want},
+		"yml":          {file: "a.yml", body: yamlBody, want: want},
+		"bad json":     {file: "a.json", body: "{", wantErr: ErrInvalidFormat},
+		"bad yaml":     {file: "a.yaml", body: "kind: [", wantErr: ErrInvalidFormat},
+		"no extension": {file: "a", body: jsonBody, wantMsg: "invalid config extension"},
+		"other":        {file: "a.txt", body: jsonBody, wantMsg: "invalid config extension"},
+		"missing":      {file: "missing.json", wantErr: os.ErrNotExist, wantMsg: "cannot read config"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), tc.file)
+
+			if tc.body != "" {
+				if err := os.WriteFile(path, []byte(tc.body), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			got, err := NewConfigFromFile(path)
+			if (err != nil) != (tc.want == nil) || (tc.wantErr != nil && !errors.Is(err, tc.wantErr)) {
+				t.Fatalf("NewConfigFromFile(%s) error = %v, want error %t (%v)", tc.file, err, tc.want == nil, tc.wantErr)
+			}
+
+			if tc.wantMsg != "" && (err == nil || !strings.Contains(err.Error(), tc.wantMsg)) {
+				t.Fatalf("NewConfigFromFile(%s) error = %v, want it to contain %q", tc.file, err, tc.wantMsg)
+			}
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("NewConfigFromFile(%s) mismatch (-want +got):\n%s", tc.file, diff)
+			}
+		})
 	}
 }
 
@@ -866,6 +1020,77 @@ func TestDecodeConfigKeepsPlaceholders(t *testing.T) {
 				t.Errorf("%s(%q) annotations mismatch (-want +got):\n%s", tt.name, tt.input, diff)
 			}
 		})
+	}
+}
+
+// APIGroup and APIVersion split a config's version at its "/".
+func TestConfigAPIVersion(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ version, group, apiVersion string }{
+		{"phenix.sandia.gov/v1", "phenix.sandia.gov", "v1"},
+		{"phenix.sandia.gov/v2/extra", "phenix.sandia.gov", "v2"},
+		{"v1", "", "v1"},
+		{"", "", ""},
+		{"/", "", ""},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			t.Parallel()
+
+			c := Config{Version: tc.version}
+
+			if got := c.APIGroup(); got != tc.group {
+				t.Errorf("Config{Version: %q}.APIGroup() = %q, want %q", tc.version, got, tc.group)
+			}
+
+			if got := c.APIVersion(); got != tc.apiVersion {
+				t.Errorf("Config{Version: %q}.APIVersion() = %q, want %q", tc.version, got, tc.apiVersion)
+			}
+		})
+	}
+}
+
+func TestConfigHasAnnotation(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		annotations Annotations
+		want        bool
+	}{
+		"none":                {want: false},
+		"empty":               {annotations: Annotations{}, want: false},
+		"another":             {annotations: Annotations{"other": "x"}, want: false},
+		"set":                 {annotations: Annotations{"phenix.io/key": "x"}, want: true},
+		"set to empty string": {annotations: Annotations{"phenix.io/key": ""}, want: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			c := Config{Metadata: ConfigMetadata{Annotations: tc.annotations}}
+			if got := c.HasAnnotation("phenix.io/key"); got != tc.want {
+				t.Errorf("HasAnnotation(phenix.io/key) with %v = %t, want %t", tc.annotations, got, tc.want)
+			}
+		})
+	}
+}
+
+// FullName joins kind and name as given; ConfigFullName takes one full name
+// or a kind and a name, and nothing else.
+func TestConfigFullNames(t *testing.T) {
+	t.Parallel()
+
+	if got := (Config{Kind: "Topology", Metadata: ConfigMetadata{Name: "a"}}).FullName(); got != "Topology/a" {
+		t.Errorf("Config{Topology, a}.FullName() = %q, want %q", got, "Topology/a")
+	}
+
+	if got := (Config{}).FullName(); got != "/" {
+		t.Errorf("Config{}.FullName() = %q, want %q", got, "/")
+	}
+
+	for _, args := range [][]string{nil, {"topology", "a", "b"}, {"notakind", "a"}, {"topology"}} {
+		if got := ConfigFullName(args...); got != "" {
+			t.Errorf("ConfigFullName(%q) = %q, want empty", args, got)
+		}
 	}
 }
 

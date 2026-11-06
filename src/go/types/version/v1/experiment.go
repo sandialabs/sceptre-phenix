@@ -60,6 +60,10 @@ func (v *VLANSpec) SetMax(m int) {
 
 func (v VLANSpec) Validate() error {
 	for k, val := range v.AliasesF {
+		if val == 0 {
+			continue // ID 0 is not assigned yet; minimega assigns it at start
+		}
+
 		if v.MinF != 0 && val < v.MinF {
 			return fmt.Errorf(
 				"topology VLAN %s (VLAN ID %d) is less than experiment min VLAN ID of %d",
@@ -71,7 +75,7 @@ func (v VLANSpec) Validate() error {
 
 		if v.MaxF != 0 && val > v.MaxF {
 			return fmt.Errorf(
-				"topology VLAN %s (VLAN ID %d) is greater than experiment min VLAN ID of %d",
+				"topology VLAN %s (VLAN ID %d) is greater than experiment max VLAN ID of %d",
 				k,
 				val,
 				v.MaxF,
@@ -254,6 +258,10 @@ func (e *ExperimentSpec) SetVLANRange(minVal, maxVal int, f bool) error {
 	}
 
 	for k, v := range e.VLANsF.AliasesF {
+		if v == 0 {
+			continue // ID 0 is not assigned yet; minimega assigns it at start
+		}
+
 		if minVal != 0 && v < minVal {
 			return fmt.Errorf(
 				"topology VLAN %s (VLAN ID %d) is less than proposed experiment min VLAN ID of %d",
@@ -265,7 +273,7 @@ func (e *ExperimentSpec) SetVLANRange(minVal, maxVal int, f bool) error {
 
 		if maxVal != 0 && v > maxVal {
 			return fmt.Errorf(
-				"topology VLAN %s (VLAN ID %d) is greater than proposed experiment min VLAN ID of %d",
+				"topology VLAN %s (VLAN ID %d) is greater than proposed experiment max VLAN ID of %d",
 				k,
 				v,
 				maxVal,
@@ -345,6 +353,16 @@ type ExperimentStatus struct {
 	FrequencyF map[string]string `json:"appRunningStageFrequency,omitempty" mapstructure:"appRunningStageFrequency" structs:"appRunningStageFrequency" yaml:"appRunningStageFrequency,omitempty"`
 	RunningF   map[string]bool   `json:"appRunningStageStatus,omitempty"    mapstructure:"appRunningStageStatus"    structs:"appRunningStageStatus"    yaml:"appRunningStageStatus,omitempty"`
 	CleanupF   map[string]bool   `json:"appCleanupStagePending,omitempty"   mapstructure:"appCleanupStagePending"   structs:"appCleanupStagePending"   yaml:"appCleanupStagePending,omitempty"`
+
+	// The delayed VM starts and post-start apps a started experiment still
+	// waits on, kept so phenix can resume them after a restart.
+	DelayedTimersF    map[string]string          `json:"delayedTimers,omitempty"    mapstructure:"delayedTimers"    structs:"delayedTimers"    yaml:"delayedTimers,omitempty"`
+	DelayedC2F        map[string]map[string]bool `json:"delayedC2,omitempty"        mapstructure:"delayedC2"        structs:"delayedC2"        yaml:"delayedC2,omitempty"`
+	PostStartPendingF bool                       `json:"postStartPending,omitempty" mapstructure:"postStartPending" structs:"postStartPending" yaml:"postStartPending,omitempty"`
+	InterruptedF      string                     `json:"interrupted,omitempty"      mapstructure:"interrupted"      structs:"interrupted"      yaml:"interrupted,omitempty"`
+
+	// The start in progress, so another phenix process can report the experiment as starting.
+	StartingF ifaces.StartMarker `json:"starting,omitzero" mapstructure:"starting" structs:"starting,omitempty" yaml:"starting,omitempty"`
 }
 
 func (s *ExperimentStatus) Init() error { //nolint:unparam // implements ifaces.ExperimentStatus
@@ -513,4 +531,53 @@ func (s *ExperimentStatus) ResetAppStatus() {
 
 	s.FrequencyF = nil
 	s.RunningF = nil
+}
+
+func (s ExperimentStatus) DelayedTimers() map[string]string {
+	if s.DelayedTimersF == nil {
+		return make(map[string]string)
+	}
+
+	return s.DelayedTimersF
+}
+
+func (s ExperimentStatus) DelayedC2() map[string]map[string]bool {
+	if s.DelayedC2F == nil {
+		return make(map[string]map[string]bool)
+	}
+
+	return s.DelayedC2F
+}
+
+func (s ExperimentStatus) PostStartPending() bool {
+	return s.PostStartPendingF
+}
+
+func (s ExperimentStatus) Interrupted() string {
+	return s.InterruptedF
+}
+
+// SetDelayedStarts records the starts still pending; empty maps are kept as nil.
+func (s *ExperimentStatus) SetDelayedStarts(timers map[string]string, c2 map[string]map[string]bool, postStart bool) {
+	s.DelayedTimersF, s.DelayedC2F, s.PostStartPendingF = nil, nil, postStart
+
+	if len(timers) > 0 {
+		s.DelayedTimersF = timers
+	}
+
+	if len(c2) > 0 {
+		s.DelayedC2F = c2
+	}
+}
+
+func (s *ExperimentStatus) SetInterrupted(reason string) {
+	s.InterruptedF = reason
+}
+
+func (s ExperimentStatus) Starting() ifaces.StartMarker {
+	return s.StartingF
+}
+
+func (s *ExperimentStatus) SetStarting(m ifaces.StartMarker) {
+	s.StartingF = m
 }

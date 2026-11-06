@@ -2,13 +2,11 @@
 // Escape with a dialog's tooltip shown hides the tooltip only: the dialog
 // does not get the key (useKeepOpenForTip in fixedTooltip.js).
 
-import { afterEach, describe, expect, test } from 'vitest';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { describe, expect, test } from 'vitest';
+import { mount } from '@vue/test-utils';
 import { defineComponent, h } from 'vue';
 
 import { useKeepOpenForTip } from '@/components/builder/fixedTooltip.js';
-
-enableAutoUnmount(afterEach);
 
 const state = { shown: false };
 

@@ -2,8 +2,8 @@
 // The Rename form of the Custom icons dialog (IconDialog.vue): a refused name
 // marks the field invalid and links it to the dialog's error.
 
-import { afterEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { describe, expect, test, vi } from 'vitest';
+import { flushPromises, mount } from '@vue/test-utils';
 import { reactive } from 'vue';
 
 import IconDialog from '@/components/builder/dialogs/IconDialog.vue';
@@ -13,8 +13,6 @@ import {
 } from '@/components/builder/inspector/control.js';
 
 import { ICON_DATA } from './png.js';
-
-enableAutoUnmount(afterEach);
 
 const ICONS = ['hmi', 'pump'].map((name) => ({
   name,

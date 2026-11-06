@@ -9,6 +9,7 @@ type createOptions struct {
 	path     string
 	data     []byte
 	validate bool
+	check    func(*store.Config) error
 }
 
 func newCreateOptions(opts ...CreateOption) createOptions {
@@ -36,6 +37,15 @@ func CreateFromPath(p string) CreateOption {
 func CreateFromYAML(d []byte) CreateOption {
 	return func(o *createOptions) {
 		o.data = d
+	}
+}
+
+// CreateWithCheck runs check on the parsed config before it is validated or
+// stored, and stops the create with check's error, such as to authorize the
+// config's kind and name.
+func CreateWithCheck(check func(*store.Config) error) CreateOption {
+	return func(o *createOptions) {
+		o.check = check
 	}
 }
 

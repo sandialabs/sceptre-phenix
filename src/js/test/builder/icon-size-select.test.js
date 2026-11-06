@@ -3,8 +3,8 @@
 // Diagram section, and a device's, in its form. A size chosen with the
 // pointer applies at once, one stepped to with keys once the choice is made.
 
-import { afterEach, describe, expect, test } from 'vitest';
-import { enableAutoUnmount, flushPromises } from '@vue/test-utils';
+import { describe, expect, test } from 'vitest';
+import { flushPromises } from '@vue/test-utils';
 
 import InspectorDiagram from '@/components/builder/inspector/InspectorDiagram.vue';
 
@@ -12,8 +12,6 @@ import { findNode, setIconSize } from '@/builder/model.js';
 
 import { sampleDocument } from './fixtures.js';
 import { actionsShown, fieldAt, mountInspector } from './inspector-mount.js';
-
-enableAutoUnmount(afterEach);
 
 // The Diagram section on `doc`, and its Icon size select.
 async function openDiagram(doc) {

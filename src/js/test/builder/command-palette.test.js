@@ -3,7 +3,7 @@
 // keyboard: filtering, the highlight, steps, running, and focus after it.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import BuilderCommandPalette from '@/components/builder/BuilderCommandPalette.vue';
 import {
@@ -15,8 +15,6 @@ import { RECENT_STORAGE_KEY } from '@/builder/recent.js';
 
 import { context } from './command-context.js';
 import { memoryStorage, sampleDocument } from './fixtures.js';
-
-enableAutoUnmount(afterEach);
 
 beforeEach(() => {
   setPlatform('other');

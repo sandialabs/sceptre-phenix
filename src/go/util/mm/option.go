@@ -12,6 +12,8 @@ const DefaultC2Timeout = 5 * time.Minute
 type Option func(*options)
 
 type options struct {
+	ctx context.Context //nolint:containedctx // carried to the commands an option set runs
+
 	ns     string
 	vm     string
 	cpu    int
@@ -30,6 +32,17 @@ type options struct {
 	captureIface    int
 	captureIfaceSet bool
 	captureFile     string
+	captures        []Capture
+	capturesKnown   bool
+
+	// experiment captures and the options of a capture start
+	captureVLANs   []string
+	captureFilter  string
+	captureSnaplen int
+	captureFormat  string
+	captureMaxSize int64 // MiB
+	captureID      string
+	mirrorHosts    []string
 
 	screenshotSize string
 
@@ -40,13 +53,22 @@ type options struct {
 }
 
 func NewOptions(opts ...Option) options {
-	o := options{injectPart: 1} //nolint:exhaustruct // partial initialization
+	o := options{ctx: context.Background(), injectPart: 1} //nolint:exhaustruct // partial initialization
 
 	for _, opt := range opts {
 		opt(&o)
 	}
 
 	return o
+}
+
+// Context gives up a call's commands still waiting for the shared connection once ctx is done (see
+// mmcli.RunContext), returning ctx's error. A call making several changes checks ctx only until its
+// first change is sent, so it is never left half done.
+func Context(ctx context.Context) Option {
+	return func(o *options) {
+		o.ctx = ctx
+	}
 }
 
 func NS(n string) Option {
@@ -125,6 +147,64 @@ func CaptureInterface(i int) Option {
 func CaptureFile(f string) Option {
 	return func(o *options) {
 		o.captureFile = f
+	}
+}
+
+// KnownCaptures gives the VM's captures as the caller already listed them, so
+// StopVMCapture does not list them again.
+func KnownCaptures(c []Capture) Option {
+	return func(o *options) {
+		o.captures = c
+		o.capturesKnown = true
+	}
+}
+
+// CaptureVLANs limits an experiment capture to the VLANs with these aliases; none captures every VLAN.
+func CaptureVLANs(v []string) Option {
+	return func(o *options) {
+		o.captureVLANs = v
+	}
+}
+
+// CaptureFilter gives an experiment capture a BPF filter.
+func CaptureFilter(f string) Option {
+	return func(o *options) {
+		o.captureFilter = f
+	}
+}
+
+// CaptureSnaplen sets how many bytes of each frame an experiment capture keeps; 0 keeps minimega's default.
+func CaptureSnaplen(n int) Option {
+	return func(o *options) {
+		o.captureSnaplen = n
+	}
+}
+
+// CaptureFormat sets the file format of a capture, pcapng or pcap, with minimega 3.4.0 or later.
+func CaptureFormat(f string) Option {
+	return func(o *options) {
+		o.captureFormat = f
+	}
+}
+
+// CaptureMaxSize sets the most MiB a capture file gets, with minimega 3.4.0 or later; 0 sets no limit.
+func CaptureMaxSize(mib int64) Option {
+	return func(o *options) {
+		o.captureMaxSize = mib
+	}
+}
+
+// CaptureID names an experiment capture by the ID minimega gave it.
+func CaptureID(id string) Option {
+	return func(o *options) {
+		o.captureID = id
+	}
+}
+
+// MirrorHosts names the hosts whose Open vSwitch mirrors GetBridgeMirrors lists.
+func MirrorHosts(h []string) Option {
+	return func(o *options) {
+		o.mirrorHosts = h
 	}
 }
 

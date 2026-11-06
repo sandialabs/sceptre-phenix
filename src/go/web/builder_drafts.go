@@ -334,7 +334,7 @@ func (b *builderAPI) createDraft(w http.ResponseWriter, r *http.Request) error {
 
 	plog.Info(plog.TypeAction, "created builder draft", "user", actor.user, "draft", meta.ID)
 
-	w.Header().Set("Location", "/api/v1/builder/drafts/"+meta.ID)
+	w.Header().Set("Location", apiLocation("builder/drafts/"+meta.ID))
 
 	return builderWriteJSON(w, http.StatusCreated, meta.ETag(), b.draftResponse(actor, meta))
 }
@@ -348,7 +348,7 @@ func builderDraftCreateError(err error) error {
 		return weberror.NewWebError(
 			nil, "the server holds %d drafts, the most it can hold. Delete drafts, or run Clean up in the Builder settings",
 			full.Limit,
-		).SetStatus(http.StatusRequestEntityTooLarge).WithCode(string(bdoc.CodeDraftLimit))
+		).SetStatus(http.StatusRequestEntityTooLarge).WithCode(weberror.Code(bdoc.CodeDraftLimit))
 	}
 
 	return builderWebError(err, "unable to create the Builder draft")
@@ -559,7 +559,7 @@ func (b *builderAPI) deleteSnapshot(w http.ResponseWriter, r *http.Request) erro
 		return builderNotFound("snapshot", requested)
 	case manifest.ID == meta.Current().ID:
 		return weberror.NewWebError(nil, "You cannot delete the current version.").
-			SetStatus(http.StatusConflict).WithCode(string(bdoc.CodeDraftSnapshotCurrent))
+			SetStatus(http.StatusConflict).WithCode(weberror.Code(bdoc.CodeDraftSnapshotCurrent))
 	}
 
 	updated, err := b.drafts.DeleteSnapshot(r.Context(), bapi.DeleteSnapshotRequest{

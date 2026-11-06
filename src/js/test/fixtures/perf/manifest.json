@@ -1,0 +1,16 @@
+[
+  {
+    "url": "http://127.0.0.1:3000/experiments",
+    "isRepresentativeRun": false,
+    "htmlPath": "/home/runner/work/sceptre-phenix/src/js/perf/lighthouse-results/127_0_0_1-experiments-run1.html",
+    "jsonPath": "/home/runner/work/sceptre-phenix/src/js/perf/lighthouse-results/missing-run.json",
+    "summary": { "performance": 0.5 }
+  },
+  {
+    "url": "http://127.0.0.1:3000/experiments",
+    "isRepresentativeRun": true,
+    "htmlPath": "/home/runner/work/sceptre-phenix/src/js/perf/lighthouse-results/lhr-experiments.html",
+    "jsonPath": "/home/runner/work/sceptre-phenix/src/js/perf/lighthouse-results/lhr-experiments.json",
+    "summary": { "performance": 0.97 }
+  }
+]

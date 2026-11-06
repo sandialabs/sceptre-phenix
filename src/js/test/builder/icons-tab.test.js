@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The drafts page's Icons tab and its preview dialog, rendered on the server,
 // and saveIconFile. icons-tab-actions.test.js uses the tab.
 

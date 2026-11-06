@@ -28,14 +28,9 @@ func escapeQuoted(s string) string {
 	).Replace(s)
 }
 
-// GenerateFromTemplate executes the template with the given name using the
-// given data. The result is written to the given writer. The templates used are
-// located in the `phenix/tmpl/templates' directory. Each template will have a
-// function with the signature `add(int, int)` available to it via a
-// `template.FuncMap`. It returns any errors encountered while executing the
-// template.
-func GenerateFromTemplate(name string, data any, w io.Writer) error {
-	funcs := template.FuncMap{
+// templateFuncs returns the functions that GenerateFromTemplate gives to each template.
+func templateFuncs() template.FuncMap {
+	return template.FuncMap{
 		"addInt": func(a, b int) int {
 			return a + b
 		},
@@ -77,6 +72,16 @@ func GenerateFromTemplate(name string, data any, w io.Writer) error {
 		"stringsJoin":  strings.Join,
 		"escapeQuoted": escapeQuoted,
 	}
+}
+
+// GenerateFromTemplate executes the template with the given name using the
+// given data. The result is written to the given writer. The templates used are
+// located in the `phenix/tmpl/templates' directory. Each template will have a
+// function with the signature `add(int, int)` available to it via a
+// `template.FuncMap`. It returns any errors encountered while executing the
+// template.
+func GenerateFromTemplate(name string, data any, w io.Writer) error {
+	funcs := templateFuncs()
 
 	tplContent, err := templatesFS.ReadFile(path.Join("templates", name))
 	if err != nil {
@@ -93,38 +98,56 @@ func GenerateFromTemplate(name string, data any, w io.Writer) error {
 }
 
 // CreateFileFromTemplate executes the template with the given name using the
-// given data. The result is written to the given file. Internally it calls
-// `GenerateFromTemplate`. It returns any errors encountered while executing the
-// template.
-func CreateFileFromTemplate(name string, data any, filename string) (err error) {
+// given data. The result is written to the given file, with mode 0600. It
+// renders to a temporary file in the same folder and then renames it over the
+// file, so an error keeps the old file. Internally it calls
+// `GenerateFromTemplate`. It returns any errors encountered.
+func CreateFileFromTemplate(name string, data any, filename string) error {
 	dir := filepath.Dir(filename)
 
-	if err = os.MkdirAll(dir, 0o750); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("creating template path: %w", err)
 	}
 
-	var f *os.File
-
-	f, err = os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	f, err := os.CreateTemp(dir, ".tmpl-*.tmp")
 	if err != nil {
 		return fmt.Errorf("creating template file: %w", err)
 	}
 
-	defer func() {
-		cerr := f.Close()
-		if cerr != nil && err == nil {
-			err = fmt.Errorf("closing template file: %w", cerr)
-		}
-	}()
+	err = GenerateFromTemplate(name, data, f)
 
-	return GenerateFromTemplate(name, data, f)
+	if cerr := f.Close(); cerr != nil && err == nil {
+		err = fmt.Errorf("closing template file: %w", cerr)
+	}
+
+	if err == nil {
+		if rerr := os.Rename(f.Name(), filename); rerr != nil { //nolint:gosec // G703 the temporary file it created
+			err = fmt.Errorf("replacing template file: %w", rerr)
+		}
+	}
+
+	if err != nil {
+		_ = os.Remove(f.Name()) //nolint:gosec // G703 the temporary file it created
+
+		return err
+	}
+
+	return nil
 }
 
-// RestoreAsset restores an asset that is part of the embedded templates.
+// RestoreAsset writes the embedded template asset name to the same relative path in dir,
+// and makes the folders of that path first.
 func RestoreAsset(dir, name string) error {
 	content, err := templatesFS.ReadFile(path.Join("templates", name))
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, name), content, 0o600)
+
+	dst := filepath.Join(dir, filepath.FromSlash(name))
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
+		return fmt.Errorf("creating folder for asset %s: %w", name, err)
+	}
+
+	return os.WriteFile(dst, content, 0o600)
 }

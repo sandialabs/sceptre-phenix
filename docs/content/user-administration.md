@@ -12,7 +12,7 @@ authorization (authz).
 When in `disabled` mode, no user authentication or authorization occurs. Users
 do not have to authenticate, and all actions are allowed.
 
-To use `disabled` mode, the UI should be built with `VUE_APP_AUTH=disabled` (if
+To use `disabled` mode, the UI should be built with `VITE_AUTH=disabled` (if
 Docker is being used to build the UI, use Docker build arg
 `PHENIX_WEB_AUTH=disabled`) and the UI server should be started without the
 `-k/--jwt-signing-key` option set.
@@ -23,7 +23,7 @@ When in `enabled` mode, user authentication and authorization occurs within
 phenix directly. Users have to authenticate to the phenix UI, and certain
 actions are prohibited based on the role assigned to the user.
 
-To use `enabled` mode, the UI should be built with `VUE_APP_AUTH=enabled` (if
+To use `enabled` mode, the UI should be built with `VITE_AUTH=enabled` (if
 Docker is being used to build the UI, use Docker build arg
 `PHENIX_WEB_AUTH=enabled`) and the UI server should be started with the
 `-k/--jwt-signing-key` (and optionally the `--jwt-lifetime`) option set.
@@ -35,7 +35,7 @@ proxy that sits in front of phenix but user authorization still occurs within
 phenix directly. Users authenticate to the proxy, and certain actions are
 prohibited based on the role assigned to the user.
 
-To use `proxy` mode, the UI should be built with `VUE_APP_AUTH=proxy` (if Docker
+To use `proxy` mode, the UI should be built with `VITE_AUTH=proxy` (if Docker
 is being used to build the UI, use Docker build arg `PHENIX_WEB_AUTH=proxy`) and
 the UI server should be started with the `-k/--jwt-signing-key` and
 `--proxy-auth-header` (and optionally the `--jwt-lifetime`) options set.
@@ -52,22 +52,25 @@ role.
 
 ## Create a new user
 
-There are three primary ways to create new users.
+There are three primary ways to create new users. A username must start with
+a letter or digit and contain only letters, digits, `.`, `_`, `@`, `+` and `-`.
+phenix refuses other usernames and stores no user.
 
 1. Choose the `Create Account` link off the login page and complete all fields
    in the `Create a New Account` dialogue. This will initiate a message to an
    administrator's account who can then activate the account, setting the
    role(s) and resource name(s).
 
-    ![screenshot](images/login_create.png){: width=400 .center}
+    ![Sign-in form with Username and Password fields and the Create Account link circled in red.](images/login_create.png){: width=400 .center}
 
-    ![screenshot](images/create_new_account.png){: width=400 .center}
+    ![Create a New Account dialog with User Name, First Name, Last Name, Password and Confirm Password fields and a Create User button.](images/create_new_account.png){: width=400 .center}
 
-2. From the `Users` tab, click the `+` button to create a new user. Here the
-   administrator will add the [role(s) and resource
-   name(s)](#user-administration).
+2. From the `Users` page in the `Admin` menu, click the `+` button to create
+   a new user. Here the administrator will add the [role(s) and resource
+   name(s)](#user-administration). phenix refuses a username that is already
+   taken or a role that does not exist, and stores no user.
 
-    ![screenshot](images/create_a_new_user.png){: width=400 .center}
+    ![Create a New User dialog with name and password fields, a Role drop-down, a Resource Name(s) field and a Create User button.](images/create_a_new_user.png){: width=400 .center}
 
 3. Create a YAML or JSON file at `/etc/phenix/users.[yml|json]` with the
    following structure. When the `phenix` UI starts, it looks for this file and
@@ -75,12 +78,14 @@ There are three primary ways to create new users.
    For users in the file that already exist, `phenix` ensures the user role
    matches what's in the file and updates it as necessary. This file is also
    automatically watched, so any users added to the file while `phenix` is
-   running will automatically be added to `phenix`.
+   running will automatically be added to `phenix`. An entry may end with
+   resource names that scope the role, each after its own `:`. phenix skips
+   and logs an entry whose role does not exist, and stores no user for it.
 
 ```yaml
 ui:
   users:
-    - <username>:<password>:<role name>
+    - <username>:<password>:<role name>[:<resource name>...]
     - ...
 ```
 
@@ -101,7 +106,9 @@ Without the `-k` (or `--jwt-signing-key`), authentication is disabled.
 
 ## Generating User Authentication Tokens
 
-From the `Users` tab, click the key icon next to the given user's name. A dialog
+From the `Users` page in the `Admin` menu, click the key icon next to the
+given user's name. The icon shows for your own user, and for another user only when your role has
+`users/tokens` `create` on them. A dialog
 box will pop up where you can enter in a description for the token to be created
 and an expiration date. This expiration date should be entered in Golang time
 duration. For example, `4320h` is valid and represents 4320 hours or about 6
@@ -111,10 +118,13 @@ date.
 This token can be used to authenticate when using the Phenix API. Specifically, you would include the following as a header in HTTP requests.
 
 ```http
-X-phenix-auth-token: ******
+X-Phenix-Auth-Token: Bearer ******
 ```
 
 ## User Administration
+
+The `Users` link in the `Admin` menu shows for a role with
+[`users`](#resource-users) `list`, or with `users` `get` on your own user, which then lists only you.
 
 ### Updating Users
 
@@ -133,13 +143,16 @@ available roles and their access rights.
 |-------------------|:-------------------------------------------------------------------------------------------------------------------------|:-----:|:-----:|:------:|:------:|:-----:|:------:|
 | Global Admin      | Can see and control absolutely anything/everything.                                                                      | E V U | E V U | E V U  | E V U  | E V U | E V U  |
 | Global Viewer     | Can see absolutely anything/everything, but cannot make any changes.                                                     | E V U | E V U |        |        |       |        |
-| Experiment Admin  | Can see and control anything/everything for assigned experiments, including VMs, but cannot create new experiments.      | E V   | E V   |   V    | E V    |   V   |   V    |
+| Experiment Admin  | Can see and control anything/everything for assigned experiments, including VMs, but cannot create new experiments.      | E V   | E V   |   V    | E V    |   V   | E\* V  |
 | Experiment User   | Can see assigned experiments, and can control VMs within assigned experiments, but cannot modify experiments themselves. | E V   | E V   |        |        |   V   |        |
 | Experiment Viewer | Can see assigned experiments and VMs within assigned experiments, but cannot modify or control experiments or VMs.       | E V   | E V   |        |        |       |        |
 | VM Admin          | Can see assigned experiments, and has full administrative control over VMs in assigned experiments.                       | E V   | E V   |   V    |   V    |   V   |   V    |
 | VM Viewer         | Can only see VM screenshots and access VM VNC, nothing else.                                                             |   V   |       |        |        |       |        |
 
 Key: E - experiment resource, V - VM resource, U - user resource
+
+E\* in the Experiment Admin row means the role can delete an experiment's
+files, but not the experiment itself.
 
 ### Resources
 
@@ -203,7 +216,7 @@ Key: E - experiment resource, V - VM resource, U - user resource
 |      |      |
 |------|------|
 | Verb | create |
-| Desc | schedule an experiment using schedule algorithm |
+| Desc | schedule an experiment using schedule algorithm; on any experiment, list the schedule algorithms |
 | Exp. Scoped | yes |
 | Res. Scoped | no |
 
@@ -212,7 +225,7 @@ Key: E - experiment resource, V - VM resource, U - user resource
 |      |      |
 |------|------|
 | Verb | create |
-| Desc | trigger the running stage of an experiment |
+| Desc | trigger a lifecycle stage of an experiment's apps, and type into or exit a SCORCH break terminal |
 | Exp. Scoped | yes |
 | Res. Scoped | no |
 
@@ -224,6 +237,27 @@ Key: E - experiment resource, V - VM resource, U - user resource
 | Desc | get list of packet captures for an experiment |
 | Exp. Scoped | yes (list is filtered to only include experiments in scope) |
 | Res. Scoped | yes (list is filtered to only include VMs in scope) |
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | start an [experiment capture](packet-captures.md) |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | get a specific experiment capture (with `experiments/files` get, also stream it and open it in WebShark) |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | stop a specific experiment capture |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
 
 #### Resource: `experiments/files`
 
@@ -260,7 +294,7 @@ Key: E - experiment resource, V - VM resource, U - user resource
 |      |      |
 |------|------|
 | Verb | patch |
-| Desc | update a specific experiment VM |
+| Desc | update a specific experiment VM, reset its saved settings, or get and change its link quality |
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
@@ -328,14 +362,14 @@ Key: E - experiment resource, V - VM resource, U - user resource
 |      |      |
 |------|------|
 | Verb | create |
-| Desc | start a packet capture on a specific experiment VM |
+| Desc | start a packet capture on a specific experiment VM, also as part of a VLAN capture |
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
 |      |      |
 |------|------|
 | Verb | delete |
-| Desc | stop all packet captures on a specific experiment VM |
+| Desc | stop all packet captures on a specific experiment VM, also as part of a VLAN capture |
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
@@ -394,9 +428,9 @@ Key: E - experiment resource, V - VM resource, U - user resource
 |      |      |
 |------|------|
 | Verb | list |
-| Desc | get list of available backing images |
-| Exp. Scoped | no |
-| Res. Scoped | yes (list is filtered to only include backing images in scope) |
+| Desc | get list of disk images |
+| Exp. Scoped | no (listing one experiment's images also needs `get` on that experiment) |
+| Res. Scoped | yes (list is filtered to only include images in scope; an image outside the minimega files directory also needs `get` on an experiment using it, unless it backs a listed image) |
 
 #### Resource: `hosts`
 
@@ -494,6 +528,10 @@ cannot create or overwrite a User or Role config.
 | Desc | manage port forwarding rules for experiment VMs |
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
+
+`create` is also needed to give a VM the `phenix/startup-autotunnel`
+annotation through the web UI or API, when creating an experiment or editing
+the VM.
 
 #### Resource: `vms/cdrom`
 
@@ -603,6 +641,14 @@ spec:
     - "experiments/files"
     verbs:
     - create
+    - delete
+  - resources:
+    - jobs
+    verbs:
+    - list
+    - get
+    - update
+    - delete
   - resources:
     - hosts
     resourceNames:

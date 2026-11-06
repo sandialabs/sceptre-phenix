@@ -3,6 +3,7 @@ package soh
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"time"
 )
 
@@ -12,6 +13,12 @@ const (
 	notifyInterval   = 5 * time.Second
 	c2RetryDelay     = 5 * time.Second
 	monitorMemory    = 512
+)
+
+// errElasticServerAddress reports a packet capture Elastic server IP address
+// that is not an IPv4 address in CIDR notation.
+var errElasticServerAddress = errors.New(
+	"packet capture Elastic server IP address must be an IPv4 address in CIDR notation",
 )
 
 type Node struct {
@@ -32,6 +39,7 @@ type Edge struct {
 
 type Network struct {
 	ExpStarted     bool     `json:"started"`
+	SOHDisabled    bool     `json:"soh_disabled"`
 	SOHInitialized bool     `json:"soh_initialized"`
 	SOHRunning     bool     `json:"soh_running"`
 	Nodes          []Node   `json:"nodes"`
@@ -204,6 +212,14 @@ func (m *sohMetadata) init() error {
 		m.AppProfileKey = "sohProfile"
 	}
 
+	// The capture VMs take the addresses after the server's, which only IPv4 supports.
+	if len(m.PacketCapture.CaptureHosts) > 0 {
+		addr := m.PacketCapture.ElasticServer.IPAddress
+		if prefix, err := netip.ParsePrefix(addr); err != nil || !prefix.Addr().Is4() {
+			return fmt.Errorf("parsing '%s': %w", addr, errElasticServerAddress)
+		}
+	}
+
 	m.uuidHosts = make(map[string]struct{})
 
 	if useUUID, ok := m.Other["hostsToUseUUIDForC2Active"]; ok {
@@ -247,7 +263,6 @@ func (m sohMetadata) useUUIDForC2Active(host string) bool {
 }
 
 type sohProfile struct {
-	C2Timeout   string           `mapstructure:"c2Timeout"`
 	Processes   []string         `mapstructure:"processes"`
 	Listeners   []string         `mapstructure:"listeners"`
 	CustomTests []customHostTest `mapstructure:"customTests"`

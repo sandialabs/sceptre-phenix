@@ -2,11 +2,11 @@ package mm
 
 import (
 	"errors"
-	"fmt"
 	"maps"
-	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
+	"time"
 )
 
 var ErrHostNotFound = errors.New("host not found")
@@ -253,8 +253,15 @@ type VM struct {
 	UUID string `json:"-"`
 }
 
-// Copy returns a deep copy of the VM. It only makes deep copies of fields that
-// are exported as JSON.
+// OnAnyHost reports whether the VM runs on one of hosts, named exactly as
+// minimega reports them; a VM with no host matches none.
+func (v VM) OnAnyHost(hosts []string) bool {
+	return v.Host != "" && slices.Contains(hosts, v.Host)
+}
+
+// Copy returns a deep copy of the VM. No slice or map field of the copy
+// shares memory with v. Copy makes shallow copies of the values in Metadata
+// and Annotations.
 func (v VM) Copy() VM {
 	vm := v
 
@@ -277,6 +284,11 @@ func (v VM) Copy() VM {
 	vm.Tags = make(map[string]string, len(v.Tags))
 	maps.Copy(vm.Tags, v.Tags)
 
+	vm.Labels = maps.Clone(v.Labels)
+	vm.Interfaces = maps.Clone(v.Interfaces)
+	vm.Metadata = maps.Clone(v.Metadata)
+	vm.Annotations = maps.Clone(v.Annotations)
+
 	return vm
 }
 
@@ -284,10 +296,59 @@ type Captures struct {
 	Captures []Capture `json:"captures"`
 }
 
+// Capture is a packet capture on one VM interface. The fields after Filepath are zero with a minimega older than
+// MinCaptureVersion.
 type Capture struct {
 	VM        string `json:"vm"`
 	Interface int    `json:"interface"`
 	Filepath  string `json:"filepath"`
+
+	ID      string `json:"id,omitempty"`
+	State   string `json:"state,omitempty"`
+	Format  string `json:"format,omitempty"`
+	Packets uint64 `json:"packets,omitempty"`
+	KDrops  uint64 `json:"kdrops,omitempty"`
+	Size    int64  `json:"size,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// CaptureCounters are the packet counters of an experiment capture, or of one of its streams.
+type CaptureCounters struct {
+	Ports, Packets, Bytes, KDrops, PDrops, QDrops, Lost, Late uint64
+	Lag, Skew                                                 time.Duration
+}
+
+// CaptureStream is the part of an experiment capture that one host records from one bridge.
+type CaptureStream struct {
+	CaptureCounters
+
+	Host, Bridge, State string
+}
+
+// NamespaceCapture is an experiment capture: one capture of all the VLANs, or of the given VLANs, of a namespace.
+// Its counters are those of its summary row. Its streams are sorted by host, then bridge.
+type NamespaceCapture struct {
+	CaptureCounters
+
+	ID, State, Path, Format, Filter, Start, Error string
+	VLANs                                         []string
+	Size                                          int64
+	Streams                                       []CaptureStream
+}
+
+// Running reports whether minimega still records the capture.
+func (c NamespaceCapture) Running() bool {
+	switch c.State {
+	case "starting", "running", "stalled", "stopping":
+		return true
+	}
+
+	return false
+}
+
+// BridgeMirror is one Open vSwitch mirror on a bridge of a host, as `bridge mirrors` lists it.
+type BridgeMirror struct {
+	Host, Bridge, Mirror, Output, Namespace, Kind string
 }
 
 type BlockDumpResponse struct {
@@ -296,37 +357,4 @@ type BlockDumpResponse struct {
 		Status    string `json:"status"`
 		Total     int    `json:"total"`
 	} `json:"return"`
-}
-
-type diskConfig struct {
-	path  string
-	base  string
-	cache string
-}
-
-func newDiskConfig(c string) diskConfig {
-	tokens := strings.Split(c, ",")
-
-	cfg := diskConfig{ //nolint:exhaustruct // partial initialization
-		path: tokens[0],
-		base: filepath.Base(tokens[0]),
-	}
-
-	if len(tokens) > 1 {
-		cfg.cache = tokens[1]
-	}
-
-	return cfg
-}
-
-func (d diskConfig) string(cache string) string {
-	if cache != "" {
-		return fmt.Sprintf("%s,%s", d.path, cache)
-	}
-
-	if d.cache != "" {
-		return fmt.Sprintf("%s,%s", d.path, d.cache)
-	}
-
-	return d.path
 }

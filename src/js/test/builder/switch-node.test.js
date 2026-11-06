@@ -1,3 +1,4 @@
+// @vitest-environment node
 // A switch on the canvas: its icon, its network's name, its outline color,
 // and an accessible name with its network and VLAN alias.
 

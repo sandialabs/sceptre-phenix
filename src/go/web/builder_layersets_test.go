@@ -559,7 +559,7 @@ func TestBuilderLayerSetErrorStatus(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			webErr := builderLayerSetError(recorder, tt.err, "ls-1")
-			got := answer{Status: webErr.Status, Code: webErr.Code, Message: webErr.Message, Header: recorder.Header()}
+			got := answer{Status: webErr.Status, Code: string(webErr.Code), Message: webErr.Message, Header: recorder.Header()}
 
 			if diff := cmp.Diff(tt.want, got, cmpopts.EquateEmpty()); diff != "" {
 				t.Errorf("builderLayerSetError(%v) mismatch (-want +got):\n%s", tt.err, diff)

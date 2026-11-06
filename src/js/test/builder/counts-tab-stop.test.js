@@ -2,8 +2,8 @@
 // The header's counts are one Tab stop, which stays on a count when the
 // count that held it goes away.
 
-import { afterEach, describe, expect, test } from 'vitest';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { describe, expect, test } from 'vitest';
+import { mount } from '@vue/test-utils';
 import { createPinia } from 'pinia';
 
 import BuilderCounts from '@/components/builder/BuilderCounts.vue';
@@ -11,8 +11,6 @@ import { setLayers, setNodeLayer } from '@/builder/model.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument } from './fixtures.js';
-
-enableAutoUnmount(afterEach);
 
 describe('the counts’ Tab stop', () => {
   test('moves to the last count when the layers count goes away', async () => {

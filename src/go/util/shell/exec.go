@@ -16,37 +16,69 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
+	"golang.org/x/sys/unix"
 )
 
 const killDelay = 10 * time.Second
 
+// maxLineSize is the length, in bytes, of the longest line that ExecCommand
+// reads from the output of a command. A longer line stops the read of that
+// stream with [bufio.ErrTooLong].
+const maxLineSize = 1 << 20
+
 type shell struct{}
 
+// FindCommandsWithPrefix returns the names, without prefix, of the regular
+// files on PATH whose names start with prefix and that the current user can
+// execute, as access(2) with X_OK tells. The first PATH folder wins for a
+// duplicate name. It skips empty PATH entries and folders it cannot read.
 func (shell) FindCommandsWithPrefix(prefix string) []string {
-	var commands []string
+	var (
+		commands []string
+		seen     = make(map[string]struct{})
+	)
 
-	args := strings.Split(os.Getenv("PATH"), ":")
-	args = append(args, "-type", "f", "-executable", "-name", prefix+"*")
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		if dir == "" {
+			continue
+		}
 
-	cmd := exec.Command("find", args...) //nolint:noctx,gosec // simple find command, Command injection via taint analysis
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
 
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil
-	}
+		for _, entry := range entries {
+			name, ok := strings.CutPrefix(entry.Name(), prefix)
+			if !ok || name == "" {
+				continue
+			}
 
-	for c := range strings.SplitSeq(string(out), "\n") {
-		if c != "" {
-			base := filepath.Base(c)
-			commands = append(commands, strings.TrimPrefix(base, prefix))
+			if _, ok := seen[name]; ok {
+				continue
+			}
+
+			path := filepath.Join(dir, entry.Name())
+
+			info, err := os.Stat(path) //nolint:gosec // G703 PATH names the folders to search
+			if err != nil || !info.Mode().IsRegular() || unix.Access(path, unix.X_OK) != nil {
+				continue
+			}
+
+			seen[name] = struct{}{}
+			commands = append(commands, name)
 		}
 	}
 
 	return commands
 }
 
+// CommandExists tells if cmd names an executable file, as [exec.LookPath] finds
+// it. A name with a slash is a path. Other names are found on PATH. A name
+// found only through a relative PATH entry does not exist, because exec does
+// not run it.
 func (shell) CommandExists(cmd string) bool {
-	err := exec.Command("which", cmd).Run() //nolint:noctx // simple which command
+	_, err := exec.LookPath(cmd)
 
 	return err == nil
 }
@@ -83,7 +115,6 @@ func (shell) ProcessExists(pid int) bool {
 	}
 }
 
-//nolint:funlen // complex logic
 func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, error) {
 	o := newOptions(opts...)
 
@@ -99,11 +130,11 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 		stdIn = bytes.NewBuffer(o.stdin)
 	}
 
-	// Not using `exec.CommandContext` here since we're catching the context being
-	// canceled below in order to gracefully terminate the child process. Using
-	// `exec.CommandContext` forcefully kills the child process when the context
-	// is canceled.
-	cmd := exec.CommandContext(ctx, o.cmd, o.args...) //nolint:gosec // Subprocess launched with a potential tainted input
+	// When ctx is canceled, send SIGTERM so that the child process can stop
+	// gracefully, and kill it if it still runs after killDelay.
+	cmd := exec.CommandContext(ctx, o.cmd, o.args...) //nolint:gosec // G204 callers name the command
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = killDelay
 
 	cmd.Stdin = stdIn
 	stdout, _ := cmd.StdoutPipe()
@@ -118,25 +149,17 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 	}
 
 	var (
-		done = make(chan struct{})
-		errs error
-		wg   sync.WaitGroup
+		errs                 error
+		stdoutErr, stderrErr error
+		wg                   sync.WaitGroup
 	)
 
-	go func() {
-		select {
-		case <-done:
-			return
-		case <-ctx.Done():
-			_ = cmd.Process.Signal(syscall.SIGTERM)
+	wg.Add(1)
 
-			select {
-			case <-done:
-				return
-			case <-time.After(killDelay):
-				_ = cmd.Process.Kill()
-			}
-		}
+	go func() {
+		defer wg.Done()
+
+		stdoutBytes, stdoutErr = readStream(stdout, o.splitter, o.stdout, "STDOUT")
 	}()
 
 	wg.Add(1)
@@ -144,65 +167,56 @@ func (shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, e
 	go func() {
 		defer wg.Done()
 
-		scanner := bufio.NewScanner(stdout)
-		scanner.Split(o.splitter)
-
-		for scanner.Scan() {
-			line := scanner.Bytes()
-
-			stdoutBytes = append(stdoutBytes, line...)
-
-			if o.stdout != nil {
-				o.stdout <- bytes.Clone(line)
-			}
-		}
-
-		err := scanner.Err()
-		if err != nil {
-			errs = multierror.Append(errs, fmt.Errorf("scanning STDOUT: %w", err))
-		}
-
-		if o.stdout != nil {
-			close(o.stdout)
-		}
-	}()
-
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
-		scanner := bufio.NewScanner(stderr)
-		scanner.Split(bufio.ScanLines)
-
-		for scanner.Scan() {
-			line := scanner.Bytes()
-
-			stderrBytes = append(stderrBytes, line...)
-
-			if o.stderr != nil {
-				o.stderr <- bytes.Clone(line)
-			}
-		}
-
-		err := scanner.Err()
-		if err != nil {
-			errs = multierror.Append(errs, fmt.Errorf("scanning STDERR: %w", err))
-		}
-
-		if o.stderr != nil {
-			close(o.stderr)
-		}
+		stderrBytes, stderrErr = readStream(stderr, bufio.ScanLines, o.stderr, "STDERR")
 	}()
 
 	wg.Wait()
+
+	for _, e := range []error{stdoutErr, stderrErr} {
+		if e != nil {
+			errs = multierror.Append(errs, e)
+		}
+	}
 
 	err = cmd.Wait()
 	if err != nil {
 		errs = multierror.Append(errs, fmt.Errorf("waiting for command to complete: %w", err))
 	}
 
-	close(done)
-
 	return stdoutBytes, stderrBytes, errs
+}
+
+// readStream reads the tokens that split finds in pipe. It sends a copy of
+// each token to stream, when stream is not nil, and closes stream at the end.
+// It returns the tokens joined. After a scan error, it reads the rest of pipe,
+// so that the command does not block on a full pipe.
+func readStream(pipe io.Reader, split bufio.SplitFunc, stream chan []byte, name string) ([]byte, error) {
+	if stream != nil {
+		defer close(stream)
+	}
+
+	var data []byte
+
+	scanner := bufio.NewScanner(pipe)
+	scanner.Buffer(nil, maxLineSize)
+	scanner.Split(split)
+
+	for scanner.Scan() {
+		line := scanner.Bytes()
+
+		data = append(data, line...)
+
+		if stream != nil {
+			stream <- bytes.Clone(line)
+		}
+	}
+
+	err := scanner.Err()
+	if err != nil {
+		_, _ = io.Copy(io.Discard, pipe)
+
+		return data, fmt.Errorf("scanning %s: %w", name, err)
+	}
+
+	return data, nil
 }
