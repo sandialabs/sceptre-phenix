@@ -30,8 +30,8 @@ var invalidExamples = map[string]bool{ //nolint:gochecknoglobals // test table
 
 // TestRepoExampleConfigsValidate proves every complete example config in the
 // repository passes config validation: the default configs phenix stores on
-// startup, the skill's example files, and the config examples in the docs and
-// skills Markdown. Fragments are skipped: an example that elides part of
+// startup, the skill's example files, the Builder docs example configs, and
+// the config examples in the docs and skills Markdown. Fragments are skipped: an example that elides part of
 // itself with "..." or has no spec. So are Workflow documents, which are not
 // configs, and the examples in invalidExamples.
 func TestRepoExampleConfigsValidate(t *testing.T) {
@@ -40,6 +40,9 @@ func TestRepoExampleConfigsValidate(t *testing.T) {
 	for _, pattern := range []string{
 		"src/go/api/config/default/*.yml",
 		"skills/*/examples/*.yaml",
+		"docs/content/builder/examples/*.topology.yaml",
+		"docs/content/builder/examples/*.scenario.yaml",
+		"docs/content/builder/examples/roles/*.yaml",
 	} {
 		files, err := filepath.Glob(filepath.Join(repoRoot, pattern))
 		if err != nil {
