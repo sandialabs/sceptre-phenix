@@ -18,6 +18,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 
 	"phenix/util/common"
+	"phenix/util/firecracker"
 	"phenix/util/mm/mmcli"
 	"phenix/util/plog"
 )
@@ -35,6 +36,7 @@ const vmInfoCmd = "vm info"
 const (
 	hostColumn             = "host"
 	stateColumn            = "state"
+	typeColumn             = "type"
 	c2ActiveCheckInterval  = 2 * time.Second
 	responseWaitInterval   = 1 * time.Second
 	responseRegexGroupUUID = 2
@@ -180,6 +182,7 @@ func (m Minimega) GetVMInfo(opts ...Option) VMs { //nolint:funlen // complex log
 		"snapshot",
 		"cdrom",
 		"tags",
+		typeColumn,
 	}
 
 	if o.vm != "" {
@@ -198,6 +201,7 @@ func (m Minimega) GetVMInfo(opts ...Option) VMs { //nolint:funlen // complex log
 			Running:  row[stateColumn] == "RUNNING",
 			CCActive: activeC2[row["uuid"]],
 			CdRom:    row["cdrom"],
+			VMType:   row[typeColumn],
 		}
 
 		s := row["vlan"]
@@ -341,16 +345,9 @@ func (Minimega) GetVMScreenshot(opts ...Option) ([]byte, error) {
 }
 
 func (Minimega) GetVNCEndpoint(opts ...Option) (string, error) {
-	o := NewOptions(opts...)
-
-	cmd := mmcli.NewNamespacedCommand(o.ns)
-	cmd.Command = vmInfoCmd
-	cmd.Columns = []string{hostColumn, "vnc_port"}
-	cmd.Filters = []string{"type=kvm", "name=" + o.vm}
-
 	var endpoint string
 
-	for _, vm := range mmcli.RunTabular(cmd) {
+	for _, vm := range mmcli.RunTabular(vncEndpointCommand(NewOptions(opts...))) {
 		endpoint = fmt.Sprintf("%s:%s", vm[hostColumn], vm["vnc_port"])
 	}
 
@@ -359,6 +356,16 @@ func (Minimega) GetVNCEndpoint(opts ...Option) (string, error) {
 	}
 
 	return endpoint, nil
+}
+
+// vncEndpointCommand looks up the VNC port of a VM. Only KVM VMs have VNC.
+func vncEndpointCommand(o options) *mmcli.Command {
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = vmInfoCmd
+	cmd.Columns = []string{hostColumn, "vnc_port"}
+	cmd.Filters = []string{"type=kvm", "name=" + o.vm}
+
+	return cmd
 }
 
 func (Minimega) StartVM(opts ...Option) error {
@@ -405,6 +412,13 @@ func (Minimega) RedeployVM(opts ...Option) error { //nolint:funlen // complex lo
 
 	cmd.Filters = nil
 
+	vmType := info[0][typeColumn]
+	if vmType == "" {
+		vmType = DefaultVMType
+	}
+
+	firecrackerVM := vmType == firecracker.VMType
+
 	cmd.Command = "vm config clone " + o.vm
 
 	err := mmcli.ErrorResponse(mmcli.Run(cmd))
@@ -412,7 +426,11 @@ func (Minimega) RedeployVM(opts ...Option) error { //nolint:funlen // complex lo
 		return fmt.Errorf("cloning VM %s in namespace %s: %w", o.vm, o.ns, err)
 	}
 
+	// A firecracker VM restored from a snapshot keeps it in firecracker-snapshot.
 	cmd.Command = "clear vm config state"
+	if firecrackerVM {
+		cmd.Command = "clear vm config firecracker-snapshot"
+	}
 
 	err = mmcli.ErrorResponse(mmcli.Run(cmd))
 	if err != nil {
@@ -449,7 +467,11 @@ func (Minimega) RedeployVM(opts ...Option) error { //nolint:funlen // complex lo
 		}
 	}
 
-	if o.disk != "" {
+	if firecrackerVM {
+		if err := redeployFirecrackerDisk(cmd, o); err != nil {
+			return err
+		}
+	} else if o.disk != "" {
 		var disk string
 
 		if len(o.injects) == 0 {
@@ -502,7 +524,7 @@ func (Minimega) RedeployVM(opts ...Option) error { //nolint:funlen // complex lo
 		}
 	}
 
-	cmd.Command = "vm launch kvm " + o.vm
+	cmd.Command = fmt.Sprintf("vm launch %s %s", vmType, o.vm)
 
 	err = mmcli.ErrorResponse(mmcli.Run(cmd))
 	if err != nil {
@@ -521,6 +543,40 @@ func (Minimega) RedeployVM(opts ...Option) error { //nolint:funlen // complex lo
 	err = mmcli.ErrorResponse(mmcli.Run(cmd))
 	if err != nil {
 		return fmt.Errorf("starting VM %s in namespace %s: %w", o.vm, o.ns, err)
+	}
+
+	return nil
+}
+
+// redeployFirecrackerDisk sets the disk and file injections of a firecracker
+// VM that RedeployVM relaunches. minimega injects the files into the VM's own
+// disk copy at launch, so no disk snapshot is made. Without a new disk, the
+// cloned config keeps the disk and injections of the original launch.
+func redeployFirecrackerDisk(cmd *mmcli.Command, o options) error {
+	if o.disk == "" {
+		return nil
+	}
+
+	cmd.Command = "vm config disk " + o.disk
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("configuring disk for VM %s in namespace %s: %w", o.vm, o.ns, err)
+	}
+
+	cmd.Command = "clear vm config inject"
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("clearing injections for VM %s in namespace %s: %w", o.vm, o.ns, err)
+	}
+
+	if len(o.injects) == 0 {
+		return nil
+	}
+
+	cmd.Command = fmt.Sprintf("vm config inject %d %s", o.injectPart, strings.Join(o.injects, " "))
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("configuring injections for VM %s in namespace %s: %w", o.vm, o.ns, err)
 	}
 
 	return nil

@@ -137,6 +137,24 @@ phenix vm mount <exp> <vm> [host path]               # mount a running VM's file
 phenix vm unmount <exp> <vm>
 ```
 
+### Firecracker VMs
+
+The VM commands and the REST API use the minimega type of each VM
+(`vm_type` in the API output). For a Firecracker VM:
+
+- `restart` kills the VM and starts it again (a cold restart).
+- `shutdown` runs minimega `vm shutdown`, which sends Ctrl-Alt-Del. The VM
+  then stops.
+- `reset-disk` runs minimega `vm reset-disk` while the VM is stopped.
+- `redeploy` launches the VM as `firecracker`. minimega injects the files
+  into the disk at launch.
+- `memory-snapshot` runs minimega `vm memory-dump` and writes an ELF file.
+- Commit to disk runs minimega `vm export-disk` and writes a qcow2 image.
+- A snapshot also has a `.mem` file and a `.json` sidecar file. A restore
+  refuses a KVM snapshot on a Firecracker VM, and the reverse.
+- Screenshots, VNC, and optical discs are not supported. The API returns 400
+  with `<operation> is not supported for firecracker VMs`.
+
 `phenix vm mount` mounts to `<mount-dir>/<experiment>/<vm>` unless an explicit
 host path is given, and prints the resulting mount path; `<mount-dir>` comes
 from the `--mount-dir` root flag (`PHENIX_MOUNT_DIR`), defaulting to

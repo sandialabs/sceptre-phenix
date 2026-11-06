@@ -27,6 +27,7 @@ message VM {
   bool snapshot = 22 [json_name="snapshot"];
   uint32 inject_partition = 23 [json_name="inject_partition"];
   string description = 24;
+  string vm_type = 25 [json_name="vm_type"];
 }
 
 message VMList {

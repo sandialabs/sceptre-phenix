@@ -129,7 +129,7 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) {
 
 				screenshot, err := util.GetScreenshot(exp.Spec.ExperimentName(), v.Name, size)
 				if err != nil {
-					plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+					logScreenshotError(err)
 
 					continue
 				}
@@ -477,7 +477,7 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 			if vm.Running && size != "" {
 				screenshot, err := util.GetScreenshot(name, vm.Name, size)
 				if err != nil {
-					plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+					logScreenshotError(err)
 				} else {
 					vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
 						screenshot,
@@ -1303,7 +1303,7 @@ func GetVMs(w http.ResponseWriter, r *http.Request) {
 			if vm.Running && size != "" {
 				screenshot, err := util.GetScreenshot(expName, vm.Name, size)
 				if err != nil {
-					plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+					logScreenshotError(err)
 				} else {
 					vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
 						screenshot,
@@ -1390,7 +1390,7 @@ func GetVM(w http.ResponseWriter, r *http.Request) {
 	if vm.Running && size != "" {
 		screenshot, err := util.GetScreenshot(expName, name, size)
 		if err != nil {
-			plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+			logScreenshotError(err)
 		} else {
 			vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
 		}
@@ -1512,7 +1512,7 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) {
 	if vm.Running {
 		screenshot, err := util.GetScreenshot(expName, name, defaultScreenshotSize)
 		if err != nil {
-			plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+			logScreenshotError(err)
 		} else {
 			vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
 		}
@@ -1643,7 +1643,7 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) {
 		if vm.Running {
 			screenshot, err := util.GetScreenshot(expName, vmRequest.GetName(), defaultScreenshotSize)
 			if err != nil {
-				plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+				logScreenshotError(err)
 			} else {
 				vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
 					screenshot,
@@ -1833,7 +1833,7 @@ func StartVM(w http.ResponseWriter, r *http.Request) {
 
 	screenshot, err := util.GetScreenshot(expName, name, "215")
 	if err != nil {
-		plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+		logScreenshotError(err)
 	} else {
 		v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
 	}
@@ -1983,6 +1983,26 @@ func StopVM(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
 }
 
+// vmErrorStatus returns the HTTP status for the error of a VM operation: 400
+// for an operation that the VM's type does not support, otherwise 500.
+func vmErrorStatus(err error) int {
+	if errors.Is(err, vm.ErrNotSupported) {
+		return http.StatusBadRequest
+	}
+
+	return http.StatusInternalServerError
+}
+
+// logScreenshotError logs a failed screenshot, but not for a VM type that has
+// no screen.
+func logScreenshotError(err error) {
+	if errors.Is(err, vm.ErrNotSupported) {
+		return
+	}
+
+	plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+}
+
 // RestartVM - GET /experiments/{exp}/vms/{name}/restart.
 //
 //nolint:funlen // handler
@@ -2039,7 +2059,7 @@ func RestartVM(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err := vm.Restart(expName, name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), vmErrorStatus(err))
 
 		return
 	}
@@ -2060,7 +2080,7 @@ func RestartVM(w http.ResponseWriter, r *http.Request) {
 
 	screenshot, err := util.GetScreenshot(expName, name, defaultScreenshotSize)
 	if err != nil {
-		plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+		logScreenshotError(err)
 	} else {
 		v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
 	}
@@ -2139,7 +2159,7 @@ func ShutdownVM(w http.ResponseWriter, r *http.Request) {
 	defer cache.UnlockVM(expName, name)
 
 	if err := vm.Shutdown(expName, name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), vmErrorStatus(err))
 
 		return
 	}
@@ -2234,7 +2254,7 @@ func ResetVM(w http.ResponseWriter, r *http.Request) {
 	defer cache.UnlockVM(expName, name)
 
 	if err := vm.ResetDiskState(expName, name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), vmErrorStatus(err))
 
 		return
 	}
@@ -2436,7 +2456,7 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) {
 
 	screenshot, err := util.GetScreenshot(expName, name, defaultScreenshotSize)
 	if err != nil {
-		plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+		logScreenshotError(err)
 	} else {
 		v.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(screenshot)
 	}
@@ -3030,7 +3050,7 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		plog.Error(plog.TypeSystem, "snapshotting VM", "exp", exp, "vm", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), vmErrorStatus(err))
 
 		return
 	}
@@ -3126,7 +3146,7 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		plog.Error(plog.TypeSystem, "restoring VM", "exp", exp, "vm", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), vmErrorStatus(err))
 
 		return
 	}
@@ -3289,7 +3309,7 @@ func CommitVM(w http.ResponseWriter, r *http.Request) {
 		)
 
 		plog.Error(plog.TypeSystem, "committing VM", "exp", expName, "vm", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), vmErrorStatus(err))
 
 		return
 	}
@@ -3481,7 +3501,7 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) {
 		)
 
 		plog.Error(plog.TypeSystem, "memory snapshot for VM", "exp", exp, "vm", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), vmErrorStatus(err))
 
 		return
 	}
@@ -3571,7 +3591,7 @@ func GetAllVMs(w http.ResponseWriter, r *http.Request) {
 			if size != "" {
 				screenshot, err := util.GetScreenshot(exp.Metadata.Name, vm.Name, size)
 				if err != nil {
-					plog.Error(plog.TypeSystem, "getting screenshot", "err", err)
+					logScreenshotError(err)
 				} else {
 					vm.Screenshot = "data:image/png;base64," + base64.StdEncoding.EncodeToString(
 						screenshot,
@@ -4068,7 +4088,7 @@ func ChangeOpticalDisc(w http.ResponseWriter, r *http.Request) {
 	err := vm.ChangeOpticalDisc(exp, name, isoPath)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "changing disc for VM", "exp", exp, "vm", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), vmErrorStatus(err))
 
 		return
 	}
@@ -4124,7 +4144,7 @@ func EjectOpticalDisc(w http.ResponseWriter, r *http.Request) {
 	err := vm.EjectOpticalDisc(exp, name)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "ejecting disc for VM", "exp", exp, "vm", name, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), vmErrorStatus(err))
 
 		return
 	}

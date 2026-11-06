@@ -57,6 +57,7 @@ for a complete, copyable two-node topology):
   (phēnix adds `root=/dev/vda1 rw` when it has no `root=`). Firecracker nodes need
   `os_type: linux`, 1 to 32 vCPUs, and at most 17 devices (drives + NICs + vsock + entropy;
   31 with `advanced: {firecracker-pci: "true"}`). They cannot have `serial` or `qinq` interfaces.
+  VM operations on Firecracker VMs are in [`references/cli.md`](references/cli.md#firecracker-vms).
 - `hardware.os_type`: `linux | windows | centos | rhel | minirouter | vyatta | vyos | other`
 - `hardware.vcpus`, `hardware.memory`, `hardware.drives[].image` (disk image name/path)
 - `network.interfaces[]`: `name`, `vlan`, `type: ethernet`, `proto: static|dhcp|manual`

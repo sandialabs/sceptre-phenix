@@ -415,7 +415,7 @@ func (c *Client) read() { //nolint:maintidx // complex logic
 				}
 
 				if c.role.Allowed("vms", "list", fmt.Sprintf("%s/%s", expName, vm.Name)) {
-					if vm.Running {
+					if vm.Running && !vm.IsFirecracker() {
 						screenshot, err := util.GetScreenshot(expName, vm.Name, screenshotSize)
 						if err != nil {
 							plog.Error(
@@ -615,7 +615,7 @@ func (c *Client) updateScreenshots() {
 					continue
 				}
 
-				if errors.Is(err, mm.ErrScreenshotNotFound) {
+				if errors.Is(err, mm.ErrScreenshotNotFound) || noScreen(err) {
 					continue
 				}
 
@@ -646,6 +646,12 @@ func (c *Client) updateScreenshots() {
 			}
 		}
 	}
+}
+
+// noScreen reports whether a screenshot failed because the VM type has no
+// screen.
+func noScreen(err error) bool {
+	return errors.Is(err, vm.ErrNotSupported)
 }
 
 func ServeWS(w http.ResponseWriter, r *http.Request) {

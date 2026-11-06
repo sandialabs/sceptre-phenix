@@ -4007,6 +4007,12 @@ components:
           type: integer
         disk:
           type: string
+        vm_type:
+          type: string
+          enum: [kvm, container, firecracker]
+          description: >-
+            The minimega VM type. A firecracker VM has no VNC, screenshot, or
+            optical disc. Those operations return 400 for it.
         dnb:
           type: boolean
         networks:

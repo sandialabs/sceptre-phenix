@@ -122,6 +122,7 @@ func VMToProtobuf(exp string, vm mm.VM, topology ifaces.TopologySpec) *proto.VM 
 		Tags:            vm.Tags,
 		CcActive:        vm.CCActive,
 		Snapshot:        vm.Snapshot,
+		VmType:          vm.VMType,
 	}
 
 	if topology == nil {

@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,6 +21,7 @@ import (
 	"phenix/api/experiment"
 	"phenix/util/common"
 	"phenix/util/file"
+	"phenix/util/firecracker"
 	"phenix/util/mm"
 	"phenix/util/mm/mmcli"
 )
@@ -108,6 +110,7 @@ func List(expName string) ([]mm.VM, error) { //nolint:funlen // complex logic
 			Interfaces:      make(map[string]string),
 			DoNotBoot:       dnb,
 			Type:            node.Type(),
+			VMType:          NodeVMType(node),
 			OSType:          node.Hardware().OSType(),
 			Snapshot:        snapshot,
 			Tags:            node.Labels(),
@@ -149,6 +152,8 @@ func List(expName string) ([]mm.VM, error) { //nolint:funlen // complex logic
 			vm.RAM = details.RAM
 			vm.Disk = details.Disk
 			vm.CCActive = details.CCActive
+
+			vm.VMType = cmp.Or(details.VMType, vm.VMType)
 
 			// `vm.IPv4` could be nil/empty if minimega isn't reporting any IPs for it
 			if len(vm.IPv4) == 0 {
@@ -235,6 +240,7 @@ func Get(expName, vmName string) (*mm.VM, error) { //nolint:funlen // complex lo
 			InjectPartition: *node.Hardware().Drives()[0].InjectPartition(),
 			Interfaces:      make(map[string]string),
 			DoNotBoot:       *node.General().DoNotBoot(),
+			VMType:          NodeVMType(node),
 			OSType:          node.Hardware().OSType(),
 			Snapshot:        *node.General().Snapshot(),
 			Metadata:        make(map[string]any),
@@ -290,6 +296,8 @@ func Get(expName, vmName string) (*mm.VM, error) { //nolint:funlen // complex lo
 	vm.RAM = details[0].RAM
 	vm.Disk = details[0].Disk
 	vm.CCActive = details[0].CCActive
+
+	vm.VMType = cmp.Or(details[0].VMType, vm.VMType)
 
 	// `vm.IPv4` could be nil/empty if minimega isn't reporting any IPs for it
 	if len(vm.IPv4) == 0 {
@@ -515,6 +523,15 @@ func Restart(expName, vmName string) error {
 		return mm.StartVM(mm.NS(expName), mm.VMName(vmName))
 	}
 
+	vmType, err := lookupVMType(expName, vmName)
+	if err != nil {
+		return err
+	}
+
+	if vmType == firecracker.VMType {
+		return restartFirecracker(expName, vmName)
+	}
+
 	cmd := mmcli.NewNamespacedCommand(expName)
 	qmp := `{ "execute": "system_reset" }`
 	cmd.Command = fmt.Sprintf("vm qmp %s '%s'", vmName, qmp)
@@ -554,10 +571,20 @@ func Shutdown(expName, vmName string) error {
 		return fmt.Errorf("stopping captures for VM %s in experiment %s: %w", vmName, expName, err)
 	}
 
-	// Send a powerdown signal to the VM using QEMU QMP.
+	vmType, err := lookupVMType(expName, vmName)
+	if err != nil {
+		return err
+	}
+
+	// Send a powerdown signal to the VM: QEMU QMP for KVM, and minimega's vm
+	// shutdown (Ctrl-Alt-Del) for firecracker.
 	cmd := mmcli.NewNamespacedCommand(expName)
 	qmp := `{ "execute": "system_powerdown" }`
 	cmd.Command = fmt.Sprintf("vm qmp %s '%s'", vmName, qmp)
+
+	if vmType == firecracker.VMType {
+		cmd.Command = "vm shutdown " + vmName
+	}
 
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		cmd.Command = "vm kill " + vmName
@@ -568,26 +595,8 @@ func Shutdown(expName, vmName string) error {
 		}
 	}
 
-	waitForShutdown := func() bool {
-		// Give the VM a maximum of 30s to shutdown.
-		after := time.After(shutdownTimeout)
-
-		for {
-			select {
-			case <-after:
-				return false
-			default:
-				time.Sleep(1 * time.Second)
-
-				state, _ := mm.GetVMState(mm.NS(expName), mm.VMName(vmName))
-				if state == vmStateQuit {
-					return true
-				}
-			}
-		}
-	}
-
-	if !waitForShutdown() {
+	// Give the VM a maximum of 30s to shutdown.
+	if !waitForState(expName, vmName, vmStateQuit, shutdownTimeout) {
 		// Forced shutdown implementation is equivalent to killing the vm without a
 		// flush to preserve the state.
 		cmd.Command = "vm kill " + vmName
@@ -616,13 +625,17 @@ func ResetDiskState(expName, vmName string) error {
 	// directory with a new snapshot.
 	cmd := mmcli.NewNamespacedCommand(expName)
 	cmd.Command = vmInfoCmd
-	cmd.Columns = []string{"host", "name", "id", "state", "disks", "snapshot"}
+	cmd.Columns = []string{"host", "name", "id", "state", "disks", "snapshot", "type"}
 	cmd.Filters = []string{"name=" + vmName}
 
 	status := mmcli.RunTabular(cmd)
 
 	if len(status) == 0 {
 		return errors.New("vm not found")
+	}
+
+	if status[0]["type"] == firecracker.VMType {
+		return resetFirecrackerDisk(expName, vmName, status[0])
 	}
 
 	var (
@@ -916,30 +929,31 @@ func Snapshot(expName, vmName, out string, cb func(string)) error { //nolint:fun
 
 	final := strings.TrimPrefix(out, expName+"_")
 
-	cmd.Command = fmt.Sprintf(
-		"%s shell mv %s/images/%s.state %s/%s.state",
-		cmdPrefix,
-		common.PhenixBase,
-		out,
-		dst,
-		final,
-	)
+	// vm save writes .state and .hdd for every VM type. For a firecracker VM it
+	// also writes the guest memory (.mem) and the sidecar that restore reads (.json).
+	type snapshotFile struct{ ext, desc string }
 
-	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-		return fmt.Errorf("moving memory snapshot to experiment files directory: %w", err)
+	files := []snapshotFile{{"state", "memory snapshot"}, {"hdd", "disk snapshot"}}
+
+	if vm.IsFirecracker() {
+		files = append(files, snapshotFile{"mem", "guest memory"}, snapshotFile{snapshotSidecarExt, "snapshot sidecar"})
 	}
 
-	cmd.Command = fmt.Sprintf(
-		"%s shell mv %s/images/%s.hdd %s/%s.hdd",
-		cmdPrefix,
-		common.PhenixBase,
-		out,
-		dst,
-		final,
-	)
+	for _, f := range files {
+		cmd.Command = fmt.Sprintf(
+			"%s shell mv %s/images/%s.%s %s/%s.%s",
+			cmdPrefix,
+			common.PhenixBase,
+			out,
+			f.ext,
+			dst,
+			final,
+			f.ext,
+		)
 
-	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
-		return fmt.Errorf("moving disk snapshot to experiment files directory: %w", err)
+		if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+			return fmt.Errorf("moving %s to experiment files directory: %w", f.desc, err)
+		}
 	}
 
 	return nil
@@ -963,11 +977,22 @@ func Restore(expName, vmName, snap string) error {
 		return errors.New("snapshot does not exist on cluster")
 	}
 
-	snap = fmt.Sprintf("%s/files/%s", expName, snap)
-
 	details := mm.GetVMInfo(mm.NS(expName), mm.VMName(vmName))
 	if len(details) == 0 {
 		return errors.New("error getting vm details")
+	}
+
+	if err := checkSnapshotType(expName, vmName, snap, details[0].IsFirecracker()); err != nil {
+		return err
+	}
+
+	vmType := cmp.Or(details[0].VMType, mm.DefaultVMType)
+	snap = fmt.Sprintf("%s/files/%s", expName, snap)
+
+	// A firecracker VM loads its saved state with firecracker-snapshot.
+	stateConfig := fmt.Sprintf("vm config state %s.state", snap)
+	if details[0].IsFirecracker() {
+		stateConfig = "vm config firecracker-snapshot " + snap
 	}
 
 	cmd := mmcli.NewNamespacedCommand(expName)
@@ -984,7 +1009,7 @@ func Restore(expName, vmName, snap string) error {
 		return fmt.Errorf("setting uuid for VM %s: %w", vmName, err)
 	}
 
-	cmd.Command = fmt.Sprintf("vm config state %s.state", snap)
+	cmd.Command = stateConfig
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("configuring state file for VM %s: %w", vmName, err)
 	}
@@ -1004,7 +1029,7 @@ func Restore(expName, vmName, snap string) error {
 		return fmt.Errorf("flushing VMs: %w", err)
 	}
 
-	cmd.Command = "vm launch kvm " + vmName
+	cmd.Command = fmt.Sprintf("vm launch %s %s", vmType, vmName)
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return fmt.Errorf("relaunching VM %s: %w", vmName, err)
 	}
@@ -1062,6 +1087,16 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 
 	if !filepath.IsAbs(out) {
 		out = common.PhenixBase + "/images/" + out
+	}
+
+	vmType, err := lookupVMType(expName, vmName)
+	if err != nil {
+		return "", err
+	}
+
+	// A firecracker VM never writes to a qcow2 overlay, so minimega exports its disk.
+	if vmType == firecracker.VMType {
+		return exportFirecrackerDisk(expName, vmName, out, cb)
 	}
 
 	base, err := getBackingImage(disk)
@@ -1314,7 +1349,7 @@ func CommitToDisk(expName, vmName, out string, cb func(float64)) (string, error)
 //
 //	that is compatible with memory forensic toolkits Volatility and Google's Rekall.
 func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error) { //nolint:funlen // complex logic
-	_, err := Get(expName, vmName)
+	vm, err := Get(expName, vmName)
 	if err != nil {
 		return "", fmt.Errorf("getting VM details: %w", err)
 	}
@@ -1365,6 +1400,20 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
 		return "", fmt.Errorf("ensuring experiment files directory exists: %w", err)
 	}
+
+	// Firecracker has no QMP; minimega dumps its memory from a snapshot.
+	if vm.IsFirecracker() {
+		if err := dumpFirecrackerMemory(expName, vmName, out, cb); err != nil {
+			return "", err
+		}
+
+		if err := pullToHeadnode(expName, status[0]["host"], out); err != nil {
+			return "", err
+		}
+
+		return out, nil
+	}
+
 	// ***** BEGIN: MEMORY SNAPSHOT VM *****
 
 	qmp := fmt.Sprintf(
@@ -1428,21 +1477,29 @@ func MemorySnapshot(expName, vmName, out string, cb func(string)) (string, error
 		}
 	}
 
-	// Copy the ELF memory dump to the headnode if the VM was not
-	// hosted on the headnode
-	if !mm.IsHeadnode(status[0]["host"]) {
-		// File path should be relative to the minimega files directory
-		memoryDumpPath := fmt.Sprintf("%s/files/%s", expName, filepath.Base(out))
-
-		cmd.Command = "file get " + memoryDumpPath
-
-		err := mmcli.ErrorResponse(mmcli.Run(cmd))
-		if err != nil {
-			return "", fmt.Errorf("pulling ELF memory snapshot to headnode: %w", err)
-		}
+	if err := pullToHeadnode(expName, status[0]["host"], out); err != nil {
+		return "", err
 	}
 
 	return out, nil
+}
+
+// pullToHeadnode copies an ELF memory dump to the headnode if the VM was not
+// hosted on the headnode.
+func pullToHeadnode(expName, host, out string) error {
+	if mm.IsHeadnode(host) {
+		return nil
+	}
+
+	// File path should be relative to the minimega files directory
+	cmd := mmcli.NewNamespacedCommand(expName)
+	cmd.Command = fmt.Sprintf("file get %s/files/%s", expName, filepath.Base(out))
+
+	if err := mmcli.ErrorResponse(mmcli.Run(cmd)); err != nil {
+		return fmt.Errorf("pulling ELF memory snapshot to headnode: %w", err)
+	}
+
+	return nil
 }
 
 // CaptureSubnet starts packet captures for all the VMs that
@@ -1664,6 +1721,10 @@ func ChangeOpticalDisc(expName, vmName, isoPath string) error {
 		return errors.New("no optical disc path provided")
 	}
 
+	if err := refuseFirecracker(expName, vmName, "changing the optical disc"); err != nil {
+		return err
+	}
+
 	cmd := mmcli.NewNamespacedCommand(expName)
 	cmd.Command = fmt.Sprintf("vm cdrom change %s %s", vmName, isoPath)
 
@@ -1683,6 +1744,10 @@ func EjectOpticalDisc(expName, vmName string) error {
 
 	if vmName == "" {
 		return errors.New("no VM name provided")
+	}
+
+	if err := refuseFirecracker(expName, vmName, "ejecting the optical disc"); err != nil {
+		return err
 	}
 
 	cmd := mmcli.NewNamespacedCommand(expName)

@@ -9,6 +9,16 @@ import (
 	"phenix/util/mm"
 )
 
+func TestVMToProtobufVMType(t *testing.T) {
+	for _, vmType := range []string{"kvm", "container", "firecracker"} {
+		t.Run(vmType, func(t *testing.T) {
+			if got := VMToProtobuf("test", mm.VM{Name: "vm", VMType: vmType}, nil).GetVmType(); got != vmType {
+				t.Errorf("VMToProtobuf(VMType %q).GetVmType() = %q, want %q", vmType, got, vmType)
+			}
+		})
+	}
+}
+
 func TestExperimentToProtobufVMCount(t *testing.T) {
 	external := true
 	vms := []mm.VM{
