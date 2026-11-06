@@ -1247,6 +1247,9 @@ func (Minimega) CloseTunnel(opts ...Option) error {
 	return errs
 }
 
+// StartVMCapture starts a capture on interface CaptureInterface of the VM into CaptureFile, relative to minimega's
+// -filepath. With minimega 3.4.0 or later it passes CaptureFormat and CaptureMaxSize, and minimega makes the file's
+// directory; with an older minimega phenix makes the directory and ignores those options.
 func (Minimega) StartVMCapture(opts ...Option) error {
 	o := NewOptions(opts...)
 
@@ -1271,6 +1274,35 @@ func (Minimega) StartVMCapture(opts ...Option) error {
 		return fmt.Errorf("unable to determine what host the VM is scheduled on: %w", err)
 	}
 
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = fmt.Sprintf("capture pcap vm %s %d %s", o.vm, o.captureIface, o.captureFile)
+
+	if captureSupport(o.ctx).Available {
+		format, err := captureFormatArg(o.captureFormat)
+		if err != nil {
+			return err
+		}
+
+		cmd.Command += format + captureMaxSizeArg(o.captureMaxSize)
+	} else if err := makeCaptureDir(o, host); err != nil {
+		return err
+	}
+
+	if err := mmcli.ErrorResponse(o.run(cmd)); err != nil {
+		return fmt.Errorf(
+			"starting VM capture for interface %d on VM %s in namespace %s: %w",
+			o.captureIface,
+			o.vm,
+			o.ns,
+			err,
+		)
+	}
+
+	return nil
+}
+
+// makeCaptureDir makes the directory of the capture file on host, for a minimega older than 3.4.0.
+func makeCaptureDir(o options, host string) error {
 	var cmdPrefix string
 
 	if !IsHeadnode(host) {
@@ -1283,19 +1315,6 @@ func (Minimega) StartVMCapture(opts ...Option) error {
 
 	if err := mmcli.ErrorResponse(o.run(cmd)); err != nil {
 		return fmt.Errorf("ensuring experiment files directory exists: %w", err)
-	}
-
-	cmd = mmcli.NewNamespacedCommand(o.ns)
-	cmd.Command = fmt.Sprintf("capture pcap vm %s %d %s", o.vm, o.captureIface, o.captureFile)
-
-	if err := mmcli.ErrorResponse(o.run(cmd)); err != nil {
-		return fmt.Errorf(
-			"starting VM capture for interface %d on VM %s in namespace %s: %w",
-			o.captureIface,
-			o.vm,
-			o.ns,
-			err,
-		)
 	}
 
 	return nil
@@ -1361,47 +1380,80 @@ func (Minimega) StopVMCapture(opts ...Option) error {
 	return nil
 }
 
-func (Minimega) GetExperimentCaptures(opts ...Option) []Capture {
+// GetExperimentCaptures is GetExperimentCapturesChecked, logging a failed listing; the captures of the responses that
+// failed are left out.
+func (m Minimega) GetExperimentCaptures(opts ...Option) []Capture {
+	captures, err := m.GetExperimentCapturesChecked(opts...)
+
+	switch o := NewOptions(opts...); {
+	case err == nil:
+	case o.ctx.Err() != nil && errors.Is(err, o.ctx.Err()):
+		plog.Debug(plog.TypeSystem, "listing VM captures canceled", "ns", o.ns, "error", err)
+	default:
+		plog.Error(plog.TypeSystem, "listing VM captures", "ns", o.ns, "error", err)
+	}
+
+	return captures
+}
+
+// GetExperimentCapturesChecked lists the VM interface captures of the namespace. With minimega 3.4.0 or later (see
+// CaptureFeatures) it reads every column by name, so it also fills the capture's ID, state, format and counters. A
+// failed minimega read is an error; the captures of the responses without an error are then returned too.
+func (Minimega) GetExperimentCapturesChecked(opts ...Option) ([]Capture, error) {
 	o := NewOptions(opts...)
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = captureCmd
-	cmd.Columns = []string{"interface", "path"}
+
+	refreshed := CaptureFeatures()
+	if !refreshed {
+		cmd.Columns = []string{"interface", "path"}
+	}
+
+	rows, err := mmcli.RunTabularCheckedContext(o.ctx, cmd, nil)
+	if err != nil {
+		err = fmt.Errorf("listing the VM captures of namespace %s: %w", o.ns, err)
+	}
 
 	var captures []Capture
 
-	for _, row := range o.tabular(cmd) {
-		// `interface` column will be empty if the capture is bridge-wide
-		if row["interface"] == "" {
-			// currently phenix doesn't provide the option to create bridge-wide
-			// captures, so if one exists (via manual creation) we just ignore it
+	for _, row := range rows {
+		if refreshed {
+			if capture, ok := vmCapture(row); ok {
+				captures = append(captures, capture)
+			}
+
 			continue
 		}
 
-		// `interface` column will be in the form of <vm_name>:<iface_idx>
-		vm, idxStr, ok := strings.Cut(row["interface"], ":")
+		vm, idx, ok := vmInterface(row["interface"])
 		if !ok {
-			plog.Warn(
-				plog.TypeSystem,
-				"unexpected capture interface format",
-				"interface", row["interface"],
-			)
-
 			continue
 		}
 
-		idx, _ := strconv.Atoi(idxStr)
-
-		capture := Capture{
-			VM:        vm,
-			Interface: idx,
-			Filepath:  row["path"],
-		}
-
-		captures = append(captures, capture)
+		captures = append(captures, Capture{VM: vm, Interface: idx, Filepath: row["path"]}) //nolint:exhaustruct // older minimega
 	}
 
-	return captures
+	return captures, err
+}
+
+// vmInterface splits the interface column of the capture listing, <vm>:<index>. It is empty for a capture of a whole
+// bridge, which phenix does not start, so such a capture is left out.
+func vmInterface(iface string) (string, int, bool) {
+	if iface == "" {
+		return "", 0, false
+	}
+
+	vm, idxStr, ok := strings.Cut(iface, ":")
+	if !ok {
+		plog.Warn(plog.TypeSystem, "unexpected capture interface format", "interface", iface)
+
+		return "", 0, false
+	}
+
+	idx, _ := strconv.Atoi(idxStr)
+
+	return vm, idx, true
 }
 
 func (m Minimega) GetVMCaptures(opts ...Option) []Capture {

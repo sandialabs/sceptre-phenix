@@ -101,6 +101,23 @@ docker exec phenix phenix workflow apply /phenix/topologies/helloworld -f
 
 See [Workflow](https://phenix.sceptre.dev/latest/workflow/) for the directory layout, the `phenix.yml` reference, more examples and the REST API.
 
+### Capture Experiment Traffic
+
+An experiment capture records the traffic of a running experiment on all of its hosts into one file on the head node. It needs minimega 3.4.0 or later on every node:
+
+```bash
+# Capture all VLANs of exp1. The command prints the capture ID.
+phenix experiment capture start exp1
+
+# Show the captures, their counters and the Open vSwitch mirror budget
+phenix experiment capture list exp1
+
+# Stop capture 1. The file stays in the experiment's files directory.
+phenix experiment capture stop exp1 1
+```
+
+See [Experiment Packet Captures](https://phenix.sceptre.dev/latest/packet-captures/) for the options, the web UI, the REST API and the limits.
+
 ## 🛠️ Local Development
 
 If you wish to build and run the services locally without Docker, follow these steps.
@@ -251,6 +268,7 @@ Logging settings are managed via the `phenix settings` command, which modifies t
 | `ui.logs.level` | `PHENIX_UI_LOGS_LEVEL` | `""` | Log level for the web UI stream (defaults to `log.level`). |
 | `ui.logs.minimega-path` | `PHENIX_UI_LOGS_MINIMEGA_PATH` | `""` | Path to the minimega log file to display in the UI and offer for download on the Logs page. **(Restart Required)** |
 | `ui.netflow.max-size` | `PHENIX_UI_NETFLOW_MAX_SIZE` | `100` | Maximum size in megabytes of each recorded netflow capture; `0` does not record captures. **(Restart Required)** |
+| `ui.captures.max-size` | `PHENIX_UI_CAPTURES_MAX_SIZE` | `10240` | Maximum size in megabytes of each packet capture file that minimega 3.4.0 or later writes; `0` sets no limit. **(Restart Required)** |
 | `base-dir.injects` | `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Directory that `phenix workflow apply` stages a topology directory's `phenix-injects/` into, as `<base-dir.injects>/<name>`. The `phenix ui` server's value is used unless `--base-dir.injects` is given. Use an absolute path. **(Restart Required)** |
 | `base-dir.topologies` | `PHENIX_BASE_DIR_TOPOLOGIES` | `<base-dir.phenix>/topologies` | Directory where `phenix workflow apply NAME` looks for `NAME` when it isn't an existing path. Use an absolute path. |
 | `base-dir.builder-templates` | `PHENIX_BASE_DIR_BUILDER_TEMPLATES` | `<base-dir.phenix>/builder/templates` | Directory of Builder node template files that `phenix ui` reads at start as read-only server collections. Use an absolute path. **(Restart Required)** |

@@ -278,6 +278,8 @@ func settingValueCheck(env doctorEnv, key, value string) (doctorCheck, bool) {
 		return gracePeriodCheck(viperWith(key, value)), true
 	case "ui.netflow.max-size":
 		return netflowMaxSizeCheck(viperWith(key, value)), true
+	case keyCaptureMaxSize:
+		return captureMaxSizeCheck(viperWith(key, value)), true
 	}
 
 	return failCheck(""), false
@@ -643,7 +645,7 @@ func featuresCheck(value string) doctorCheck {
 			))
 		}
 
-		if feature != web.FeatureVMMount && !slices.Contains(autoFeatures, feature) {
+		if !slices.Contains(handFeatures, feature) && !slices.Contains(autoFeatures, feature) {
 			unknown = append(unknown, unknownFeatureDetail(feature))
 		}
 	}

@@ -131,7 +131,7 @@ func uiSettingText(t *rapid.T) string {
 	).Draw(t, "value")
 }
 
-// Whatever text ui.shutdown-grace-period and ui.netflow.max-size hold, a
+// Whatever text ui.shutdown-grace-period, ui.netflow.max-size and ui.captures.max-size hold, a
 // number from 0 to the largest that fits is read in seconds or MiB, and any
 // other text fails with the reason its value gives.
 func TestUISettingParseProperty(t *testing.T) {
@@ -142,6 +142,7 @@ func TestUISettingParseProperty(t *testing.T) {
 		v := viper.New()
 		v.Set("ui.shutdown-grace-period", value)
 		v.Set("ui.netflow.max-size", value)
+		v.Set("ui.captures.max-size", value)
 
 		seconds, wantErr := uiParseModel(value, maxShutdownGraceSeconds)
 
@@ -154,7 +155,7 @@ func TestUISettingParseProperty(t *testing.T) {
 			t.Fatalf("shutdownGracePeriod(%q) = %s, %v; want %ds", value, grace, err, seconds)
 		}
 
-		mib, wantErr := uiParseModel(value, maxNetflowMaxSizeMiB)
+		mib, wantErr := uiParseModel(value, maxSizeMaxMiB)
 
 		size, err := netflowMaxSize(v)
 		if wantErr != "" {
@@ -164,24 +165,35 @@ func TestUISettingParseProperty(t *testing.T) {
 		} else if err != nil || size != mib<<20 {
 			t.Fatalf("netflowMaxSize(%q) = %d, %v; want %d MiB", value, size, err, mib)
 		}
+
+		captures, err := captureMaxSize(v)
+		if wantErr != "" {
+			if err == nil || !strings.Contains(err.Error(), wantErr) {
+				t.Fatalf("captureMaxSize(%q) = %d, %v; want an error containing %q", value, captures, err, wantErr)
+			}
+		} else if err != nil || captures != mib {
+			t.Fatalf("captureMaxSize(%q) = %d, %v; want %d", value, captures, err, mib)
+		}
 	})
 }
 
-// phenix ui refuses a bad ui.shutdown-grace-period or ui.netflow.max-size
-// before it starts anything.
+// phenix ui refuses a bad ui.shutdown-grace-period, ui.netflow.max-size or
+// ui.captures.max-size before it starts anything.
 func TestUIRunRefusesBadSettings(t *testing.T) {
 	tests := map[string]struct {
-		grace, netflow string
-		wantErr        string
+		grace, netflow, captures string
+		wantErr                  string
 	}{
 		"grace period": {grace: "5s", wantErr: `invalid ui.shutdown-grace-period "5s"`},
 		"netflow size": {grace: "5", netflow: "-1", wantErr: `invalid ui.netflow.max-size "-1"`},
+		"capture size": {grace: "5", netflow: "100", captures: "-1", wantErr: `invalid ui.captures.max-size "-1"`},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("PHENIX_UI_SHUTDOWN_GRACE_PERIOD", tt.grace)
 			t.Setenv("PHENIX_UI_NETFLOW_MAX_SIZE", tt.netflow)
+			t.Setenv("PHENIX_UI_CAPTURES_MAX_SIZE", tt.captures)
 
 			err := uiCmd.RunE(uiCmd, nil)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
@@ -437,6 +449,70 @@ func TestNetflowMaxSize(t *testing.T) {
 
 			if err != nil || got != tt.want {
 				t.Errorf("netflowMaxSize() = %d, %v; want %d, nil", got, err, tt.want)
+			}
+		})
+	}
+}
+
+// ui.captures.max-size is a whole number of MiB from the environment, a flag or
+// the config file; a negative or non-numeric value is refused.
+func TestCaptureMaxSize(t *testing.T) {
+	tests := map[string]struct {
+		env, arg, config string
+		want             int64
+		wantErr          string
+	}{
+		"default":         {want: 10240},
+		"env":             {env: "7", want: 7},
+		"env no limit":    {env: "0", want: 0},
+		"env fraction":    {env: "1.5", wantErr: "whole number of megabytes, such as 10240"},
+		"env negative":    {env: "-1", wantErr: "must not be negative"},
+		"env too large":   {env: "8796093022208", wantErr: "at most"},
+		"flag":            {arg: "250", want: 250},
+		"config":          {config: "12", want: 12},
+		"config duration": {config: "5s", wantErr: "whole number of megabytes"},
+		"names setting":   {env: "x", wantErr: "ui.captures.max-size"},
+	}
+
+	flag := uiCmd.Flags().Lookup("captures.max-size")
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			v := viper.GetViper()
+
+			switch {
+			case tt.env != "":
+				t.Setenv("PHENIX_UI_CAPTURES_MAX_SIZE", tt.env)
+			case tt.arg != "":
+				t.Cleanup(func() {
+					_ = flag.Value.Set(flag.DefValue)
+					flag.Changed = false
+				})
+
+				if err := uiCmd.Flags().Parse([]string{"--captures.max-size=" + tt.arg}); err != nil {
+					t.Fatalf("parsing --captures.max-size=%s: %v", tt.arg, err)
+				}
+			case tt.config != "":
+				v = viper.New()
+				v.SetConfigType("yaml")
+
+				config := "ui:\n  captures:\n    max-size: " + tt.config + "\n"
+				if err := v.ReadConfig(strings.NewReader(config)); err != nil {
+					t.Fatalf("reading config %q: %v", config, err)
+				}
+			}
+
+			got, err := captureMaxSize(v)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("captureMaxSize() = %d, %v; want an error containing %q", got, err, tt.wantErr)
+				}
+
+				return
+			}
+
+			if err != nil || got != tt.want {
+				t.Errorf("captureMaxSize() = %d, %v; want %d, nil", got, err, tt.want)
 			}
 		})
 	}

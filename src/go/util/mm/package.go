@@ -145,8 +145,33 @@ func GetExperimentCaptures(opts ...Option) []Capture {
 	return DefaultMM.GetExperimentCaptures(opts...)
 }
 
+// GetExperimentCapturesChecked lists the VM interface captures of a namespace; a failed minimega read is an error.
+func GetExperimentCapturesChecked(opts ...Option) ([]Capture, error) {
+	return DefaultMM.GetExperimentCapturesChecked(opts...)
+}
+
 func GetVMCaptures(opts ...Option) []Capture {
 	return DefaultMM.GetVMCaptures(opts...)
+}
+
+// StartNamespaceCapture starts an experiment capture and returns its ID.
+func StartNamespaceCapture(opts ...Option) (string, error) {
+	return DefaultMM.StartNamespaceCapture(opts...)
+}
+
+// StopNamespaceCapture stops an experiment capture and returns its final rows.
+func StopNamespaceCapture(opts ...Option) ([]NamespaceCapture, error) {
+	return DefaultMM.StopNamespaceCapture(opts...)
+}
+
+// GetNamespaceCaptures lists the experiment captures of a namespace, sorted by ID.
+func GetNamespaceCaptures(opts ...Option) ([]NamespaceCapture, error) {
+	return DefaultMM.GetNamespaceCaptures(opts...)
+}
+
+// GetBridgeMirrors lists the Open vSwitch mirrors of the hosts that MirrorHosts names.
+func GetBridgeMirrors(opts ...Option) ([]BridgeMirror, error) {
+	return DefaultMM.GetBridgeMirrors(opts...)
 }
 
 func GetClusterHosts(schedOnly bool) (Hosts, error) {

@@ -50,9 +50,10 @@ var errNoAnswer = errors.New("no answer")
 // doctorFound is what earlier checks of one run found, for the checks that
 // build on them.
 type doctorFound struct {
-	minimegaUp   bool
-	minimegaArgs map[string]string // minimega's flags, once minimega-env read them
-	images       *doctorImageScan  // the scan of the images folder, once disk-chains or disk-formats read it
+	minimegaUp      bool
+	minimegaVersion string            // minimega's version answer, once the minimega check passed
+	minimegaArgs    map[string]string // minimega's flags, once minimega-env read them
+	images          *doctorImageScan  // the scan of the images folder, once disk-chains or disk-formats read it
 
 	experiments *doctorExperiments // the stored experiments, once a check read them
 	inventory   *doctorInventory   // minimega's namespaces, VMs, taps and captures, once a check read them

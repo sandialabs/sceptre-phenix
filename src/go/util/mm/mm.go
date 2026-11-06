@@ -39,7 +39,13 @@ type MM interface { //nolint:interfacebloat // legacy interface
 	StartVMCapture(...Option) error
 	StopVMCapture(...Option) error
 	GetExperimentCaptures(...Option) []Capture
+	GetExperimentCapturesChecked(...Option) ([]Capture, error)
 	GetVMCaptures(...Option) []Capture
+
+	StartNamespaceCapture(...Option) (string, error)
+	StopNamespaceCapture(...Option) ([]NamespaceCapture, error)
+	GetNamespaceCaptures(...Option) ([]NamespaceCapture, error)
+	GetBridgeMirrors(...Option) ([]BridgeMirror, error)
 
 	GetClusterHosts(bool) (Hosts, error)
 	GetNamespaceHosts(string) (Hosts, error)

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"phenix/store"
+	"phenix/util/mm"
 	"phenix/web"
 	"phenix/web/health"
 )
@@ -21,10 +22,17 @@ const (
 	diskRowPrefix = "disk "
 )
 
-// autoFeatures are the ui.features phenix ui turns on by itself.
-//
-//nolint:gochecknoglobals // constant list
-var autoFeatures = []string{web.FeatureWebShark, web.FeatureTunnelerDownload, web.FeatureFileServer}
+// minimegaCapturesName is the check of the minimega capture support.
+const minimegaCapturesName = "minimega-captures"
+
+//nolint:gochecknoglobals // constant lists
+var (
+	// autoFeatures are the ui.features phenix ui turns on by itself.
+	autoFeatures = []string{web.FeatureWebShark, web.FeatureTunnelerDownload, web.FeatureFileServer}
+
+	// handFeatures are the ui.features set by hand.
+	handFeatures = []string{web.FeatureVMMount, web.FeatureMinimegaCaptures}
+)
 
 // qemuImgCheck reports qemu-img's version as the readiness check does, but
 // fails without it: phenix commits VMs to disk images with it.
@@ -245,7 +253,7 @@ func (e doctorEnv) featuresSettingCheck(features []string, cwd, fileServer strin
 
 	for _, feature := range features {
 		switch feature {
-		case web.FeatureVMMount:
+		case web.FeatureVMMount, web.FeatureMinimegaCaptures:
 		case web.FeatureWebShark:
 			if _, ok := web.FindWebShark(e.stat); !ok {
 				problem(doctorFail, fmt.Sprintf("webshark is set by hand without a WebShark build in %s, so phenix ui refuses to start",
@@ -281,7 +289,7 @@ func unknownFeatureDetail(feature string) string {
 
 	best, bestDistance := "", maxEnvSuggestDistance+1
 
-	for _, known := range append([]string{web.FeatureVMMount}, autoFeatures...) {
+	for _, known := range slices.Concat(handFeatures, autoFeatures) {
 		if d := editDistance(feature, known); d < bestDistance {
 			best, bestDistance = known, d
 		}
@@ -301,11 +309,42 @@ func unknownFeatureDetail(feature string) string {
 // featuresHint is what to do about ui.features.
 func featuresHint(c doctorCheck) string {
 	if strings.Contains(c.Detail, "unknown feature") {
-		return "remove or fix the unknown features (phenix ui knows vm-mount, " + strings.Join(autoFeatures, ", ") + ")"
+		return "remove or fix the unknown features (phenix ui knows " +
+			strings.Join(slices.Concat(handFeatures, autoFeatures), ", ") + ")"
 	}
 
-	return "keep only vm-mount in ui.features, because phenix ui enables " + strings.Join(autoFeatures, ", ") +
-		" by itself when it finds what each needs"
+	return "keep only " + strings.Join(handFeatures, " and ") + " in ui.features, because phenix ui enables " +
+		strings.Join(autoFeatures, ", ") + " by itself when it finds what each needs"
+}
+
+// minimegaCapturesCheck reports whether phenix ui uses the capture commands of
+// minimega 3.4.0, from the version answer that the minimega check read. It
+// never asks minimega itself. features is ui.features.
+func minimegaCapturesCheck(features []string, found *doctorFound) doctorCheck {
+	const forcedText = "on, because ui.features has " + web.FeatureMinimegaCaptures
+
+	forced := slices.Contains(features, web.FeatureMinimegaCaptures)
+
+	if found == nil || !found.minimegaUp {
+		if forced {
+			return passCheck(forcedText)
+		}
+
+		return doctorCheck{Name: "", Status: doctorSkip, Detail: "not checked, because minimega gave no version"}
+	}
+
+	s := mm.CaptureSupportOf(found.minimegaVersion, forced)
+
+	switch {
+	case forced:
+		return passCheck(fmt.Sprintf("%s (minimega gives %q)", forcedText, found.minimegaVersion))
+	case s.Available:
+		return passCheck("minimega " + s.Version + " supports experiment captures")
+	case s.Version == "":
+		return warnCheck("off: " + s.Reason)
+	}
+
+	return passCheck("off: " + s.Reason)
 }
 
 // minimegaLogCheck checks ui.logs.minimega-path, the minimega log phenix ui

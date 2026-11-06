@@ -35,6 +35,15 @@ type options struct {
 	captures        []Capture
 	capturesKnown   bool
 
+	// experiment captures and the options of a capture start
+	captureVLANs   []string
+	captureFilter  string
+	captureSnaplen int
+	captureFormat  string
+	captureMaxSize int64 // MiB
+	captureID      string
+	mirrorHosts    []string
+
 	screenshotSize string
 
 	// tunnels
@@ -147,6 +156,55 @@ func KnownCaptures(c []Capture) Option {
 	return func(o *options) {
 		o.captures = c
 		o.capturesKnown = true
+	}
+}
+
+// CaptureVLANs limits an experiment capture to the VLANs with these aliases; none captures every VLAN.
+func CaptureVLANs(v []string) Option {
+	return func(o *options) {
+		o.captureVLANs = v
+	}
+}
+
+// CaptureFilter gives an experiment capture a BPF filter.
+func CaptureFilter(f string) Option {
+	return func(o *options) {
+		o.captureFilter = f
+	}
+}
+
+// CaptureSnaplen sets how many bytes of each frame an experiment capture keeps; 0 keeps minimega's default.
+func CaptureSnaplen(n int) Option {
+	return func(o *options) {
+		o.captureSnaplen = n
+	}
+}
+
+// CaptureFormat sets the file format of a capture, pcapng or pcap, with minimega 3.4.0 or later.
+func CaptureFormat(f string) Option {
+	return func(o *options) {
+		o.captureFormat = f
+	}
+}
+
+// CaptureMaxSize sets the most MiB a capture file gets, with minimega 3.4.0 or later; 0 sets no limit.
+func CaptureMaxSize(mib int64) Option {
+	return func(o *options) {
+		o.captureMaxSize = mib
+	}
+}
+
+// CaptureID names an experiment capture by the ID minimega gave it.
+func CaptureID(id string) Option {
+	return func(o *options) {
+		o.captureID = id
+	}
+}
+
+// MirrorHosts names the hosts whose Open vSwitch mirrors GetBridgeMirrors lists.
+func MirrorHosts(h []string) Option {
+	return func(o *options) {
+		o.mirrorHosts = h
 	}
 }
 

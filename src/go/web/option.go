@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"phenix/util/common"
+	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -21,19 +23,23 @@ const (
 	DefaultShutdownGracePeriod = 5 * time.Second
 	// DefaultNetflowMaxSize is the most bytes of each netflow capture recorded.
 	DefaultNetflowMaxSize = 100 << 20
+	// DefaultCaptureMaxSize is the most MiB of each packet capture file that minimega 3.4.0 or later writes.
+	DefaultCaptureMaxSize = 10240
 
 	// TunnelerDownloadDir holds the phenix-tunneler builds the server offers,
 	// relative to the directory it starts in.
 	TunnelerDownloadDir = "downloads/tunneler"
 )
 
-// The ui.features names. Only FeatureVMMount is set by hand; the server turns
-// on the others itself when it finds what each one needs.
+// The ui.features names. FeatureVMMount and FeatureMinimegaCaptures are set by
+// hand; the server turns on the others itself when it finds what each one
+// needs, and FeatureMinimegaCaptures when minimega supports experiment captures.
 const (
 	FeatureVMMount          = "vm-mount"
 	FeatureWebShark         = "webshark"
 	FeatureTunnelerDownload = "tunneler-download"
 	FeatureFileServer       = "file-server"
+	FeatureMinimegaCaptures = "minimega-captures"
 )
 
 type ServerOption func(*serverOptions)
@@ -69,6 +75,9 @@ type serverOptions struct {
 	shutdownGrace time.Duration
 
 	netflowMaxSize int64
+
+	// captureMaxSize is the most MiB of each packet capture file; 0 sets no limit
+	captureMaxSize int64
 }
 
 func newServerOptions(opts ...ServerOption) serverOptions {
@@ -82,6 +91,7 @@ func newServerOptions(opts ...ServerOption) serverOptions {
 
 		shutdownGrace:  DefaultShutdownGracePeriod,
 		netflowMaxSize: DefaultNetflowMaxSize,
+		captureMaxSize: DefaultCaptureMaxSize,
 	}
 
 	for _, opt := range opts {
@@ -131,6 +141,32 @@ func (o serverOptions) featured(f string) bool {
 	_, ok := o.features[f]
 
 	return ok
+}
+
+// featureNames lists the features that are on, with FeatureMinimegaCaptures
+// once minimega answers with a version that supports experiment captures.
+func (o serverOptions) featureNames() []string {
+	features := make([]string, 0, len(o.features)+1)
+
+	for f := range o.features {
+		features = append(features, f)
+	}
+
+	if !o.featured(FeatureMinimegaCaptures) && mm.CaptureFeatures() {
+		features = append(features, FeatureMinimegaCaptures)
+	}
+
+	return features
+}
+
+// startCaptureSupport forces the capture support on for FeatureMinimegaCaptures,
+// and asks minimega for its version until it answers or ctx is done.
+func (o serverOptions) startCaptureSupport(ctx context.Context) {
+	if o.featured(FeatureMinimegaCaptures) {
+		mm.SetCaptureFeaturesForced(true)
+	}
+
+	mm.StartVersionCheck(ctx)
 }
 
 func ServeOnEndpoint(e string) ServerOption {
@@ -250,6 +286,14 @@ func ServeWithShutdownGracePeriod(d time.Duration) ServerOption {
 func ServeWithNetflowMaxSize(n int64) ServerOption {
 	return func(o *serverOptions) {
 		o.netflowMaxSize = n
+	}
+}
+
+// ServeWithCaptureMaxSize sets the most MiB of each packet capture file that
+// minimega 3.4.0 or later writes; 0 sets no limit.
+func ServeWithCaptureMaxSize(mib int64) ServerOption {
+	return func(o *serverOptions) {
+		o.captureMaxSize = mib
 	}
 }
 

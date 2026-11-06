@@ -26,6 +26,7 @@ import (
 	v2 "phenix/types/version/v2"
 	"phenix/util/common"
 	"phenix/util/file"
+	"phenix/util/mm"
 	"phenix/util/mm/mmtest"
 	"phenix/util/polltest"
 	"phenix/util/shell"
@@ -69,14 +70,8 @@ func (r recorder) Cleanup(context.Context) error {
 func useMinimega(t *testing.T, busy *atomic.Bool) func() []mmtest.Command {
 	t.Helper()
 
-	forgetVersion := func() {
-		mmVersionCache.mu.Lock()
-		mmVersionCache.version = ""
-		mmVersionCache.mu.Unlock()
-	}
-
-	forgetVersion()
-	t.Cleanup(forgetVersion)
+	mm.ForgetCluster()
+	t.Cleanup(mm.ForgetCluster)
 
 	return mmtest.Use(t, func(cmd mmtest.Command) []*minicli.Response {
 		if cmd.Base == "version" && busy != nil && busy.Load() {

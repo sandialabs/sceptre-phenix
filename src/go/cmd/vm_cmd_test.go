@@ -175,7 +175,7 @@ func (f vmCmdMinimega) handle(cmd mmtest.Command) []*minicli.Response {
 // state, with the time in capture file names replaced by TIME.
 func vmCmdChanges(cmds []mmtest.Command) []string {
 	var (
-		reads     = regexp.MustCompile(`^(cc client|vm info|vm info summary|capture|host|args|mesh send head disk info .*)$`)
+		reads     = regexp.MustCompile(`^(cc client|vm info|vm info summary|capture|host|args|version|mesh send head disk info .*)$`)
 		timestamp = regexp.MustCompile(`_\d{8}_\d{4}\.pcap$`)
 		changes   []string
 	)
@@ -827,6 +827,7 @@ func TestVMCmdCapture(t *testing.T) { //nolint:paralleltest // replaces the phen
 		wantRows  [][3]string
 		wantErr   string
 		humanized string
+		maxSize   string // ui.captures.max-size, "" for the default
 	}{
 		{
 			name: "start subnet", args: []string{"start-subnet", "exp", "10.0.0.0/24"},
@@ -845,6 +846,17 @@ func TestVMCmdCapture(t *testing.T) { //nolint:paralleltest // replaces the phen
 			name:    "start subnet filter matches nothing",
 			args:    []string{"start-subnet", "exp", "10.0.0.0/24", "--filter", "nothing"},
 			wantErr: `no VMs matched filter "nothing"`,
+		},
+		{
+			name:    "start subnet of another format",
+			args:    []string{"start-subnet", "exp", "10.0.0.0/24", "--format", "erf"},
+			wantErr: `invalid --format "erf": it must be pcapng or pcap`,
+		},
+		{
+			name:    "start subnet with an invalid size limit",
+			args:    []string{"start-subnet", "exp", "10.0.0.0/24"},
+			maxSize: "-1",
+			wantErr: `invalid ui.captures.max-size "-1": it must not be negative`,
 		},
 		{
 			name:    "start invalid subnet",
@@ -897,6 +909,11 @@ func TestVMCmdCapture(t *testing.T) { //nolint:paralleltest // replaces the phen
 			name:    "start VLAN filter matches nothing",
 			args:    []string{"start-vlan", "exp", "EXP_1", "--filter", "nothing"},
 			wantErr: `no VMs matched filter "nothing"`,
+		},
+		{
+			name:    "start VLAN of another format",
+			args:    []string{"start-vlan", "exp", "EXP_1", "--format", "erf"},
+			wantErr: `invalid --format "erf": it must be pcapng or pcap`,
 		},
 		{name: "start VLAN too few arguments", args: []string{"start-vlan", "exp"}, wantErr: "must provide an experiment name and VLAN"},
 		{
@@ -957,6 +974,10 @@ func TestVMCmdCapture(t *testing.T) { //nolint:paralleltest // replaces the phen
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.maxSize != "" {
+				t.Setenv("PHENIX_UI_CAPTURES_MAX_SIZE", tt.maxSize)
+			}
+
 			vmCmdUseStore(t, vmCmdExperiment(t, "exp", true), vmCmdExperiment(t, "stopped", false))
 			received := mmtest.Use(t, fake.handle)
 
