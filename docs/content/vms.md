@@ -225,6 +225,13 @@ on one interface leaves the VM's other captures running; use
 A capture cannot be started on a disconnected interface; phēnix says
 `Cannot capture traffic on a disconnected interface.` instead of starting one.
 
+With minimega 3.4.0 or later, phēnix writes the capture file in pcapng format,
+and the file name ends in `.pcapng`. The network menu of the VM table can also
+start a capture in pcap format (see
+[Starting/Stopping Packet Captures](vm-multi-action.md#startingstopping-packet-captures)).
+To capture the traffic of all VMs into one file, see
+[Experiment Packet Captures](packet-captures.md).
+
 ### From the Command Line Binary
 
 To start a packet capture, run the following command, specifying the target
@@ -234,6 +241,12 @@ network interface by its name (as declared in the experiment topology, e.g.
 ```shell
 phenix vm capture start <experiment name> <vm name> <iface name/index> </path/to/out file>
 ```
+
+The `--format` flag sets the capture file format, `pcapng` (the default) or
+`pcap`. phēnix sets the extension of the output file name to match the format.
+minimega before 3.4.0 writes only pcap. With minimega 3.4.0 or later, the
+`ui.captures.max-size` setting limits the size of the file (see
+[Settings](settings.md)).
 
 To stop all packet captures on a running VM, use the following command.
 

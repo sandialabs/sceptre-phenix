@@ -341,6 +341,65 @@ A running capture in WebShark (`/webshark/captures/{name}` while live) sends no
 bytes captured so far, but a resume with `If-Range` gets the whole capture
 again. `GET .../captures/{iface}/stream` is a live stream with no ranges.
 
+## Experiment captures
+
+An experiment capture records a running experiment's traffic on all its hosts
+into one file in the experiment's files directory on the head node. It needs
+minimega 3.4.0 or later on every node. The RBAC resource is
+`experiments/captures`, and the resource name is the experiment. Of the
+built-in roles, only `global-admin` has `create` and `delete`. The routes are
+in `openapi.yml`:
+
+| Method and path | Verb | Answer |
+|---|---|---|
+| `GET /experiments/{exp}/captures` | `list` | VM interface `captures`, plus `experimentCaptures`, `support`, `budget`, `budgetError` and `experimentCapturesError` |
+| `POST /experiments/{exp}/captures` | `create` | `201` `{capture, warnings}` |
+| `GET /experiments/{exp}/captures/{id}` | `get` | one capture with `streams`, `404` when minimega does not list it |
+| `DELETE /experiments/{exp}/captures/{id}` | `delete` | `200` with the last counters, and the file stays |
+| `GET /experiments/{exp}/captures/{id}/stream[?from=now]` | `get`, and `experiments/files` `get` | websocket binary messages or a chunked body |
+| `POST /experiments/{exp}/webshark` with `{"capture": "<id>"}` | as for the stream | WebShark on the merged file, title `exp1 capture 3 (live)` |
+
+- The start body is `{"vlans", "filter", "snaplen", "name", "format"}`, all
+  optional. Empty `vlans` is every VLAN (aliases, matched without case),
+  `snaplen` 0 is 1600 (else 14 to 65535), `format` is `pcapng` (default) or
+  `pcap`. The filter allows only letters, digits, spaces and
+  `. : / [ ] ( ) & | ! < > = + - * ,`, at most 1024 bytes. The name becomes `[A-Za-z0-9._-]` with the format's extension.
+  The default name is `<exp>[-<vlan>]-<YYYYmmdd-HHMMSS>.pcapng`, with `-2`,
+  `-3` ... when a file or running capture has it. phenix adds `maxsize` from
+  `ui.captures.max-size` (MiB, default 10240, 0 no limit, restart).
+- Start status codes: `400` invalid input, `409` experiment not running, the
+  mirror budget refuses (`compute1 / mega_bridge_exp1 has 32 of 32 Open
+  vSwitch mirrors`, or 32 captures already run), or a running capture or a
+  file has the given name, `501` no minimega support. A `409` or `400` sends
+  nothing to minimega.
+- Mirror budget: Open vSwitch applies 32 mirrors per bridge and ignores a 33rd.
+  `budget` rows are `{host, bridge, total, experiment, limit, level}` for each
+  host and bridge the experiment's VMs use. `level` is `full` (total >= 32),
+  `near` (>= 28), `half` (experiment > 16) or `ok`. `warnings` name the levels
+  that the new capture passes. A mirror count that fails starts the capture
+  with `cannot count Open vSwitch mirrors: <err>`.
+- `support` is `{available, reason, version}`, for example reason
+  `requires minimega 3.4.0 or later; the head node runs 3.3.0`. `phenix ui`
+  reads the head node's version once at startup, asking every 10 s until
+  minimega answers, and never again: restart it after a minimega upgrade.
+  `ui.features` `minimega-captures` forces support on.
+- A capture has `id`, `state` (`starting`, `running`, `stalled`, `stopping`,
+  `stopped`, `failed`, `orphaned`, `full`), `running`, `path`, `file`
+  (relative to the experiment files, for their download and delete), `format`,
+  `vlans`, `filter`, `start`, `size`, `error`, `counters` and `streams` (one per
+  host and bridge, with `skewWarning` when the skew is over 500 ms).
+  `counters` has `ports`, `packets`, `bytes`, `kdrops`, `pdrops`, `qdrops`,
+  `lost`, `late`, `lagMs` and `skewMs`. 64-bit numbers are decimal strings.
+- Start and stop publish an `experiment/capture` resource on `/ws`, named
+  `<exp>/<id>` with action `start` or `stop`. An experiment stop sends one
+  `stop` named `<exp>/*`. The audit log records them as
+  `capture-start` and `capture-stop` with `phenix.capture.id`.
+- A pcapng stream with `from=now` starts with the section header and the
+  interface blocks. Its `frame.interface_name` is `<host>/<bridge>`.
+- `POST .../vms/{name}/captures` and `POST .../captureVlan` take an optional
+  `format` (`pcapng` default, `pcap`), and the file extension follows it.
+  minimega before 3.4.0 writes only pcap.
+
 ## minimega Console
 
 The console routes need `phenix ui --minimega-console`. `POST /console` starts
