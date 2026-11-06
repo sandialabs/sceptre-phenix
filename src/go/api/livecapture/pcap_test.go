@@ -39,30 +39,41 @@ func record(order binary.ByteOrder, n int) []byte {
 func TestParseHeader(t *testing.T) {
 	t.Parallel()
 
+	var (
+		le = binary.LittleEndian
+		be = binary.BigEndian
+	)
+
 	tests := []struct {
-		name  string
-		b     []byte
-		order binary.ByteOrder
-		err   error
+		name string
+		b    []byte
+		want format
+		err  error
 	}{
-		{"little endian", pcapFile(binary.LittleEndian, 0xa1b2c3d4), binary.LittleEndian, nil},
-		{"big endian", pcapFile(binary.BigEndian, 0xa1b2c3d4), binary.BigEndian, nil},
-		{"nanosecond", pcapFile(binary.LittleEndian, 0xa1b23c4d), binary.LittleEndian, nil},
-		{"pcapng", pcapFile(binary.LittleEndian, 0x0a0d0d0a), nil, errNotPcap},
-		{"short", []byte{0xd4, 0xc3, 0xb2, 0xa1}, nil, errNotPcap},
+		{"little endian", pcapFile(le, magicMicroseconds), format{ng: false, order: le}, nil},
+		{"big endian", pcapFile(be, magicMicroseconds), format{ng: false, order: be}, nil},
+		{"nanosecond", pcapFile(le, magicNanoseconds), format{ng: false, order: le}, nil},
+		{"nanosecond big endian", pcapFile(be, magicNanoseconds), format{ng: false, order: be}, nil},
+		{"pcapng", ngSHB(le), format{ng: true, order: le}, nil},
+		{"pcapng big endian", ngSHB(be), format{ng: true, order: be}, nil},
+		{"pcapng section with options", ngSHB(be, ngOpt(4, "minimega")), format{ng: true, order: be}, nil},
+		{"pcapng without a byte-order magic", pcapFile(le, blockSHB), format{}, errNotPcap},
+		{"pcapng interface block first", ngIDB(le, ngOpt(2, "eth0")), format{}, errNotPcap},
+		{"short", []byte{0xd4, 0xc3, 0xb2, 0xa1}, format{}, errNotPcap},
+		{"short pcapng", ngSHB(le)[:fileHeaderLen-1], format{}, errNotPcap},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			h, err := parseHeader(tt.b)
+			got, err := parseHeader(tt.b)
 			if !errors.Is(err, tt.err) {
 				t.Errorf("parseHeader(%x) error = %v, want %v", tt.b, err, tt.err)
 			}
 
-			if tt.err == nil && h.order != tt.order {
-				t.Errorf("parseHeader(%x).order = %v, want %v", tt.b, h.order, tt.order)
+			if got != tt.want {
+				t.Errorf("parseHeader(%x) = %+v, want %+v", tt.b, got, tt.want)
 			}
 		})
 	}
@@ -72,7 +83,7 @@ func TestComplete(t *testing.T) {
 	t.Parallel()
 
 	var (
-		h     = pcapHeader{order: binary.BigEndian}
+		h     = format{ng: false, order: binary.BigEndian}
 		one   = record(binary.BigEndian, 60)
 		two   = record(binary.BigEndian, 1500)
 		whole = append(append([]byte{}, one...), two...)
@@ -107,7 +118,11 @@ func TestComplete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := h.complete(tt.b)
+			got, next, err := h.complete(tt.b, nil)
+			if next != h {
+				t.Errorf("complete(%d bytes of %s) format = %+v, want %+v", len(tt.b), tt.name, next, h)
+			}
+
 			if !errors.Is(err, tt.err) {
 				t.Errorf("complete(%d bytes of %s) error = %v, want %v", len(tt.b), tt.name, err, tt.err)
 			}
@@ -188,7 +203,7 @@ func TestCompleteProperties(t *testing.T) {
 			wantErr = errCorrupt
 		}
 
-		got, err := pcapHeader{order: order}.complete(b[:cut])
+		got, _, err := format{ng: false, order: order}.complete(b[:cut], nil)
 		if got != want || !errors.Is(err, wantErr) {
 			t.Fatalf("complete(%d of %d bytes, records %v, %q) = %d, %v; want %d, %v",
 				cut, len(b), lens, corrupt, got, err, want, wantErr)

@@ -39,6 +39,11 @@ type fakeCluster struct {
 	running   atomic.Bool
 	capturing atomic.Bool
 	lookups   atomic.Int32 // of the VM's captures
+	nsLookups atomic.Int32 // of the experiment captures
+	nsFails   atomic.Int32 // the experiment capture listings still to fail
+
+	// the state minimega lists the VM's captures in, "" for an older minimega
+	vmState atomic.Value
 
 	mu      sync.Mutex
 	release chan struct{} // while set, mesh reads wait for it to close
@@ -52,9 +57,11 @@ func (c *fakeCluster) GetVMCaptures(...mm.Option) []mm.Capture {
 		return nil
 	}
 
+	state, _ := c.vmState.Load().(string)
+
 	return []mm.Capture{
-		{VM: "vm", Interface: 0, Filepath: c.capturePath(0)},
-		{VM: "vm", Interface: 1, Filepath: c.capturePath(1)},
+		{VM: "vm", Interface: 0, Filepath: c.capturePath(0), State: state},
+		{VM: "vm", Interface: 1, Filepath: c.capturePath(1), State: state},
 	}
 }
 
@@ -740,7 +747,15 @@ func TestTapPoll(t *testing.T) {
 			return b
 		}()
 		large = tapRecords(800, 1500) // more than one remote chunk
+
+		le      = binary.LittleEndian
+		shb     = ngSHB(le, ngOpt(4, "minimega 3.4.0"))
+		ngWhole = ngFile(shb, ngIDB(le), ngEPB(le, 0, 60))
+		ngLarge = ngFile(shb, ngEPB(le, 0, remoteChunk+remoteChunk/2))
+		badEnd  = ngEPB(le, 0, 60)
 	)
+
+	le.PutUint32(badEnd[len(badEnd)-4:], 8)
 
 	tests := []struct {
 		name     string
@@ -749,6 +764,7 @@ func TestTapPoll(t *testing.T) {
 		local    bool
 		readOnly bool
 		size     int64 // already published, with the header parsed
+		ng       bool  // the header parsed is a pcapng one
 		wantMore bool
 		wantSize int64
 		wantErr  error
@@ -769,6 +785,25 @@ func TestTapPoll(t *testing.T) {
 			wantSize: fileHeaderLen + (remoteChunk-fileHeaderLen)/(recordHeaderLen+1500)*(recordHeaderLen+1500),
 		},
 		{name: "spool not writable", data: two, readOnly: true, wantText: "spooling capture"},
+		{name: "pcapng section header partly written", data: shb[:fileHeaderLen+2], wantSize: 0},
+		{name: "pcapng whole blocks", data: append(bytes.Clone(ngWhole), shb[:20]...), wantSize: int64(len(ngWhole))},
+		{name: "pcapng whole blocks on the headnode", data: ngWhole, local: true, wantSize: int64(len(ngWhole))},
+		{
+			name:     "pcapng corrupt block",
+			data:     ngFile(shb, badEnd),
+			wantErr:  errCorrupt,
+			wantText: "at byte " + strconv.Itoa(len(shb)),
+		},
+		{name: "pcapng section header without a byte-order magic", data: pcapFile(le, blockSHB), wantErr: errNotPcap},
+		{name: "pcapng block after a whole one", data: ngLarge, wantMore: true, wantSize: int64(len(shb))},
+		{
+			name:     "pcapng block larger than a chunk",
+			data:     ngLarge,
+			size:     int64(len(shb)),
+			ng:       true,
+			wantMore: true,
+			wantSize: int64(len(ngLarge)),
+		},
 	}
 
 	for _, test := range tests {
@@ -777,7 +812,7 @@ func TestTapPoll(t *testing.T) {
 
 			src := &tapFakeSource{data: test.data, errs: test.errs}
 			tap := tapNew(t, src, test.local, nil, test.readOnly)
-			tap.size, tap.header = test.size, pcapHeader{order: binary.LittleEndian}
+			tap.size, tap.format = test.size, format{ng: test.ng, order: binary.LittleEndian}
 			before := tap.State()
 
 			more, err := tap.poll()
@@ -952,7 +987,7 @@ func TestTapStreamEnds(t *testing.T) {
 			t.Parallel()
 
 			tap := tapNew(t, &tapFakeSource{}, true, test.content, true)
-			tap.header = pcapHeader{order: binary.LittleEndian}
+			tap.format = format{ng: false, order: binary.LittleEndian}
 			tap.size, tap.caughtUp, tap.done, tap.err = int64(len(test.content)), true, test.done, test.err
 
 			if test.closed {
@@ -1488,4 +1523,356 @@ func TestRemoveStaleSpoolsErrors(t *testing.T) {
 			t.Errorf("RemoveStaleSpools() of a spool it cannot remove = %d, %v; want 0, %v", removed, err, fs.ErrPermission)
 		}
 	})
+}
+
+// ngWholeSends returns an error unless each send of out ends at a block
+// boundary, and each send larger than streamChunk is one block.
+func ngWholeSends(out []byte, sends []int) error {
+	var end int
+
+	for _, n := range sends {
+		if _, err := readNg(out[:end+n]); err != nil {
+			return fmt.Errorf("send of bytes %d to %d: %w", end, end+n, err)
+		}
+
+		if n > streamChunk {
+			if lead := int(binary.LittleEndian.Uint32(out[end+4:])); lead != n && int(binary.BigEndian.Uint32(out[end+4:])) != n {
+				return fmt.Errorf("send of bytes %d to %d is larger than %d and more than one block", end, end+n, streamChunk)
+			}
+		}
+
+		end += n
+	}
+
+	return nil
+}
+
+func TestTapFollowsPcapng(t *testing.T) { //nolint:paralleltest // replaces package state
+	for _, remote := range []bool{false, true} {
+		name := "headnode"
+		if remote {
+			name = "remote node"
+		}
+
+		t.Run(name, func(t *testing.T) {
+			cluster := useFakeCluster(t, remote)
+
+			var (
+				le    = binary.LittleEndian
+				shb   = ngSHB(le, ngOpt(4, "minimega 3.4.0"))
+				idb0  = ngIDB(le, ngOpt(2, "compute1/mega_bridge_exp"))
+				one   = ngEPB(le, 0, 60)
+				two   = ngEPB(le, 0, 1500, ngOpt(1, "late"))
+				idb1  = ngIDB(le, ngOpt(2, "compute2/mega_bridge_exp"))
+				three = ngEPB(le, 1, 100)
+				isb   = ngISB(le, 1)
+			)
+
+			// minimega has written the section header, an interface, one packet and part of the next
+			cluster.write(t, ngFile(shb, idb0, one, two[:700]))
+
+			tap, err := Open("exp", "vm", 0)
+			if err != nil {
+				t.Fatalf("Open(exp, vm, 0) error = %v", err)
+			}
+
+			defer tap.Release()
+
+			waitFor(t, tap, "the first packet", func(st State) bool { return st.CaughtUp })
+
+			if got, want := tap.State().Size, int64(len(shb)+len(idb0)+len(one)); got != want {
+				t.Errorf("Tap.State().Size = %d, want %d", got, want)
+			}
+
+			s := collect(tap, false)
+
+			// the rest of the packet, then an interface that joins later and its packet
+			want := ngFile(shb, idb0, one, two, idb1, three, isb)
+
+			cluster.write(t, ngFile(two[700:], idb1, three, isb))
+			waitFor(t, tap, "the new interface's statistics", func(st State) bool { return st.Size == int64(len(want)) })
+
+			cluster.capturing.Store(false)
+
+			select {
+			case err := <-s.done:
+				if err != nil {
+					t.Errorf("Stream(fromNow false) after the capture stops error = %v, want nil", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("Stream(fromNow false) still running 5s after the capture stopped")
+			}
+
+			if diff := cmp.Diff(want, s.out.Bytes()); diff != "" {
+				t.Errorf("Stream(fromNow false) bytes mismatch (-want +got):\n%s", diff)
+			}
+
+			if err := ngWholeSends(s.out.Bytes(), s.sends); err != nil {
+				t.Errorf("Stream(fromNow false) sends %v: %v", s.sends, err)
+			}
+		})
+	}
+}
+
+func TestTapStreamFromNowPcapng(t *testing.T) { //nolint:paralleltest // replaces package state
+	var (
+		le, be = binary.LittleEndian, binary.BigEndian
+		shb    = ngSHB(le, ngOpt(4, "minimega 3.4.0"))
+		idb0   = ngIDB(le, ngOpt(2, "compute1/mega_bridge_exp"))
+		idb1   = ngIDB(le, ngOpt(2, "compute1/mega_bridge_exp/mega_tap3"))
+		idb2   = ngIDB(le, ngOpt(2, "compute2/mega_bridge_exp"))
+		nrb    = ngNRB(le, "web01")
+		shbBE  = ngSHB(be, ngOpt(3, "Linux"))
+		idbBE  = ngIDB(be)
+		nrbBE  = ngNRB(be, "db01", "db01.local")
+	)
+
+	tests := []struct {
+		name   string
+		before []byte // captured before the stream starts
+		after  []byte
+		want   []byte
+	}{
+		{
+			name:   "one section",
+			before: ngFile(shb, idb0, nrb, ngEPB(le, 0, 60), ngEPB(le, 0, 70), ngISB(le, 0), idb1, ngEPB(le, 1, 80)),
+			after:  ngFile(ngEPB(le, 1, 90), idb2, ngEPB(le, 2, 100)),
+			want:   ngFile(shb, idb0, nrb, idb1, ngEPB(le, 1, 90), idb2, ngEPB(le, 2, 100)),
+		},
+		{
+			name:   "nothing before the stream but the section header",
+			before: shb,
+			after:  ngFile(idb0, ngEPB(le, 0, 60)),
+			want:   ngFile(shb, idb0, ngEPB(le, 0, 60)),
+		},
+		{
+			name:   "a second section in the other byte order",
+			before: ngFile(shb, idb0, idb1, ngEPB(le, 1, 60), shbBE, idbBE, nrbBE, ngEPB(be, 0, 70)),
+			after:  ngFile(ngEPB(be, 0, 80), ngISB(be, 0)),
+			want:   ngFile(shbBE, idbBE, nrbBE, ngEPB(be, 0, 80), ngISB(be, 0)),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cluster := useFakeCluster(t, false)
+			cluster.write(t, test.before)
+
+			tap, err := Open("exp", "vm", 0)
+			if err != nil {
+				t.Fatalf("Open(exp, vm, 0) error = %v", err)
+			}
+
+			defer tap.Release()
+
+			waitFor(t, tap, "the backlog", func(st State) bool { return st.CaughtUp })
+
+			s := collect(tap, true)
+
+			select {
+			case <-s.started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("Stream(fromNow true) sent no preamble within 5s")
+			}
+
+			cluster.write(t, test.after)
+			waitFor(t, tap, "the new blocks", func(st State) bool {
+				return st.Size == int64(len(test.before)+len(test.after))
+			})
+
+			cluster.capturing.Store(false)
+
+			if err := <-s.done; err != nil {
+				t.Errorf("Stream(fromNow true) after the capture stops error = %v, want nil", err)
+			}
+
+			if diff := cmp.Diff(test.want, s.out.Bytes()); diff != "" {
+				t.Errorf("Stream(fromNow true) bytes mismatch (-want +got):\n%s", diff)
+			}
+
+			// each packet comes after the description of its interface
+			if _, err := readNg(s.out.Bytes()); err != nil {
+				t.Errorf("reading what Stream(fromNow true) sent error = %v", err)
+			}
+
+			if err := ngWholeSends(s.out.Bytes(), s.sends); err != nil {
+				t.Errorf("Stream(fromNow true) sends %v: %v", s.sends, err)
+			}
+		})
+	}
+}
+
+func TestTapPcapngPreamble(t *testing.T) {
+	t.Parallel()
+
+	var (
+		le, be = binary.LittleEndian, binary.BigEndian
+		shb    = ngSHB(le, ngOpt(4, "minimega 3.4.0"))
+		idb    = ngIDB(le, ngOpt(2, "compute1/mega_bridge_exp"))
+		nrb    = ngNRB(le, "web01")
+		shbBE  = ngSHB(be)
+		idbBE  = ngIDB(be)
+		// larger than a remote chunk and than one send of a Stream
+		bigIdb = ngIDB(le, slices.Repeat([]ngOption{ngOpt(1, strings.Repeat("x", 0xfffc))}, 24)...)
+		bigEpb = ngEPB(le, 0, 2*streamChunk)
+	)
+
+	if len(bigIdb) <= max(remoteChunk, streamChunk) {
+		t.Fatalf("len(large IDB) = %d, want more than %d", len(bigIdb), max(remoteChunk, streamChunk))
+	}
+
+	// spans returns the byte ranges of blocks laid out from off.
+	spans := func(off int, blocks ...[]byte) []span {
+		s := make([]span, 0, len(blocks))
+
+		for _, b := range blocks {
+			s = append(s, span{start: int64(off), end: int64(off + len(b))})
+			off += len(b)
+		}
+
+		return s
+	}
+
+	tests := []struct {
+		name         string
+		data         []byte
+		wantPreamble []span
+		wantFromNow  []byte
+	}{
+		{
+			name: "one section",
+			data: ngFile(shb, idb, ngEPB(le, 0, 60), nrb, ngEPB(le, 0, 70), idb, ngISB(le, 1), ngEPB(le, 1, 80)),
+			wantPreamble: slices.Concat(
+				spans(0, shb, idb),
+				spans(len(shb)+len(idb)+len(ngEPB(le, 0, 60)), nrb),
+				spans(len(shb)+len(idb)+len(ngEPB(le, 0, 60))+len(nrb)+len(ngEPB(le, 0, 70)), idb),
+			),
+			wantFromNow: ngFile(shb, idb, nrb, idb),
+		},
+		{
+			name:         "a second section",
+			data:         ngFile(shb, idb, ngEPB(le, 0, 60), shbBE, idbBE, ngEPB(be, 0, 70)),
+			wantPreamble: spans(len(shb)+len(idb)+len(ngEPB(le, 0, 60)), shbBE, idbBE),
+			wantFromNow:  ngFile(shbBE, idbBE),
+		},
+		{
+			name:         "blocks larger than a chunk",
+			data:         ngFile(shb, bigIdb, bigEpb, ngEPB(le, 0, 60)),
+			wantPreamble: spans(0, shb, bigIdb),
+			wantFromNow:  ngFile(shb, bigIdb),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			tap := tapNew(t, &tapFakeSource{data: test.data}, false, nil, false)
+
+			if err := tap.drain(); err != nil {
+				t.Fatalf("drain() error = %v", err)
+			}
+
+			tap.finish(nil)
+
+			if got, want := tap.State().Size, int64(len(test.data)); got != want {
+				t.Errorf("Tap.State().Size after drain() = %d, want %d", got, want)
+			}
+
+			_, preamble, _ := tap.cut()
+			if diff := cmp.Diff(test.wantPreamble, preamble, cmp.AllowUnexported(span{})); diff != "" {
+				t.Errorf("preamble after drain() mismatch (-want +got):\n%s", diff)
+			}
+
+			for _, fromNow := range []bool{false, true} {
+				var (
+					out   []byte
+					sends []int
+				)
+
+				err := tap.Stream(t.Context(), fromNow, func(b []byte) error {
+					out = append(out, b...)
+					sends = append(sends, len(b))
+
+					return nil
+				})
+				if err != nil {
+					t.Errorf("Stream(fromNow %t) error = %v, want nil", fromNow, err)
+				}
+
+				want := test.data
+				if fromNow {
+					want = test.wantFromNow
+				}
+
+				// cmp.Diff is slow on megabytes
+				if !bytes.Equal(want, out) {
+					t.Errorf("Stream(fromNow %t) sent %d bytes that differ from the %d wanted", fromNow, len(out), len(want))
+				}
+
+				if err := ngWholeSends(out, sends); err != nil {
+					t.Errorf("Stream(fromNow %t) sends %v: %v", fromNow, sends, err)
+				}
+			}
+		})
+	}
+}
+
+// A pcapng stream from now ends with the error of reading or sending its preamble, having sent no packet.
+func TestTapPcapngPreambleFails(t *testing.T) {
+	t.Parallel()
+
+	var (
+		le      = binary.LittleEndian
+		shb     = ngSHB(le)
+		idb     = ngIDB(le)
+		data    = ngFile(shb, idb, ngEPB(le, 0, 60))
+		errSend = errors.New("client went away")
+	)
+
+	tests := []struct {
+		name     string
+		closed   bool // the store is closed before the stream starts
+		send     error
+		want     []byte
+		wantErr  error
+		wantText string
+	}{
+		{name: "preamble not sent", send: errSend, want: ngFile(shb, idb), wantErr: errSend},
+		{name: "preamble unreadable", closed: true, wantErr: os.ErrClosed, wantText: "reading capture preamble"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			tap := tapNew(t, &tapFakeSource{data: data}, false, nil, false)
+
+			if err := tap.drain(); err != nil {
+				t.Fatalf("drain() error = %v", err)
+			}
+
+			tap.finish(nil)
+
+			if test.closed {
+				_ = tap.store.Close()
+			}
+
+			var got []byte
+
+			err := tap.Stream(t.Context(), true, func(b []byte) error {
+				got = append(got, b...)
+
+				return test.send
+			})
+
+			if !errors.Is(err, test.wantErr) || (test.wantText != "" && !strings.Contains(fmt.Sprint(err), test.wantText)) {
+				t.Errorf("Stream(fromNow true) error = %v, want %v containing %q", err, test.wantErr, test.wantText)
+			}
+
+			if diff := cmp.Diff(test.want, got); diff != "" {
+				t.Errorf("Stream(fromNow true) bytes sent mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
