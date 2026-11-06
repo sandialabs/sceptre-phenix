@@ -123,6 +123,7 @@ message BackingImageResponse {
 message StartCaptureRequest {
   uint32 interface = 1;
   string filename = 2;
+  string format = 3;
 }
 
 message UpdateScheduleRequest {

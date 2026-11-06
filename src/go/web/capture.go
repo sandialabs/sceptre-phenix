@@ -26,6 +26,9 @@ import (
 )
 
 // GetExperimentCaptures - GET /experiments/{name}/captures.
+//
+// Lists the VM interface captures of the experiment's VMs that the role may list, and its experiment captures, whether
+// minimega supports them, and the Open vSwitch mirror budget of each host and bridge that the experiment uses.
 func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
@@ -51,11 +54,12 @@ func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) error {
 	var (
 		captures []mm.Capture
 		allowed  []mm.Capture
+		running  = experiment.Running(name)
 	)
 
 	// A stopped experiment has no captures, and asking minimega would
 	// recreate its namespace (see experiment.Running).
-	if experiment.Running(name) {
+	if running {
 		captures = mm.GetExperimentCaptures(mm.NS(name), mm.Context(ctx))
 	}
 
@@ -69,7 +73,14 @@ func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	body, err := marshaler.Marshal(&proto.CaptureList{Captures: util.CapturesToProtobuf(allowed)})
+	list, err := experimentCaptureList(r, name, running)
+	if err != nil {
+		return answerExperimentCaptureError(r, name, "", err)
+	}
+
+	list.Captures = util.CapturesToProtobuf(allowed)
+
+	body, err := marshaler.Marshal(list)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling captures for experiment", "exp", name, "err", err)
 
@@ -80,6 +91,18 @@ func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) error {
 	_, _ = w.Write(body)
 
 	return nil
+}
+
+// vmCaptureList is a capture list of VM interface captures alone.
+func vmCaptureList(captures []mm.Capture) *proto.CaptureList {
+	return &proto.CaptureList{
+		Captures:                util.CapturesToProtobuf(captures),
+		ExperimentCaptures:      []*proto.ExperimentCapture{},
+		Support:                 nil,
+		Budget:                  []*proto.MirrorBudget{},
+		BudgetError:             "",
+		ExperimentCapturesError: "",
+	}
 }
 
 // GetVMCaptures - GET /experiments/{exp}/vms/{name}/captures.
@@ -113,7 +136,7 @@ func GetVMCaptures(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	body, err := marshaler.Marshal(&proto.CaptureList{Captures: util.CapturesToProtobuf(captures)})
+	body, err := marshaler.Marshal(vmCaptureList(captures))
 	if err != nil {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
@@ -158,11 +181,12 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) error {
 
 	iface := int(req.GetInterface())
 	captured := audit.Fields{Experiment: exp, VM: name, Interface: &iface, File: req.GetFilename()}
+	opts := vm.CaptureOptions{Format: req.GetFormat(), MaxSizeMiB: o.captureMaxSize}
 
 	change, cancel := changeContext(r, vmChangeTimeout)
 	defer cancel()
 
-	if err := vm.StartCapture(change, exp, name, iface, req.GetFilename()); err != nil {
+	if err := vm.StartCapture(change, exp, name, iface, req.GetFilename(), opts); err != nil {
 		audit.Failure(r, audit.CaptureStart, "starting capture for VM failed", captured, err)
 
 		if requestCanceled(r, err) {
@@ -176,6 +200,8 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) error {
 			return weberror.New(http.StatusBadRequest, vm.ErrInvalidInterface.Error())
 		case errors.Is(err, vm.ErrDisconnectedInterface):
 			return weberror.New(http.StatusBadRequest, vm.ErrDisconnectedInterface.Error())
+		case errors.Is(err, vm.ErrInvalidFormat):
+			return weberror.New(http.StatusBadRequest, vm.ErrInvalidFormat.Error())
 		}
 
 		if werr := vmStateError(exp, name, err); werr != nil {
@@ -342,7 +368,9 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 	change, cancel := changeContext(r, vmsChangeTimeout)
 	defer cancel()
 
-	vmCaptures, err := vm.CaptureSubnet(change, exp, req.GetSubnet(), req.GetVms())
+	vmCaptures, err := vm.CaptureSubnet(change, exp, req.GetSubnet(), req.GetVms(), vm.CaptureOptions{
+		Format: "", MaxSizeMiB: o.captureMaxSize,
+	})
 	if err != nil {
 		audit.Failure(r, audit.CaptureStart, "starting subnet capture failed", audit.Fields{Experiment: exp, Extra: subnet}, err)
 
@@ -355,7 +383,7 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	body, err = marshaler.Marshal(&proto.CaptureList{Captures: util.CapturesToProtobuf(vmCaptures)})
+	body, err = marshaler.Marshal(vmCaptureList(vmCaptures))
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unable to marshal vm capture list", "err", err)
 
@@ -539,7 +567,9 @@ func StartCaptureVLAN(w http.ResponseWriter, r *http.Request) error {
 	change, cancel := changeContext(r, vmsChangeTimeout)
 	defer cancel()
 
-	captures, err := vm.CaptureVLAN(change, exp, req.GetVlan(), targets)
+	captures, err := vm.CaptureVLAN(change, exp, req.GetVlan(), targets, vm.CaptureOptions{
+		Format: req.GetFormat(), MaxSizeMiB: o.captureMaxSize,
+	})
 	if err != nil {
 		audit.Failure(r, audit.CaptureStart, "starting VLAN capture failed", audit.Fields{Experiment: exp, Extra: vlan}, err)
 
@@ -547,12 +577,16 @@ func StartCaptureVLAN(w http.ResponseWriter, r *http.Request) error {
 			return nil
 		}
 
+		if errors.Is(err, vm.ErrInvalidFormat) {
+			return weberror.New(http.StatusBadRequest, vm.ErrInvalidFormat.Error())
+		}
+
 		plog.Error(plog.TypeSystem, "unable to start VLAN capture", "exp", exp, "vlan", req.GetVlan(), "err", err)
 
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}
 
-	body, err := marshaler.Marshal(&proto.CaptureList{Captures: util.CapturesToProtobuf(captures)})
+	body, err := marshaler.Marshal(vmCaptureList(captures))
 	if err != nil {
 		plog.Error(plog.TypeSystem, "unable to marshal vm capture list", "err", err)
 

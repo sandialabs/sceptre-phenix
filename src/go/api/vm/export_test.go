@@ -21,3 +21,13 @@ func InjectPartitionOf(drive ifaces.NodeDrive) int {
 func VMImage(expName, vmName string) (string, error) {
 	return getVMImage(expName, vmName)
 }
+
+// CaptureFileOf is captureFile, the file of a capture of the experiment expName into out in format.
+func CaptureFileOf(expName, out, format string) string {
+	return captureFile(expName, out, format)
+}
+
+// CaptureFormatOf is the format that minimega writes the captures of opts in.
+func CaptureFormatOf(ctx context.Context, opts CaptureOptions) (string, error) {
+	return opts.format(ctx)
+}

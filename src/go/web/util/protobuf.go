@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -307,6 +308,69 @@ func CaptureToProtobuf(capture mm.Capture) *proto.Capture {
 		Vm:        capture.VM,
 		Interface: uint32(capture.Interface), //nolint:gosec // G115 interface indexes are small
 		Filepath:  capture.Filepath,
+		Id:        capture.ID,
+		State:     capture.State,
+		Format:    capture.Format,
+		Packets:   capture.Packets,
+		Kdrops:    capture.KDrops,
+		Size:      capture.Size,
+		Error:     capture.Error,
+	}
+}
+
+// skewWarning is how far a stream's clock may be from the head node's before its rows warn: half of minimega's
+// default reorder window of 1 s.
+const skewWarning = 500 * time.Millisecond
+
+// ExperimentCaptureToProtobuf converts an experiment capture whose file, relative to the experiment's files
+// directory, is file ("" when it is not there).
+func ExperimentCaptureToProtobuf(c mm.NamespaceCapture, file string) *proto.ExperimentCapture {
+	streams := make([]*proto.CaptureStream, len(c.Streams))
+
+	for i, s := range c.Streams {
+		streams[i] = &proto.CaptureStream{
+			Host:        s.Host,
+			Bridge:      s.Bridge,
+			State:       s.State,
+			Counters:    captureCountersToProtobuf(s.CaptureCounters),
+			SkewWarning: s.Skew > skewWarning || s.Skew < -skewWarning,
+		}
+	}
+
+	vlans := c.VLANs
+	if vlans == nil {
+		vlans = []string{}
+	}
+
+	return &proto.ExperimentCapture{
+		Id:       c.ID,
+		State:    c.State,
+		Running:  c.Running(),
+		Path:     c.Path,
+		File:     file,
+		Format:   c.Format,
+		Vlans:    vlans,
+		Filter:   c.Filter,
+		Start:    c.Start,
+		Size:     c.Size,
+		Error:    c.Error,
+		Counters: captureCountersToProtobuf(c.CaptureCounters),
+		Streams:  streams,
+	}
+}
+
+func captureCountersToProtobuf(c mm.CaptureCounters) *proto.CaptureCounters {
+	return &proto.CaptureCounters{
+		Ports:   c.Ports,
+		Packets: c.Packets,
+		Bytes:   c.Bytes,
+		Kdrops:  c.KDrops,
+		Pdrops:  c.PDrops,
+		Qdrops:  c.QDrops,
+		Lost:    c.Lost,
+		Late:    c.Late,
+		LagMs:   float64(c.Lag) / float64(time.Millisecond),
+		SkewMs:  float64(c.Skew) / float64(time.Millisecond),
 	}
 }
 

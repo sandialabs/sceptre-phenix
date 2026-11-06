@@ -111,7 +111,7 @@ func GetExperimentFileChecksum(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	local, err := experiment.LocalFile(name, path)
+	local, err := experiment.LocalFile(r.Context(), name, path)
 	if err == nil {
 		err = util.ServeChecksum(w, local, path)
 	}
@@ -148,7 +148,7 @@ func DeleteExperimentFile(w http.ResponseWriter, r *http.Request) error {
 
 	deleted := audit.Fields{Experiment: name, File: path}
 
-	err := experiment.DeleteFile(name, path)
+	err := experiment.DeleteFile(r.Context(), name, path)
 	if err != nil {
 		audit.Failure(r, audit.FileDelete, "deleting experiment file failed", deleted, err)
 
@@ -186,7 +186,7 @@ func DeleteExperimentFiles(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	deleted, refused, err := experiment.DeleteFiles(name, paths)
+	deleted, refused, err := experiment.DeleteFiles(r.Context(), name, paths)
 	if err != nil {
 		audit.Failure(r, audit.FileDelete, "deleting experiment files failed", audit.Fields{
 			Experiment: name, Extra: []any{"phenix.file.count", len(paths)},
@@ -255,7 +255,7 @@ func DownloadExperimentFiles(w http.ResponseWriter, r *http.Request) error {
 
 	limits := experiment.ZipLimits{MaxFiles: maxZipFiles, MaxBytes: maxZipBytes}
 
-	zipped, err := experiment.ZipFiles(name, paths, limits, func() io.Writer {
+	zipped, err := experiment.ZipFiles(r.Context(), name, paths, limits, func() io.Writer {
 		started = true
 
 		w.Header().Set("Content-Type", "application/zip")
@@ -325,7 +325,7 @@ func ArchiveExperimentFiles(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	plan, err := experiment.PlanZip(name, paths, experiment.ZipLimits{MaxFiles: maxZipFiles, MaxBytes: maxZipBytes})
+	plan, err := experiment.PlanZip(r.Context(), name, paths, experiment.ZipLimits{MaxFiles: maxZipFiles, MaxBytes: maxZipBytes})
 	if err != nil {
 		status := fileErrorStatus(err)
 		if status == http.StatusInternalServerError {
@@ -555,7 +555,7 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	local, err := experiment.LocalFile(name, path)
+	local, err := experiment.LocalFile(r.Context(), name, path)
 	if err != nil {
 		audit.Failure(r, audit.FileDownload, "getting experiment file failed", fields, err)
 

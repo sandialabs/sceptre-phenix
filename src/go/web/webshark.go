@@ -22,8 +22,10 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"phenix/api/capture"
 	"phenix/api/experiment"
 	"phenix/api/livecapture"
+	"phenix/util/file"
 	"phenix/util/plog"
 	"phenix/web/audit"
 	"phenix/web/capability"
@@ -76,6 +78,9 @@ var (
 	captureExtensions = []string{".pcap", ".pcapng", ".cap"} //nolint:gochecknoglobals // constant list
 )
 
+// sharkFileKinds tells which experiment files WebShark opens.
+const sharkFileKinds = "WebShark opens .pcap, .pcapng and .cap files, and pcap or pcapng files with no extension"
+
 func isCaptureFile(name string) bool {
 	name = strings.TrimSuffix(strings.ToLower(name), ".gz")
 
@@ -92,6 +97,7 @@ type sharkCaptureRequest struct {
 	Path      string `json:"path"`
 	VM        string `json:"vm"`
 	Interface *int   `json:"interface"`
+	Capture   string `json:"capture"`
 }
 
 type sharkCaptureResponse struct {
@@ -104,8 +110,9 @@ type sharkCaptureResponse struct {
 
 // CreateWebSharkCapture - POST /experiments/{exp}/webshark
 //
-// Names a capture for WebShark to open, as a capture grant of the user's (see capability.go): a saved file ({"path"})
-// or a VM interface's running capture ({"vm", "interface"}). A file still being captured is opened live.
+// Names a capture for WebShark to open, as a capture grant of the user's (see capability.go): a saved file ({"path"}),
+// a VM interface's running capture ({"vm", "interface"}) or an experiment capture ({"capture"}). A file still being
+// captured is opened live.
 func CreateWebSharkCapture(w http.ResponseWriter, r *http.Request) error {
 	var (
 		exp = mux.Vars(r)["exp"]
@@ -153,24 +160,34 @@ func resolveSharkTarget(
 	role := middleware.RoleFromContext(r.Context())
 
 	switch {
-	case req.Path != "" && req.VM == "":
+	case req.Capture != "" && req.Path == "" && req.VM == "":
+		return experimentCaptureTarget(r, exp, req.Capture, a)
+	case req.Path != "" && req.VM == "" && req.Capture == "":
 		if !role.Allowed("experiments/files", "get", exp) {
 			audit.Denied(r, a, "opening experiment file in WebShark not allowed", audit.Fields{Experiment: exp, File: req.Path})
 
 			return capability.Target{}, weberror.New(http.StatusForbidden, "forbidden")
 		}
 
-		if !isCaptureFile(req.Path) {
-			return capability.Target{}, weberror.New(http.StatusBadRequest, "WebShark opens .pcap, .pcapng and .cap files")
+		// a file with no extension opens when its first bytes show a capture
+		named := isCaptureFile(req.Path)
+		if !named && path.Ext(req.Path) != "" {
+			return capability.Target{}, weberror.New(http.StatusBadRequest, sharkFileKinds)
 		}
 
 		var writing *experiment.CaptureWritingError
 
-		local, err := experiment.LocalFile(exp, req.Path)
+		local, err := experiment.LocalFile(r.Context(), exp, req.Path)
 
 		switch {
+		case err == nil && !named && file.LocalCaptureFormat(local) == "":
+			return capability.Target{}, weberror.New(http.StatusBadRequest, sharkFileKinds)
 		case err == nil:
-			return capability.Target{Exp: exp, File: req.Path, VM: "", Interface: 0, Live: false, Local: local}, nil
+			return capability.Target{
+				Exp: exp, File: req.Path, VM: "", Interface: 0, Capture: "", Live: false, Local: local,
+			}, nil
+		case errors.As(err, &writing) && writing.ExperimentCapture != "":
+			return experimentCaptureTarget(r, exp, writing.ExperimentCapture, a)
 		case errors.As(err, &writing):
 			req.VM, req.Interface = writing.Capture.VM, &writing.Capture.Interface
 		default:
@@ -183,12 +200,12 @@ func resolveSharkTarget(
 
 			return capability.Target{}, weberror.New(status, err.Error())
 		}
-	case req.VM != "" && req.Path == "":
+	case req.VM != "" && req.Path == "" && req.Capture == "":
 		if req.Interface == nil || *req.Interface < 0 {
 			return capability.Target{}, weberror.New(http.StatusBadRequest, "interface must be an interface index")
 		}
 	default:
-		return capability.Target{}, weberror.New(http.StatusBadRequest, `give either "path" or "vm" and "interface"`)
+		return capability.Target{}, weberror.New(http.StatusBadRequest, `give one of "path", "vm" and "interface", or "capture"`)
 	}
 
 	// a running capture
@@ -219,14 +236,76 @@ func resolveSharkTarget(
 	file, _ := experiment.CaptureFile(exp, capture.Path)
 
 	return capability.Target{
-		Exp: exp, File: file, VM: capture.VM, Interface: capture.Interface, Live: true, Local: "",
+		Exp: exp, File: file, VM: capture.VM, Interface: capture.Interface, Capture: "", Live: true, Local: "",
 	}, nil
+}
+
+// experimentCaptureTarget finds the experiment capture id of exp if the role may read it, and otherwise returns the
+// error to answer, auditing a refusal or failure as action a. A running capture is followed live; a stopped one opens
+// as its saved file.
+func experimentCaptureTarget(r *http.Request, exp, id string, a audit.Action) (capability.Target, error) {
+	var (
+		role   = middleware.RoleFromContext(r.Context())
+		fields = experimentCaptureAuditFields(exp, id, "")
+	)
+
+	if !experimentCaptureReadAllowed(role, exp) {
+		audit.Denied(r, a, "opening experiment capture in WebShark not allowed", fields)
+
+		return capability.Target{}, weberror.New(http.StatusForbidden, "forbidden")
+	}
+
+	failed := func(err error) error {
+		audit.Failure(r, a, "opening experiment capture for WebShark failed", fields, err)
+
+		werr := experimentCaptureError(exp, id, err)
+		if werr.Status == http.StatusInternalServerError {
+			plog.Error(plog.TypeSystem, "opening experiment capture for WebShark", "exp", exp, "capture", id, "err", err)
+		}
+
+		return werr
+	}
+
+	// opening it starts following it, so it is ready when WebShark asks
+	tap, err := livecapture.OpenExperiment(r.Context(), exp, id)
+	if err == nil {
+		c := tap.Capture()
+		tap.Release()
+
+		file, _ := experiment.CaptureFile(exp, c.Path)
+
+		return capability.Target{Exp: exp, File: file, VM: "", Interface: 0, Capture: id, Live: true, Local: ""}, nil
+	}
+
+	if !errors.Is(err, livecapture.ErrNotCapturing) {
+		return capability.Target{}, failed(err)
+	}
+
+	stopped, err := capture.Get(r.Context(), exp, id)
+	if err != nil {
+		return capability.Target{}, failed(err)
+	}
+
+	file := capture.File(exp, stopped)
+	if file == "" {
+		return capability.Target{}, failed(fmt.Errorf("%w: experiment capture %s has no file", capture.ErrNotFound, id))
+	}
+
+	local, err := experiment.LocalFile(r.Context(), exp, file)
+	if err != nil {
+		return capability.Target{}, failed(err)
+	}
+
+	return capability.Target{Exp: exp, File: file, VM: "", Interface: 0, Capture: id, Live: false, Local: local}, nil
 }
 
 // sharkBaseName is the file name WebShark shows and downloads a capture as.
 func sharkBaseName(t capability.Target) string {
-	if t.File != "" {
+	switch {
+	case t.File != "":
 		return path.Base(t.File)
+	case t.Capture != "":
+		return fmt.Sprintf("%s-capture-%s.pcapng", t.Exp, t.Capture)
 	}
 
 	return fmt.Sprintf("%s-%d.pcap", t.VM, t.Interface)
@@ -234,21 +313,34 @@ func sharkBaseName(t capability.Target) string {
 
 // sharkTitle is how the WebShark page names a capture.
 func sharkTitle(t capability.Target) string {
-	if t.Live {
+	switch {
+	case t.Live && t.Capture != "":
+		return fmt.Sprintf("%s capture %s (live)", t.Exp, t.Capture)
+	case t.Live:
 		return fmt.Sprintf("%s interface %d (live)", t.VM, t.Interface)
 	}
 
 	return t.File
 }
 
+// openTargetTap starts following the running capture of the target, or finds the Tap that follows it. ctx bounds the
+// question to minimega that finds an experiment capture.
+func openTargetTap(ctx context.Context, t capability.Target) (*livecapture.Tap, error) {
+	if t.Capture != "" {
+		return livecapture.OpenExperiment(ctx, t.Exp, t.Capture) //nolint:wrapcheck // reported as is
+	}
+
+	return livecapture.Open(t.Exp, t.VM, t.Interface) //nolint:wrapcheck // reported as is
+}
+
 // sharkSource opens what the grant's capture's bytes are read from: its
-// running capture, or its file once that has stopped. The returned Tap, if
-// any, must be released.
-func sharkSource(g capability.Grant) (*livecapture.Tap, *os.File, error) {
+// running capture, or its file once that has stopped, asking minimega in ctx.
+// The returned Tap, if any, must be released.
+func sharkSource(ctx context.Context, g capability.Grant) (*livecapture.Tap, *os.File, error) {
 	t := g.Target
 
 	if t.Live {
-		tap, err := livecapture.Open(t.Exp, t.VM, t.Interface)
+		tap, err := openTargetTap(ctx, t)
 		if err == nil {
 			return tap, nil, nil
 		}
@@ -259,7 +351,7 @@ func sharkSource(g capability.Grant) (*livecapture.Tap, *os.File, error) {
 
 		// the capture stopped and nothing is following it any more: its file
 		// is complete now
-		local, err := experiment.LocalFile(t.Exp, t.File)
+		local, err := experiment.LocalFile(ctx, t.Exp, t.File)
 		if err != nil {
 			return nil, nil, err //nolint:wrapcheck // reported as is
 		}
@@ -291,7 +383,7 @@ func (c grantChecker) serveSharkCapture(
 		return
 	}
 
-	tap, f, err := sharkSource(g)
+	tap, f, err := sharkSource(r.Context(), g)
 	if err != nil {
 		plog.Warn(plog.TypeSystem, "opening capture for WebShark", "exp", g.Target.Exp, "id", g.ID, "err", err)
 		audit.Failure(r, audit.CaptureWebSharkRead, "reading capture for WebShark failed", grantAuditFields(r, g, op), err)
@@ -422,7 +514,7 @@ func (c grantChecker) GetWebSharkWatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tap, f, err := sharkSource(g)
+	tap, f, err := sharkSource(r.Context(), g)
 	if err != nil {
 		sharkError(w, "not found", http.StatusNotFound)
 

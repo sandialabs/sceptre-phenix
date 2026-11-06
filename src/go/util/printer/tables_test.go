@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"phenix/api/capture"
 	"phenix/api/job"
 	"phenix/store"
 	"phenix/types"
@@ -110,6 +111,46 @@ func TestTablePrinters(t *testing.T) {
 +--------+-----------------+------------------------+
 | router |               1 | /exp/files/router.pcap |
 +--------+-----------------+------------------------+
+`,
+		},
+		{
+			name: "experiment captures",
+			render: func(w io.Writer) {
+				PrintTableOfExperimentCaptures(w, []mm.NamespaceCapture{
+					{
+						CaptureCounters: mm.CaptureCounters{Packets: 12, Bytes: 900, KDrops: 1, PDrops: 2, QDrops: 3, Lost: 4},
+						ID:              "3", State: "running", Path: "/exp/files/a.pcapng", Filter: "tcp", Size: 1024,
+						Streams: []mm.CaptureStream{
+							{
+								CaptureCounters: mm.CaptureCounters{Packets: 12, Bytes: 900},
+								Host:            "compute1", Bridge: "phenix", State: "running",
+							},
+						},
+					},
+					{ID: "4", State: "failed", Path: "/exp/files/b.pcap", VLANs: []string{"EXP_1", "EXP_2"}, Error: "boom"},
+				})
+			},
+			want: `+----+----------+--------+---------+---------+-------+-------+------+--------------+--------+---------------------+-------+
+| ID |   HOST   | BRIDGE |  STATE  | PACKETS | BYTES | DROPS | SIZE |    VLANS     | FILTER |      FILE PATH      | ERROR |
++----+----------+--------+---------+---------+-------+-------+------+--------------+--------+---------------------+-------+
+|  3 |          |        | running |      12 |   900 |     6 | 1024 | all          | tcp    | /exp/files/a.pcapng |       |
+|    | compute1 | phenix | running |      12 |   900 |     0 |      |              |        |                     |       |
+|  4 |          |        | failed  |       0 |     0 |     0 |    0 | EXP_1, EXP_2 |        | /exp/files/b.pcap   | boom  |
++----+----------+--------+---------+---------+-------+-------+------+--------------+--------+---------------------+-------+
+`,
+		},
+		{
+			name: "mirror budgets",
+			render: func(w io.Writer) {
+				PrintTableOfMirrorBudgets(w, []capture.Budget{
+					{Host: "compute1", Bridge: "phenix", Total: 29, Experiment: 18, Limit: 32, Level: "near"},
+				})
+			},
+			want: `+----------+--------+---------+------------+-------+-------+
+|   HOST   | BRIDGE | MIRRORS | EXPERIMENT | LIMIT | LEVEL |
++----------+--------+---------+------------+-------+-------+
+| compute1 | phenix |      29 |         18 |    32 | near  |
++----------+--------+---------+------------+-------+-------+
 `,
 		},
 		{

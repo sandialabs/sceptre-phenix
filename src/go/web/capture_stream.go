@@ -5,13 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 
 	"phenix/api/livecapture"
+	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/web/audit"
 	"phenix/web/capability"
@@ -42,8 +45,12 @@ func removeStaleCaptureSpools() {
 	}
 }
 
-// pcapContentType is the registered media type of a pcap file.
-const pcapContentType = "application/vnd.tcpdump.pcap"
+// pcapContentType is the registered media type of a pcap file, and pcapngContentType the media type that tools give a
+// pcapng file.
+const (
+	pcapContentType   = "application/vnd.tcpdump.pcap"
+	pcapngContentType = "application/x-pcapng"
+)
 
 // captureReadAllowed reports whether the role may read the packets of a
 // VM's capture: seeing that it exists (vms/captures list) and reading the
@@ -60,6 +67,8 @@ func captureStreamStatus(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, livecapture.ErrUnsafePath):
 		return http.StatusBadRequest
+	case errors.Is(err, mm.ErrCaptureUnsupported):
+		return http.StatusNotImplemented
 	default:
 		return http.StatusInternalServerError
 	}
@@ -75,7 +84,7 @@ func GetVMCaptureStream(w http.ResponseWriter, r *http.Request) error {
 		vars    = mux.Vars(r)
 		exp     = vars["exp"]
 		name    = vars["name"]
-		fromNow = r.URL.Query().Get("from") == "now"
+		fromNow = streamsFromNow(r)
 	)
 
 	if !captureReadAllowed(role, exp, name) {
@@ -95,7 +104,9 @@ func GetVMCaptureStream(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	tap, err := openCaptureTap(r, fields)
+	target := capability.Target{Exp: exp, File: "", VM: name, Interface: iface, Capture: "", Live: true, Local: ""}
+
+	tap, err := openCaptureTap(r, target, fields)
 	if err != nil {
 		return err
 	}
@@ -127,7 +138,7 @@ func (c grantChecker) GetCaptureStreamByToken(w http.ResponseWriter, r *http.Req
 
 	fields := grantAuditFields(r, g, capability.OpStream)
 
-	tap, err := openCaptureTap(r, fields)
+	tap, err := openCaptureTap(r, g.Target, fields)
 	if err != nil {
 		return err
 	}
@@ -139,30 +150,56 @@ func (c grantChecker) GetCaptureStreamByToken(w http.ResponseWriter, r *http.Req
 	ctx, cancel := c.untilRevoked(r.Context(), g)
 	defer cancel()
 
-	streamCapture(w, r.WithContext(ctx), tap, r.URL.Query().Get("from") == "now")
+	streamCapture(w, r.WithContext(ctx), tap, streamsFromNow(r))
 
 	return nil
 }
 
-// openCaptureTap starts following the running capture of the VM interface
-// fields name, for request r, or returns the error to answer when it cannot.
-func openCaptureTap(r *http.Request, fields audit.Fields) (*livecapture.Tap, error) {
-	exp, vm, iface := fields.Experiment, fields.VM, *fields.Interface
-
-	tap, err := livecapture.Open(exp, vm, iface)
+// openCaptureTap starts following the running capture of the target, a VM
+// interface's or an experiment capture, for request r, or returns the error
+// to answer when it cannot, auditing it with fields.
+func openCaptureTap(r *http.Request, target capability.Target, fields audit.Fields) (*livecapture.Tap, error) {
+	tap, err := openTargetTap(r.Context(), target)
 	if err != nil {
+		what := "VM capture"
+		if target.Capture != "" {
+			what = "experiment capture"
+		}
+
 		// not capturing included: it was an attempt to read the capture
-		audit.Failure(r, audit.CaptureStream, "opening VM capture stream failed", fields, err)
+		audit.Failure(r, audit.CaptureStream, "opening "+what+" stream failed", fields, err)
 
 		status := captureStreamStatus(err)
 		if status == http.StatusInternalServerError {
-			plog.Error(plog.TypeSystem, "opening VM capture stream", "exp", exp, "vm", vm, "interface", iface, "err", err)
+			plog.Error(
+				plog.TypeSystem, "opening "+what+" stream",
+				"exp", target.Exp, "vm", target.VM, "interface", target.Interface, "capture", target.Capture, "err", err,
+			)
 		}
 
 		return nil, weberror.New(status, err.Error())
 	}
 
 	return tap, nil
+}
+
+// streamFileName is the file name and media type of a stream of the capture.
+func streamFileName(c livecapture.Capture) (string, string) {
+	ext, ctype := ".pcap", pcapContentType
+	if strings.EqualFold(filepath.Ext(c.Path), ".pcapng") {
+		ext, ctype = ".pcapng", pcapngContentType
+	}
+
+	if c.ID != "" {
+		return fmt.Sprintf("%s-capture-%s%s", c.Exp, c.ID, ext), ctype
+	}
+
+	return fmt.Sprintf("%s-%d%s", c.VM, c.Interface, ext), ctype
+}
+
+// streamsFromNow reports whether a capture stream request skips the packets captured before it (?from=now).
+func streamsFromNow(r *http.Request) bool {
+	return r.URL.Query().Get("from") == "now"
 }
 
 // streamCapture sends the capture as a chunked pcap body, until it stops or
@@ -172,9 +209,10 @@ func streamCapture(w http.ResponseWriter, r *http.Request, tap *livecapture.Tap,
 	defer release()
 
 	capture := tap.Capture()
+	name, ctype := streamFileName(capture)
 
-	w.Header().Set("Content-Type", pcapContentType)
-	w.Header().Set("Content-Disposition", util.Attachment(fmt.Sprintf("%s-%d.pcap", capture.VM, capture.Interface)))
+	w.Header().Set("Content-Type", ctype)
+	w.Header().Set("Content-Disposition", util.Attachment(name))
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no") // proxies must pass packets on as they come
 	w.WriteHeader(http.StatusOK)
@@ -183,8 +221,8 @@ func streamCapture(w http.ResponseWriter, r *http.Request, tap *livecapture.Tap,
 	if err != nil && ctx.Err() == nil {
 		// the status is gone; the client sees the stream end early
 		plog.Warn(
-			plog.TypeSystem, "streaming VM capture",
-			"exp", capture.Exp, "vm", capture.VM, "interface", capture.Interface, "err", err,
+			plog.TypeSystem, "streaming capture",
+			"exp", capture.Exp, "vm", capture.VM, "interface", capture.Interface, "capture", capture.ID, "err", err,
 		)
 	}
 }

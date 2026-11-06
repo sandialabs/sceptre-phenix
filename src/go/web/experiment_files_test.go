@@ -1166,11 +1166,11 @@ func TestArchiveFilesCutsShortAGrownFile(t *testing.T) {
 	server := serveAs(t, "alice", testRole("experiments/files", "get", "test-experiment")).URL
 	events := captureAudit(t)
 
-	plan, err := experiment.PlanZip("test-experiment", []string{"a.log", "b.log"}, experiment.ZipLimits{
+	plan, err := experiment.PlanZip(context.Background(), "test-experiment", []string{"a.log", "b.log"}, experiment.ZipLimits{
 		MaxFiles: 2, MaxBytes: 1 << 20,
 	})
 	if err != nil {
-		t.Fatalf("experiment.PlanZip(test-experiment, [a.log b.log]) error = %v", err)
+		t.Fatalf("experiment.PlanZip(context.Background(), test-experiment, [a.log b.log]) error = %v", err)
 	}
 
 	local := filepath.Join(common.PhenixBase, "images", "test-experiment", "files", "a.log")
@@ -1479,9 +1479,11 @@ func TestArchiveFilesFailures(t *testing.T) {
 
 			registry := useJobsIn(t, dir)
 
-			plan, err := experiment.PlanZip("test-experiment", []string{"a.log"}, experiment.ZipLimits{MaxFiles: 1, MaxBytes: 1 << 20})
+			plan, err := experiment.PlanZip(
+				context.Background(), "test-experiment", []string{"a.log"}, experiment.ZipLimits{MaxFiles: 1, MaxBytes: 1 << 20},
+			)
 			if err != nil {
-				t.Fatalf("experiment.PlanZip(test-experiment, [a.log]) error = %v", err)
+				t.Fatalf("experiment.PlanZip(context.Background(), test-experiment, [a.log]) error = %v", err)
 			}
 
 			started, err := registry.Start(job.Spec{

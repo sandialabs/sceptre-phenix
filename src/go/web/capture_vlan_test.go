@@ -143,7 +143,11 @@ func TestCaptureVLANRoutes(t *testing.T) {
 			path: start, body: `{"vlan":"EXP_2"}`, role: testRole("vms/captures", "create", "test-experiment/c"),
 			want: http.StatusForbidden, wantAudit: "failure",
 		},
-		"start without a VLAN":                   {path: start, body: `{"vms":["a"]}`, role: creator, want: http.StatusBadRequest},
+		"start without a VLAN": {path: start, body: `{"vms":["a"]}`, role: creator, want: http.StatusBadRequest},
+		"start in an unknown format": {
+			path: start, body: `{"vlan":"EXP_2","format":"erf"}`, role: creator, want: http.StatusBadRequest,
+			wantAudit: "failure",
+		},
 		"start with a body that does not decode": {path: start, body: `{`, role: creator, want: http.StatusBadRequest},
 		"start of a stopped experiment": {
 			path: start, body: `{"vlan":"EXP_2"}`, role: creator, stopped: true,

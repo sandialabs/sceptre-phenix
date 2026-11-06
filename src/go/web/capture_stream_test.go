@@ -344,6 +344,7 @@ func TestCaptureStreamStatus(t *testing.T) {
 	}{
 		"not capturing": {fmt.Errorf("finding: %w", livecapture.ErrNotCapturing), http.StatusNotFound},
 		"unsafe path":   {fmt.Errorf("mesh: %w", livecapture.ErrUnsafePath), http.StatusBadRequest},
+		"unsupported":   {fmt.Errorf("open: %w", mm.ErrCaptureUnsupported), http.StatusNotImplemented},
 		"other":         {errors.New("opening store"), http.StatusInternalServerError},
 		"nil":           {nil, http.StatusInternalServerError},
 	}

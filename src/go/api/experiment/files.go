@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"slices"
@@ -53,8 +54,13 @@ func cleanFilePath(filePath string) (string, error) {
 // captures is still writing. It wraps mm.ErrCaptureExists.
 type CaptureWritingError struct {
 	// Path is the file, relative to the experiment's files directory.
-	Path    string
+	Path string
+	// Capture is the VM interface capture that writes the file, zero for an
+	// experiment capture.
 	Capture mm.Capture
+	// ExperimentCapture is the ID of the experiment capture that writes the
+	// file, "" for a VM interface capture.
+	ExperimentCapture string
 }
 
 func (e *CaptureWritingError) Error() string {
@@ -66,28 +72,41 @@ func (e *CaptureWritingError) Unwrap() error {
 }
 
 // CaptureFile returns the path, relative to the experiment's files directory,
-// of the file a capture writes (minimega's path for it), and false for a
-// capture written anywhere else; phenix always has minimega write captures
-// there.
+// of the file a capture writes (minimega's full path for it, or the path
+// relative to minimega's files directory), and false for a capture written
+// anywhere else; phenix always has minimega write captures there.
 func CaptureFile(name, capturePath string) (string, bool) {
 	_, file, ok := strings.Cut(capturePath, "/"+name+"/files/")
+	if !ok {
+		if file, ok = strings.CutPrefix(capturePath, name+"/files/"); !ok {
+			return "", false
+		}
+	}
 
-	return file, ok && file != ""
+	return file, file != ""
 }
 
-// captureChecker returns a check that fails with a *CaptureWritingError for a
-// pcap one of the experiment's captures is still writing. Only a pcap capture
-// writes to a file, and only a running experiment has captures; asking
-// minimega about a stopped one would recreate its namespace (see Running).
-// The captures are listed once, for the first pcap checked.
-func captureChecker(name string) func(clean string) error {
+// isCapturePath reports whether a file is named as a capture that minimega
+// writes: a pcap or a pcapng.
+func isCapturePath(clean string) bool {
+	return strings.HasSuffix(clean, ".pcap") || strings.HasSuffix(clean, ".pcapng")
+}
+
+// captureChecker returns a check that fails with a *CaptureWritingError for a pcap or pcapng that a VM interface
+// capture (see vmCaptureWrites) or an experiment capture (with mm.CaptureFeatures) of the experiment still writes. Only
+// a running experiment has captures; asking minimega about a stopped one would recreate its namespace (see Running).
+// The captures are listed once, in ctx, for the first capture file checked; a failed list fails the checks.
+func captureChecker(ctx context.Context, name string) func(clean string) error {
 	var (
-		listed   bool
-		captures []mm.Capture
+		listed      bool
+		captures    []mm.Capture
+		expCaptures []mm.NamespaceCapture
+		vmErr       error
+		listErr     error
 	)
 
 	return func(clean string) error {
-		if !strings.HasSuffix(clean, ".pcap") {
+		if !isCapturePath(clean) {
 			return nil
 		}
 
@@ -95,13 +114,31 @@ func captureChecker(name string) func(clean string) error {
 			listed = true
 
 			if Running(name) {
-				captures = mm.GetExperimentCaptures(mm.NS(name))
+				captures, vmErr = mm.GetExperimentCapturesChecked(mm.NS(name), mm.Context(ctx))
+
+				if mm.CaptureFeatures() {
+					expCaptures, listErr = mm.GetNamespaceCaptures(mm.NS(name), mm.Context(ctx))
+				}
 			}
 		}
 
 		for _, c := range captures {
-			if file, ok := CaptureFile(name, c.Filepath); ok && file == clean {
-				return &CaptureWritingError{Path: clean, Capture: c}
+			if file, ok := CaptureFile(name, c.Filepath); ok && file == clean && vmCaptureWrites(c) {
+				return &CaptureWritingError{Path: clean, Capture: c, ExperimentCapture: ""}
+			}
+		}
+
+		if vmErr != nil {
+			return fmt.Errorf("listing the VM captures of %s: %w", name, vmErr)
+		}
+
+		if listErr != nil {
+			return fmt.Errorf("listing the experiment captures of %s: %w", name, listErr)
+		}
+
+		for _, c := range expCaptures {
+			if file, ok := CaptureFile(name, c.Path); ok && file == clean && c.Running() {
+				return &CaptureWritingError{Path: clean, Capture: mm.Capture{}, ExperimentCapture: c.ID} //nolint:exhaustruct // no VM
 			}
 		}
 
@@ -109,9 +146,23 @@ func captureChecker(name string) func(clean string) error {
 	}
 }
 
+// vmCaptureWrites reports whether minimega still writes the file of the VM interface capture c: an older minimega
+// lists no state, and minimega 3.4.0 closes the file of a capture that is failed or full.
+func vmCaptureWrites(c mm.Capture) bool {
+	return c.State == "" || c.State == "running"
+}
+
 // localFilePath is where the headnode keeps the experiment's file.
 func localFilePath(name, clean string) string {
 	return fmt.Sprintf("%s/images/%s/files/%s", common.PhenixBase, name, clean)
+}
+
+// LocalFileExists reports whether the headnode has a file of any kind, or cannot tell, at the path clean of the
+// experiment's files directory.
+func LocalFileExists(name, clean string) bool {
+	_, err := os.Lstat(localFilePath(name, clean))
+
+	return !errors.Is(err, fs.ErrNotExist)
 }
 
 // localFileSize returns the size of the headnode's copy of the file, and
@@ -181,13 +232,15 @@ var storedExtensions = []string{ //nolint:gochecknoglobals // constant list
 // returns, one file at a time. It checks and totals every path first, so ErrInvalidFilePath, ErrFileNotFound,
 // mm.ErrCaptureExists or ErrDownloadTooLarge means nothing was written. It returns the paths archived, even on a later
 // failure. It is PlanZip followed by ZipPlan.Write.
-func ZipFiles(name string, paths []string, limits ZipLimits, start func() io.Writer) ([]string, error) {
-	plan, err := PlanZip(name, paths, limits)
+func ZipFiles(
+	ctx context.Context, name string, paths []string, limits ZipLimits, start func() io.Writer,
+) ([]string, error) {
+	plan, err := PlanZip(ctx, name, paths, limits)
 	if err != nil {
 		return nil, err
 	}
 
-	return plan.Write(context.Background(), start(), ZipHooks{OnStart: nil, OnFile: nil, OnBytes: nil, SkipFailed: false})
+	return plan.Write(ctx, start(), ZipHooks{OnStart: nil, OnFile: nil, OnBytes: nil, SkipFailed: false})
 }
 
 // ZipPlan is a checked zip archive of an experiment's files, ready to write.
@@ -222,8 +275,8 @@ const missingEntry = "MISSING.txt"
 // PlanZip checks every path as File does and totals the files' sizes, the
 // files only a mesh node has sized from the cluster's listing, without
 // copying anything. It fails with ErrInvalidFilePath, ErrFileNotFound,
-// mm.ErrCaptureExists or ErrDownloadTooLarge.
-func PlanZip(name string, paths []string, limits ZipLimits) (ZipPlan, error) {
+// mm.ErrCaptureExists or ErrDownloadTooLarge. ctx bounds its minimega calls.
+func PlanZip(ctx context.Context, name string, paths []string, limits ZipLimits) (ZipPlan, error) {
 	paths = util.Unique(paths)
 
 	if len(paths) == 0 {
@@ -237,7 +290,7 @@ func PlanZip(name string, paths []string, limits ZipLimits) (ZipPlan, error) {
 	}
 
 	var (
-		capturing = captureChecker(name)
+		capturing = captureChecker(ctx, name)
 		listing   file.Files
 		listed    bool
 		plan      = ZipPlan{Name: name, Paths: paths, Sizes: make(map[string]int64, len(paths)), Total: 0}
@@ -467,8 +520,9 @@ func (c *ctxReader) Read(b []byte) (int, error) {
 
 // DeleteFiles deletes the experiment's files at paths (relative to its files directory) from the headnode and every mesh
 // node that has them. It refuses, with the reason, a path File would, one not listed, one minimega could misparse, and a
-// pcap a running capture is writing; after a failure deleting the rest, any of them may remain.
-func DeleteFiles(name string, paths []string) ([]string, map[string]error, error) {
+// capture file a running capture is writing; after a failure deleting the rest, any of them may remain. ctx bounds its
+// minimega calls.
+func DeleteFiles(ctx context.Context, name string, paths []string) ([]string, map[string]error, error) {
 	refused := make(map[string]error)
 
 	if !file.CommandSafe(name) {
@@ -486,7 +540,7 @@ func DeleteFiles(name string, paths []string) ([]string, map[string]error, error
 	}
 
 	var (
-		capturing = captureChecker(name)
+		capturing = captureChecker(ctx, name)
 		accepted  []string
 		names     []string
 	)
@@ -536,8 +590,8 @@ func DeleteFiles(name string, paths []string) ([]string, map[string]error, error
 }
 
 // DeleteFile deletes one of the experiment's files, as DeleteFiles does.
-func DeleteFile(name, filePath string) error {
-	_, refused, err := DeleteFiles(name, []string{filePath})
+func DeleteFile(ctx context.Context, name, filePath string) error {
+	_, refused, err := DeleteFiles(ctx, name, []string{filePath})
 	if err != nil {
 		return err
 	}

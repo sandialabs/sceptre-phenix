@@ -1528,7 +1528,15 @@ paths:
         - Experiments
       summary: Get captures for existing experiment
       description: >-
-        Lists the running captures of the experiment that the role may list.
+        Lists the running VM interface captures of the experiment that the
+        role may list. It also gives the experiment captures, whether
+        minimega supports them (`support`), and the Open vSwitch mirror
+        budget of each host and bridge that the experiment uses (`budget`).
+        Experiment captures and the budget are given only while the
+        experiment runs and minimega supports experiment captures. A budget
+        that cannot be read gives `budgetError`, and experiment captures
+        that cannot be listed give `experimentCapturesError`; the list does
+        not fail.
         Needs `experiments/captures` `list`.
       operationId: getExperimentsNameCaptures
       parameters:
@@ -1553,7 +1561,307 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: the captures could not be encoded
+          description: the experiment captures could not be listed, or the captures could not be encoded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags:
+        - Experiments
+      summary: Start an experiment capture
+      description: >-
+        Starts one packet capture of the running experiment's traffic on all
+        its hosts, which minimega merges into one file in the experiment's
+        files directory on the head node. It needs minimega 3.4.0 or later.
+        The capture uses one Open vSwitch mirror on each host and bridge where
+        the experiment's VMs have an interface on a captured VLAN. phenix
+        refuses the start, and sends nothing to minimega, when one of those
+        bridges has 32 mirrors, or the experiment already runs 32 experiment
+        captures. The answer warns when the experiment uses more than 16
+        mirrors on a bridge, or 28 or more mirrors are on it. The file is at
+        most `ui.captures.max-size` MiB. A default file name that a file or a
+        running capture already has gets the first free suffix `-2`, `-3`
+        and so on. The start is published on the `/ws`
+        websocket as an `experiment/capture` resource named
+        `<experiment>/<id>` with the action `start`. Needs
+        `experiments/captures` `create`.
+      operationId: postExperimentsNameCaptures
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          example: exp1
+          schema:
+            type: string
+      requestBody:
+        description: what to capture
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartExperimentCaptureRequest"
+      responses:
+        "201":
+          description: the capture started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StartExperimentCaptureResponse"
+        "400":
+          description: >-
+            a malformed body, a VLAN that is not one of the experiment's, a
+            filter with a character that phenix does not pass to minimega or
+            of more than 1024 bytes, a snaplen that is not 0 or from 14 to
+            65535, or a format that is not pcapng or pcap
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: the experiment does not exist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: >-
+            the experiment is not running, the Open vSwitch mirror budget
+            refuses the capture, or a running experiment capture writes the
+            file that the request names, or the head node has a file of that
+            name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: the capture could not be started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "501":
+          description: minimega does not support experiment captures (it needs 3.4.0 or later)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/experiments/{name}/captures/{id}":
+    get:
+      tags:
+        - Experiments
+      summary: Get an experiment capture
+      description: >-
+        Gives one experiment capture with the counters of each host and
+        bridge it records. Needs `experiments/captures` `get`.
+      operationId: getExperimentsNameCapturesId
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          example: exp1
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: the ID that minimega gave the capture
+          required: true
+          example: "3"
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExperimentCapture"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: >-
+            the experiment does not exist, or minimega does not list the
+            capture (a stopped experiment has none)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: the experiment captures could not be listed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "501":
+          description: minimega does not support experiment captures
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags:
+        - Experiments
+      summary: Stop an experiment capture
+      description: >-
+        Stops an experiment capture and answers it with its last counters.
+        Its file stays in the experiment's files. The stop ends the capture's
+        stream tokens and is published on the `/ws` websocket as an
+        `experiment/capture` resource named `<experiment>/<id>` with the
+        action `stop`. Needs `experiments/captures` `delete`.
+      operationId: deleteExperimentsNameCapturesId
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          example: exp1
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: the ID that minimega gave the capture
+          required: true
+          example: "3"
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the stopped capture
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExperimentCapture"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: >-
+            the experiment does not exist, or minimega does not list the
+            capture
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: the capture could not be stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "501":
+          description: minimega does not support experiment captures
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/experiments/{name}/captures/{id}/stream":
+    get:
+      tags:
+        - Experiments
+      summary: Stream a running experiment capture
+      description: >-
+        Streams a running experiment capture, from its merged file on the
+        head node, as `GET
+        /experiments/{exp_name}/vms/{vm_name}/captures/{interface}/stream`
+        streams a VM interface's capture, until the capture stops. A plain
+        request gets a chunked body; a websocket request gets binary
+        messages. A pcapng capture starts with its section header and
+        interface blocks, also with `from=now`. Needs `experiments/captures`
+        `get` and `experiments/files` `get` on the experiment.
+      operationId: getExperimentsNameCapturesIdStream
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          example: exp1
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: the ID that minimega gave the capture
+          required: true
+          example: "3"
+          schema:
+            type: string
+        - name: from
+          in: query
+          description: "`now` to skip packets captured before the request"
+          required: false
+          schema:
+            type: string
+            enum: [now]
+      responses:
+        "101":
+          description: switching protocols (websocket)
+        "200":
+          description: the capture, streamed as it grows
+          headers:
+            Content-Disposition:
+              description: "`attachment`, named `<experiment>-capture-<id>.pcapng` (`.pcap` for pcap)"
+              schema:
+                type: string
+            Cache-Control:
+              description: "`no-store`"
+              schema:
+                type: string
+          content:
+            application/x-pcapng:
+              schema:
+                type: string
+                format: binary
+            application/vnd.tcpdump.pcap:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: the capture path is not safe
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: the capture does not run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: the capture could not be opened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "501":
+          description: minimega does not support experiment captures
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: >-
+            the server is shutting down (`Retry-After` says when to try again)
           content:
             application/json:
               schema:
@@ -1569,8 +1877,10 @@ paths:
         `/webshark/embed?capture=<name>&embed=1`. The capture is a saved file,
         by its path in the experiment's files, which needs `experiments/files`
         `get`. Or it is a VM interface's running capture, which also needs
-        `vms/captures` `list` on `<exp>/<vm>`. A file still being captured
-        opens live. WebShark sends no credentials, so the name is a capture
+        `vms/captures` `list` on `<exp>/<vm>`. Or it is an experiment capture,
+        by its ID, which also needs `experiments/captures` `get`: a running
+        one opens live, a stopped one as its file. A file still being
+        captured opens live. WebShark sends no credentials, so the name is a capture
         grant, bound to the caller and its session, and each use checks that
         the caller may still read the capture. The name ends 2 hours after its
         last use or 12 hours after it was given, whichever is first. It also
@@ -1586,7 +1896,7 @@ paths:
           schema:
             type: string
       requestBody:
-        description: the capture to open, a file `path` or a `vm` and `interface`
+        description: the capture to open, a file `path`, a `vm` and `interface`, or a `capture`
         required: true
         content:
           application/json:
@@ -1609,6 +1919,11 @@ paths:
                   type: integer
                   minimum: 0
                   description: index of the VM interface being captured
+                capture:
+                  title: Capture
+                  example: "3"
+                  type: string
+                  description: the ID of an experiment capture
       responses:
         "200":
           description: successful operation
@@ -1629,7 +1944,9 @@ paths:
                     description: whether the capture is still running
                   title:
                     title: Title
-                    description: how the WebShark page names the capture, the file's path or `<vm> interface <n> (live)`
+                    description: >-
+                      how the WebShark page names the capture: the file's path,
+                      `<vm> interface <n> (live)` or `<experiment> capture <id> (live)`
                     example: captures/router_eth0.pcap
                     type: string
                   id:
@@ -1648,9 +1965,9 @@ paths:
                     description: when the name stops working at the latest
         "400":
           description: >-
-            a body that is not valid JSON or is larger than 4 KiB, neither or
-            both of a path and a VM, or a VM without an interface index. Also
-            a path that is not clean and relative to the files
+            a body that is not valid JSON or is larger than 4 KiB, not exactly
+            one of a path, a VM and a capture, or a VM without an interface
+            index. Also a path that is not clean and relative to the files
             directory, or not a capture file.
           content:
             application/json:
@@ -1663,13 +1980,15 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
-          description: no such file, or the interface is not being captured
+          description: >-
+            no such file, the interface is not being captured, or minimega
+            does not list the experiment capture
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "501":
-          description: WebShark is not installed
+          description: WebShark is not installed, or minimega does not support experiment captures
           content:
             application/json:
               schema:
@@ -1905,7 +2224,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Captures"
         "400":
-          description: the body is not a capture request, or it has no VLAN
+          description: >-
+            the body is not a capture request, it has no VLAN, or a start
+            names a format that is not pcapng or pcap
           content:
             application/json:
               schema:
@@ -5471,20 +5792,31 @@ paths:
                   title: "Filename"
                   description: >-
                     name of the capture file in the experiment's files
-                    directory. A folder part is dropped, and `.pcap` is added
-                    when the name does not end in it.
-                  example: capture.pcap
+                    directory. A folder part is dropped, and a `.pcap` or
+                    `.pcapng` extension is replaced by the format's, which is
+                    added when the name has neither.
+                  example: capture.pcapng
                   type: string
+                format:
+                  title: Format
+                  description: >-
+                    the file format; empty is pcapng. A minimega older than
+                    3.4.0 writes pcap, whatever the format.
+                  example: pcapng
+                  type: string
+                  enum: [pcapng, pcap, ""]
             example:
               interface: 0
-              filename: capture.pcap
+              filename: capture.pcapng
+              format: pcapng
       responses:
         "204":
           description: successful operation
         "400":
           description: >-
-            a malformed body, no filename, an interface index that the VM does
-            not have, or an interface that is not connected to a VLAN
+            a malformed body, no filename, a format that is not pcapng or
+            pcap, an interface index that the VM does not have, or an
+            interface that is not connected to a VLAN
           content:
             application/json:
               schema:
@@ -13413,7 +13745,9 @@ components:
       title: "Captures"
       description: >-
         The running packet captures of an experiment or of one VM, or the captures that POST
-        /experiments/{name}/captureSubnet started.
+        /experiments/{name}/captureSubnet started. GET /experiments/{name}/captures also fills
+        `experimentCaptures`, `support`, `budget`, `budgetError` and `experimentCapturesError`;
+        other routes leave them empty and `support` null.
       type: object
       properties:
         captures:
@@ -13422,9 +13756,45 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Capture"
+        experimentCaptures:
+          title: Experiment Captures
+          description: the experiment captures of the experiment, sorted by ID
+          type: array
+          items:
+            $ref: "#/components/schemas/ExperimentCapture"
+        support:
+          title: Support
+          description: whether minimega supports experiment captures; null outside GET /experiments/{name}/captures
+          type: object
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/CaptureSupport"
+        budget:
+          title: Budget
+          description: >-
+            the Open vSwitch mirrors of each host and bridge where the
+            experiment's VMs have an interface, sorted by host, then bridge
+          type: array
+          items:
+            $ref: "#/components/schemas/MirrorBudget"
+        budgetError:
+          title: Budget Error
+          description: why the mirrors could not be counted, or empty
+          example: ""
+          type: string
+        experimentCapturesError:
+          title: Experiment Captures Error
+          description: >-
+            why minimega could not list the experiment captures, or empty;
+            `experimentCaptures` is then empty, and the VM interface captures
+            are still listed
+          example: ""
+          type: string
     Capture:
       title: "Capture"
-      description: "One packet capture: the VM, the index of its interface and the capture file."
+      description: >-
+        One VM interface capture: the VM, the index of its interface and the capture file. With minimega
+        3.4.0 or later, also its ID, state, format and counters; with an older minimega these are empty or 0.
       type: object
       properties:
         vm:
@@ -13442,6 +13812,332 @@ components:
           description: "Path to the packet capture file."
           example: /phenix/captures/capture.pcap
           type: string
+        id:
+          title: ID
+          description: the ID that minimega gave the capture
+          example: "2"
+          type: string
+        state:
+          title: State
+          description: the capture's state, as minimega gives it
+          example: running
+          type: string
+        format:
+          title: Format
+          description: the file format
+          example: pcapng
+          type: string
+          enum: [pcapng, pcap, ""]
+        packets:
+          title: Packets
+          description: the packets captured, a 64-bit number as a decimal string
+          example: "1284"
+          type: string
+        kdrops:
+          title: Kernel Drops
+          description: the packets the kernel dropped, a 64-bit number as a decimal string
+          example: "0"
+          type: string
+        size:
+          title: Size
+          description: the bytes of the capture file, a 64-bit number as a decimal string
+          example: "81920"
+          type: string
+        error:
+          title: Error
+          description: why the capture failed, or empty
+          example: ""
+          type: string
+    CaptureSupport:
+      title: Capture Support
+      description: Whether minimega supports experiment captures, which need minimega 3.4.0 or later, and why not.
+      type: object
+      properties:
+        available:
+          title: Available
+          description: whether phenix can start experiment captures
+          example: false
+          type: boolean
+        reason:
+          title: Reason
+          description: why not, empty when available
+          example: requires minimega 3.4.0 or later; the head node runs 3.3.0
+          type: string
+        version:
+          title: Version
+          description: the minimega version of the head node, empty when it is not known
+          example: 3.3.0
+          type: string
+    MirrorBudget:
+      title: Mirror Budget
+      description: >-
+        The Open vSwitch mirrors on one bridge of one host that the experiment
+        uses. Open vSwitch applies at most 32 mirrors on a bridge, and each
+        running experiment capture uses one.
+      type: object
+      properties:
+        host:
+          title: Host
+          description: the host
+          example: compute1
+          type: string
+        bridge:
+          title: Bridge
+          description: the bridge
+          example: mega_bridge_exp1
+          type: string
+        total:
+          title: Total
+          description: the mirrors on the bridge, of all experiments and tools
+          example: 18
+          type: integer
+        experiment:
+          title: Experiment
+          description: the mirrors of the experiment's captures on the bridge
+          example: 12
+          type: integer
+        limit:
+          title: Limit
+          description: the most mirrors Open vSwitch applies on a bridge
+          example: 32
+          type: integer
+        level:
+          title: Level
+          description: >-
+            `full` with 32 mirrors, `near` with 28 or more, `half` when the
+            experiment uses more than 16, else `ok`
+          example: ok
+          type: string
+          enum: [ok, half, near, full]
+    CaptureCounters:
+      title: Capture Counters
+      description: >-
+        The counters of an experiment capture, or of one host and bridge of it.
+        64-bit numbers are decimal strings.
+      type: object
+      properties:
+        ports:
+          title: Ports
+          description: the VM ports captured
+          example: "6"
+          type: string
+        packets:
+          title: Packets
+          description: the packets written to the file
+          example: "1284113"
+          type: string
+        bytes:
+          title: Bytes
+          description: the bytes of the packets written
+          example: "81920311"
+          type: string
+        kdrops:
+          title: Kernel Drops
+          description: the packets the kernel dropped
+          example: "4"
+          type: string
+        pdrops:
+          title: Pcap Drops
+          description: the packets the capture library dropped
+          example: "8"
+          type: string
+        qdrops:
+          title: Queue Drops
+          description: the packets dropped from full queues
+          example: "0"
+          type: string
+        lost:
+          title: Lost
+          description: the packets lost between a host and the head node
+          example: "0"
+          type: string
+        late:
+          title: Late
+          description: the packets that came after the reorder window
+          example: "21"
+          type: string
+        lagMs:
+          title: Lag (ms)
+          description: how far behind the head node's merge is, in milliseconds
+          example: 80
+          type: number
+        skewMs:
+          title: Skew (ms)
+          description: how far the host's clock is from the head node's, in milliseconds
+          example: 0.3
+          type: number
+    CaptureStream:
+      title: Capture Stream
+      description: The part of an experiment capture that one host records from one bridge.
+      type: object
+      properties:
+        host:
+          title: Host
+          description: the host
+          example: compute1
+          type: string
+        bridge:
+          title: Bridge
+          description: the bridge
+          example: mega_bridge_exp1
+          type: string
+        state:
+          title: State
+          description: the stream's state, as minimega gives it
+          example: running
+          type: string
+        counters:
+          title: Counters
+          description: the counters of this host and bridge
+          type: object
+          allOf:
+            - $ref: "#/components/schemas/CaptureCounters"
+        skewWarning:
+          title: Skew Warning
+          description: whether the skew is more than 500 ms, half of minimega's default reorder window
+          example: false
+          type: boolean
+    ExperimentCapture:
+      title: Experiment Capture
+      description: >-
+        One capture of an experiment's traffic on all its hosts, which
+        minimega merges into one file on the head node.
+      type: object
+      properties:
+        id:
+          title: ID
+          description: the ID that minimega gave the capture
+          example: "3"
+          type: string
+        state:
+          title: State
+          description: the capture's state
+          example: running
+          type: string
+          enum: [starting, running, stalled, stopping, stopped, failed, orphaned, full, ""]
+        running:
+          title: Running
+          description: whether minimega still writes the file (starting, running, stalled or stopping)
+          example: true
+          type: boolean
+        path:
+          title: Path
+          description: the file on the head node
+          example: /phenix/images/exp1/files/exp1-20261105-142233.pcapng
+          type: string
+        file:
+          title: File
+          description: >-
+            the file relative to the experiment's files directory, for the
+            experiment file routes; empty when the file is not there
+          example: exp1-20261105-142233.pcapng
+          type: string
+        format:
+          title: Format
+          description: the file format, from the file's extension
+          example: pcapng
+          type: string
+          enum: [pcapng, pcap, ""]
+        vlans:
+          title: VLANs
+          description: the VLAN aliases captured; empty for all
+          type: array
+          items:
+            type: string
+          example: [EXP_1]
+        filter:
+          title: Filter
+          description: the BPF filter, or empty
+          example: tcp port 502
+          type: string
+        start:
+          title: Start
+          description: when the capture started, as minimega gives it
+          example: "2026-11-05T14:22:33Z"
+          type: string
+        size:
+          title: Size
+          description: the bytes of the file, a 64-bit number as a decimal string
+          example: "851836928"
+          type: string
+        error:
+          title: Error
+          description: why the capture failed, or empty
+          example: ""
+          type: string
+        counters:
+          title: Counters
+          description: the counters of the whole capture, as the head node merges it
+          type: object
+          allOf:
+            - $ref: "#/components/schemas/CaptureCounters"
+        streams:
+          title: Streams
+          description: the part that each host records from each bridge, sorted by host, then bridge
+          type: array
+          items:
+            $ref: "#/components/schemas/CaptureStream"
+    StartExperimentCaptureRequest:
+      title: Start Experiment Capture Request
+      description: What an experiment capture records, and its file.
+      type: object
+      properties:
+        vlans:
+          title: VLANs
+          description: the experiment's VLAN aliases to capture; empty for all
+          type: array
+          items:
+            type: string
+          example: [EXP_1]
+        filter:
+          title: Filter
+          description: >-
+            a BPF filter of at most 1024 bytes, with only letters, digits,
+            spaces and . : / [ ] ( ) & | ! < > = + - * , ; empty for none
+          example: tcp port 502
+          type: string
+        snaplen:
+          title: Snaplen
+          description: the bytes kept of each frame, from 14 to 65535; 0 keeps 1600
+          example: 1600
+          type: integer
+          minimum: 0
+          maximum: 65535
+        name:
+          title: Name
+          description: >-
+            the file name. Characters other than letters, digits, `.`, `_` and
+            `-` become `_`, and the extension follows the format. Empty gives
+            `<experiment>[-<vlan>]-<YYYYmmdd-HHMMSS>.pcapng`, with the VLAN only
+            for exactly one.
+          example: ""
+          type: string
+        format:
+          title: Format
+          description: the file format; empty is pcapng
+          example: pcapng
+          type: string
+          enum: [pcapng, pcap, ""]
+    StartExperimentCaptureResponse:
+      title: Start Experiment Capture Response
+      description: The capture that started, and the warnings of the Open vSwitch mirror budget.
+      type: object
+      properties:
+        capture:
+          title: Capture
+          description: the capture as minimega lists it after the start
+          type: object
+          allOf:
+            - $ref: "#/components/schemas/ExperimentCapture"
+        warnings:
+          title: Warnings
+          description: >-
+            such as `exp1 uses 18 of 32 mirrors on compute1 / mega_bridge_exp1`,
+            or `cannot count Open vSwitch mirrors: <reason>`
+          type: array
+          items:
+            type: string
+          example: ["exp1 uses 18 of 32 mirrors on compute1 / mega_bridge_exp1"]
     CaptureToken:
       title: Capture Token
       description: A capture token, as the experiment's capture token routes give and list it.
@@ -13514,6 +14210,11 @@ components:
               description: the index of the captured VM interface, for a running capture
               example: 0
               type: integer
+            capture:
+              title: Capture
+              description: the ID of the experiment capture, for one
+              example: "3"
+              type: string
         urls:
           title: URLs
           type: object
@@ -13554,6 +14255,11 @@ components:
           example: 0
           type: integer
           description: index of the VM interface being captured
+        capture:
+          title: Capture
+          example: "3"
+          type: string
+          description: the ID of an experiment capture
         operations:
           title: Operations
           type: array
@@ -13638,6 +14344,16 @@ components:
                 description: whether the entry is a directory
                 example: false
                 type: boolean
+              captureFormat:
+                title: Capture Format
+                description: >-
+                  the packet capture format that the file's first bytes show: `pcap` or `pcapng`. It is empty
+                  when the file is not a capture, when only a mesh node has it, when it is not a regular file
+                  on the head node, or when its name does not end in `.pcap`, `.pcapng` or `.cap` and has an
+                  extension.
+                type: string
+                enum: ["", pcap, pcapng]
+                example: pcapng
         total:
           title: Total
           example: 12
@@ -20028,6 +20744,15 @@ components:
           items:
             type: string
           example: [web]
+        format:
+          title: Format
+          description: >-
+            the file format of the captures that a start makes; empty is
+            pcapng. A minimega older than 3.4.0 writes pcap, whatever the
+            format. A stop does not read it.
+          example: pcapng
+          type: string
+          enum: [pcapng, pcap, ""]
     VMUpdate:
       title: VM Update
       type: object
@@ -20178,6 +20903,12 @@ components:
           type: boolean
           description: whether the entry is a folder
           example: false
+        captureFormat:
+          title: Capture Format
+          type: string
+          description: always empty for a file of a VM mount; only the experiment files list reads capture formats
+          enum: [""]
+          example: ""
     ScorchTerminal:
       title: Scorch Terminal
       type: object

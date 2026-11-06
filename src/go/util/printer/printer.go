@@ -13,6 +13,7 @@ import (
 
 	"github.com/olekukonko/tablewriter"
 
+	"phenix/api/capture"
 	"phenix/api/job"
 	"phenix/store"
 	"phenix/types"
@@ -488,4 +489,51 @@ func jobProgress(j job.Job) string {
 	}
 
 	return progress
+}
+
+// PrintTableOfExperimentCaptures writes the experiment captures as an ASCII table: one row for each capture, then one
+// row for each host and bridge that it records, under it.
+func PrintTableOfExperimentCaptures(writer io.Writer, captures []mm.NamespaceCapture) {
+	table := tablewriter.NewWriter(writer)
+	table.SetHeader([]string{
+		"ID", "Host", "Bridge", "State", "Packets", "Bytes", "Drops", "Size", "VLANs", "Filter", "File Path", "Error",
+	})
+
+	counts := func(c mm.CaptureCounters) []string {
+		return []string{
+			strconv.FormatUint(c.Packets, 10), strconv.FormatUint(c.Bytes, 10),
+			strconv.FormatUint(c.KDrops+c.PDrops+c.QDrops, 10),
+		}
+	}
+
+	for _, c := range captures {
+		vlans := strings.Join(c.VLANs, ", ")
+		if vlans == "" {
+			vlans = "all"
+		}
+
+		row := append([]string{c.ID, "", "", c.State}, counts(c.CaptureCounters)...)
+		table.Append(append(row, strconv.FormatInt(c.Size, 10), vlans, c.Filter, c.Path, c.Error))
+
+		for _, s := range c.Streams {
+			row := append([]string{"", s.Host, s.Bridge, s.State}, counts(s.CaptureCounters)...)
+			table.Append(append(row, "", "", "", "", ""))
+		}
+	}
+
+	table.Render()
+}
+
+// PrintTableOfMirrorBudgets writes the Open vSwitch mirror budget of each host and bridge as an ASCII table.
+func PrintTableOfMirrorBudgets(writer io.Writer, budgets []capture.Budget) {
+	table := tablewriter.NewWriter(writer)
+	table.SetHeader([]string{"Host", "Bridge", "Mirrors", "Experiment", "Limit", "Level"})
+
+	for _, b := range budgets {
+		table.Append([]string{
+			b.Host, b.Bridge, strconv.Itoa(b.Total), strconv.Itoa(b.Experiment), strconv.Itoa(b.Limit), b.Level,
+		})
+	}
+
+	table.Render()
 }

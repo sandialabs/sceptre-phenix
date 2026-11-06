@@ -132,6 +132,10 @@ func mintCaptureGrant(r *http.Request, target capability.Target, ops []capabilit
 
 // targetAuditFields name a capture grant's target in an audit event.
 func targetAuditFields(t capability.Target) audit.Fields {
+	if t.Capture != "" {
+		return experimentCaptureAuditFields(t.Exp, t.Capture, t.File)
+	}
+
 	f := audit.Fields{Experiment: t.Exp, VM: t.VM, File: t.File}
 
 	if t.VM != "" {
@@ -149,7 +153,7 @@ func grantAuditFields(r *http.Request, g capability.Grant, op capability.Op) aud
 	f := targetAuditFields(g.Target)
 	f.User = g.User
 	f.URLPath = "-"
-	f.Extra = []any{"phenix.capability.id", g.ID, "phenix.capability.op", string(op)}
+	f.Extra = append(f.Extra, "phenix.capability.id", g.ID, "phenix.capability.op", string(op))
 
 	if route := mux.CurrentRoute(r); route != nil {
 		if tmpl, err := route.GetPathTemplate(); err == nil {
@@ -177,11 +181,11 @@ func mintedAuditFields(g capability.Grant) audit.Fields {
 	}
 
 	f := targetAuditFields(g.Target)
-	f.Extra = []any{
+	f.Extra = append(f.Extra,
 		"phenix.capability.id", g.ID, "phenix.capability.ops", ops,
 		"phenix.capability.expires", g.Expires.UTC().Format(time.RFC3339),
 		"phenix.webshark.live", g.Target.Live,
-	}
+	)
 
 	return f
 }
@@ -297,11 +301,16 @@ func (c grantChecker) recheck(g capability.Grant) (string, error) {
 		return "session ended: " + err.Error(), nil //nolint:nilerr // the reason to revoke the grant
 	}
 
-	if g.Target.VM != "" {
+	switch {
+	case g.Target.Capture != "":
+		if !experimentCaptureReadAllowed(role, g.Target.Exp) {
+			return "capture no longer allowed", nil
+		}
+	case g.Target.VM != "":
 		if !captureReadAllowed(role, g.Target.Exp, g.Target.VM) {
 			return "capture no longer allowed", nil
 		}
-	} else if !role.Allowed("experiments/files", "get", g.Target.Exp) {
+	case !role.Allowed("experiments/files", "get", g.Target.Exp):
 		return "file no longer allowed", nil
 	}
 
@@ -418,6 +427,7 @@ type captureTokenTarget struct {
 	Path      string `json:"path,omitempty"`
 	VM        string `json:"vm,omitempty"`
 	Interface *int   `json:"interface,omitempty"`
+	Capture   string `json:"capture,omitempty"`
 }
 
 // captureToken is a capture grant as the captureTokens routes show it. The
@@ -446,7 +456,7 @@ func newCaptureToken(g capability.Grant) captureToken {
 		LastUsed:   g.LastUsed.UTC().Format(time.RFC3339),
 		Uses:       g.Uses,
 		Experiment: g.Target.Exp,
-		Target:     captureTokenTarget{Path: g.Target.File, VM: "", Interface: nil},
+		Target:     captureTokenTarget{Path: g.Target.File, VM: "", Interface: nil, Capture: g.Target.Capture},
 		URLs:       nil,
 	}
 

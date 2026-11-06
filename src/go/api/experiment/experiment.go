@@ -1267,10 +1267,10 @@ func Delete(name string) error {
 }
 
 // FilesObserved lists the experiment's files matching filter, also reporting
-// when the listing was read from minimega. The listing may be a few seconds
-// old (see file.InvalidateExperimentFiles). It returns an error, not a partial
-// listing, when a cluster node could not be listed, or when ctx ended while
-// the listing waited for minimega (see file.GetExperimentFilesObserved).
+// when the listing was read from minimega, with the capture format of each
+// headnode file, read once for each listing. The listing may be a few seconds old (see
+// file.InvalidateExperimentFiles). It fails, rather than give a partial
+// listing, as file.GetExperimentFilesObserved does.
 func FilesObserved(ctx context.Context, name, filter string) (file.Files, freshness.Observation, error) {
 	return file.GetExperimentFilesObserved(ctx, name, filter) //nolint:wrapcheck // passthrough
 }
@@ -1284,15 +1284,16 @@ func InvalidateFiles(name string) {
 // LocalFile returns the headnode path of one of the experiment's files, by its
 // path relative to the experiment's files directory as listed (see
 // FilesObserved), copying it to the headnode first if only a mesh node has it.
-// It refuses a pcap a running capture is still writing (a *CaptureWritingError,
-// which wraps mm.ErrCaptureExists).
-func LocalFile(name, filePath string) (string, error) {
+// It refuses a capture file a running capture still writes (a
+// *CaptureWritingError, which wraps mm.ErrCaptureExists). ctx bounds its
+// minimega calls.
+func LocalFile(ctx context.Context, name, filePath string) (string, error) {
 	clean, err := cleanFilePath(filePath)
 	if err != nil {
 		return "", err
 	}
 
-	err = captureChecker(name)(clean)
+	err = captureChecker(ctx, name)(clean)
 	if err != nil {
 		return "", err
 	}

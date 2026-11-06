@@ -148,6 +148,10 @@ func Start(ctx context.Context, opts ...ServerOption) error {
 		return fmt.Errorf("invalid ui.netflow.max-size %d bytes: it must not be negative", o.netflowMaxSize)
 	}
 
+	if o.captureMaxSize < 0 {
+		return fmt.Errorf("invalid ui.captures.max-size %d MiB: it must not be negative", o.captureMaxSize)
+	}
+
 	fileServerEndpoint, err := NormalizeFileServerEndpoint(o.fileServerEndpoint)
 	if err != nil {
 		return fmt.Errorf("invalid ui.file-server-endpoint: %w", err)
@@ -195,6 +199,8 @@ func Start(ctx context.Context, opts ...ServerOption) error {
 
 		return err
 	}
+
+	o.startCaptureSupport(background)
 
 	_ = ConfigureUsers(o.users)
 
@@ -488,6 +494,12 @@ func newRouter(assets http.FileSystem, builderOpts ...builderOption) (*mux.Route
 	api.Handle("/experiments/{name}/schedule", weberror.ErrorHandler(ScheduleExperiment)).Methods("POST", "OPTIONS")
 	api.Handle("/schedulers", weberror.ErrorHandler(GetSchedulers)).Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}/captures", weberror.ErrorHandler(GetExperimentCaptures)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/captures", weberror.ErrorHandler(StartExperimentCapture)).Methods("POST", "OPTIONS")
+	api.Handle("/experiments/{exp}/captures/{id}", weberror.ErrorHandler(GetExperimentCapture)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/captures/{id}", weberror.ErrorHandler(StopExperimentCapture)).
+		Methods("DELETE", "OPTIONS")
+	api.Handle("/experiments/{exp}/captures/{id}/stream", weberror.ErrorHandler(GetExperimentCaptureStream)).
+		Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{exp}/captureSubnet", weberror.ErrorHandler(StartCaptureSubnet)).
 		Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{exp}/stopCaptureSubnet", weberror.ErrorHandler(StopCaptureSubnet)).

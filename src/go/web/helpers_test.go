@@ -90,10 +90,48 @@ type testMM struct {
 	screenshot    []byte // every VM's screenshot
 	screenshotErr error  // from taking a screenshot
 
+	// the experiment captures, the Open vSwitch mirrors, and the ID of a started experiment capture
+	nsCaptures []mm.NamespaceCapture
+	nsErr      error                 // from listing the experiment captures
+	nsStarted  []mm.NamespaceCapture // listed once an experiment capture start runs
+	mirrors    []mm.BridgeMirror
+	mirrorErr  error // from listing the mirrors
+	startedID  string
+
 	vmListings, captureListings, stateReads, captureStops atomic.Int32
+	nsStarts, nsStops                                     atomic.Int32
 }
 
 func (m *testMM) IsHeadnode(string) bool { return true }
+
+func (m *testMM) Headnode() string { return "headnode" }
+
+func (m *testMM) GetNamespaceCaptures(...mm.Option) ([]mm.NamespaceCapture, error) {
+	return m.nsCaptures, m.nsErr
+}
+
+func (m *testMM) StartNamespaceCapture(...mm.Option) (string, error) {
+	m.nsStarts.Add(1)
+	m.nsCaptures = append(m.nsCaptures, m.nsStarted...)
+
+	return m.startedID, nil
+}
+
+// StopNamespaceCapture answers every listed experiment capture as stopped.
+func (m *testMM) StopNamespaceCapture(...mm.Option) ([]mm.NamespaceCapture, error) {
+	m.nsStops.Add(1)
+
+	final := slices.Clone(m.nsCaptures)
+	for i := range final {
+		final[i].State = "stopped"
+	}
+
+	return final, nil
+}
+
+func (m *testMM) GetBridgeMirrors(...mm.Option) ([]mm.BridgeMirror, error) {
+	return m.mirrors, m.mirrorErr
+}
 
 func (m *testMM) GetVMHost(...mm.Option) (string, error) { return "headnode", nil }
 
@@ -113,6 +151,12 @@ func (m *testMM) GetExperimentCaptures(...mm.Option) []mm.Capture {
 	m.captureListings.Add(1)
 
 	return m.captures
+}
+
+func (m *testMM) GetExperimentCapturesChecked(...mm.Option) ([]mm.Capture, error) {
+	m.captureListings.Add(1)
+
+	return m.captures, nil
 }
 
 func (m *testMM) GetVMCaptures(...mm.Option) []mm.Capture {

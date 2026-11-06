@@ -111,9 +111,9 @@ func TestStartCapture(t *testing.T) {
 				}
 
 				call = "StartCaptureForVM(" + details + ", " + args + ")"
-				err = vm.StartCaptureForVM(t.Context(), test.details, test.exp, test.vm, test.iface, test.out)
+				err = vm.StartCaptureForVM(t.Context(), test.details, test.exp, test.vm, test.iface, test.out, vm.CaptureOptions{})
 			} else {
-				err = vm.StartCapture(t.Context(), test.exp, test.vm, test.iface, test.out)
+				err = vm.StartCapture(t.Context(), test.exp, test.vm, test.iface, test.out, vm.CaptureOptions{})
 			}
 
 			if !errMatches(err, test.wantErr) {
@@ -404,7 +404,7 @@ func TestCaptureSubnet(t *testing.T) {
 				startErr: test.startErr,
 			})
 
-			got, err := vm.CaptureSubnet(t.Context(), testExp, test.subnet, test.vms)
+			got, err := vm.CaptureSubnet(t.Context(), testExp, test.subnet, test.vms, vm.CaptureOptions{})
 			if !errMatches(err, test.wantErr) {
 				t.Errorf("CaptureSubnet(%q, %q, %q) error = %v, want %v", testExp, test.subnet, test.vms, err, test.wantErr)
 			}
@@ -540,7 +540,7 @@ func TestStopCapturesListsCapturesOnce(t *testing.T) {
 func TestSubnetCapturesGiveUpWithTheirContext(t *testing.T) {
 	calls := map[string]func(ctx context.Context) error{
 		"CaptureSubnet": func(ctx context.Context) error {
-			_, err := vm.CaptureSubnet(ctx, testExp, "10.0.0.0/24", nil)
+			_, err := vm.CaptureSubnet(ctx, testExp, "10.0.0.0/24", nil, vm.CaptureOptions{})
 
 			return err
 		},
@@ -550,7 +550,7 @@ func TestSubnetCapturesGiveUpWithTheirContext(t *testing.T) {
 			return err
 		},
 		"CaptureVLAN": func(ctx context.Context) error {
-			_, err := vm.CaptureVLAN(ctx, testExp, "EXP_1", nil)
+			_, err := vm.CaptureVLAN(ctx, testExp, "EXP_1", nil, vm.CaptureOptions{})
 
 			return err
 		},
@@ -642,7 +642,7 @@ func TestCaptureVLAN(t *testing.T) {
 				startErr: test.startErr,
 			})
 
-			got, err := vm.CaptureVLAN(t.Context(), testExp, test.vlan, test.vms)
+			got, err := vm.CaptureVLAN(t.Context(), testExp, test.vlan, test.vms, vm.CaptureOptions{})
 			if !errMatches(err, test.wantErr) {
 				t.Errorf("CaptureVLAN(%q, %q, %q) error = %v, want %v", testExp, test.vlan, test.vms, err, test.wantErr)
 			}
@@ -665,7 +665,7 @@ func TestCaptureVLANBareAlias(t *testing.T) {
 		captures: []mm.Capture{{VM: "test-vm", Interface: 1, Filepath: "1.pcap"}},
 	}, "EXP_1 (101)", "EXP_2")
 
-	got, err := vm.CaptureVLAN(t.Context(), testExp, "EXP_2", nil)
+	got, err := vm.CaptureVLAN(t.Context(), testExp, "EXP_2", nil, vm.CaptureOptions{})
 	if err != nil {
 		t.Fatalf("CaptureVLAN(%q, EXP_2, nil) error = %v", testExp, err)
 	}
@@ -764,7 +764,7 @@ func TestStopCaptureVLAN(t *testing.T) {
 func TestCaptureVLANUnknownExperiment(t *testing.T) {
 	fake := useSubnetVMs(t, false, &fakeMM{})
 
-	if _, err := vm.CaptureVLAN(t.Context(), "missing", "EXP_1", nil); err == nil {
+	if _, err := vm.CaptureVLAN(t.Context(), "missing", "EXP_1", nil, vm.CaptureOptions{}); err == nil {
 		t.Error("CaptureVLAN(missing, EXP_1, nil) error = nil, want an error")
 	}
 

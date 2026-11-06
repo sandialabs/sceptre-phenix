@@ -1108,7 +1108,10 @@ func TestMintCaptureGrant(t *testing.T) {
 // recheck tells why a grant's user may no longer read its capture, and fails
 // when it cannot tell.
 func TestGrantCheckerRecheck(t *testing.T) {
-	vm := capability.Target{Exp: "test-experiment", VM: "test-vm"}
+	var (
+		vm         = capability.Target{Exp: "test-experiment", VM: "test-vm"}
+		expCapture = capability.Target{Exp: "test-experiment", Capture: "3", Live: true}
+	)
 
 	tests := map[string]struct {
 		role       *rbac.Role // a dev user alice's role; nil for sign-in disabled
@@ -1133,6 +1136,14 @@ func TestGrantCheckerRecheck(t *testing.T) {
 		},
 		"experiment deleted": {
 			user: "global-admin", target: capability.Target{Exp: "gone-experiment"}, want: "experiment deleted",
+		},
+		"allowed experiment capture": {
+			role: ptr(combinedRole(captureRole("get"), testRole("experiments/files", "get", "test-experiment"))),
+			user: "alice", target: expCapture,
+		},
+		"experiment capture not allowed": {
+			role: ptr(testRole("experiments/files", "get", "test-experiment")), user: "alice", target: expCapture,
+			want: "capture no longer allowed",
 		},
 		"invalid experiment": {user: "global-admin", target: capability.Target{Exp: "a/b"}, wantErr: true},
 		"store unreadable":   {user: "global-admin", target: capabilitySaved(), storeFails: true, wantErr: true},

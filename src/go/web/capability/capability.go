@@ -44,6 +44,8 @@ type Target struct {
 	// a running capture: its VM and interface index
 	VM        string
 	Interface int
+	// an experiment capture, running or stopped: its ID
+	Capture string
 	// whether the capture is still running
 	Live bool
 	// a saved capture: where the headnode has its file
