@@ -12,7 +12,9 @@ vi.mock('@/utils/axios.js', modules.axios);
 import {
   canUseWebShark,
   capabilityURL,
+  experimentCaptureTarget,
   isCaptureFile,
+  isCaptureRow,
   mintCaptureStream,
   openFailure,
   openInWebShark,
@@ -72,6 +74,23 @@ describe('capture files', () => {
       expect(isCaptureFile(name)).toBe(false);
     },
   );
+
+  it.each([
+    [{ name: 'x.bin', captureFormat: 'pcapng' }, true],
+    [{ name: 'x.bin', captureFormat: 'pcap' }, true],
+    [{ name: 'x.pcap', captureFormat: 'gzip' }, false],
+    [{ name: 'x.pcap', captureFormat: 'json' }, false],
+    [{ name: 'x.pcap.gz', captureFormat: '' }, true],
+    [{ name: 'x.pcapng.gz', captureFormat: '' }, true],
+    [{ name: 'x.pcap', captureFormat: '' }, true],
+    [{ name: 'x.gz', captureFormat: '' }, false],
+    [{ name: 'x.txt', captureFormat: '' }, false],
+    [{ name: 'x.pcap' }, true],
+    [{ name: 'x.txt' }, false],
+    [undefined, false],
+  ])('a row %j is one by its format, else by its name: %s', (file, want) => {
+    expect(isCaptureRow(file)).toBe(want);
+  });
 });
 
 describe('webSharkURL', () => {
@@ -133,6 +152,34 @@ describe('queryTarget', () => {
     });
   });
 
+  it('names an experiment capture by its ID', () => {
+    const { exp, target } = queryTarget({ exp: 'exp1', capture: '3' });
+    expect(exp).toBe('exp1');
+    expect(target).toEqual(experimentCaptureTarget('3'));
+    expect(target).toMatchObject({
+      key: 'capture:3',
+      capture: '3',
+      label: 'capture 3',
+      body: { capture: '3' },
+      query: { capture: '3' },
+    });
+  });
+
+  it('labels an experiment capture with its scope, and marks a running one', () => {
+    expect(
+      experimentCaptureTarget('4', {
+        live: true,
+        format: 'pcapng',
+        scope: 'EXP_1, EXP_2',
+      }),
+    ).toMatchObject({
+      key: 'capture:4',
+      live: true,
+      format: 'pcapng',
+      label: 'capture 4 · EXP_1, EXP_2',
+    });
+  });
+
   it('names nothing without an experiment or with a bad interface', () => {
     expect(queryTarget({ file: 'a.pcap' })).toEqual({
       exp: null,
@@ -157,6 +204,10 @@ describe('queryTarget', () => {
     const param = (arb) =>
       fc.oneof(arb, fc.array(arb, { minLength: 1, maxLength: 2 }));
     const fileQuery = fc.record({ exp: param(name), file: param(name) });
+    const captureQuery = fc.record({
+      exp: param(name),
+      capture: param(name),
+    });
     const liveQuery = fc.record({
       exp: param(name),
       vm: param(name),
@@ -169,7 +220,7 @@ describe('queryTarget', () => {
       fc.array(fc.option(fc.string()), { maxLength: 2 }),
     );
     const anyQuery = fc.record(
-      { exp: value, file: value, vm: value, iface: value },
+      { exp: value, file: value, capture: value, vm: value, iface: value },
       { requiredKeys: [] },
     );
     const roundTrips = (q) => {
@@ -182,6 +233,13 @@ describe('queryTarget', () => {
         expect(queryTarget(q).target.live).toBe(false);
         roundTrips(q);
       }),
+    );
+    fc.assert(
+      fc.property(captureQuery, (q) => {
+        expect(queryTarget(q).target.key).toMatch(/^capture:/);
+        roundTrips(q);
+      }),
+      { numRuns: 100 },
     );
     fc.assert(
       fc.property(liveQuery, (q) => {

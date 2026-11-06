@@ -667,6 +667,26 @@ describe('opening a file', () => {
   });
 
   it.each([
+    [
+      'a capture by its first bytes, whatever its name',
+      'capture',
+      'pcapng',
+      true,
+    ],
+    ['a classic pcap by its first bytes', 'trace.bin', 'pcap', true],
+    ['a file named like a capture that is none', 'fake.pcap', 'json', false],
+    ['a gzipped capture the server did not read', 'x.pcap.gz', '', true],
+    ['a file the server did not read, by its name', 'notes.txt', '', false],
+  ])(
+    'tells %s from the format the server read',
+    async (_, name, captureFormat, want) => {
+      store.features = ['webshark'];
+      const tab = await listing([row(name, { captureFormat })]);
+      expect(byLabel(tab, `Open ${name} in WebShark`).exists()).toBe(want);
+    },
+  );
+
+  it.each([
     ['WebShark is not installed', ['tunneler-download'], allowAll],
     ['the server has not said what it has installed', null, allowAll],
     [

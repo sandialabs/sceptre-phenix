@@ -136,19 +136,52 @@ export function netflowCaptureURL(name, id, format, token) {
 }
 
 // GET /experiments/{name}/captures, the name encoded: the packet captures
-// running on the experiment's VMs
+// running on the experiment's VMs, and its experiment captures with whether
+// minimega supports them and how many Open vSwitch mirrors each host uses
 export function listExperimentCaptures(name) {
   return axiosInstance.get(`experiments/${encodeURIComponent(name)}/captures`);
 }
 
+const experimentCaptureURL = (exp, id) =>
+  `experiments/${encodeURIComponent(exp)}/captures/${encodeURIComponent(id)}`;
+
+// POST /experiments/{exp}/captures: starts one capture of the experiment's
+// traffic on every host, body { vlans, filter, snaplen, name, format };
+// answers { capture, warnings }
+export function startExperimentCapture(exp, body) {
+  return axiosInstance.post(
+    `experiments/${encodeURIComponent(exp)}/captures`,
+    body,
+  );
+}
+
+// GET /experiments/{exp}/captures/{id}: one experiment capture and its
+// streams
+export function getExperimentCapture(exp, id) {
+  return axiosInstance.get(experimentCaptureURL(exp, id));
+}
+
+// DELETE /experiments/{exp}/captures/{id}: stops an experiment capture and
+// answers with its last counters
+export function stopExperimentCapture(exp, id) {
+  return axiosInstance.delete(experimentCaptureURL(exp, id));
+}
+
 // POST /experiments/{name}/captureVlan: starts packet captures on every
-// interface of the experiment's VMs on the VLAN alias
-export function startVlanCaptures(name, vlan) {
-  return axiosInstance.post(`experiments/${name}/captureVlan`, { vlan });
+// interface of the experiment's VMs on the VLAN alias, in the format
+// (pcapng or pcap) when it is given
+export function startVlanCaptures(name, vlan, format) {
+  return axiosInstance.post(
+    `experiments/${encodeURIComponent(name)}/captureVlan`,
+    format ? { vlan, format } : { vlan },
+  );
 }
 
 // POST /experiments/{name}/stopCaptureVlan: stops the packet captures on
 // the VLAN alias
 export function stopVlanCaptures(name, vlan) {
-  return axiosInstance.post(`experiments/${name}/stopCaptureVlan`, { vlan });
+  return axiosInstance.post(
+    `experiments/${encodeURIComponent(name)}/stopCaptureVlan`,
+    { vlan },
+  );
 }

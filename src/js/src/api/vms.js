@@ -146,11 +146,13 @@ export function listVmCaptures(exp, vm) {
 }
 
 // POST /experiments/{exp}/vms/{vm}/captures: starts capturing the
-// interface's packets into the experiment file filename
-export function createVmCapture(exp, vm, iface, filename) {
+// interface's packets into the experiment file filename, in the format
+// (pcapng or pcap) when it is given
+export function createVmCapture(exp, vm, iface, filename, format) {
   return axiosInstance.post(capturesURL(exp, vm), {
     interface: iface,
     filename,
+    ...(format && { format }),
   });
 }
 

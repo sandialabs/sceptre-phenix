@@ -307,6 +307,9 @@ describe('the network menus', () => {
   // the items that change a running VM's interface, and the Files tab link
   const VLAN_ITEMS = ['Change VLAN…', 'Disconnect', 'Set link quality…'];
   const FILES_ITEM = 'Show capture files in the Files tab';
+  // the experiment capture item, greyed out while minimega lacks support
+  const CAPTURE_VLAN = (vlan) =>
+    `Capture VLAN ${vlan}… (requires minimega 3.4.0 or later) (disabled)`;
 
   // the network buttons of a VM's interfaces
   const triggers = (wrapper, name) =>
@@ -356,7 +359,8 @@ describe('the network menus', () => {
       [
         ...VLAN_ITEMS,
         'Start capture on this interface',
-        'Start captures on VLAN dmz',
+        'Start interface captures on VLAN dmz',
+        CAPTURE_VLAN('dmz'),
         'Show VMs on VLAN dmz',
         FILES_ITEM,
       ],
@@ -368,8 +372,9 @@ describe('the network menus', () => {
       [
         ...VLAN_ITEMS,
         'Stop capture on this interface',
-        'Start captures on VLAN mgmt',
-        'Stop captures on VLAN mgmt',
+        'Start interface captures on VLAN mgmt',
+        'Stop interface captures on VLAN mgmt',
+        CAPTURE_VLAN('mgmt'),
         'Show VMs on VLAN mgmt',
         FILES_ITEM,
       ],
@@ -381,8 +386,9 @@ describe('the network menus', () => {
       [
         ...VLAN_ITEMS,
         'Start capture on this interface',
-        'Start captures on VLAN dmz',
-        'Stop captures on VLAN dmz',
+        'Start interface captures on VLAN dmz',
+        'Stop interface captures on VLAN dmz',
+        CAPTURE_VLAN('dmz'),
         'Show VMs on VLAN dmz',
         FILES_ITEM,
       ],
@@ -412,10 +418,15 @@ describe('the network menus', () => {
     ['disconnect', 0, 'Disconnect', [web, 0]],
     ['link-quality', 1, 'Set link quality…', [web, 1]],
     ['search', 0, 'Show VMs on VLAN dmz', ['"dmz (149)"']],
-    ['capture', 0, 'Start capture on this interface', [web, 0]],
+    ['start-capture', 0, 'Start capture on this interface', [web, 0]],
     ['capture', 1, 'Stop capture on this interface', [web, 1]],
-    ['capture-vlan', 0, 'Start captures on VLAN dmz', ['DMZ', true]],
-    ['capture-vlan', 1, 'Stop captures on VLAN mgmt', ['MGMT', false]],
+    ['capture-vlan', 0, 'Start interface captures on VLAN dmz', ['DMZ', true]],
+    [
+      'capture-vlan',
+      1,
+      'Stop interface captures on VLAN mgmt',
+      ['MGMT', false],
+    ],
   ])(
     'emits %s for interface %i from %s, then closes',
     async (event, iface, text, args) => {
@@ -433,9 +444,9 @@ describe('the network menus', () => {
     [['vms', 'patch'], 'Set link quality…'],
     [['vms', 'list'], 'Show VMs on VLAN mgmt'],
     [['experiments/files', 'list'], FILES_ITEM],
-    [['vms/captures', 'create'], 'Start captures on VLAN mgmt'],
+    [['vms/captures', 'create'], 'Start interface captures on VLAN mgmt'],
     [['vms/captures', 'delete'], 'Stop capture on this interface'],
-    [['vms/captures', 'delete'], 'Stop captures on VLAN mgmt'],
+    [['vms/captures', 'delete'], 'Stop interface captures on VLAN mgmt'],
   ])('offers to a role without %j no %s', async (perm, text) => {
     const offered = async () => {
       document.body.innerHTML = '';
@@ -448,12 +459,65 @@ describe('the network menus', () => {
     expect(await offered()).not.toContain(text);
   });
 
+  describe('the experiment capture of a VLAN', () => {
+    const supported = { captureSupport: { available: true, reason: '' } };
+
+    it('opens the capture dialog on the VLAN, then closes', async () => {
+      const wrapper = await render([web], supported);
+      await openMenu(wrapper, 'web', 0);
+      expect(itemTexts()).toContain('Capture VLAN dmz…');
+      await pick('Capture VLAN dmz…');
+      expect(wrapper.emitted('capture-experiment')).toEqual([['DMZ']]);
+      expect(items()).toEqual([]);
+    });
+
+    it('is offered for a VM not running too', async () => {
+      const off = vm({ running: false, state: 'QUIT' });
+      const wrapper = await render([off], supported);
+      await openMenu(wrapper, 'web', 0);
+      expect(itemTexts()).toContain('Capture VLAN dmz…');
+    });
+
+    it.each([
+      ['experiments/captures', 'create'],
+      ['experiments/captures', '*'],
+    ])('is not offered to a role without %s %s', async (...perm) => {
+      const offered = async () => {
+        document.body.innerHTML = '';
+        const wrapper = await render([web], supported);
+        await openMenu(wrapper, 'web', 1);
+        return itemTexts();
+      };
+      expect(await offered()).toContain('Capture VLAN mgmt…');
+      rbac.allowed = denyOnly(perm);
+      expect(await offered()).not.toContain('Capture VLAN mgmt…');
+    });
+
+    it('is greyed out with the short reason while minimega lacks support', async () => {
+      const wrapper = await render([web], {
+        captureSupport: {
+          available: false,
+          reason: 'requires minimega 3.4.0 or later; the head node runs 3.3.0',
+        },
+      });
+      await openMenu(wrapper, 'web', 0);
+      expect(itemTexts()).toContain(CAPTURE_VLAN('dmz'));
+      // a disabled item cannot be picked
+      items()
+        .find((b) => textOf(b).startsWith('Capture VLAN'))
+        .click();
+      await flushPromises();
+      expect(wrapper.emitted('capture-experiment')).toBeUndefined();
+    });
+  });
+
   it('offers no VLAN change, Disconnect or link quality for a VM not running', async () => {
     const wrapper = await render([vm({ running: false, state: 'QUIT' })]);
     await openMenu(wrapper, 'web', 0);
     expect(itemTexts()).toEqual([
       'Start capture on this interface (the VM is not running) (disabled)',
-      'Start captures on VLAN dmz (the VM is not running) (disabled)',
+      'Start interface captures on VLAN dmz (the VM is not running) (disabled)',
+      CAPTURE_VLAN('dmz'),
       'Show VMs on VLAN dmz',
       FILES_ITEM,
     ]);
@@ -463,7 +527,7 @@ describe('the network menus', () => {
     const wrapper = await render([{ ...web, networks: ['A"B (5)'] }]);
     await openMenu(wrapper, 'web', 0);
     expect(itemTexts()).not.toContain('Show VMs on VLAN a"b');
-    expect(itemTexts()).toContain('Start captures on VLAN a"b');
+    expect(itemTexts()).toContain('Start interface captures on VLAN a"b');
   });
 
   // the open menu's link with this text, by the URL it goes to
@@ -550,7 +614,7 @@ describe('the network menus', () => {
     await openMenu(wrapper, 'web', 0);
     expect(itemTexts()).toEqual([
       'Start capture on this interface (the VM is not running) (disabled)',
-      'Start captures on VLAN dmz (the VM is not running) (disabled)',
+      'Start interface captures on VLAN dmz (the VM is not running) (disabled)',
     ]);
   });
 
@@ -573,7 +637,7 @@ describe('the network menus', () => {
     await openMenu(wrapper, 'web', 0);
     expect(itemTexts()).toEqual([
       'Start capture on this interface (disabled)',
-      'Start captures on VLAN dmz (disabled)',
+      'Start interface captures on VLAN dmz (disabled)',
     ]);
     expect(document.activeElement).toBe(trigger.element);
 
@@ -608,7 +672,7 @@ describe('the network menus', () => {
     });
     await wrapper.find('.vm-network-trigger').trigger('click');
     await flushPromises();
-    expect(items()).toHaveLength(7);
+    expect(items()).toHaveLength(8);
     await wrapper.setProps({ vm: { ...web, name: 'db' } });
     expect(items()).toEqual([]);
   });
@@ -621,7 +685,7 @@ describe('the network menus', () => {
       .querySelector('.vm-network-items')
       .dispatchEvent(new Event('scroll'));
     await flushPromises();
-    expect(items()).toHaveLength(7);
+    expect(items()).toHaveLength(8);
     window.dispatchEvent(new Event('scroll'));
     await flushPromises();
     expect(items()).toEqual([]);
@@ -642,7 +706,8 @@ describe('the network menus', () => {
       [
         ...VLAN_ITEMS,
         'Start capture on this interface',
-        'Start captures on VLAN dmz',
+        'Start interface captures on VLAN dmz',
+        CAPTURE_VLAN('dmz'),
         'Show VMs on VLAN dmz',
         FILES_ITEM,
       ],
@@ -653,7 +718,8 @@ describe('the network menus', () => {
       [
         ...VLAN_ITEMS,
         'Start capture on this interface (disabled)',
-        'Start captures on VLAN dmz',
+        'Start interface captures on VLAN dmz',
+        CAPTURE_VLAN('dmz'),
         'Show VMs on VLAN dmz',
         FILES_ITEM,
       ],
@@ -664,7 +730,8 @@ describe('the network menus', () => {
       [
         ...VLAN_ITEMS,
         'Start capture on this interface',
-        'Start captures on VLAN dmz (disabled)',
+        'Start interface captures on VLAN dmz (disabled)',
+        CAPTURE_VLAN('dmz'),
         'Show VMs on VLAN dmz',
         FILES_ITEM,
       ],
@@ -749,7 +816,7 @@ describe('the network menus', () => {
     const wrapper = await render([web]);
     await openMenu(wrapper, 'web', 0);
     document.querySelector('.vm-network-items').click();
-    expect(items()).toHaveLength(7);
+    expect(items()).toHaveLength(8);
     document.body.click();
     await flushPromises();
     expect(items()).toEqual([]);

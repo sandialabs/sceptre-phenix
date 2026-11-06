@@ -38,6 +38,16 @@
           :loading="listsLoading"
           :disabled="!exp"
           @update:model-value="pickCapture">
+          <optgroup
+            v-if="experimentCaptureOptions.length"
+            label="Experiment captures">
+            <option
+              v-for="t in experimentCaptureOptions"
+              :key="t.key"
+              :value="t.key">
+              {{ t.label }}{{ t.live ? ' (live)' : '' }}
+            </option>
+          </optgroup>
           <optgroup v-if="liveOptions.length" label="Live captures">
             <option v-for="t in liveOptions" :key="t.key" :value="t.key">
               {{ t.label }}
@@ -104,6 +114,32 @@
           </b-tooltip>
         </div>
       </div>
+      <!-- WebShark takes no display filter from the page, so these copy one -->
+      <div
+        v-if="capture && displayFilters.length"
+        class="webshark-filters"
+        role="group"
+        aria-label="Display filters for one host">
+        <span class="webshark-label">
+          Display filters to paste into the WebShark filter box:
+        </span>
+        <span
+          v-for="f in displayFilters"
+          :key="f.filter"
+          class="webshark-filter">
+          <span class="webshark-label">{{ f.label }}:</span>
+          <code>{{ f.filter }}</code>
+          <b-button
+            class="webshark-filter-copy"
+            size="is-small"
+            type="is-light"
+            icon-left="copy"
+            :aria-label="`Copy the ${f.label} filter`"
+            @click="copyFilter(f.filter)">
+            Copy
+          </b-button>
+        </span>
+      </div>
       <!-- sized to the room left in the window (fitFrame) -->
       <div ref="frame" class="webshark-frame" :style="{ height: frameHeight }">
         <iframe
@@ -137,10 +173,16 @@
   import { roomInWindow } from '@/utils/viewportFit.js';
   import { vmInterfaces } from '@/components/experiment/vmActions.js';
   import {
+    captureScope,
+    hostFilters,
+    isRunning,
+  } from '@/components/experiment/experimentCaptures.js';
+  import {
     capabilityURL,
     captureStreamCLI,
+    experimentCaptureTarget,
     fileTarget,
-    isCaptureFile,
+    isCaptureRow,
     liveTarget,
     mintCaptureStream,
     openFailure,
@@ -153,10 +195,10 @@
 
   // the targets a picker group lists, plus the one the URL names when the
   // lists do not have it (not loaded yet, or a capture that has stopped), so
-  // the picker shows it
-  const withSelected = (targets, selected, live) =>
+  // the picker shows it; `kind` is the group's key prefix
+  const withSelected = (targets, selected, kind) =>
     selected &&
-    selected.live === live &&
+    selected.key.startsWith(`${kind}:`) &&
     !targets.some((t) => t.key === selected.key)
       ? [...targets, selected]
       : targets;
@@ -240,11 +282,29 @@
         }
         return [{ name: this.exp, running: false }, ...this.experiments];
       },
+      experimentCaptureOptions() {
+        return withSelected(this.experimentCaptures, this.selected, 'capture');
+      },
       liveOptions() {
-        return withSelected(this.liveCaptures, this.selected, true);
+        return withSelected(this.liveCaptures, this.selected, 'live');
       },
       fileOptions() {
-        return withSelected(this.savedFiles, this.selected, false);
+        return withSelected(this.savedFiles, this.selected, 'file');
+      },
+      // every capture the picker lists
+      captureOptions() {
+        return [
+          ...this.experimentCaptureOptions,
+          ...this.liveOptions,
+          ...this.fileOptions,
+        ];
+      },
+      // the display filters of the picked experiment capture's hosts, from
+      // the list, which has its format and streams
+      displayFilters() {
+        const key = this.selected?.key;
+        const listed = this.experimentCaptures.find((t) => t.key === key);
+        return listed ? hostFilters(listed) : [];
       },
       frameURL() {
         return this.capture ? webSharkURL(this.capture.capture) : null;
@@ -259,6 +319,8 @@
       streamTarget() {
         const selected = this.selected;
         if (!this.capture?.live || !selected) return null;
+        // an experiment capture has no stream token of its own yet
+        if (selected.key.startsWith('capture:')) return null;
         if (selected.live) return selected;
         return (
           this.liveCaptures.find((c) =>
@@ -269,9 +331,7 @@
       capturePlaceholder() {
         if (!this.exp) return 'Pick an experiment first';
         if (this.listsLoading) return 'Loading captures…';
-        if (!this.liveOptions.length && !this.fileOptions.length) {
-          return 'No captures';
-        }
+        if (!this.captureOptions.length) return 'No captures';
         return 'Pick a capture';
       },
       emptyText() {
@@ -281,7 +341,7 @@
           return 'Pick an experiment, then one of its live captures or saved capture files to view its packets.';
         }
         if (this.listsLoading) return 'Loading captures…';
-        if (!this.liveOptions.length && !this.fileOptions.length) {
+        if (!this.captureOptions.length) {
           return `${this.exp} has no live captures or saved capture files.`;
         }
         return 'Pick a live capture or a saved capture file to view its packets.';
@@ -319,6 +379,7 @@
 
         if (exp !== this.exp) {
           this.exp = exp;
+          this.experimentCaptures = [];
           this.liveCaptures = [];
           this.savedFiles = [];
           this.loadLists();
@@ -334,9 +395,7 @@
       },
 
       pickCapture(key) {
-        const target = [...this.liveOptions, ...this.fileOptions].find(
-          (t) => t.key === key,
-        );
+        const target = this.captureOptions.find((t) => t.key === key);
         if (!target) return;
         this.$router.replace({ query: { exp: this.exp, ...target.query } });
       },
@@ -364,7 +423,8 @@
 
         this.listsLoading = false;
         if (live.status === 'fulfilled') {
-          this.liveCaptures = live.value;
+          this.liveCaptures = live.value.live;
+          this.experimentCaptures = live.value.experiment;
         } else {
           useErrorNotification(live.reason);
         }
@@ -376,14 +436,34 @@
         this.$nextTick(this.fitFrame);
       },
 
-      // the experiment's running captures the role may open, named after
-      // their interface's network when the experiment page has listed the VM
+      // The experiment's captures the role may open: { live, experiment }.
+      // The running VM interface captures are named after their interface's
+      // network when the experiment page has listed the VM; the experiment
+      // captures, newest first, by ID and scope, those that failed left out.
+      // An experiment capture opens only with experiments/files get too.
       async fetchLiveCaptures(exp) {
-        if (!roleAllowed('experiments/captures', 'list', exp)) return [];
+        if (!roleAllowed('experiments/captures', 'list', exp)) {
+          return { live: [], experiment: [] };
+        }
 
         const resp = await experimentsApi.listExperimentCaptures(exp);
+        const experiment =
+          roleAllowed('experiments/captures', 'get', exp) &&
+          roleAllowed('experiments/files', 'get', exp)
+            ? (resp.data?.experimentCaptures ?? [])
+                .filter((c) => c.id && c.state !== 'failed')
+                .map((c) =>
+                  experimentCaptureTarget(c.id, {
+                    live: isRunning(c),
+                    format: c.format,
+                    streams: c.streams,
+                    scope: captureScope(c),
+                  }),
+                )
+                .reverse()
+            : [];
         const vms = cachedPage(experimentKey(exp))?.data?.vms ?? [];
-        return (resp.data?.captures ?? [])
+        const live = (resp.data?.captures ?? [])
           .filter((c) => roleAllowed('vms/captures', 'list', `${exp}/${c.vm}`))
           .map((c) => {
             const vm = vms.find((v) => v.name === c.vm);
@@ -394,6 +474,7 @@
             };
           })
           .sort((a, b) => a.vm.localeCompare(b.vm) || a.iface - b.iface);
+        return { live, experiment };
       },
 
       // the experiment's capture files, newest first
@@ -410,7 +491,7 @@
           { params: { sortCol: 'date', sortDir: 'desc' } },
         );
         return (resp.data?.files ?? [])
-          .filter((f) => !f.isDir && isCaptureFile(f.name))
+          .filter((f) => !f.isDir && isCaptureRow(f))
           .map((f) => fileTarget(f.path, f.size));
       },
 
@@ -520,6 +601,23 @@
         });
       },
 
+      // Copies a display filter for the user to paste into WebShark, which
+      // takes none from this page.
+      async copyFilter(filter) {
+        const copied = await copyWhenReady(Promise.resolve(filter));
+        this.$buefy.toast.open(
+          copied
+            ? {
+                message: `Copied ${filter}. Paste it into the WebShark display filter box.`,
+                type: 'is-success',
+              }
+            : {
+                message: `Could not copy the filter. Select ${filter} and copy it.`,
+                type: 'is-warning',
+              },
+        );
+      },
+
       // Sizes the frame to the room left in the window, so WebShark scrolls
       // inside it and the page never does.
       fitFrame() {
@@ -537,6 +635,7 @@
         // the experiment the URL names
         exp: null,
         // what the capture picker lists (see utils/webshark.js)
+        experimentCaptures: [],
         liveCaptures: [],
         savedFiles: [],
         listsLoading: false,
@@ -600,6 +699,22 @@
   .webshark-bar-end {
     margin-left: auto;
     display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .webshark-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 1rem;
+    padding: 0.35rem 0.6rem;
+    background: #484848;
+    border-bottom: 1px solid #6e6e6e;
+  }
+
+  .webshark-filter {
+    display: inline-flex;
     align-items: center;
     gap: 0.4rem;
   }

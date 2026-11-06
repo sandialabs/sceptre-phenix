@@ -90,8 +90,9 @@ export function useVmCaptures({ fanOut }) {
   // The capture button of an interface: asks the server which captures
   // are running (minimega lists them across the cluster, which takes a
   // moment), then starts or stops this interface's capture. The button
-  // spins until the server has answered both.
-  async function handlePcap(vm, iface) {
+  // spins until the server has answered both. With a format (pcapng or
+  // pcap), picked in the format dialog, it only starts one in that format.
+  async function handlePcap(vm, iface, format) {
     if (capturePending.value[captureKey(vm.name, iface)]) return;
 
     const time = uniqueStamp();
@@ -101,7 +102,13 @@ export function useVmCaptures({ fanOut }) {
     try {
       const resp = await vmsApi.listVmCaptures(expName, vm.name);
       // the row updates from the capture's websocket event
-      if (isInterfaceCapturing(resp.data?.captures ?? [], iface)) {
+      const capturing = isInterfaceCapturing(resp.data?.captures ?? [], iface);
+      if (capturing && format) {
+        proxy.$buefy.toast.open({
+          message: `phēnix already captures interface ${iface} of the ${vm.name} VM.`,
+          type: 'is-info',
+        });
+      } else if (capturing) {
         await vmsApi.deleteVmCapture(expName, vm.name, iface);
       } else if (vm.networks[iface] == 'disconnected') {
         showError('Cannot capture traffic on a disconnected interface.');
@@ -110,7 +117,8 @@ export function useVmCaptures({ fanOut }) {
           expName,
           vm.name,
           iface,
-          captureFilename(vm.name, iface, time),
+          captureFilename(vm.name, iface, time, format),
+          format,
         );
       }
     } catch (err) {
@@ -191,10 +199,11 @@ export function useVmCaptures({ fanOut }) {
   }
 
   // Starts or stops the packet captures on every interface on a VLAN, from
-  // an interface's network menu; the rows update from the captures' events.
-  // Its summary toast stands for the events', which the server sends before
-  // it answers: those of a VM on the VLAN, or not on this page, are hushed.
-  async function captureVlan(alias, start) {
+  // an interface's network menu, starting them in the format when given;
+  // the rows update from the captures' events. Its summary toast stands for
+  // the events', which the server sends before it answers: those of a VM on
+  // the VLAN, or not on this page, are hushed.
+  async function captureVlan(alias, start, format) {
     if (vlanCapturePending.value[alias]) return;
 
     const vlan = alias.toLowerCase();
@@ -205,7 +214,11 @@ export function useVmCaptures({ fanOut }) {
     vlanCapturePending.value = { ...vlanCapturePending.value, [alias]: true };
     try {
       if (start) {
-        const resp = await experimentsApi.startVlanCaptures(exp(), alias);
+        const resp = await experimentsApi.startVlanCaptures(
+          exp(),
+          alias,
+          format,
+        );
         const started = new Set(
           (resp.data?.captures ?? []).map((c) => captureKey(c.vm, c.interface)),
         );

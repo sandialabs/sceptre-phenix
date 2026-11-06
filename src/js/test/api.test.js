@@ -469,10 +469,62 @@ const requests = [
     ['experiments/exp/captureVlan', { vlan: 'DMZ' }],
   ],
   [
+    'startVlanCaptures in a format',
+    () => experimentsApi.startVlanCaptures('exp', 'DMZ', 'pcap'),
+    'post',
+    ['experiments/exp/captureVlan', { vlan: 'DMZ', format: 'pcap' }],
+  ],
+  [
+    'startVlanCaptures with the name encoded',
+    () => experimentsApi.startVlanCaptures('a b', 'DMZ'),
+    'post',
+    ['experiments/a%20b/captureVlan', { vlan: 'DMZ' }],
+  ],
+  [
     'stopVlanCaptures',
     () => experimentsApi.stopVlanCaptures('exp', 'DMZ'),
     'post',
     ['experiments/exp/stopCaptureVlan', { vlan: 'DMZ' }],
+  ],
+  [
+    'stopVlanCaptures with the name encoded',
+    () => experimentsApi.stopVlanCaptures('a/b', 'DMZ'),
+    'post',
+    ['experiments/a%2Fb/stopCaptureVlan', { vlan: 'DMZ' }],
+  ],
+  [
+    'startExperimentCapture',
+    () =>
+      experimentsApi.startExperimentCapture('a b', {
+        vlans: ['DMZ'],
+        filter: 'tcp',
+        snaplen: 1600,
+        name: '',
+        format: 'pcapng',
+      }),
+    'post',
+    [
+      'experiments/a%20b/captures',
+      {
+        vlans: ['DMZ'],
+        filter: 'tcp',
+        snaplen: 1600,
+        name: '',
+        format: 'pcapng',
+      },
+    ],
+  ],
+  [
+    'getExperimentCapture',
+    () => experimentsApi.getExperimentCapture('a b', '3/4'),
+    'get',
+    ['experiments/a%20b/captures/3%2F4'],
+  ],
+  [
+    'stopExperimentCapture',
+    () => experimentsApi.stopExperimentCapture('a b', '3'),
+    'delete',
+    ['experiments/a%20b/captures/3'],
   ],
   [
     'getExperimentApps',
@@ -734,6 +786,15 @@ const requests = [
     ['experiments/exp/vms/a/captures', { interface: 0, filename: 'a_0.pcap' }],
   ],
   [
+    'createVmCapture in a format',
+    () => vmsApi.createVmCapture('exp', 'a', 0, 'a_0.pcapng', 'pcapng'),
+    'post',
+    [
+      'experiments/exp/vms/a/captures',
+      { interface: 0, filename: 'a_0.pcapng', format: 'pcapng' },
+    ],
+  ],
+  [
     'deleteVmCapture on an interface',
     () => vmsApi.deleteVmCapture('exp', 'a', 0),
     'delete',
@@ -981,6 +1042,31 @@ describe('names encoded into a path', () => {
       'listExperimentCaptures',
       (name) => experimentsApi.listExperimentCaptures(name),
       (name) => ['experiments', name, 'captures'],
+    ],
+    [
+      'startExperimentCapture',
+      (name) => experimentsApi.startExperimentCapture(name, {}),
+      (name) => ['experiments', name, 'captures'],
+    ],
+    [
+      'getExperimentCapture',
+      (name) => experimentsApi.getExperimentCapture(name, name),
+      (name) => ['experiments', name, 'captures', name],
+    ],
+    [
+      'stopExperimentCapture',
+      (name) => experimentsApi.stopExperimentCapture(name, name),
+      (name) => ['experiments', name, 'captures', name],
+    ],
+    [
+      'startVlanCaptures',
+      (name) => experimentsApi.startVlanCaptures(name, 'DMZ'),
+      (name) => ['experiments', name, 'captureVlan'],
+    ],
+    [
+      'stopVlanCaptures',
+      (name) => experimentsApi.stopVlanCaptures(name, 'DMZ'),
+      (name) => ['experiments', name, 'stopCaptureVlan'],
     ],
     [
       'getVmScreenshot',

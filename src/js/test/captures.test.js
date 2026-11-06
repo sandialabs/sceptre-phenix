@@ -96,4 +96,12 @@ describe('captureFilename', () => {
       'web_2_2026-09-28_0914.pcap',
     );
   });
+
+  test.each([
+    ['pcapng', 'web_0_t.pcapng'],
+    ['pcap', 'web_0_t.pcap'],
+    [undefined, 'web_0_t.pcap'],
+  ])('gives the file of format %s its extension', (format, want) => {
+    expect(captureFilename('web', 0, 't', format)).toBe(want);
+  });
 });

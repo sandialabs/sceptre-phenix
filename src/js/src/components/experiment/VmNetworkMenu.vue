@@ -63,6 +63,7 @@
   import { isInterfaceCapturing } from '@/utils/captures.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import { canUseWebShark, webSharkInstalled } from '@/utils/webshark.js';
+  import { shortReason } from './experimentCaptures.js';
   import { TAB } from './experimentTabs.js';
   import { vlanAlias } from './vmActions.js';
 
@@ -70,9 +71,10 @@
 
   // The menu of a VM interface's network in the VM table: changing or
   // disconnecting its VLAN, setting its link quality, starting or stopping
-  // packet captures on it or on its whole VLAN, listing the VMs on its VLAN,
-  // and links to its capture files and live capture. A network with no item
-  // to press, and no request waiting, shows as text.
+  // packet captures on it or on the interfaces of its whole VLAN, an
+  // experiment capture of its VLAN, listing the VMs on its VLAN, and links
+  // to its capture files and live capture. A network with no item to press,
+  // and no request waiting, shows as text.
   export default {
     name: 'VmNetworkMenu',
     props: {
@@ -87,14 +89,23 @@
       vlanChangePending: { type: Boolean, default: false },
       capturePending: { type: Boolean, default: false },
       vlanCapturePending: { type: Boolean, default: false },
+      // { available, reason }: whether minimega supports experiment captures
+      captureSupport: {
+        type: Object,
+        default: () => ({ available: false, reason: '' }),
+      },
     },
     emits: [
       'change-vlan',
       'disconnect',
       'link-quality',
+      // stop the interface's capture, or start one
       'capture',
+      'start-capture',
       // (alias, start): start or stop the captures on the interface's VLAN
       'capture-vlan',
+      // (alias): open the experiment capture dialog for the VLAN
+      'capture-experiment',
       // (term): search the VM table for the VMs on the interface's VLAN
       'show-vlan',
     ],
@@ -134,6 +145,11 @@
           }
           items.push({ name: 'link-quality', label: 'Set link quality…' });
         }
+        // an experiment capture item minimega rules out says why
+        const support = this.captureSupport;
+        const unsupported = support.available
+          ? ''
+          : ` (${shortReason(support.reason)})`;
         if (may('vms/captures', capturing ? 'delete' : 'create')) {
           items.push({
             name: capturing ? 'stop' : 'start',
@@ -144,15 +160,25 @@
         if (this.alias && may('vms/captures', 'create')) {
           items.push({
             name: 'start-vlan',
-            label: `Start captures on VLAN ${vlan}${why}`,
+            label: `Start interface captures on VLAN ${vlan}${why}`,
             disabled: off || this.vlanCapturePending,
           });
         }
         if (this.alias && this.vlanCaptured && may('vms/captures', 'delete')) {
           items.push({
             name: 'stop-vlan',
-            label: `Stop captures on VLAN ${vlan}${why}`,
+            label: `Stop interface captures on VLAN ${vlan}${why}`,
             disabled: off || this.vlanCapturePending,
+          });
+        }
+        if (
+          this.alias &&
+          roleAllowed('experiments/captures', 'create', this.experiment)
+        ) {
+          items.push({
+            name: 'capture-experiment',
+            label: `Capture VLAN ${vlan}…${unsupported}`,
+            disabled: !support.available,
           });
         }
         if (this.vlanTerm && may('vms', 'list')) {
@@ -298,8 +324,13 @@
             this.$emit('show-vlan', this.vlanTerm);
             break;
           case 'start':
+            this.$emit('start-capture');
+            break;
           case 'stop':
             this.$emit('capture');
+            break;
+          case 'capture-experiment':
+            this.$emit('capture-experiment', this.alias);
             break;
           default:
             this.$emit('capture-vlan', this.alias, item.name === 'start-vlan');

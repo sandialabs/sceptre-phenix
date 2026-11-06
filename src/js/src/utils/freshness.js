@@ -82,6 +82,12 @@ export const RESOURCES = {
   },
   settings: { live: false, staleAfterMs: 10 * MINUTE },
   vmtiles: { pollMs: MINUTE, staleAfterMs: 3 * MINUTE },
+  // a running experiment's captures, which its Captures tab lists while it
+  // shows; capture start and stop events reload them at once
+  captures: { pollMs: 5 * SECOND },
+  // the count of running captures on the Captures tab, read again while
+  // another tab shows: a capture that turns full or failed sends no event
+  captureCount: { pollMs: 30 * SECOND },
 };
 
 // Rules for the keys that name one experiment: its page, running or stopped,
