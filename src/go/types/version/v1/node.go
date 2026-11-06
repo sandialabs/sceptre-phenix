@@ -789,8 +789,8 @@ func (h Hardware) DiskConfig(snapshot string) string {
 	for i, d := range h.DrivesF {
 		config := []string{d.ImageF}
 
-		if i == 0 && snapshot != "" {
-			config[0] = snapshot
+		if snapshot != "" {
+			config[0] = DriveSnapshotName(snapshot, i)
 		}
 
 		if d.IfaceF != "" {
@@ -809,6 +809,16 @@ func (h Hardware) DiskConfig(snapshot string) string {
 	}
 
 	return strings.Join(configs, " ")
+}
+
+// DriveSnapshotName returns the snapshot name for the drive at the given index,
+// derived from the first drive's snapshot name (which is returned unchanged).
+func DriveSnapshotName(snapshot string, drive int) string {
+	if drive == 0 {
+		return snapshot
+	}
+
+	return fmt.Sprintf("%s_%d", snapshot, drive)
 }
 
 func (d Drive) GetInjectPartition() int {
