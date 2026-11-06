@@ -10,8 +10,13 @@ import (
 	"time"
 
 	ifaces "phenix/types/interfaces"
+	"phenix/util/firecracker"
 	"phenix/util/plog"
 )
+
+// ErrFirecrackerNode is the error that node validation wraps when a
+// firecracker node sets something that minimega cannot launch.
+var ErrFirecrackerNode = errors.New("firecracker node")
 
 type Node struct {
 	AnnotationsF map[string]any    `json:"annotations" mapstructure:"annotations" structs:"annotations" yaml:"annotations"`
@@ -438,11 +443,14 @@ func (g *General) SetDoNotBoot(b bool) {
 }
 
 type Hardware struct {
-	CPUF    string   `json:"cpu"     mapstructure:"cpu"     structs:"cpu"     yaml:"cpu"`
-	VCPUF   int      `json:"vcpus"   mapstructure:"vcpus"   structs:"vcpus"   yaml:"vcpus"`
-	MemoryF int      `json:"memory"  mapstructure:"memory"  structs:"memory"  yaml:"memory"`
-	OSTypeF string   `json:"os_type" mapstructure:"os_type" structs:"os_type" yaml:"os_type"`
-	DrivesF []*Drive `json:"drives"  mapstructure:"drives"  structs:"drives"  yaml:"drives"`
+	CPUF        string   `json:"cpu"                   mapstructure:"cpu"         structs:"cpu"                   yaml:"cpu"`
+	VCPUF       int      `json:"vcpus"                 mapstructure:"vcpus"       structs:"vcpus"                 yaml:"vcpus"`
+	MemoryF     int      `json:"memory"                mapstructure:"memory"      structs:"memory"                yaml:"memory"`
+	OSTypeF     string   `json:"os_type"               mapstructure:"os_type"     structs:"os_type"               yaml:"os_type"`
+	DrivesF     []*Drive `json:"drives"                mapstructure:"drives"      structs:"drives"                yaml:"drives"`
+	KernelF     string   `json:"kernel,omitempty"      mapstructure:"kernel"      structs:"kernel,omitempty"      yaml:"kernel,omitempty"`
+	InitrdF     string   `json:"initrd,omitempty"      mapstructure:"initrd"      structs:"initrd,omitempty"      yaml:"initrd,omitempty"`
+	KernelArgsF string   `json:"kernel_args,omitempty" mapstructure:"kernel_args" structs:"kernel_args,omitempty" yaml:"kernel_args,omitempty"`
 }
 
 func (h *Hardware) CPU() string {
@@ -489,6 +497,37 @@ func (h *Hardware) Drives() []ifaces.NodeDrive {
 	}
 
 	return drives
+}
+
+func (h *Hardware) Kernel() string {
+	if h == nil {
+		return ""
+	}
+
+	return h.KernelF
+}
+
+func (h *Hardware) Initrd() string {
+	if h == nil {
+		return ""
+	}
+
+	return h.InitrdF
+}
+
+func (h *Hardware) KernelArgs() string {
+	if h == nil {
+		return ""
+	}
+
+	return h.KernelArgsF
+}
+
+// FirecrackerAppend returns the kernel command line the minimega script sets
+// for a firecracker node: kernel_args, plus root=/dev/vda1 rw when it sets no
+// root=.
+func (h *Hardware) FirecrackerAppend() string {
+	return firecracker.KernelArgs(h.KernelArgs())
 }
 
 func (h *Hardware) SetVCPU(v int) {
@@ -614,6 +653,12 @@ func (n Node) validate() error {
 		)
 	}
 
+	if n.GeneralF.VMTypeF == firecracker.VMType {
+		if err := n.validateFirecracker(); err != nil {
+			return err
+		}
+	}
+
 	if n.NetworkF == nil {
 		return nil
 	}
@@ -660,6 +705,106 @@ func (n Node) validate() error {
 	return nil
 }
 
+// validateFirecracker checks what minimega needs to launch a firecracker node.
+// It runs before setDefaults, so an unset os_type, vcpus or snapshot has its
+// default value.
+func (n Node) validateFirecracker() error {
+	hostname := n.GeneralF.HostnameF
+
+	hardware := n.HardwareF
+	if hardware == nil {
+		hardware = new(Hardware)
+	}
+
+	if osType := hardware.OSTypeF; osType != "" && osType != "linux" {
+		return fmt.Errorf("%w: hardware.os_type is %q, but firecracker nodes run only linux", ErrFirecrackerNode, osType)
+	}
+
+	if strings.TrimSpace(hardware.KernelF) == "" {
+		return fmt.Errorf("%w: hardware.kernel is not set, and firecracker nodes boot a kernel file", ErrFirecrackerNode)
+	}
+
+	if vcpus := hardware.VCPUF; vcpus != 0 && !firecracker.VCPUsFit(vcpus) {
+		return fmt.Errorf(
+			"%w: hardware.vcpus is %d, but firecracker nodes have 1 to %d vCPUs",
+			ErrFirecrackerNode, vcpus, firecracker.MaxVCPUs,
+		)
+	}
+
+	var (
+		snapshot = n.GeneralF.SnapshotF == nil || *n.GeneralF.SnapshotF
+		disks    int
+	)
+
+	for i, drive := range hardware.DrivesF {
+		if drive == nil {
+			continue
+		}
+
+		disks++
+
+		if !snapshot && firecracker.IsQCOW2(drive.ImageF) {
+			return fmt.Errorf(
+				"%w: drive %d image %q is qcow2, and firecracker nodes need a raw image when general.snapshot is false",
+				ErrFirecrackerNode, i, drive.ImageF,
+			)
+		}
+
+		if drive.IfaceF != "" && drive.IfaceF != "virtio" {
+			plog.Warn(
+				plog.TypeSystem,
+				"firecracker nodes ignore the drive interface and always use virtio",
+				"node", hostname,
+				"drive", i,
+				"interface", drive.IfaceF,
+			)
+		}
+	}
+
+	var nics int
+
+	if n.NetworkF != nil {
+		for _, iface := range n.NetworkF.InterfacesF {
+			if iface == nil {
+				continue
+			}
+
+			nics++
+
+			if iface.TypeF == "serial" {
+				return fmt.Errorf(
+					"%w: interface %q is a serial interface, and the one serial port of a firecracker node is its console",
+					ErrFirecrackerNode, iface.NameF,
+				)
+			}
+
+			if iface.QinQF {
+				return fmt.Errorf("%w: interface %q uses qinq, which is not supported for firecracker nodes yet",
+					ErrFirecrackerNode, iface.NameF)
+			}
+		}
+	}
+
+	devices := firecracker.NewDevices(
+		disks, nics, n.AdvancedF[firecracker.EntropyKey], n.AdvancedF[firecracker.PCIKey],
+	)
+
+	if !devices.Fits() {
+		return fmt.Errorf("%w: node %s needs %s", ErrFirecrackerNode, hostname, devices)
+	}
+
+	if len(n.OverridesF) > 0 {
+		plog.Warn(
+			plog.TypeSystem,
+			"firecracker nodes ignore QEMU overrides",
+			"node", hostname,
+			"overrides", len(n.OverridesF),
+		)
+	}
+
+	return nil
+}
+
 func (n *Node) setDefaults(bridge string) {
 	if n.External() {
 		return
@@ -679,7 +824,8 @@ func (n *Node) setDefaults(bridge string) {
 		n.GeneralF.DoNotBootF = &dnb
 	}
 
-	if n.HardwareF.CPUF == "" {
+	// minimega ignores the CPU model of a firecracker VM.
+	if n.HardwareF.CPUF == "" && n.GeneralF.VMTypeF != firecracker.VMType {
 		n.HardwareF.CPUF = "Broadwell"
 	}
 
@@ -781,6 +927,18 @@ func (n Node) FileDeletions() string {
 	}
 
 	return strings.Join(deletions, ",")
+}
+
+// FileDeletionArgs returns the quoted paths of the node's deletions, each a
+// separate argument, as vm config inject delete takes them.
+func (n Node) FileDeletionArgs() string {
+	deletions := make([]string, len(n.DeletionsF))
+
+	for i, deletion := range n.DeletionsF {
+		deletions[i] = fmt.Sprintf(`"%s"`, deletion.PathF)
+	}
+
+	return strings.Join(deletions, " ")
 }
 
 func (h Hardware) DiskConfig(snapshot string) string {

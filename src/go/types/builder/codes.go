@@ -413,18 +413,21 @@ const (
 // experiment is started from it: host capacity, networks, disk images and
 // scenario apps.
 const (
-	CodePreflightCapacityCPU       Code = "preflight.capacity.cpu"
-	CodePreflightCapacityMemory    Code = "preflight.capacity.memory"
-	CodePreflightCapacityVMTooBig  Code = "preflight.capacity.vm-too-large"
-	CodePreflightNetworkVLANRange  Code = "preflight.network.vlan-range"
-	CodePreflightNetworkAliasInUse Code = "preflight.network.alias-in-use"
-	CodePreflightNetworkBridge     Code = "preflight.network.bridge-missing"
-	CodePreflightDiskMissing       Code = "preflight.disk.missing"
-	CodePreflightDiskKind          Code = "preflight.disk.kind"
-	CodePreflightAppMissing        Code = "preflight.app.missing"
-	CodePreflightScenarioMissing   Code = "preflight.app.scenario-missing"
-	CodePreflightScenarioUnread    Code = "preflight.app.scenario-unreadable"
-	CodePreflightUnavailable       Code = "preflight.unavailable"
+	CodePreflightCapacityCPU                Code = "preflight.capacity.cpu"
+	CodePreflightCapacityMemory             Code = "preflight.capacity.memory"
+	CodePreflightCapacityVMTooBig           Code = "preflight.capacity.vm-too-large"
+	CodePreflightCapacityFirecracker        Code = "preflight.capacity.firecracker"
+	CodePreflightCapacityFirecrackerDevices Code = "preflight.capacity.firecracker-devices"
+	CodePreflightCapacityFirecrackerIgnored Code = "preflight.capacity.firecracker-ignored"
+	CodePreflightNetworkVLANRange           Code = "preflight.network.vlan-range"
+	CodePreflightNetworkAliasInUse          Code = "preflight.network.alias-in-use"
+	CodePreflightNetworkBridge              Code = "preflight.network.bridge-missing"
+	CodePreflightDiskMissing                Code = "preflight.disk.missing"
+	CodePreflightDiskKind                   Code = "preflight.disk.kind"
+	CodePreflightAppMissing                 Code = "preflight.app.missing"
+	CodePreflightScenarioMissing            Code = "preflight.app.scenario-missing"
+	CodePreflightScenarioUnread             Code = "preflight.app.scenario-unreadable"
+	CodePreflightUnavailable                Code = "preflight.unavailable"
 )
 
 // Codes of the answers about a draft that a client tells apart: a version
@@ -826,11 +829,19 @@ var codeRegistry = []CodeInfo{
 		"VMs would share CPUs."},
 	{CodePreflightCapacityMemory, SeverityError, "The schedulable hosts have less free memory than the diagram's devices take."},
 	{CodePreflightCapacityVMTooBig, SeverityError, "A device fits on no single schedulable host: none has both its CPUs and its memory."},
+	{CodePreflightCapacityFirecracker, SeverityError, "A firecracker device sets something minimega cannot launch: " +
+		"an OS type other than linux, no kernel, more than 32 vCPUs, a qcow2 drive without a snapshot, " +
+		"a serial interface or a QinQ interface."},
+	{CodePreflightCapacityFirecrackerDevices, SeverityError, "A firecracker device needs more virtio devices " +
+		"than Firecracker allows: 17, or 31 with firecracker-pci."},
+	{CodePreflightCapacityFirecrackerIgnored, SeverityWarning, "Firecracker ignores a setting of a firecracker device, " +
+		"such as a QEMU override or a drive interface other than virtio."},
 	{CodePreflightNetworkVLANRange, SeverityError, "The experiment's VLAN range is too small for the diagram, or leaves out a VLAN alias."},
 	{CodePreflightNetworkAliasInUse, SeverityError, "A network's VLAN alias is a VLAN a running experiment already uses."},
 	{CodePreflightNetworkBridge, SeverityWarning, "A bridge the diagram's interfaces or the experiment use does not exist on a host yet."},
 	{CodePreflightDiskMissing, SeverityError, "A drive image is not one of the server's disk images."},
-	{CodePreflightDiskKind, SeverityError, "A drive image is not of the kind its device needs: VM or ISO for kvm, container otherwise."},
+	{CodePreflightDiskKind, SeverityError, "A drive image is not of the kind its device needs: " +
+		"VM or ISO for kvm, VM for firecracker, container for a container."},
 	{CodePreflightAppMissing, SeverityError, "A scenario names an app that is not a default, built-in or user app of this server."},
 	{CodePreflightScenarioMissing, SeverityError, "A scenario the diagram lists does not exist."},
 	{CodePreflightScenarioUnread, SeverityWarning, "The caller may not read a scenario the diagram lists, " +

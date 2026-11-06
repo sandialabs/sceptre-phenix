@@ -29,7 +29,9 @@ ns add-host localhost
     {{- if (derefBool .General.DoNotBoot) }}
 ## DoNotBoot: {{ derefBool .General.DoNotBoot }} ##
     {{- else }}
-        {{- if (derefBool .General.Snapshot) -}}
+        {{- /* minimega injects files into a firecracker VM's own disk copy at launch */}}
+        {{- $firecracker := eq .General.VMType "firecracker" }}
+        {{- if and (derefBool .General.Snapshot) (not $firecracker) -}}
             {{ $firstDrive := index .Hardware.Drives 0 }}
 disk snapshot {{ $firstDrive.Image }} {{ $.SnapshotName .General.Hostname }}
             {{- if ne $firstDrive.GetInjectPartition 0 }}
@@ -46,15 +48,35 @@ clear vm config
 vm config schedule {{ index $.Schedules .General.Hostname }}
         {{- end }}
 vm config vcpus {{ .Hardware.VCPU }}
+        {{- if not $firecracker }}
 vm config cpu {{ .Hardware.CPU }}
+        {{- end }}
 vm config memory {{ .Hardware.Memory }}
+        {{- if $firecracker }}
+vm config kernel {{ .Hardware.Kernel }}
+            {{- if ne .Hardware.Initrd "" }}
+vm config initrd {{ .Hardware.Initrd }}
+            {{- end }}
+vm config append "{{ escapeQuoted .Hardware.FirecrackerAppend }}"
+        {{- end }}
 vm config snapshot {{ derefBool .General.Snapshot }}
-        {{- if (derefBool .General.Snapshot) }}
+        {{- if and (derefBool .General.Snapshot) (not $firecracker) }}
 vm config disk {{ .Hardware.DiskConfig ($.SnapshotName .General.Hostname) }}
         {{- else }}
 vm config disk {{ .Hardware.DiskConfig "" }}
         {{- end }}
-        {{- if eq .Hardware.OSType "linux" }}
+        {{- if and $firecracker (derefBool .General.Snapshot) }}
+            {{- $firstDrive := index .Hardware.Drives 0 }}
+            {{- if ne $firstDrive.GetInjectPartition 0 }}
+                {{- if gt (len .Injections) 0 }}
+vm config inject {{ $firstDrive.GetInjectPartition }} {{ .FileInjects $basedir }}
+                {{- end }}
+                {{- if gt (len .Deletions) 0 }}
+vm config inject delete {{ $firstDrive.GetInjectPartition }} {{ .FileDeletionArgs }}
+                {{- end }}
+            {{- end }}
+        {{- end }}
+        {{- if and (eq .Hardware.OSType "linux") (not $firecracker) }}
 vm config qemu-append -vga qxl
         {{- end }}
         {{- if .Network }}
@@ -63,8 +85,10 @@ vm config net {{ .Network.InterfaceConfig }}
         {{- range $config, $value := .Advanced }}
 vm config {{ $config }} {{ $value }}
         {{- end }}
-        {{- range $match, $replacement := .Overrides }}
+        {{- if not $firecracker }}
+            {{- range $match, $replacement := .Overrides }}
 vm config qemu-override "{{ $match }}" "{{ $replacement }}"
+            {{- end }}
         {{- end }}
         {{- range $label, $value := .Labels }}
 vm config tags "{{ escapeQuoted $label }}" "{{ escapeQuoted $value }}"

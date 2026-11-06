@@ -15,6 +15,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/types/builder"
+	"phenix/util/firecracker"
 )
 
 // fakePreflight is a [PreflightEnvironment] whose sources each test sets. A
@@ -873,23 +874,27 @@ func TestPreflightMessageWords(t *testing.T) {
 
 func TestPreflightImageKinds(t *testing.T) {
 	for _, tt := range []struct {
-		kind                  string
-		fitsVM, fitsContainer bool
-		words                 string
+		kind                                   string
+		fitsVM, fitsContainer, fitsFirecracker bool
+		words                                  string
 	}{
-		{kind: PreflightImageVM, fitsVM: true, words: "a VM image"},
+		{kind: PreflightImageVM, fitsVM: true, fitsFirecracker: true, words: "a VM image"},
 		{kind: PreflightImageISO, fitsVM: true, words: "an ISO image"},
 		{kind: PreflightImageContainer, fitsContainer: true, words: "a container image"},
-		{kind: "", fitsVM: true, fitsContainer: true, words: "an image of unknown kind"},
-		{kind: "vm", fitsVM: true, fitsContainer: true, words: "an image of unknown kind"},
+		{kind: "", fitsVM: true, fitsContainer: true, fitsFirecracker: true, words: "an image of unknown kind"},
+		{kind: "vm", fitsVM: true, fitsContainer: true, fitsFirecracker: true, words: "an image of unknown kind"},
 	} {
 		t.Run(tt.kind, func(t *testing.T) {
-			if got := imageFits(tt.kind, false); got != tt.fitsVM {
-				t.Errorf("imageFits(%q, kvm VM) = %t, want %t", tt.kind, got, tt.fitsVM)
+			if got := imageFits(tt.kind, preflightKVMType); got != tt.fitsVM {
+				t.Errorf("imageFits(%q, kvm) = %t, want %t", tt.kind, got, tt.fitsVM)
 			}
 
-			if got := imageFits(tt.kind, true); got != tt.fitsContainer {
+			if got := imageFits(tt.kind, preflightContainerType); got != tt.fitsContainer {
 				t.Errorf("imageFits(%q, container) = %t, want %t", tt.kind, got, tt.fitsContainer)
+			}
+
+			if got := imageFits(tt.kind, firecracker.VMType); got != tt.fitsFirecracker {
+				t.Errorf("imageFits(%q, firecracker) = %t, want %t", tt.kind, got, tt.fitsFirecracker)
 			}
 
 			if got := imageKind(tt.kind); got != tt.words {
@@ -898,8 +903,179 @@ func TestPreflightImageKinds(t *testing.T) {
 		})
 	}
 
-	if got := deviceKind(true) + ", " + deviceKind(false); got != "a container, a kvm VM" {
-		t.Errorf("deviceKind(true), deviceKind(false) = %q, want \"a container, a kvm VM\"", got)
+	got := []string{deviceKind(preflightContainerType), deviceKind(preflightKVMType), deviceKind(firecracker.VMType)}
+	if diff := cmp.Diff([]string{"a container", "a kvm VM", "a firecracker VM"}, got); diff != "" {
+		t.Errorf("deviceKind(container, kvm, firecracker) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// firecrackerSpec is the spec of a firecracker device with a kernel, one
+// drive and nics interfaces on VLAN EXP.
+func firecrackerSpec(nics int) map[string]any {
+	interfaces := make([]any, nics)
+	for i := range interfaces {
+		interfaces[i] = map[string]any{"name": fmt.Sprintf("eth%d", i), "vlan": "EXP"}
+	}
+
+	return map[string]any{
+		"general": map[string]any{"vm_type": "firecracker"},
+		"hardware": map[string]any{
+			"os_type": "linux", "kernel": "vmlinux", "drives": []any{map[string]any{"image": "base.qc2"}},
+		},
+		"network": map[string]any{"interfaces": interfaces},
+	}
+}
+
+// The capacity check counts each firecracker device's disks, NICs, vsock and
+// entropy device against the limit of 17, or 31 with firecracker-pci, even
+// when the hosts cannot be read.
+func TestPreflightCapacityFirecrackerDevices(t *testing.T) {
+	hosts := []PreflightHost{{Name: "h1", CPUs: 64, CPUCommit: 0, MemTotal: 65536, MemCommit: 0}}
+
+	devicesIssue := builder.Issue{
+		Code: builder.CodePreflightCapacityFirecrackerDevices, Severity: builder.SeverityError,
+		Path: "nodes[0].device.spec.network.interfaces", NodeID: "n-fc", Field: "spec.network.interfaces",
+	}
+
+	for _, tt := range []struct {
+		name     string
+		nics     int
+		advanced map[string]any
+		want     []builder.Issue
+		message  string
+	}{
+		{name: "17 devices fit", nics: 14},
+		{
+			name: "18 devices do not fit", nics: 15, want: []builder.Issue{devicesIssue},
+			message: `device "fc" needs 18 Firecracker devices (1 disk, 15 NICs, vsock, entropy); ` +
+				"the limit is 17 without firecracker-pci",
+		},
+		{name: "no entropy device", nics: 15, advanced: map[string]any{"firecracker-entropy": "false"}},
+		{name: "31 devices fit with pci", nics: 28, advanced: map[string]any{"firecracker-pci": "true"}},
+		{
+			name: "32 devices do not fit with pci", nics: 29, advanced: map[string]any{"firecracker-pci": "true"},
+			want: []builder.Issue{devicesIssue},
+			message: `device "fc" needs 32 Firecracker devices (1 disk, 29 NICs, vsock, entropy); ` +
+				"the limit is 31 with firecracker-pci",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := firecrackerSpec(tt.nics)
+			if tt.advanced != nil {
+				spec["advanced"] = tt.advanced
+			}
+
+			doc := builder.NewDocument("firecracker")
+			doc.Nodes = []builder.Node{preflightNode("n-fc", "fc", spec)}
+
+			result := runOne(t, doc, PreflightCapacity, "", &fakePreflight{hosts: hosts})
+
+			status := PreflightPassed
+			if len(tt.want) > 0 {
+				status = PreflightFailed
+			}
+
+			want := PreflightResult{Name: PreflightCapacity, Status: status, Issues: tt.want}
+			if diff := resultDiff(want, result); diff != "" {
+				t.Fatalf("RunPreflight(capacity) mismatch (-want +got):\n%s", diff)
+			}
+
+			if tt.message != "" && result.Issues[0].Message != tt.message {
+				t.Errorf("RunPreflight(capacity) issue message = %q, want %q", result.Issues[0].Message, tt.message)
+			}
+		})
+	}
+
+	t.Run("hosts unavailable", func(t *testing.T) {
+		doc := builder.NewDocument("firecracker")
+		doc.Nodes = []builder.Node{preflightNode("n-fc", "fc", firecrackerSpec(15))}
+
+		result := runOne(t, doc, PreflightCapacity, "", &fakePreflight{hostsErr: errors.New("down")})
+
+		want := PreflightResult{Name: PreflightCapacity, Status: PreflightFailed, Issues: []builder.Issue{
+			devicesIssue,
+			{Code: builder.CodePreflightUnavailable, Severity: builder.SeverityWarning},
+		}}
+		if diff := resultDiff(want, result); diff != "" {
+			t.Errorf("RunPreflight(capacity) mismatch (-want +got):\n%s", diff)
+		}
+	})
+}
+
+// The capacity check finds each other firecracker rule that topology
+// validation applies, and warns about what Firecracker ignores. A kvm device
+// with the same settings has no such issue.
+func TestPreflightCapacityFirecrackerRules(t *testing.T) {
+	spec := firecrackerSpec(0)
+	spec["general"] = map[string]any{"vm_type": "Firecracker", "snapshot": false}
+	spec["hardware"] = map[string]any{
+		"os_type": "windows", "vcpus": float64(33),
+		"drives": []any{map[string]any{"image": "base.qcow2", "interface": "ide"}},
+	}
+	spec["network"] = map[string]any{"interfaces": []any{
+		map[string]any{"name": "s0", "type": "serial"},
+		map[string]any{"name": "eth1", "type": "ethernet", "qinq": true},
+	}}
+	spec["overrides"] = map[string]any{"a": "b"}
+
+	kvm := map[string]any{"general": map[string]any{"vm_type": "kvm"}, "hardware": spec["hardware"]}
+
+	doc := builder.NewDocument("firecracker")
+	doc.Nodes = []builder.Node{preflightNode("n-fc", "fc", spec), preflightNode("n-kvm", "kvm", kvm)}
+
+	result := runOne(t, doc, PreflightCapacity, "", &fakePreflight{hosts: []PreflightHost{
+		{Name: "h1", CPUs: 128, CPUCommit: 0, MemTotal: 65536, MemCommit: 0},
+	}})
+
+	issue := func(code builder.Code, path, field string) builder.Issue {
+		return builder.Issue{
+			Code: code, Severity: code.DefaultSeverity(),
+			Path: "nodes[0].device.spec." + path, NodeID: "n-fc", Field: "spec." + field,
+		}
+	}
+
+	want := PreflightResult{Name: PreflightCapacity, Status: PreflightFailed, Issues: []builder.Issue{
+		issue(builder.CodePreflightCapacityFirecracker, "hardware.os_type", "hardware.os_type"),
+		issue(builder.CodePreflightCapacityFirecracker, "hardware.kernel", "hardware.kernel"),
+		issue(builder.CodePreflightCapacityFirecracker, "hardware.vcpus", "hardware.vcpus"),
+		issue(builder.CodePreflightCapacityFirecracker, "hardware.drives[0].image", "hardware.drives.0.image"),
+		issue(builder.CodePreflightCapacityFirecrackerIgnored, "hardware.drives[0].interface", "hardware.drives.0.interface"),
+		issue(builder.CodePreflightCapacityFirecracker, "network.interfaces[0].type", "network.interfaces.0.type"),
+		issue(builder.CodePreflightCapacityFirecracker, "network.interfaces[1].qinq", "network.interfaces.1.qinq"),
+		issue(builder.CodePreflightCapacityFirecrackerIgnored, "overrides", "overrides"),
+	}}
+
+	if diff := resultDiff(want, result); diff != "" {
+		t.Errorf("RunPreflight(capacity) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// The disks check describes a firecracker device as one, and refuses an ISO
+// image for it, since it has no CD-ROM.
+func TestPreflightDisksFirecracker(t *testing.T) {
+	spec := firecrackerSpec(0)
+	spec["hardware"] = map[string]any{"kernel": "vmlinux", "drives": []any{
+		map[string]any{"image": "base.qc2"}, map[string]any{"image": "tools.iso"},
+	}}
+
+	doc := builder.NewDocument("firecracker")
+	doc.Nodes = []builder.Node{preflightNode("n-fc", "fc", spec)}
+
+	result := runOne(t, doc, PreflightDisks, "", &fakePreflight{images: []PreflightImage{
+		{Name: "base.qc2", Kind: PreflightImageVM}, {Name: "tools.iso", Kind: PreflightImageISO},
+	}})
+
+	want := PreflightResult{Name: PreflightDisks, Status: PreflightFailed, Issues: []builder.Issue{{
+		Code: builder.CodePreflightDiskKind, Severity: builder.SeverityError,
+		Path: "nodes[0].device.spec.hardware.drives[1].image", NodeID: "n-fc", Field: "spec.hardware.drives.1.image",
+	}}}
+
+	if diff := resultDiff(want, result); diff != "" {
+		t.Fatalf("RunPreflight(disks) mismatch (-want +got):\n%s", diff)
+	}
+
+	if message := result.Issues[0].Message; !strings.Contains(message, "is a firecracker VM") {
+		t.Errorf("RunPreflight(disks) issue message = %q, want the firecracker VM fc with an ISO image", message)
 	}
 }
 

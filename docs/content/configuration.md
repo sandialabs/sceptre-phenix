@@ -168,6 +168,53 @@ network:
         - eth2
 ```
 
+#### Firecracker Nodes
+
+Set `general.vm_type: firecracker` to run a Linux node in a jailed Firecracker
+microVM. minimega must support the `firecracker` VM type. A Firecracker node
+boots a kernel file directly, so set these `hardware` fields:
+
+- `kernel` (required): the path of the guest kernel on the minimega host. A
+  relative path is in the phēnix image directory.
+- `initrd` (optional): the path of the guest initrd.
+- `kernel_args` (optional): the kernel command line. When it has no `root=`,
+  phēnix adds `root=/dev/vda1 rw`.
+
+```yaml
+general:
+  hostname: web1
+  vm_type: firecracker
+hardware:
+  os_type: linux
+  vcpus: 1
+  memory: 512
+  kernel: vmlinux-6.1
+  initrd: initrd-6.1.img
+  kernel_args: console=ttyS0 quiet
+  drives:
+    - image: debian.qc2
+```
+
+Topology validation refuses a Firecracker node that:
+
+- has an OS type other than `linux`
+- has no `kernel`
+- has fewer than 1 or more than 32 vCPUs
+- has a qcow2 drive image and `general.snapshot: false`
+- has a `serial` interface or a `qinq` interface
+- needs more than 17 devices
+
+Each drive, each interface, the vsock device, and the entropy device is one
+device. Set `firecracker-entropy: "false"` in `advanced` to remove the entropy
+device. Set `firecracker-pci: "true"` in `advanced` to increase the limit to 31.
+The guest kernel must then support PCI.
+
+Firecracker ignores the `cpu` field, the drive `interface` field, and
+`overrides`. phēnix logs a warning for `overrides` and for a drive interface
+other than `virtio`. When `general.snapshot` is `true`, minimega injects the
+node's files into the VM's copy of the disk at launch. When the kernel or initrd
+file is missing, the `startup` app sets `do_not_boot` on the node.
+
 ### External Nodes
 
 There may be cases where an experiment includes external devices (hardware in

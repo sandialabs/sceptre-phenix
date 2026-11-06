@@ -2,21 +2,39 @@
 
 {{- range .Exp.Topology.FindNodesWithLabels "soh-elastic-server" }}
 ## VM: {{ .General.Hostname }} ##
-{{ $firstDrive := index .Hardware.Drives 0 }}
-disk snapshot {{ $firstDrive.Image }} {{ $.Exp.SnapshotName .General.Hostname }} 
+{{ $firstDrive := index .Hardware.Drives 0 }}{{ $firecracker := eq .General.VMType "firecracker" }}
+{{- if not $firecracker }}
+disk snapshot {{ $firstDrive.Image }} {{ $.Exp.SnapshotName .General.Hostname }}
 {{- if gt (len .Injections) 0 }}
 disk inject {{ $.Exp.SnapshotName .General.Hostname }}:{{ $firstDrive.GetInjectPartition }} files {{ .FileInjects $.Exp.BaseDir }}
+{{- end }}
 {{- end }}
 clear vm config
 {{- if ne (index $.Exp.Schedules .General.Hostname) "" }}
 vm config schedule {{ index $.Exp.Schedules .General.Hostname }}
 {{- end }}
 vm config vcpus {{ .Hardware.VCPU }}
+{{- if not $firecracker }}
 vm config cpu {{ .Hardware.CPU }}
+{{- end }}
 vm config memory {{ .Hardware.Memory }}
+{{- if $firecracker }}
+vm config kernel {{ .Hardware.Kernel }}
+{{- if ne .Hardware.Initrd "" }}
+vm config initrd {{ .Hardware.Initrd }}
+{{- end }}
+vm config append "{{ escapeQuoted .Hardware.FirecrackerAppend }}"
+{{- end }}
 vm config snapshot true
+{{- if $firecracker }}
+vm config disk {{ .Hardware.DiskConfig "" }}
+{{- if and (ne $firstDrive.GetInjectPartition 0) (gt (len .Injections) 0) }}
+vm config inject {{ $firstDrive.GetInjectPartition }} {{ .FileInjects $.Exp.BaseDir }}
+{{- end }}
+{{- else }}
 vm config disk {{ .Hardware.DiskConfig ($.Exp.SnapshotName .General.Hostname) }}
 vm config qemu-append -vga qxl
+{{- end }}
 vm config net {{ .Network.InterfaceConfig }}
 vm launch {{ .General.VMType }} {{ .General.Hostname }}
 {{- end }}
@@ -25,21 +43,39 @@ vm launch {{ .General.VMType }} {{ .General.Hostname }}
 
 {{- range .Exp.Topology.FindNodesWithLabels "soh-monitor-node" }}
 ## VM: {{ .General.Hostname }} ##
-        {{ $firstDrive := index .Hardware.Drives 0 }}
-disk snapshot {{ $firstDrive.Image }} {{ $.Exp.SnapshotName .General.Hostname }} 
-        {{- if gt (len .Injections) 0 }}
+        {{ $firstDrive := index .Hardware.Drives 0 }}{{ $firecracker := eq .General.VMType "firecracker" }}
+        {{- if not $firecracker }}
+disk snapshot {{ $firstDrive.Image }} {{ $.Exp.SnapshotName .General.Hostname }}
+            {{- if gt (len .Injections) 0 }}
 disk inject {{ $.Exp.SnapshotName .General.Hostname }}:{{ $firstDrive.GetInjectPartition }} files {{ .FileInjects $.Exp.BaseDir }}
+            {{- end }}
         {{- end }}
 clear vm config
         {{- if ne (index $.Exp.Schedules .General.Hostname) "" }}
 vm config schedule {{ index $.Exp.Schedules .General.Hostname }}
         {{- end }}
 vm config vcpus {{ .Hardware.VCPU }}
+        {{- if not $firecracker }}
 vm config cpu {{ .Hardware.CPU }}
+        {{- end }}
 vm config memory {{ .Hardware.Memory }}
+        {{- if $firecracker }}
+vm config kernel {{ .Hardware.Kernel }}
+            {{- if ne .Hardware.Initrd "" }}
+vm config initrd {{ .Hardware.Initrd }}
+            {{- end }}
+vm config append "{{ escapeQuoted .Hardware.FirecrackerAppend }}"
+        {{- end }}
 vm config snapshot true
+        {{- if $firecracker }}
+vm config disk {{ .Hardware.DiskConfig "" }}
+            {{- if and (ne $firstDrive.GetInjectPartition 0) (gt (len .Injections) 0) }}
+vm config inject {{ $firstDrive.GetInjectPartition }} {{ .FileInjects $.Exp.BaseDir }}
+            {{- end }}
+        {{- else }}
 vm config disk {{ .Hardware.DiskConfig ($.Exp.SnapshotName .General.Hostname) }}
 vm config qemu-append -vga qxl
+        {{- end }}
 vm config net {{ .Network.InterfaceConfig }}
 vm launch {{ .General.VMType }} {{ .General.Hostname }}
 {{- end }}

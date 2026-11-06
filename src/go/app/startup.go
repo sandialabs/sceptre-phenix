@@ -13,6 +13,7 @@ import (
 	"phenix/types"
 	"phenix/util"
 	"phenix/util/common"
+	"phenix/util/firecracker"
 	"phenix/util/mm"
 	"phenix/util/notes"
 	"phenix/util/plog"
@@ -287,6 +288,38 @@ func removeInjectionDestinations(node ifaces.NodeSpec, dsts map[string]struct{})
 	node.SetInjections(filtered)
 }
 
+// checkFirecrackerBootFiles marks a firecracker node do-not-boot and warns
+// when its kernel or initrd file is missing, as PreStart does for a missing
+// disk image. A relative path is in imageDir.
+func checkFirecrackerBootFiles(ctx context.Context, node ifaces.NodeSpec, imageDir string) {
+	for _, file := range []string{node.Hardware().Kernel(), node.Hardware().Initrd()} {
+		if file == "" {
+			continue
+		}
+
+		if !filepath.IsAbs(file) {
+			file = imageDir + file
+		}
+
+		if _, err := os.Stat(file); !os.IsNotExist(err) {
+			continue
+		}
+
+		node.General().SetDoNotBoot(true)
+		plog.Warn(
+			plog.TypeSystem,
+			"firecracker boot file not found; node will not boot",
+			"node", node.General().Hostname(),
+			"file", file,
+		)
+
+		notes.AddWarnings(ctx, false, fmt.Errorf(
+			"node %q will not boot: firecracker boot file %q not found",
+			node.General().Hostname(), file,
+		))
+	}
+}
+
 //nolint:cyclop,funlen,gocyclo,maintidx // complex logic
 func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 	var (
@@ -396,6 +429,10 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 				"node %q will not boot: disk image %q not found",
 				node.General().Hostname(), imagePath,
 			))
+		}
+
+		if node.General().VMType() == firecracker.VMType {
+			checkFirecrackerBootFiles(ctx, node, imageDir)
 		}
 
 		useC2 := startupC2DeliveryEnabled(node)

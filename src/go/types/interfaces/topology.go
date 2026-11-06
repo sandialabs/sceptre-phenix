@@ -112,12 +112,15 @@ type NodeGeneral interface {
 	SetDoNotBoot(bool)
 }
 
-type NodeHardware interface {
+type NodeHardware interface { //nolint:interfacebloat // one getter for each hardware field
 	CPU() string
 	VCPU() int
 	Memory() int
 	OSType() string
 	Drives() []NodeDrive
+	Kernel() string
+	Initrd() string
+	KernelArgs() string
 
 	SetVCPU(int)
 	SetMemory(int)

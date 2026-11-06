@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"phenix/types/builder"
+	"phenix/util/firecracker"
 )
 
 // PreflightCheck names one of the preflight checks that can run on the
@@ -27,7 +28,8 @@ type PreflightCheck string
 const (
 	// PreflightCapacity compares the CPUs and memory the document's devices
 	// take with what the schedulable cluster hosts have free, and checks that
-	// each device fits on at least one host.
+	// each device fits on at least one host and each firecracker device fits
+	// the limits of a Firecracker VM.
 	PreflightCapacity PreflightCheck = "capacity"
 	// PreflightNetwork compares the VLANs of the document with the experiment VLAN
 	// range, its VLAN aliases with the VLANs of running experiments, and its
@@ -78,8 +80,11 @@ const (
 	preflightDefaultBridge = "phenix"
 
 	// preflightContainerType is the general.vm_type of a device that phenix
-	// starts as a container. Any other device is a kvm VM.
+	// starts as a container, and [firecracker.VMType] that of a device it
+	// starts as a Firecracker microVM. Any other device is a kvm VM
+	// (preflightKVMType).
 	preflightContainerType = "container"
+	preflightKVMType       = "kvm"
 
 	// preflightListed is how many names a message lists before it says how
 	// many more there are.
@@ -410,6 +415,17 @@ func (d preflightDevice) issue(code builder.Code, path, field, message string) b
 	return issue
 }
 
+// vmType returns the general.vm_type of the device in lowercase: container,
+// firecracker, or kvm for any other value.
+func (d preflightDevice) vmType() string {
+	switch vmType := strings.ToLower(specString(specMap(d.spec["general"])["vm_type"])); vmType {
+	case preflightContainerType, firecracker.VMType:
+		return vmType
+	}
+
+	return preflightKVMType
+}
+
 // specMap reads an object of a node spec, or nil for anything else.
 func specMap(value any) map[string]any {
 	object, _ := value.(map[string]any)
@@ -468,15 +484,29 @@ func positiveWhole(text string) (int, bool) {
 // capacityCheck compares what the devices take with the free CPUs and memory
 // of all schedulable hosts, and with each host. Too few free CPUs is a warning,
 // because VMs share CPUs. Too little memory, or a device that no host holds,
-// is an error.
+// is an error. It also checks each firecracker device against what a
+// Firecracker VM can have (see [firecrackerIssues]), even when the hosts
+// cannot be read.
 func capacityCheck(ctx context.Context, doc *builder.Document, env PreflightEnvironment) PreflightResult {
+	devices := preflightDevices(doc)
+
+	var issues []builder.Issue
+
+	for _, device := range devices {
+		issues = append(issues, firecrackerIssues(device)...)
+	}
+
+	unavailable := func(reason string) PreflightResult {
+		return preflightResult(PreflightCapacity, sentence(reason), append(issues, unavailableIssue(reason)), true)
+	}
+
 	hosts, err := env.ClusterHosts(ctx)
 	if err != nil {
-		return unavailableResult(PreflightCapacity, unavailableReason("the cluster hosts", err))
+		return unavailable(unavailableReason("the cluster hosts", err))
 	}
 
 	if len(hosts) == 0 {
-		return unavailableResult(PreflightCapacity, "the server lists no schedulable cluster host")
+		return unavailable("the server lists no schedulable cluster host")
 	}
 
 	var freeCPUs, freeMemory int
@@ -485,10 +515,6 @@ func capacityCheck(ctx context.Context, doc *builder.Document, env PreflightEnvi
 		freeCPUs += max(host.CPUs-host.CPUCommit, 0)
 		freeMemory += max(host.MemTotal-host.MemCommit, 0)
 	}
-
-	devices := preflightDevices(doc)
-
-	var issues []builder.Issue
 
 	neededCPUs, neededMemory := 0, 0
 
@@ -582,6 +608,168 @@ func deviceFit(device preflightDevice, vcpus, memory int, hosts []PreflightHost)
 	}
 
 	return issues
+}
+
+// firecrackerIssues returns the issues of a firecracker device that topology
+// validation also finds, so that minimega could not launch it: an OS type
+// other than linux, no kernel, too many vCPUs or devices, a qcow2 drive
+// without a snapshot, and a serial or QinQ interface. It also warns about QEMU
+// overrides and drive interfaces, which Firecracker ignores. Any other device
+// has none.
+func firecrackerIssues(device preflightDevice) []builder.Issue {
+	if device.vmType() != firecracker.VMType {
+		return nil
+	}
+
+	var (
+		general  = specMap(device.spec["general"])
+		hardware = specMap(device.spec["hardware"])
+		advanced = specMap(device.spec["advanced"])
+		issues   = firecrackerHardwareIssues(device, hardware)
+	)
+
+	snapshot, set := general["snapshot"].(bool)
+	driveIssues, disks := firecrackerDriveIssues(device, specItems(hardware["drives"]), snapshot || !set)
+	issues = append(issues, driveIssues...)
+
+	nicIssues, nics := firecrackerInterfaceIssues(device, specItems(specMap(device.spec["network"])["interfaces"]))
+	issues = append(issues, nicIssues...)
+
+	add := firecrackerAdder(device, &issues)
+
+	devices := firecracker.NewDevices(
+		disks, nics, specString(advanced[firecracker.EntropyKey]), specString(advanced[firecracker.PCIKey]),
+	)
+
+	if !devices.Fits() {
+		add(builder.CodePreflightCapacityFirecrackerDevices, "network.interfaces", "network.interfaces",
+			fmt.Sprintf("device %q needs %s", device.hostname, devices))
+	}
+
+	if len(specMap(device.spec["overrides"])) > 0 {
+		add(builder.CodePreflightCapacityFirecrackerIgnored, "overrides", "overrides", fmt.Sprintf(
+			"device %q is a firecracker VM, which ignores its QEMU overrides", device.hostname,
+		))
+	}
+
+	return issues
+}
+
+// firecrackerAdder returns a function that appends an issue of the device at
+// the spec path and field to issues.
+func firecrackerAdder(device preflightDevice, issues *[]builder.Issue) func(builder.Code, string, string, string) {
+	return func(code builder.Code, path, field, message string) {
+		*issues = append(*issues, device.issue(code, "spec."+path, "spec."+field, message))
+	}
+}
+
+// firecrackerHardwareIssues returns the OS type, kernel, and vCPU issues of a
+// firecracker device.
+func firecrackerHardwareIssues(device preflightDevice, hardware map[string]any) []builder.Issue {
+	var issues []builder.Issue
+
+	add := firecrackerAdder(device, &issues)
+
+	if osType := specString(hardware["os_type"]); osType != "" && osType != "linux" {
+		add(builder.CodePreflightCapacityFirecracker, "hardware.os_type", "hardware.os_type", fmt.Sprintf(
+			"device %q is a firecracker VM, which runs only linux, but its OS type is %q", device.hostname, osType,
+		))
+	}
+
+	if specString(hardware["kernel"]) == "" {
+		add(builder.CodePreflightCapacityFirecracker, "hardware.kernel", "hardware.kernel", fmt.Sprintf(
+			"device %q is a firecracker VM, which boots a kernel file, but it names no kernel", device.hostname,
+		))
+	}
+
+	if vcpus, ok := specWhole(hardware["vcpus"]); ok && !firecracker.VCPUsFit(vcpus) {
+		add(builder.CodePreflightCapacityFirecracker, "hardware.vcpus", "hardware.vcpus", fmt.Sprintf(
+			"device %q takes %s, but a firecracker VM has at most %d",
+			device.hostname, plural(vcpus, "vCPU", "vCPUs"), firecracker.MaxVCPUs,
+		))
+	}
+
+	return issues
+}
+
+// firecrackerDriveIssues returns the drive issues of a firecracker device and
+// the number of its drives. A qcow2 image is an issue only without a snapshot.
+func firecrackerDriveIssues(device preflightDevice, drives []any, snapshot bool) ([]builder.Issue, int) {
+	var (
+		issues []builder.Issue
+		disks  int
+	)
+
+	add := firecrackerAdder(device, &issues)
+
+	for position, entry := range drives {
+		drive := specMap(entry)
+		if drive == nil {
+			continue
+		}
+
+		disks++
+
+		if image := specString(drive["image"]); !snapshot && firecracker.IsQCOW2(image) {
+			add(builder.CodePreflightCapacityFirecracker,
+				fmt.Sprintf("hardware.drives[%d].image", position), fmt.Sprintf("hardware.drives.%d.image", position),
+				fmt.Sprintf(
+					"device %q is a firecracker VM without a snapshot, which needs a raw image, but drive image %q is qcow2",
+					device.hostname, image,
+				))
+		}
+
+		if iface := specString(drive["interface"]); iface != "" && iface != "virtio" {
+			add(builder.CodePreflightCapacityFirecrackerIgnored,
+				fmt.Sprintf("hardware.drives[%d].interface", position), fmt.Sprintf("hardware.drives.%d.interface", position),
+				fmt.Sprintf(
+					"device %q is a firecracker VM, which ignores drive interface %q and always uses virtio",
+					device.hostname, iface,
+				))
+		}
+	}
+
+	return issues, disks
+}
+
+// firecrackerInterfaceIssues returns the interface issues of a firecracker
+// device and the number of its interfaces.
+func firecrackerInterfaceIssues(device preflightDevice, interfaces []any) ([]builder.Issue, int) {
+	var (
+		issues []builder.Issue
+		nics   int
+	)
+
+	add := firecrackerAdder(device, &issues)
+
+	for position, entry := range interfaces {
+		iface := specMap(entry)
+		if iface == nil {
+			continue
+		}
+
+		nics++
+
+		if specString(iface["type"]) == "serial" {
+			add(builder.CodePreflightCapacityFirecracker,
+				fmt.Sprintf("network.interfaces[%d].type", position), fmt.Sprintf("network.interfaces.%d.type", position),
+				fmt.Sprintf(
+					"device %q is a firecracker VM, whose one serial port is its console, so it cannot have serial interface %q",
+					device.hostname, specString(iface["name"]),
+				))
+		}
+
+		if qinq, _ := iface["qinq"].(bool); qinq {
+			add(builder.CodePreflightCapacityFirecracker,
+				fmt.Sprintf("network.interfaces[%d].qinq", position), fmt.Sprintf("network.interfaces.%d.qinq", position),
+				fmt.Sprintf(
+					"device %q is a firecracker VM, and interface %q uses QinQ, which is not supported for firecracker nodes yet",
+					device.hostname, specString(iface["name"]),
+				))
+		}
+	}
+
+	return issues, nics
 }
 
 // preflightBridgeUse is the first interface of a device that names a bridge.
@@ -1008,7 +1196,7 @@ func disksCheck(ctx context.Context, doc *builder.Document, env PreflightEnviron
 	)
 
 	for _, device := range preflightDevices(doc) {
-		container := strings.EqualFold(specString(specMap(device.spec["general"])["vm_type"]), preflightContainerType)
+		vmType := device.vmType()
 
 		for position, entry := range specItems(specMap(device.spec["hardware"])["drives"]) {
 			image := specString(specMap(entry)["image"])
@@ -1030,10 +1218,10 @@ func disksCheck(ctx context.Context, doc *builder.Document, env PreflightEnviron
 				issues = append(issues, device.issue(builder.CodePreflightDiskMissing, path, field, fmt.Sprintf(
 					"device %q uses drive image %q, which is not one of the server's disk images", device.hostname, image,
 				)))
-			case !imageFits(kind, container):
+			case !imageFits(kind, vmType):
 				issues = append(issues, device.issue(builder.CodePreflightDiskKind, path, field, fmt.Sprintf(
 					"device %q is %s, but its drive image %q is %s",
-					device.hostname, deviceKind(container), image, imageKind(kind),
+					device.hostname, deviceKind(vmType), image, imageKind(kind),
 				)))
 			}
 		}
@@ -1051,23 +1239,30 @@ func disksCheck(ctx context.Context, doc *builder.Document, env PreflightEnviron
 	return preflightResult(PreflightDisks, summary, issues, false)
 }
 
-// imageFits reports whether an image of kind fits a device that is a
-// container, or a kvm VM. An image of unknown kind fits either.
-func imageFits(kind string, container bool) bool {
+// imageFits reports whether an image of kind fits a device of vmType (see
+// [preflightDevice.vmType]). A container takes a container image, a kvm VM a
+// VM or ISO image, and a firecracker VM, which has no CD-ROM, a VM image. An
+// image of unknown kind fits any device.
+func imageFits(kind, vmType string) bool {
 	switch kind {
 	case PreflightImageContainer:
-		return container
-	case PreflightImageVM, PreflightImageISO:
-		return !container
+		return vmType == preflightContainerType
+	case PreflightImageVM:
+		return vmType != preflightContainerType
+	case PreflightImageISO:
+		return vmType == preflightKVMType
 	}
 
 	return true
 }
 
-// deviceKind names what a device is, as a message says it.
-func deviceKind(container bool) string {
-	if container {
+// deviceKind names what a device of vmType is, as a message says it.
+func deviceKind(vmType string) string {
+	switch vmType {
+	case preflightContainerType:
 		return "a container"
+	case firecracker.VMType:
+		return "a firecracker VM"
 	}
 
 	return "a kvm VM"

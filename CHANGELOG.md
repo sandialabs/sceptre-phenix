@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Firecracker Nodes**: Added the `firecracker` VM type for minimega nodes, with `kernel`, `initrd`, and `kernel_args` hardware fields.
 - **Web UI Help**: Added a Help link to the documentation in the footer.
 - **Image Releases**: `phenix image create` recognizes the Debian releases `trixie` and `forky`.
 - **SCORCH**: Support the `cleanup` stage in the built-in `tap` component for reliable tap teardown on run completion or cancellation.

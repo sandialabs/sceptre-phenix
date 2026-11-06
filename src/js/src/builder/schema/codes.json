@@ -859,6 +859,18 @@
     "severity": "warning",
     "description": "The schedulable hosts have fewer free CPUs than the devices take. VMs would share CPUs."
   },
+  "preflight.capacity.firecracker": {
+    "severity": "error",
+    "description": "A firecracker device sets something minimega cannot launch: an OS type other than linux, no kernel, more than 32 vCPUs, a qcow2 drive without a snapshot, a serial interface or a QinQ interface."
+  },
+  "preflight.capacity.firecracker-devices": {
+    "severity": "error",
+    "description": "A firecracker device needs more virtio devices than Firecracker allows: 17, or 31 with firecracker-pci."
+  },
+  "preflight.capacity.firecracker-ignored": {
+    "severity": "warning",
+    "description": "Firecracker ignores a setting of a firecracker device, such as a QEMU override or a drive interface other than virtio."
+  },
   "preflight.capacity.memory": {
     "severity": "error",
     "description": "The schedulable hosts have less free memory than the diagram's devices take."
@@ -869,7 +881,7 @@
   },
   "preflight.disk.kind": {
     "severity": "error",
-    "description": "A drive image is not of the kind its device needs: VM or ISO for kvm, container otherwise."
+    "description": "A drive image is not of the kind its device needs: VM or ISO for kvm, VM for firecracker, container for a container."
   },
   "preflight.disk.missing": {
     "severity": "error",

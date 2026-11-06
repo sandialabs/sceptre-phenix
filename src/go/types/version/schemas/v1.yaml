@@ -297,11 +297,13 @@ components:
               example: Active Directory Server
             vm_type:
               description: >-
-                How minimega runs the node: kvm for a QEMU/KVM virtual machine, or container. Empty means kvm.
+                How minimega runs the node: kvm for a QEMU/KVM virtual machine, container, or firecracker for a
+                Linux guest in a jailed Firecracker microVM. Empty means kvm.
               type: string
               enum:
               - kvm
               - container
+              - firecracker
               - ""
               default: kvm
               example: kvm
@@ -416,6 +418,22 @@ components:
                     default: 1
                     example: 2
                     nullable: true
+            kernel:
+              description: >-
+                Path of the guest kernel on the minimega host. Firecracker nodes need it. Other nodes ignore it.
+              type: string
+              example: /phenix/images/vmlinux-6.1
+            initrd:
+              description: >-
+                Path of the guest initrd on the minimega host, used by Firecracker nodes. Empty boots without an
+                initrd.
+              type: string
+              example: /phenix/images/initrd-6.1.img
+            kernel_args:
+              description: >-
+                Kernel command line for Firecracker nodes. phenix adds root=/dev/vda1 rw when it sets no root=.
+              type: string
+              example: console=ttyS0 quiet
         network:
           type: object
           nullable: true
