@@ -660,6 +660,11 @@ func Schedule(opts ...ScheduleOption) error {
 func Start(ctx context.Context, opts ...StartOption) error {
 	o := newStartOptions(opts...)
 
+	timer := newStartTimer(o.name, time.Now)
+	defer timer.done()
+
+	timer.begin("claim")
+
 	c, exp, marker, err := claimStart(o.name)
 	if err != nil {
 		return err
@@ -696,6 +701,8 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	// the startup app marks a VM do not boot when its first disk image is missing; the disk check still reports it
 	booting := bootingVMs(exp.Spec)
 
+	timer.begin("pre-start-apps")
+
 	err = app.ApplyApps(
 		ctx,
 		exp,
@@ -707,12 +714,16 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	}
 
 	// pre-start apps may change the drives, so the check comes after them and before minimega is told anything
+	timer.begin("disk-check")
+
 	warnings, err := CheckDisks(ctx, exp.Spec, CheckAsWarnings(o.dryrun || o.mmErrAsWarn), checkBooting(booting))
 	reportDiskWarnings(ctx, exp.Metadata.Name, warnings)
 
 	if err != nil {
 		return err
 	}
+
+	timer.begin("scripts")
 
 	var (
 		mmScript = fmt.Sprintf("%s/mm_files/%s.mm", exp.Spec.BaseDir(), exp.Spec.ExperimentName())
@@ -754,10 +765,14 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		// Delete any snapshot files created by this headnode for this experiment
 		// previously before starting the experiment. This way, cluster nodes that VMs
 		// get scheduled on will pull the most up-to-date snapshot files.
+		timer.begin("snapshot-cleanup")
+
 		err = deleteC2AndSnapshots(exp)
 		if err != nil {
 			return fmt.Errorf("deleting experiment snapshots and CC responses: %w", err)
 		}
+
+		timer.begin("minimega-script")
 
 		err = mm.ReadScriptFromFile(exp.Spec.ExperimentName(), mmScript)
 		err = explainVLANInUse(ctx, exp.Spec.ExperimentName(), exp.Spec.VLANs().Aliases(), err)
@@ -840,6 +855,8 @@ func Start(ctx context.Context, opts ...StartOption) error {
 			start = nil
 		}
 
+		timer.begin("launch")
+
 		err = mm.LaunchVMs(exp.Spec.ExperimentName(), start...)
 		if err = mmStepFailed(ctx, exp.Spec.ExperimentName(), o.mmErrAsWarn, "launching experiment VMs", err); err != nil {
 			return err
@@ -851,11 +868,15 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		// the VM taps (and thus bridges) do not get created until the overall
 		// minimega namespace is launched.
 		if exp.Spec.UseGREMesh() {
+			timer.begin("bridge")
+
 			err = mm.CreateBridge(mm.NS(exp.Metadata.Name), mm.Bridge(exp.Spec.DefaultBridge()))
 			if err = mmStepFailed(ctx, exp.Spec.ExperimentName(), o.mmErrAsWarn, "creating experiment bridge", err); err != nil {
 				return err
 			}
 		}
+
+		timer.begin("vm-hosts-and-vlans")
 
 		exp.Status.SetSchedule(mm.GetVMHosts(mm.NS(exp.Spec.ExperimentName())))
 
@@ -883,6 +904,8 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	exp.Status.SetDelayedStarts(nil, nil, false)
 
 	if o.errChan == nil || (o.dryrun && o.keepStopped) {
+		timer.begin("post-start")
+
 		if step, err := afterLaunch(ctx, exp, o.dryrun, steps); err != nil {
 			return abortStart(exp, o.dryrun, step, err)
 		}
@@ -899,6 +922,8 @@ func Start(ctx context.Context, opts ...StartOption) error {
 
 	exp.Status.SetStartTime(start)
 	exp.Status.SetStarting(ifaces.StartMarker{Since: "", PID: 0, Host: ""})
+
+	timer.begin("record")
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 	c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
