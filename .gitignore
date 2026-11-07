@@ -41,7 +41,6 @@ src/go/*.pb.go
 src/go/bindata.go
 src/go/mock.go
 src/go/known_policy.go
-src/go/web/public/
 
 # JS specific
 src/js/node_modules/
