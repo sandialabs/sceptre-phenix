@@ -132,7 +132,10 @@ type Client struct {
 	// the screenshot last sent of each VM in view, so an unchanged one is not
 	// sent again; forgotten whenever the view or the VM changes
 	sent map[vmKey]pngHash
-	vmMu sync.RWMutex
+	// the VMs whose live VNC tiles the client draws, so it needs no
+	// screenshots of them
+	liveTiles map[vmKey]struct{}
+	vmMu      sync.RWMutex
 
 	// held while screenshots are being pushed; shotAgain asks for another round
 	shotMu    sync.Mutex
@@ -360,34 +363,7 @@ func (c *Client) read() {
 					)
 				}
 			case "metadata/screenshot":
-				var payload map[string]string
-
-				err := json.Unmarshal(req.Payload, &payload)
-				if err != nil {
-					plog.Error(
-						plog.TypeSystem,
-						"cannot unmarshal WebSocket request payload JSON",
-						"err",
-						err,
-					)
-
-					continue
-				}
-
-				size, ok := payload["size"]
-				if ok {
-					width, err := util.ScreenshotWidth(size)
-					if err != nil {
-						plog.Error(plog.TypeSystem, "invalid screenshot resolution", "size", size)
-
-						continue
-					}
-
-					plog.Debug(plog.TypeSystem, "updated screenshot resolution", "size", width)
-					c.setScreenshotSize(width)
-
-					go c.updateScreenshots()
-				}
+				c.screenshotRequest(req)
 			case "experiment/topology":
 				// Same permission as GET /experiments/{name}/topology.
 				if !c.role.Allowed("experiments/topology", "get", req.Resource.Name) {
@@ -939,6 +915,85 @@ func (c *Client) clearVMs() {
 	c.sent = nil
 	c.nextList = nil
 	c.view++
+}
+
+// screenshotRequest acts on a metadata/screenshot request: "live" names the
+// VMs whose live tiles the client draws, as exp/vm; any other action sets the
+// screenshot size.
+func (c *Client) screenshotRequest(req bt.Request) {
+	if req.Resource.Action == "live" {
+		var payload struct {
+			VMs []string `json:"vms"`
+		}
+
+		if err := json.Unmarshal(req.Payload, &payload); err != nil {
+			plog.Error(plog.TypeSystem, "cannot unmarshal WebSocket request payload JSON", "err", err)
+
+			return
+		}
+
+		if c.setLiveTiles(payload.VMs) {
+			go c.updateScreenshots()
+		}
+
+		return
+	}
+
+	var payload map[string]string
+
+	if err := json.Unmarshal(req.Payload, &payload); err != nil {
+		plog.Error(plog.TypeSystem, "cannot unmarshal WebSocket request payload JSON", "err", err)
+
+		return
+	}
+
+	size, ok := payload["size"]
+	if !ok {
+		return
+	}
+
+	width, err := util.ScreenshotWidth(size)
+	if err != nil {
+		plog.Error(plog.TypeSystem, "invalid screenshot resolution", "size", size)
+
+		return
+	}
+
+	plog.Debug(plog.TypeSystem, "updated screenshot resolution", "size", width)
+	c.setScreenshotSize(width)
+
+	go c.updateScreenshots()
+}
+
+// setLiveTiles replaces the VMs whose live tiles the client draws, skipping
+// names that are not exp/vm. It reports whether a VM left the set: the client
+// then needs that VM's screenshot again, so its last one is forgotten.
+func (c *Client) setLiveTiles(names []string) bool {
+	live := make(map[vmKey]struct{}, len(names))
+
+	for _, name := range names {
+		exp, vm, ok := strings.Cut(name, "/")
+		if ok && exp != "" && vm != "" && !strings.Contains(vm, "/") {
+			live[vmKey{exp: exp, name: vm}] = struct{}{}
+		}
+	}
+
+	c.vmMu.Lock()
+	defer c.vmMu.Unlock()
+
+	left := false
+
+	for key := range c.liveTiles {
+		if _, ok := live[key]; !ok {
+			delete(c.sent, key)
+
+			left = true
+		}
+	}
+
+	c.liveTiles = live
+
+	return left
 }
 
 // updateScreenshots pushes the screenshots of the VMs in view now, not at the next round. A call

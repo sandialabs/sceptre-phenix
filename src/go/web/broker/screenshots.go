@@ -152,6 +152,10 @@ func wantedShots(viewers []*Client) map[shotKey][]*Client {
 		c.vmMu.RLock()
 
 		for _, v := range c.vms {
+			if _, live := c.liveTiles[vmKey{exp: v.exp, name: v.name}]; live {
+				continue
+			}
+
 			if v.running {
 				key := shotKey{exp: v.exp, vm: v.name, width: width}
 				wanted[key] = append(wanted[key], c)
@@ -213,6 +217,10 @@ func (c *Client) sendFrame(key shotKey, f frame) {
 	defer c.vmMu.Unlock()
 
 	if !slices.Contains(c.vms, vmScope{exp: key.exp, name: key.vm, running: true}) {
+		return
+	}
+
+	if _, live := c.liveTiles[vm]; live {
 		return
 	}
 

@@ -23,6 +23,7 @@
     "@jsonforms/core": "^3.8.0",
     "@jsonforms/vue": "^3.8.0",
     "@jsonforms/vue-vanilla": "^3.8.0",
+    "@novnc/novnc": "1.7.0",
     "@vue-flow/background": "^1.3.2",
     "@vue-flow/controls": "^1.1.3",
     "@vue-flow/core": "^1.48.2",

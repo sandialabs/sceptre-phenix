@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -34,6 +35,10 @@ var (
 	ErrC2CommandMismatch  = errors.New("C2 command ID names another VM's command on the VM's host")
 	ErrVMNotFound         = errors.New("VM not found")
 	ErrScreenshotNotFound = errors.New("screenshot not found")
+
+	// ErrOldMinimega is the error of a minimega whose `vm info` does not have the vga column. phenix needs a minimega
+	// release that has it.
+	ErrOldMinimega = errors.New("minimega is too old: vm info has no vga column, update minimega")
 )
 
 // VMNotFoundError is an error about a VM that minimega or the experiment does not have. It keeps the message of Err
@@ -631,29 +636,71 @@ func (Minimega) GetVMScreenshot(opts ...Option) ([]byte, error) {
 	return nil, ErrScreenshotNotFound
 }
 
-func (Minimega) GetVNCEndpoint(opts ...Option) (string, error) {
+// The `vm info` columns that GetVNCInfo reads.
+const (
+	vncPortColumn   = "vnc_port"
+	vgaColumn       = "vga"
+	copyPasteColumn = "bidirectional-copy-paste"
+)
+
+// VNCInfo is how to reach the VNC server of a KVM VM and how its console works, as `vm info` gives them.
+type VNCInfo struct {
+	// Host is the minimega node that runs the VM.
+	Host string
+	// Port is the TCP port of the VM's VNC server on Host.
+	Port int
+	// VGA is the video card that QEMU emulates for the VM, such as std, qxl or virtio.
+	VGA string
+	// BidirectionalCopyPaste is true when the VM shares its clipboard with VNC clients through qemu-vdagent.
+	BidirectionalCopyPaste bool
+}
+
+// Endpoint is the VM's VNC server as host:port.
+func (i VNCInfo) Endpoint() string {
+	return net.JoinHostPort(i.Host, strconv.Itoa(i.Port))
+}
+
+// GetVNCInfo reads the VNC endpoint, the video card and the copy and paste mode of the KVM VM in one `vm info`. An
+// error wraps ErrVMNotFound when minimega has no such running KVM VM, and ErrOldMinimega when minimega has no vga
+// column.
+func (Minimega) GetVNCInfo(opts ...Option) (VNCInfo, error) {
 	o := NewOptions(opts...)
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = vmInfoCmd
-	cmd.Columns = []string{hostColumn, "vnc_port"}
+	cmd.Columns = []string{hostColumn, vncPortColumn, vgaColumn, copyPasteColumn}
 	cmd.Filters = []string{"type=kvm", "name=" + o.vm}
 
-	var endpoint string
+	rows, err := mmcli.RunTabularCheckedContext(o.ctx, cmd, nil)
 
-	for _, vm := range o.tabular(cmd) {
-		endpoint = fmt.Sprintf("%s:%s", vm[hostColumn], vm["vnc_port"])
+	switch {
+	case err != nil && strings.Contains(err.Error(), "no such column"):
+		return VNCInfo{}, fmt.Errorf("getting VNC info of VM %s: %w: %w", o.vm, ErrOldMinimega, err)
+	case len(rows) == 0 && err != nil:
+		return VNCInfo{}, fmt.Errorf("getting VNC info of VM %s in namespace %s: %w", o.vm, o.ns, err)
+	case len(rows) == 0:
+		if err := ended(o.ctx); err != nil {
+			return VNCInfo{}, err
+		}
+
+		return VNCInfo{}, fmt.Errorf("getting VNC info of VM %s in namespace %s: %w", o.vm, o.ns, ErrVMNotFound)
 	}
 
-	if err := ended(o.ctx); endpoint == "" && err != nil {
-		return "", err
+	row := rows[len(rows)-1]
+
+	port, err := strconv.Atoi(row[vncPortColumn])
+	if err != nil {
+		return VNCInfo{}, fmt.Errorf("VM %s has the VNC port %q, want a number: %w", o.vm, row[vncPortColumn], err)
 	}
 
-	if endpoint == "" {
-		return "", errors.New("not found")
+	copyPaste, err := strconv.ParseBool(row[copyPasteColumn])
+	if err != nil {
+		return VNCInfo{}, fmt.Errorf(
+			"VM %s has the %s value %q, want true or false: %w", o.vm, copyPasteColumn, row[copyPasteColumn], err,
+		)
 	}
 
-	return endpoint, nil
+	return VNCInfo{Host: row[hostColumn], Port: port, VGA: row[vgaColumn], BidirectionalCopyPaste: copyPaste}, nil
 }
 
 func (Minimega) StartVM(opts ...Option) error {

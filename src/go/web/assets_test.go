@@ -192,15 +192,15 @@ func TestStaticHandlerDirectoryIndex(t *testing.T) {
 		t.Errorf("GET /docs = %d, want %d", resp.StatusCode, http.StatusMovedPermanently)
 	}
 
-	resp = get(t, h, "/novnc/app/", "gzip")
+	resp = get(t, h, "/docs/images/", "gzip")
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		t.Errorf("GET /novnc/app/ = %d, want %d", resp.StatusCode, http.StatusOK)
+		t.Errorf("GET /docs/images/ = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
 	if listing := readBody(t, resp); !strings.Contains(listing, "readme.txt") {
-		t.Errorf("GET /novnc/app/ = %q, want a directory listing with readme.txt", listing)
+		t.Errorf("GET /docs/images/ = %q, want a directory listing with readme.txt", listing)
 	}
 }
 
@@ -613,8 +613,8 @@ func TestStaticHandlerFileErrors(t *testing.T) {
 			wantStatus: http.StatusOK, wantBody: `<a href="index.html">index.html</a>`,
 		},
 		"index missing": {
-			target:     "/novnc/",
-			wantStatus: http.StatusOK, wantBody: `<a href="app/">app/</a>`,
+			target:     "/docs/images/",
+			wantStatus: http.StatusOK, wantBody: `<a href="readme.txt">readme.txt</a>`,
 		},
 	}
 

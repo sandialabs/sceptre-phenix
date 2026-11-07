@@ -6,8 +6,10 @@ import * as authApi from '@/api/auth.js';
 import { usePhenixStore } from '@/store.js';
 import { routeTitle } from '@/utils/pageTitle.js';
 import { roleAllowed, usersPageAllowed } from '@/utils/rbac.js';
+import { signInFromOtherTab } from '@/utils/authHandoff.js';
 import { isChunkLoadError, reloadForStaleChunk } from '@/utils/staleChunk.js';
 import { tokenExpired } from '@/utils/token.js';
+import { CONSOLE_ROUTE } from '@/vnc/consoleUrl.js';
 import { canUseWebShark } from '@/utils/webshark.js';
 
 export { pageTitle } from '@/utils/pageTitle.js';
@@ -179,6 +181,21 @@ const router = createRouter({
     },
 
     {
+      // The VNC console page, which opens in a window of its own. It has its
+      // own top bar, so App.vue drops the header and the footer. A console
+      // tab with no token gets one from another signed-in tab (see
+      // utils/authHandoff.js) before it shows the sign-in page.
+      path: '/vnc',
+      name: CONSOLE_ROUTE,
+      meta: {
+        title: 'VNC console',
+        fullBleed: true,
+        header: false,
+        tokenFromOtherTab: true,
+      },
+      component: () => import('@/views/VncView.vue'),
+    },
+    {
       // username must be a path param: Vue Router 4 drops params that are
       // not part of the route path (passing them worked in Vue Router 3)
       path: '/proxysignup/:username?',
@@ -197,9 +214,6 @@ const router = createRouter({
     //static paths
     { path: '/version', name: 'version' },
     { path: '/features', name: 'features' },
-
-    //vnc
-    { path: '/api/v1/experiments/:id/vms/:name/vnc?token=:token', name: 'vnc' },
 
     {
       path: '/:pathMatch(.*)*',
@@ -269,6 +283,14 @@ router.beforeEach(async (to, _, next) => {
   if (to.name === 'proxysignup' && import.meta.env.VITE_AUTH === 'proxy') {
     next();
     return;
+  }
+
+  if (
+    !store.auth &&
+    to.meta.tokenFromOtherTab &&
+    import.meta.env.VITE_AUTH === 'enabled'
+  ) {
+    await signInFromOtherTab();
   }
 
   if (store.auth) {

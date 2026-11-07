@@ -21,6 +21,7 @@ vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 vi.mock('@/store.js', modules.store);
+vi.mock('@/api/vnc.js', modules.vnc);
 vi.mock('@/utils/websocket', modules.websocket);
 vi.mock('@/utils/pageLoader.js', modules.pageLoader);
 
@@ -316,12 +317,18 @@ describe('the VM table', () => {
       console: el.querySelector('a[href]')?.getAttribute('href') ?? null,
     };
   };
-  // the pictures on the VNC tab's tiles
+  // the pictures on the VNC tab's tiles: the image, its text (the console
+  // link over it names it), and the console it opens, if any
   const tiles = (page) =>
-    page
-      .findAll('.vnc-tile-name')
-      .map((name) => picture(name.element.parentElement));
-  const vnc = '/api/v1/experiments/demo/vms/vm1/vnc?token=t';
+    page.findAll('.vnc-tile-item').map((item) => {
+      const link = item.find('a.vnc-tile-link');
+      return {
+        image: item.find('img').attributes('src'),
+        alt: link.exists() ? textOf(link) : item.find('img').attributes('alt'),
+        console: link.exists() ? link.attributes('href') : null,
+      };
+    });
+  const vnc = '/vnc?vm=demo/vm1';
 
   // Each VM state vmScreenshot pictures: the VM, the page's state, the
   // image, its alt text, and whether the table links it to the console.
@@ -371,8 +378,8 @@ describe('the VM table', () => {
       { delayed_start: true, state: 'BUILDING' },
       {},
       placeholderImage('delayed'),
-      'Open the console of VM vm1: VM vm1 has a delayed start',
-      true,
+      'VM vm1 has a delayed start',
+      false,
     ],
     [
       'is not running',
@@ -400,17 +407,9 @@ describe('the VM table', () => {
         alt,
         console: linked ? vnc : null,
       });
-      // a VNC tile always opens the console, and says so first
+      // the table and the VNC tiles link the same VMs: the ones with a screen
       expect(tiles(page)).toEqual(
-        vm.external
-          ? []
-          : [
-              {
-                image,
-                alt: linked ? alt : `Open the console of VM vm1: ${alt}`,
-                console: vnc,
-              },
-            ],
+        vm.external ? [] : [{ image, alt, console: linked ? vnc : null }],
       );
     },
   );

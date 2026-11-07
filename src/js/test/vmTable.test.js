@@ -8,6 +8,7 @@ const { modules, rbac, resetMocks, store } = await vi.hoisted(
 );
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/store.js', modules.store);
+vi.mock('@/api/vnc.js', modules.vnc);
 
 import loadingImg from '@/assets/imgs/loading-screenshot.svg';
 import { placeholderImage } from '@/components/experiment/vmPlaceholder.js';
@@ -139,12 +140,44 @@ describe('the rows', () => {
     expect(await shot(true)).toBe(placeholderImage('notAvailable'));
   });
 
-  it('links a running VM to its console', async () => {
+  it('links a running VM to its console page, which opens in a new window', async () => {
+    vi.stubGlobal('BroadcastChannel', undefined);
+    const open = vi.spyOn(window, 'open').mockReturnValue({});
     const link = rowOf(await render([web]), 'web').Screenshot.find('a');
-    expect(link.attributes('href')).toBe(
-      '/api/v1/experiments/demo/vms/web/vnc?token=t',
+    expect(link.attributes('href')).toBe('/vnc?vm=demo/web');
+    expect(link.attributes('target')).toBeUndefined();
+    await link.trigger('click', { button: 0 });
+    await flushPromises();
+    expect(open).toHaveBeenCalledWith(
+      expect.stringMatching(/\/vnc\?vm=demo\/web$/),
+      expect.stringMatching(/^phenix-vnc-/),
     );
+    open.mockRestore();
+    vi.unstubAllGlobals();
   });
+
+  it.each([
+    ['running', vm(), true],
+    ['paused', vm({ running: false, state: 'PAUSED' }), true],
+    ['shut down', vm({ running: false, state: 'QUIT' }), false],
+    ['busy', vm({ busy: true, percent: 40 }), false],
+    [
+      'waiting for its delayed start',
+      vm({ running: false, state: 'BUILDING', delayed_start: '5m' }),
+      false,
+    ],
+  ])(
+    'links a %s VM to its console only when it has a screen and the role has vms/vnc get',
+    async (_, row, linked) => {
+      const link = async () =>
+        rowOf(await render([row]), 'web')
+          .Screenshot.find('a')
+          .exists();
+      expect(await link()).toBe(linked);
+      rbac.allowed = denyOnly(['vms/vnc', 'get']);
+      expect(await link()).toBe(false);
+    },
+  );
 
   it('counts labels and notes beside the tag icon, and shows no count for none', async () => {
     const vms = [

@@ -25,5 +25,5 @@ export const ROUTES = [
   ['/disabled', 'disabled'],
   ['/version', 'version'],
   ['/features', 'features'],
-  ['/api/v1/experiments/:id/vms/:name/vnc?token=:token', 'vnc'],
+  ['/vnc', 'vnc'],
 ].map(([path, name]) => ({ path, name, component: {} }));

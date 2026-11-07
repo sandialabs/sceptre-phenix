@@ -1,13 +1,16 @@
 package web
 
 import (
-	"crypto/rand"
-	"encoding/base64"
+	"context"
+	"errors"
 	"fmt"
-	"html/template"
+	"net"
 	"net/http"
+	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/mitchellh/mapstructure"
@@ -20,7 +23,6 @@ import (
 	"phenix/web/audit"
 	"phenix/web/lifecycle"
 	"phenix/web/middleware"
-	"phenix/web/rbac"
 	"phenix/web/util"
 	"phenix/web/weberror"
 )
@@ -48,22 +50,38 @@ func findTopologyNode(exp, name string) ifaces.NodeSpec { //nolint:ireturn // to
 	return nil
 }
 
+// vncProbeTimeout bounds the dial of a probe to the VM's VNC server.
+const vncProbeTimeout = 3 * time.Second
+
 // GetVNC - GET /experiments/{exp}/vms/{name}/vnc.
+//
+// It returns the VM's VNC session as JSON. With probe=true, it also dials the VM's VNC server, and answers 502 with
+// the code vnc_unreachable when phenix cannot connect to it.
 func GetVNC(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetVNC")
 
 	var (
-		ctx     = r.Context()
-		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		exp     = vars["exp"]
-		name    = vars["name"]
+		ctx  = r.Context()
+		role = middleware.RoleFromContext(ctx)
+		vars = mux.Vars(r)
+		exp  = vars["exp"]
+		name = vars["name"]
 	)
 
 	if !role.Allowed("vms/vnc", "get", exp+"/"+name) {
 		audit.Denied(r, audit.VNCAttach, "vnc access not allowed", audit.Fields{Experiment: exp, VM: name})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
+	}
+
+	probe := false
+
+	if value := r.URL.Query().Get("probe"); value != "" {
+		var err error
+
+		if probe, err = strconv.ParseBool(value); err != nil {
+			return weberror.NewWebError(err, "probe must be true or false")
+		}
 	}
 
 	// Only the node's annotations are needed, so read them from the topology
@@ -73,50 +91,67 @@ func GetVNC(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusNotFound, "VM not found")
 	}
 
-	// The `token` variable will be an empty string if authentication is disabled,
-	// which is okay and will not cause any issues here.
-	token, _ := ctx.Value(middleware.ContextKeyJWT).(string)
-
-	nonce, err := newCSPNonce()
+	info, err := mm.GetVNCInfo(mm.NS(exp), mm.VMName(name), mm.Context(ctx))
 	if err != nil {
-		return weberror.New(http.StatusInternalServerError, err.Error())
+		if requestCanceled(r, err) {
+			return nil
+		}
+
+		return vncInfoError(err)
 	}
 
-	config := newVNCConfig(token, exp, name, nonce)
-	config.setBanners(name, node.Annotations()["vncBanner"])
+	if probe {
+		if err := probeVNC(ctx, info); err != nil {
+			if requestCanceled(r, err) {
+				return nil
+			}
 
-	// The page runs only its own scripts: the inline one that starts noVNC
-	// carries the nonce, so markup that reached the page some other way cannot
-	// run script or load it from another host.
-	w.Header().Set("Content-Security-Policy", vncContentSecurityPolicy(nonce))
+			return weberror.NewWebError(err, "phenix cannot connect to the VNC port of the VM").
+				SetStatus(http.StatusBadGateway).
+				WithCode(weberror.CodeVNCUnreachable).
+				WithDetail("host", info.Host).
+				WithDetail("port", info.Port)
+		}
+	}
+
+	session := newVNCSession(exp, name, info)
+	session.setBanners(name, node.Annotations()["vncBanner"])
 
 	// set no-cache headers
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate") // HTTP 1.1.
 	w.Header().Set("Pragma", "no-cache")                                   // HTTP 1.0.
 	w.Header().Set("Expires", "0")                                         // Proxies.
 
-	plog.Info(
-		plog.TypeAction,
-		"vnc opened",
-		"user",
-		middleware.UserFromContext(ctx),
-		"exp",
-		exp,
-		"vm",
-		name,
-	)
-
-	if o.unbundled {
-		tmpl := template.Must(template.New("vnc.html").ParseFiles("web/public/vnc.html"))
-		_ = tmpl.Execute(w, config)
-	} else {
-		assets, err := GetAssets()
-		if err != nil {
-			return weberror.New(http.StatusInternalServerError, err.Error())
-		}
-		bfs := util.NewBinaryFileSystem(assets)
-		bfs.ServeTemplate(w, "vnc.html", config)
+	if !probe {
+		plog.Info(plog.TypeAction, "vnc opened", "user", middleware.UserFromContext(ctx), "exp", exp, "vm", name)
 	}
+
+	return writeJSON(w, session)
+}
+
+// vncInfoError is the web error for err from mm.GetVNCInfo.
+func vncInfoError(err error) *weberror.WebError {
+	switch {
+	case errors.Is(err, mm.ErrVMNotFound):
+		return weberror.NewWebError(err, "VM is not running").SetStatus(http.StatusConflict)
+	case errors.Is(err, mm.ErrOldMinimega):
+		return weberror.NewWebError(err, "%s", mm.ErrOldMinimega.Error()).SetStatus(http.StatusInternalServerError)
+	default:
+		return weberror.NewWebError(err, "unable to get the VNC info of the VM from minimega").
+			SetStatus(http.StatusBadGateway)
+	}
+}
+
+// probeVNC dials the VM's VNC server, and closes the connection.
+func probeVNC(ctx context.Context, info mm.VNCInfo) error {
+	dialer := &net.Dialer{Timeout: vncProbeTimeout} //nolint:exhaustruct // partial initialization
+
+	conn, err := dialer.DialContext(ctx, "tcp", info.Endpoint())
+	if err != nil {
+		return fmt.Errorf("probing VNC server %s: %w", info.Endpoint(), err)
+	}
+
+	_ = conn.Close()
 
 	return nil
 }
@@ -141,7 +176,7 @@ func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(name), mm.Context(r.Context()))
+	info, err := mm.GetVNCInfo(mm.NS(exp), mm.VMName(name), mm.Context(r.Context()))
 	if err != nil {
 		audit.Failure(r, audit.VNCAttach, "vnc attach failed", fields, err)
 
@@ -158,7 +193,7 @@ func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	proxy := util.ConnectWSHandler(endpoint)
+	proxy := util.ConnectWSHandler(info.Endpoint())
 
 	websocket.Handler(func(ws *websocket.Conn) {
 		defer lifecycle.TrackConn("VNC", ws)()
@@ -184,40 +219,68 @@ type vncBannerSpec struct {
 	TextColor       string   `mapstructure:"textColor"`
 }
 
-// bannerConfig is a banner as the VNC page shows it: each line as text, on a
-// line of its own.
+// bannerConfig is a banner as the VNC console shows it: each line as text, on a line of its own. No lines means no
+// banner.
 type bannerConfig struct {
-	Lines           []string
-	BackgroundColor string
-	TextColor       string
+	Lines           []string `json:"lines"`
+	BackgroundColor string   `json:"backgroundColor"`
+	TextColor       string   `json:"textColor"`
 }
 
-type vncConfig struct {
-	BasePath string
-	Token    string
-	ExpName  string
-	VMName   string
-	Nonce    string
-
-	TopBanner    bannerConfig
-	BottomBanner bannerConfig
+// vncBanners are the banners above and below the VNC console.
+type vncBanners struct {
+	Top    bannerConfig `json:"top"`
+	Bottom bannerConfig `json:"bottom"`
 }
 
-func newVNCConfig(token, exp, vm, nonce string) *vncConfig {
-	return &vncConfig{
-		BasePath: o.basePath,
-		Token:    token,
-		ExpName:  exp,
-		VMName:   vm,
-		Nonce:    nonce,
-		TopBanner: bannerConfig{ //nolint:exhaustruct // lines set by setBanners
-			BackgroundColor: defaultBannerBackground,
-			TextColor:       defaultBannerText,
-		},
-		BottomBanner: bannerConfig{ //nolint:exhaustruct // lines set by setBanners
-			BackgroundColor: defaultBannerBackground,
-			TextColor:       defaultBannerText,
-		},
+// vncDisplay is the video card that QEMU emulates for the VM, and whether a client can resize the VM's screen.
+type vncDisplay struct {
+	VGA          string `json:"vga"`
+	RemoteResize bool   `json:"remoteResize"`
+}
+
+// The copy and paste modes of a VNC session.
+const (
+	// clipboardPasteAsKeys types pasted text as key presses.
+	clipboardPasteAsKeys = "pasteAsKeys"
+	// clipboardBidirectional shares the clipboard both ways through qemu-vdagent.
+	clipboardBidirectional = "bidirectional"
+)
+
+// vncClipboard is the copy and paste mode of the VM's console.
+type vncClipboard struct {
+	Mode string `json:"mode"`
+}
+
+// vncSession is what the UI needs to open the VM's VNC console, as GET /experiments/{exp}/vms/{name}/vnc answers it.
+type vncSession struct {
+	Experiment string `json:"experiment"`
+	VM         string `json:"vm"`
+	// WebSocket is the path of the VM's VNC websocket, relative to the API root.
+	WebSocket string       `json:"websocket"`
+	Banners   vncBanners   `json:"banners"`
+	Display   vncDisplay   `json:"display"`
+	Clipboard vncClipboard `json:"clipboard"`
+}
+
+// newVNCSession is the VNC session of VM vm of experiment exp, with the display and clipboard mode of info and no
+// banner lines.
+func newVNCSession(exp, vm string, info mm.VNCInfo) *vncSession {
+	defaults := bannerConfig{Lines: []string{}, BackgroundColor: defaultBannerBackground, TextColor: defaultBannerText}
+
+	clipboard := clipboardPasteAsKeys
+	if info.BidirectionalCopyPaste {
+		clipboard = clipboardBidirectional
+	}
+
+	return &vncSession{
+		Experiment: exp,
+		VM:         vm,
+		WebSocket:  "experiments/" + url.PathEscape(exp) + "/vms/" + url.PathEscape(vm) + "/vnc/ws",
+		Banners:    vncBanners{Top: defaults, Bottom: defaults},
+		// Only virtio-vga has the resize hook in QEMU.
+		Display:   vncDisplay{VGA: info.VGA, RemoteResize: info.VGA == "virtio"},
+		Clipboard: vncClipboard{Mode: clipboard},
 	}
 }
 
@@ -226,14 +289,14 @@ const (
 	defaultBannerText       = "black"
 )
 
-// setBanners sets the page's banners from the VM's vncBanner annotation:
+// setBanners sets the session's banners from the VM's vncBanner annotation:
 // none names the experiment and VM, a string is the text of both banners (a
 // newline starts a new line), and a map sets each banner's lines and colors,
-// or turns both off. The page shows the text as text, never as markup.
-func (c *vncConfig) setBanners(vm string, annotation any) {
+// or turns both off. The console shows the text as text, never as markup.
+func (c *vncSession) setBanners(vm string, annotation any) {
 	switch banner := annotation.(type) {
 	case nil:
-		c.setText(fmt.Sprintf("EXP: %s - VM: %s", c.ExpName, vm))
+		c.setText(fmt.Sprintf("EXP: %s - VM: %s", c.Experiment, vm))
 	case string:
 		c.setText(banner)
 	case map[string]any:
@@ -271,8 +334,8 @@ func (c *vncConfig) setBanners(vm string, annotation any) {
 			return
 		}
 
-		c.TopBanner = bannerFrom(vm, spec.TopBanner)
-		c.BottomBanner = bannerFrom(vm, spec.BottomBanner)
+		c.Banners.Top = bannerFrom(vm, spec.TopBanner)
+		c.Banners.Bottom = bannerFrom(vm, spec.BottomBanner)
 	default:
 		plog.Error(
 			plog.TypeSystem,
@@ -286,25 +349,29 @@ func (c *vncConfig) setBanners(vm string, annotation any) {
 }
 
 // setText makes text, split at its newlines, the lines of both banners.
-func (c *vncConfig) setText(text string) {
+func (c *vncSession) setText(text string) {
 	lines := strings.Split(text, "\n")
 
-	c.TopBanner.Lines = lines
-	c.BottomBanner.Lines = lines
+	c.Banners.Top.Lines = lines
+	c.Banners.Bottom.Lines = lines
 }
 
 // bannerFrom is the banner spec describes, its colors replaced by the default
 // ones where they are not CSS color names or hex colors.
 func bannerFrom(vm string, spec vncBannerSpec) bannerConfig {
+	lines := spec.Banner
+	if lines == nil {
+		lines = []string{}
+	}
+
 	return bannerConfig{
-		Lines:           spec.Banner,
+		Lines:           lines,
 		BackgroundColor: bannerColor(vm, spec.BackgroundColor, defaultBannerBackground),
 		TextColor:       bannerColor(vm, spec.TextColor, defaultBannerText),
 	}
 }
 
-// cssColor matches a CSS color name or hex color. The page's template refuses
-// rgb() and other color functions in a style anyway.
+// cssColor matches a CSS color name or hex color.
 var cssColor = regexp.MustCompile(`^(?:[a-zA-Z]{1,32}|#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8}))$`)
 
 // bannerColor returns color when it is a CSS color name or hex color, fallback
@@ -327,32 +394,4 @@ func bannerColor(vm, color, fallback string) string {
 
 		return fallback
 	}
-}
-
-// newCSPNonce returns a random nonce for one page's Content-Security-Policy.
-func newCSPNonce() (string, error) {
-	nonce := make([]byte, 16) //nolint:mnd // 128 bits
-
-	if _, err := rand.Read(nonce); err != nil {
-		return "", fmt.Errorf("generating the nonce for the content security policy: %w", err)
-	}
-
-	return base64.RawURLEncoding.EncodeToString(nonce), nil
-}
-
-// vncContentSecurityPolicy is the VNC page's Content-Security-Policy. noVNC
-// loads its scripts, styles, images and sounds from this server, draws its
-// cursor from data: and blob: URLs, styles elements inline, and connects back
-// over a websocket.
-func vncContentSecurityPolicy(nonce string) string {
-	return strings.Join([]string{
-		"default-src 'self'",
-		"script-src 'self' 'nonce-" + nonce + "'",
-		"style-src 'self' 'unsafe-inline'",
-		"img-src 'self' data: blob:",
-		"connect-src 'self'",
-		"object-src 'none'",
-		"base-uri 'none'",
-		"form-action 'self'",
-	}, "; ")
 }

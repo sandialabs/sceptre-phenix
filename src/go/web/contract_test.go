@@ -398,6 +398,11 @@ func contractRoutes() []contractRoute {
 			method: "POST", path: exp + "/vms/actions", body: `{"action":"start","vms":["test-vm"]}`,
 			need: one(testRole("vms/start", "update", contractExp+"/"+contractVM)),
 		},
+		// the contract's minimega has no running VM
+		{
+			method: "GET", path: vm + "/vnc", need: one(testRole("vms/vnc", "get", contractExp+"/"+contractVM)),
+			want: []int{http.StatusConflict},
+		},
 		{method: "GET", path: vm + "/vnc/ws", need: one(testRole("vms/vnc", "get", contractExp+"/"+contractVM))},
 		// saved settings and link quality need vms patch on the VM
 		{
@@ -1045,6 +1050,15 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 		},
 		"screenshot with a base64 that is not a boolean": {
 			method: "GET", path: exp + "/vms/" + contractVM + "/screenshot.png?base64=maybe", want: http.StatusBadRequest,
+		},
+		"VNC session with a probe that is not a boolean": {
+			method: "GET", path: exp + "/vms/" + contractVM + "/vnc?probe=maybe", want: http.StatusBadRequest,
+		},
+		"VNC session of a VM the topology does not have": {
+			method: "GET", path: exp + "/vms/missing-vm/vnc", want: http.StatusNotFound,
+		},
+		"VNC session of a VM that is not running": {
+			method: "GET", path: exp + "/vms/" + contractVM + "/vnc", want: http.StatusConflict,
 		},
 		"netflow that is not running": {method: "GET", path: exp + "/netflow", want: http.StatusNotFound},
 		"netflow captures of unknown experiment": {

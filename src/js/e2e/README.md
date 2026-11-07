@@ -16,6 +16,7 @@ a CI-built binary, a container, or a full range node.
 | `tables.spec.js`               | just a running server                                                                        | yes                     |
 | `jobs.spec.js`                 | just a running server                                                                        | yes                     |
 | `a11y-seeded.spec.js`          | just a running server (each test seeds and deletes its own data)                             | yes                     |
+| `vnc.spec.js`                  | just a running server (it stands in for the experiment, its VMs and their VNC servers)       | yes                     |
 | `health.spec.js`               | a running server with a BoltDB store and no minimega                                         | yes, in every auth mode |
 | `builder-*.spec.js`            | just a running server, except the two specs below                                            | yes                     |
 | `builder-files.spec.js`        | also `E2E_BASE_DIR`: the server's `--base-dir.phenix`, on the machine the tests run on       | yes                     |
@@ -93,6 +94,15 @@ the browser asks for reduced motion. All these scans use the same rules
 the full axe report is attached to each test result. Content these scans
 don't reach, such as notifications and the running experiment page, is not
 covered.
+
+`vnc.spec.js` tests the VNC console page and the live tiles without minimega.
+`tests/vnc-support.js` stands in for a running experiment: `page.route`
+answers its VM rows and VNC sessions, and `page.routeWebSocket` is a small
+RFB 3.8 server behind each VNC websocket. noVNC accepts a WebSocket only when
+its methods are on the object or its direct prototype, so an init script
+gives the routed WebSocket a subclass that has them. Each server keeps the
+messages that its console sends, thus a test can show that a live tile sends
+no keys and no pointer events.
 
 ## Projects
 

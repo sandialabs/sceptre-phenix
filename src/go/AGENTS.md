@@ -58,8 +58,9 @@ the root target does.
 - `openapi.yml` must stay valid OpenAPI: a prek hook runs
   `scripts/api-docs.sh lint web/public/docs/openapi.yml` (from the repository
   root) when it changes.
-- Preserve bundled third-party assets under `web/public/` unless explicitly
-  upgrading or replacing them.
+- `web/public/` has no third-party assets of its own: the UI build brings
+  them (noVNC is an npm dependency of `src/js`), and only
+  `web/public/docs/openapi.yml` is tracked.
 - Config changes must keep versioned structs, interfaces, YAML/JSON tags,
   OpenAPI schemas, examples, and API output aligned.
 - Config schemas are OpenAPI YAML files embedded with `//go:embed`:

@@ -36,7 +36,7 @@ type changeMM struct {
 
 	host    string
 	hostErr error
-	vnc     string
+	vnc     mm.VNCInfo
 	vncErr  error
 	tunnels []map[string]string
 }
@@ -45,7 +45,7 @@ func (*changeMM) IsHeadnode(string) bool { return true }
 
 func (m *changeMM) GetVMHost(...mm.Option) (string, error) { return m.host, m.hostErr }
 
-func (m *changeMM) GetVNCEndpoint(...mm.Option) (string, error) { return m.vnc, m.vncErr }
+func (m *changeMM) GetVNCInfo(...mm.Option) (mm.VNCInfo, error) { return m.vnc, m.vncErr }
 
 func (m *changeMM) GetTunnels(...mm.Option) []map[string]string { return m.tunnels }
 
@@ -166,7 +166,7 @@ func TestCreatePortForward(t *testing.T) {
 			want: []ft.Listener{tunnelTo("10.0.0.5", 80, 8080)}, command: "cc tunnel vm %d 10.0.0.5 80",
 		},
 		"VNC console": {
-			query: "?src=5901&dst=vnc", fake: changeMM{vnc: "node2:5905"}, status: http.StatusNoContent,
+			query: "?src=5901&dst=vnc", fake: changeMM{vnc: mm.VNCInfo{Host: "node2", Port: 5905}}, status: http.StatusNoContent,
 			want: []ft.Listener{{
 				Exp: "exp", VM: "vm", SrcPort: 5901, DstHost: "127.0.0.1", DstPort: 5900, Owner: "u",
 				ClusterHost: "node2", ClusterPort: 5905, QEMU: true,
@@ -183,7 +183,7 @@ func TestCreatePortForward(t *testing.T) {
 			query: "?src=5901&dst=VNC", fake: changeMM{vncErr: errors.New("not found")}, status: http.StatusBadRequest,
 		},
 		"the user's forward exists": {
-			query: "?src=5901&dst=vnc", fake: changeMM{vnc: "node2:5905"}, forwarded: []ft.Listener{existing},
+			query: "?src=5901&dst=vnc", fake: changeMM{vnc: mm.VNCInfo{Host: "node2", Port: 5905}}, forwarded: []ft.Listener{existing},
 			status: http.StatusBadRequest, want: []ft.Listener{existing},
 		},
 		"tunnel fails": {
@@ -234,7 +234,7 @@ func TestCreatePortForward(t *testing.T) {
 			}
 
 			ignorePort := cmpopts.IgnoreFields(ft.Listener{}, "ClusterPort")
-			if tc.fake.vnc != "" {
+			if tc.fake.vnc.Host != "" {
 				ignorePort = nil
 			}
 
@@ -474,7 +474,7 @@ func TestRestoreForward(t *testing.T) {
 func TestAppTunnelCreatesForward(t *testing.T) {
 	useForwards(t, []string{"exp"}, nil)
 
-	fake := &changeMM{host: "node1", vnc: "node1:5901"}
+	fake := &changeMM{host: "node1", vnc: mm.VNCInfo{Host: "node1", Port: 5901}}
 	received := useChangeMM(t, fake, nil)
 
 	pubsub.Publish("create-tunnel", app.CreateTunnel{

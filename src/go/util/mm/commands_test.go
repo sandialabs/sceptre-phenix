@@ -102,7 +102,7 @@ func errOnly(call func() error) func() (any, error) {
 //
 //nolint:maintidx // one table
 func TestOneCommandFunctions(t *testing.T) { //nolint:paralleltest // shares the fake minimega
-	vnc := inExp(`.columns "vnc_port" .filter name=a .filter type=kvm vm info`)
+	vnc := inExp(`.columns "vnc_port","vga","bidirectional-copy-paste" .filter name=a .filter type=kvm vm info`)
 	host := inExp(`.columns "name" .filter name=a vm info`)
 	state := inExp(`.columns "state" .filter name=a vm info summary`)
 
@@ -217,19 +217,57 @@ func TestOneCommandFunctions(t *testing.T) { //nolint:paralleltest // shares the
 			sent:    []string{inExp("clear vm tag a "), inExp(`vm tag a "k" "v"`)},
 			wantMsg: "bad tag",
 		},
-		"GetVNCEndpoint": {
-			call: func() (any, error) { return GetVNCEndpoint(NS("exp"), VMName("a")) },
+		"GetVNCInfo": {
+			call: func() (any, error) { return GetVNCInfo(NS("exp"), VMName("a")) },
 			answers: map[string][]*minicli.Response{
-				vmInfoCmd: {mmtest.Tabular("compute1", []string{"vnc_port"}, []string{"5901"})},
+				vmInfoCmd: {mmtest.Tabular(
+					"compute1", []string{"vnc_port", "vga", "bidirectional-copy-paste"}, []string{"5901", "virtio", "true"},
+				)},
 			},
 			sent: []string{vnc},
-			want: "compute1:5901",
+			want: VNCInfo{Host: "compute1", Port: 5901, VGA: "virtio", BidirectionalCopyPaste: true},
 		},
-		"GetVNCEndpoint of a missing VM": {
-			call:    func() (any, error) { return GetVNCEndpoint(NS("exp"), VMName("a")) },
+		"GetVNCInfo without copy and paste": {
+			call: func() (any, error) { return GetVNCInfo(NS("exp"), VMName("a")) },
+			answers: map[string][]*minicli.Response{
+				vmInfoCmd: {mmtest.Tabular(
+					"compute2", []string{"vnc_port", "vga", "bidirectional-copy-paste"}, []string{"43691", "std", "false"},
+				)},
+			},
+			sent: []string{vnc},
+			want: VNCInfo{Host: "compute2", Port: 43691, VGA: "std", BidirectionalCopyPaste: false},
+		},
+		"GetVNCInfo of a missing VM": {
+			call:   func() (any, error) { return GetVNCInfo(NS("exp"), VMName("a")) },
+			sent:   []string{vnc},
+			want:   VNCInfo{},
+			wantIs: ErrVMNotFound,
+		},
+		"GetVNCInfo from a minimega without the vga column": {
+			call:    func() (any, error) { return GetVNCInfo(NS("exp"), VMName("a")) },
+			answers: map[string][]*minicli.Response{vmInfoCmd: failed("no such column `vga`")},
 			sent:    []string{vnc},
-			want:    "",
-			wantMsg: "not found",
+			want:    VNCInfo{},
+			wantIs:  ErrOldMinimega,
+			wantMsg: "no such column `vga`",
+		},
+		"GetVNCInfo reports an error": {
+			call:    func() (any, error) { return GetVNCInfo(NS("exp"), VMName("a")) },
+			answers: map[string][]*minicli.Response{vmInfoCmd: failed("busy")},
+			sent:    []string{vnc},
+			want:    VNCInfo{},
+			wantMsg: "busy",
+		},
+		"GetVNCInfo of a VNC port that is not a number": {
+			call: func() (any, error) { return GetVNCInfo(NS("exp"), VMName("a")) },
+			answers: map[string][]*minicli.Response{
+				vmInfoCmd: {mmtest.Tabular(
+					"compute1", []string{"vnc_port", "vga", "bidirectional-copy-paste"}, []string{"none", "std", "false"},
+				)},
+			},
+			sent:    []string{vnc},
+			want:    VNCInfo{},
+			wantMsg: `"none"`,
 		},
 		"GetVMHost": {
 			call: func() (any, error) { return GetVMHost(NS("exp"), VMName("a")) },
@@ -540,5 +578,19 @@ func TestGetNamespaceHosts(t *testing.T) { //nolint:paralleltest // shares the f
 
 	if diff := cmp.Diff([]string{inExp("host"), bare(disk)}, sentRaw(received())); diff != "" {
 		t.Errorf("GetNamespaceHosts(exp) sent commands mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestVNCInfoEndpoint(t *testing.T) {
+	t.Parallel()
+
+	for info, want := range map[VNCInfo]string{
+		{Host: "compute1", Port: 5901}:    "compute1:5901",
+		{Host: "fd00::4", Port: 43691}:    "[fd00::4]:43691",
+		{Host: "compute-04", Port: 43691}: "compute-04:43691",
+	} {
+		if got := info.Endpoint(); got != want {
+			t.Errorf("%+v.Endpoint() = %q, want %q", info, got, want)
+		}
 	}
 }

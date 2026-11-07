@@ -21,6 +21,7 @@ vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/errorNotif.js', modules.errorNotif);
 vi.mock('@/store.js', modules.store);
+vi.mock('@/api/vnc.js', modules.vnc);
 vi.mock('@/utils/websocket', modules.websocket);
 vi.mock('@/utils/notify.js', modules.notify);
 // the pages' lists come from the tests
@@ -1666,8 +1667,8 @@ describe('VMtilesView', () => {
     { experiment: 'exp2', name: 'vm[3]', running: false },
   ];
 
-  // the page's heading and its tiles: the name on each, what its picture
-  // says, and whether the picture opens the VM's console
+  // the page's heading and its tiles: the name on each, the text of its
+  // picture (the console link names it), and the console it opens, if any
   async function tiles(route, searchName = '') {
     const page = await mountComponent(VMtilesView, {
       route,
@@ -1677,8 +1678,12 @@ describe('VMtilesView', () => {
       heading: textOf(page.find('h3')),
       tiles: page.findAll('.tile.is-child').map((tile) => ({
         name: textOf(tile.find('.title')),
-        alt: tile.find('img').attributes('alt'),
-        console: tile.find('a[href*="/vnc?token=t"]').exists(),
+        alt: tile.find('a.vnc-tile-link').exists()
+          ? textOf(tile.get('a.vnc-tile-link'))
+          : tile.get('img').attributes('alt'),
+        console: tile.find('a.vnc-tile-link').exists()
+          ? tile.get('a.vnc-tile-link').attributes('href')
+          : null,
       })),
     };
   }
@@ -1688,8 +1693,12 @@ describe('VMtilesView', () => {
     expect(await tiles('/experiment/exp1')).toEqual({
       heading: 'Experiment: exp1',
       tiles: [
-        { name: 'vm2', alt: 'VM vm2 is not running', console: false },
-        { name: 'vm[1]', alt: 'Open the console of VM vm[1]', console: true },
+        { name: 'vm2', alt: 'VM vm2 is not running', console: null },
+        {
+          name: 'vm[1]',
+          alt: 'Open the console of VM vm[1]',
+          console: '/vnc?vm=exp1/vm[1]',
+        },
       ],
     });
     expect(
@@ -1783,15 +1792,60 @@ describe('VMtilesView', () => {
         {
           name: 'exp1/vm[1]',
           alt: 'Open the console of VM exp1/vm[1]',
-          console: true,
+          console: '/vnc?vm=exp1/vm[1]',
         },
         {
           name: 'exp2/vm[3]',
           alt: 'VM exp2/vm[3] is not running',
-          console: false,
+          console: null,
         },
       ],
     });
+  });
+
+  it('shows the VM of the chosen experiment when another has a VM of that name', async () => {
+    const page = await mountComponent(VMtilesView, {
+      route: '/experiment/exp1',
+      data: {
+        vms: [
+          { experiment: 'exp1', name: 'web', running: true, screenshot },
+          { experiment: 'exp2', name: 'web', running: true, screenshot },
+        ],
+      },
+    });
+    const links = () =>
+      page.findAll('a.vnc-tile-link').map((a) => a.attributes('href'));
+    expect(links()).toEqual(['/vnc?vm=exp1/web']);
+    const exp2 = page
+      .findAll('.dropdown-item')
+      .find((item) => textOf(item) === 'exp2');
+    await exp2.trigger('click');
+    await flushPromises();
+    expect(textOf(page.find('h3'))).toBe('Experiment: exp2');
+    expect(links()).toEqual(['/vnc?vm=exp2/web']);
+  });
+
+  it('keeps each tile in place while a search hides the tiles before it', async () => {
+    const page = await mountComponent(VMtilesView, {
+      route: '/experiment/exp1',
+      data: {
+        vms: ['a', 'b', 'c', 'd'].map((name) => ({
+          experiment: 'exp1',
+          name,
+          running: true,
+          screenshot,
+        })),
+      },
+    });
+    const tileOf = (name) =>
+      page
+        .findAll('.tile.is-child')
+        .find((tile) => textOf(tile.find('.title')) === name).element;
+    const before = tileOf('d');
+    await page.find('.autocomplete input').setValue('d');
+    await flushPromises();
+    expect(page.findAll('.tile.is-child')).toHaveLength(1);
+    expect(tileOf('d')).toBe(before);
   });
 });
 

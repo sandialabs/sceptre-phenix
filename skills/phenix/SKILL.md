@@ -214,7 +214,8 @@ curl -H "X-Phenix-Auth-Token: Bearer $TOKEN" http://localhost:3000/api/v1/experi
 [`references/web-api.md`](references/web-api.md) points to the route reference
 (`src/go/web/public/docs/openapi.yml`) and has the
 `?token=` query-parameter alternative, proxy/dev auth modes, config revisions
-(`ETag`/`If-Match`), and the `X-Phenix-Seq` ordering and freshness headers.
+(`ETag`/`If-Match`), the `X-Phenix-Seq` ordering and freshness headers, and
+the JSON VNC session (`GET .../vms/{name}/vnc`) that the web UI's console uses.
 
 ## Gotchas
 

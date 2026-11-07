@@ -6242,25 +6242,44 @@ paths:
     get:
       tags:
         - Virtual Machines
-      summary: Open a VM's VNC page
+      summary: Get a VM's VNC session
       description: >-
-        The noVNC page that connects to the VM's console over
-        `GET /experiments/{exp}/vms/{name}/vnc/ws`, with the VM's
-        `vncBanner` annotation as its banner. A browser opens it as a link,
-        with the token as `?token=`. The page sends a Content-Security-Policy
-        that runs only its own scripts, and is not cached. Needs the
-        `vms/vnc` `get` permission.
+        The information that the UI needs to open the VM's VNC console: the
+        path of `GET /experiments/{exp}/vms/{name}/vnc/ws`, the banners from
+        the VM's `vncBanner` annotation, the video card, and the copy and
+        paste mode. The banner lines are plain text. The answer is not
+        cached. A websocket handshake cannot give an HTTP error, so after a
+        websocket failure the UI sends `probe=true`. The server then also
+        connects to the VM's VNC port, with a 3-second timeout, and closes
+        the connection. phenix needs a minimega release whose `vm info` has
+        the `vga` column. Needs the `vms/vnc` `get` permission.
       operationId: getExperimentsNameVmsNameVnc
       parameters:
         - $ref: "#/components/parameters/ExpName"
         - $ref: "#/components/parameters/VMName"
+        - name: probe
+          in: query
+          description: >-
+            set to true to also connect to the VM's VNC port. A failed
+            connection gives 502 with the code `vnc_unreachable`. A value that
+            is not a boolean is refused with 400.
+          required: false
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
-          description: the VNC page
+          description: the VM's VNC session
           content:
-            text/html:
+            application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/VNCSession"
+        "400":
+          description: the `probe` value is not a boolean
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "403":
           description: forbidden
           content:
@@ -6273,8 +6292,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: minimega has no KVM VM of that name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
-          description: the page could not be built
+          description: >-
+            minimega is too old: its `vm info` has no `vga` column
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: >-
+            minimega could not give the VM's VNC information (code
+            `unavailable`), or, with `probe=true`, phenix cannot connect to
+            the VM's VNC port (code `vnc_unreachable`, with the host and port
+            in `details.host` and `details.port`)
           content:
             application/json:
               schema:
@@ -15434,6 +15470,123 @@ components:
           description: the cluster host the schedule placed the VM on, empty for none
           example: compute-01
           type: string
+    VNCSession:
+      title: VNC Session
+      description: >-
+        What the UI needs to open a VM's VNC console. The VM state comes from
+        the event stream, not from this object.
+      type: object
+      required:
+        - experiment
+        - vm
+        - websocket
+        - banners
+        - display
+        - clipboard
+      properties:
+        experiment:
+          title: Experiment
+          description: the name of the experiment
+          example: demo
+          type: string
+        vm:
+          title: VM
+          description: the name of the VM
+          example: web
+          type: string
+        websocket:
+          title: WebSocket
+          description: >-
+            the path of the VM's VNC websocket, relative to the API root
+            (`/api/v1/` after the server's base path)
+          example: experiments/demo/vms/web/vnc/ws
+          type: string
+        banners:
+          title: Banners
+          description: the banners above and below the console
+          type: object
+          required:
+            - top
+            - bottom
+          properties:
+            top:
+              title: Top Banner
+              description: the banner above the console
+              allOf:
+                - $ref: "#/components/schemas/VNCBanner"
+            bottom:
+              title: Bottom Banner
+              description: the banner below the console
+              allOf:
+                - $ref: "#/components/schemas/VNCBanner"
+        display:
+          title: Display
+          description: the VM's video card
+          type: object
+          required:
+            - vga
+            - remoteResize
+          properties:
+            vga:
+              title: VGA
+              description: >-
+                the video card that QEMU emulates for the VM, as `vm info`
+                gives it
+              example: std
+              type: string
+            remoteResize:
+              title: Remote Resize
+              description: >-
+                true when a client can change the VM's screen size. Only the
+                `virtio` video card supports it
+              example: false
+              type: boolean
+        clipboard:
+          title: Clipboard
+          description: the copy and paste mode of the console
+          type: object
+          required:
+            - mode
+          properties:
+            mode:
+              title: Mode
+              description: >-
+                `bidirectional` when the VM shares its clipboard with VNC
+                clients (minimega's `bidirectional-copy-paste`), else
+                `pasteAsKeys`, which types pasted text as key presses
+              type: string
+              enum:
+                - pasteAsKeys
+                - bidirectional
+              example: pasteAsKeys
+    VNCBanner:
+      title: VNC Banner
+      description: >-
+        A banner of the VNC console. The UI shows each line as text, never as
+        markup. A banner with no lines is not shown.
+      type: object
+      required:
+        - lines
+        - backgroundColor
+        - textColor
+      properties:
+        lines:
+          title: Lines
+          description: the lines of the banner, empty for no banner
+          type: array
+          items:
+            type: string
+            example: "EXP: demo - VM: web"
+        backgroundColor:
+          title: Background Color
+          description: a CSS color name or hex color
+          example: white
+          type: string
+        textColor:
+          title: Text Color
+          description: a CSS color name or hex color
+          example: black
+          type: string
     VMQoS:
       title: VM Link Quality
       description: The link quality of each interface of a VM.
@@ -21781,6 +21934,8 @@ components:
             `details.images` and `details.experiments`). `vlan_in_use` (400)
             is a start that failed because minimega gives a VLAN ID that the
             experiment pins to another alias (see `details.vlan`).
+            `vnc_unreachable` (502) is a VNC probe that cannot connect to the
+            VM's VNC port (see `details.host` and `details.port`).
 
             A Builder route gives each error a code of its own instead, such
             as `document.invalid`, `publish.blocked`, `publish.topology.exists`,
@@ -21804,6 +21959,7 @@ components:
                 - broken_disks
                 - disk_in_use
                 - vlan_in_use
+                - vnc_unreachable
             - pattern: "^[a-z]+(\\.[a-z0-9-]+)+$"
           example: not_found
         metadata:
@@ -21925,6 +22081,19 @@ components:
                 pins and that minimega gives to another alias
               type: integer
               example: 102
+            host:
+              title: "Host"
+              description: >-
+                for the code `vnc_unreachable`, the minimega node that runs the
+                VM
+              type: string
+              example: compute-04
+            port:
+              title: "Port"
+              description: >-
+                for the code `vnc_unreachable`, the VM's VNC port on that node
+              type: integer
+              example: 43691
             users:
               title: "Users"
               description: >-

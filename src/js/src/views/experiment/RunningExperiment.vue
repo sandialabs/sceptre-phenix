@@ -4,7 +4,7 @@
       v-model="expModal.active"
       @close="resetExpModal"
       has-modal-card
-      width="68rem">
+      width="96rem">
       <VmDetailsCard
         :vm="expModalVm"
         :full-name="expModal.fullName"
@@ -17,9 +17,6 @@
         :cd-rom-disk="expModal.cdRomDisk"
         :files-dir="expModal.filesDir"
         :screenshot="vmScreenshot(expModalVm, screenshotsDue)"
-        :vnc-href="
-          expModalVm.running && !expModalVm.busy ? vncLoc(expModalVm) : null
-        "
         :snapshots="expModal.snapshots"
         :forwards="expModal.forwards"
         :features="features"
@@ -367,7 +364,9 @@
             :experiment="experiment.name"
             :width="vncWidth"
             :screenshots-due="screenshotsDue"
-            @info="getInfo" />
+            :selected="vmSelectedArray"
+            @info="getInfo"
+            @action="onVmAction" />
         </b-tab-item>
         <b-tab-item
           :value="TAB.NETFLOW"
@@ -457,7 +456,7 @@
     replaceVm,
     useVmRows,
   } from '@/components/experiment/vmRows.js';
-  import { vmScreenshot, vncHref } from '@/components/experiment/vmScreens.js';
+  import { vmScreenshot } from '@/components/experiment/vmScreens.js';
   import { createRunningCount } from '@/components/experiment/runningCount.js';
   import { createDelayedVms } from '@/components/experiment/delayedVms.js';
   import {
@@ -952,10 +951,6 @@
           this.getUserStorageKey(toggle.storageKey),
           this.columnVisibility[toggle.key],
         );
-      },
-
-      vncLoc(vm) {
-        return vncHref(this.$router, this.$route.params.id, vm);
       },
 
       setVncScreenshotRes(width) {

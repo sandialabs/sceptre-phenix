@@ -2,7 +2,6 @@ package tmpl_test
 
 import (
 	"errors"
-	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -28,12 +27,16 @@ func checkUnexpanded(t *testing.T, lines []string) {
 	}
 }
 
-// compileLine compiles the line of lines that starts with prefix, without its noPreprocess prefix, which every line
-// with free text must have.
+// compileLine compiles the last line of lines that starts with prefix, without its noPreprocess prefix, which every
+// line with free text must have. The last line is the topology's: the lossy VNC override of a KVM VM comes before it.
 func compileLine(t *testing.T, lines []string, prefix string) *minicli.Command {
 	t.Helper()
 
-	i := slices.IndexFunc(lines, func(l string) bool { return strings.HasPrefix(l, noPreprocess+prefix) })
+	i := len(lines) - 1
+	for i >= 0 && !strings.HasPrefix(lines[i], noPreprocess+prefix) {
+		i--
+	}
+
 	if i < 0 {
 		t.Fatalf("no %q line:\n%s", noPreprocess+prefix, strings.Join(lines, "\n"))
 	}

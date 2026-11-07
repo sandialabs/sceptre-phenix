@@ -20,6 +20,7 @@
   import { schedulePagePreload } from '@/utils/pageData.js';
   import { useJobStore } from '@/utils/jobs.js';
   import { invalidatePages } from '@/utils/pageCache.js';
+  import { answerTokenRequests } from '@/utils/authHandoff.js';
   import { followSignIn } from '@/utils/signIn.js';
   import { viewKey } from '@/utils/viewKey.js';
   import { focusMode } from '@/builder/focusMode.js';
@@ -78,6 +79,8 @@
     });
 
   let stopFollowingSignIn = () => {};
+  // a signed-in tab gives its token to a console tab that has none
+  let stopAnsweringTokens = () => {};
 
   onMounted(() => {
     // connect websockets once user has authenticated (or auth disabled), and
@@ -91,16 +94,21 @@
         followJobs();
         timeout.fetchAndStart();
         schedulePagePreload();
+        stopAnsweringTokens();
+        stopAnsweringTokens = answerTokenRequests();
       },
       onSignOut: () => {
         if (isWsConnected()) disconnectWebsocket();
         forgetJobs();
+        stopAnsweringTokens();
+        stopAnsweringTokens = () => {};
       },
     });
   });
 
   onUnmounted(() => {
     stopFollowingSignIn();
+    stopAnsweringTokens();
     forgetJobs();
     removeWsHandler(invalidatePages);
     disconnectWebsocket();
@@ -116,8 +124,11 @@
     <a class="skip-link" href="#main">Skip to main content</a>
     <!-- The Builder's focus mode hides the navigation bar, so the editor
          fills the window (builder/focusMode.js). v-show keeps the header's
-         state. -->
-    <app-header v-show="!focusMode.on"></app-header>
+         state. A route with meta.header false, such as the VNC console, has
+         its own top bar. -->
+    <app-header
+      v-if="route.meta.header !== false"
+      v-show="!focusMode.on"></app-header>
     <main id="main" tabindex="-1" :class="mainClass">
       <router-view v-slot="{ Component, route }">
         <component :is="Component" :key="viewKey(route)"></component>

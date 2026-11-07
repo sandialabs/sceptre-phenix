@@ -61,8 +61,8 @@ func GetVMScreenshot(opts ...Option) ([]byte, error) {
 	return DefaultMM.GetVMScreenshot(opts...)
 }
 
-func GetVNCEndpoint(opts ...Option) (string, error) {
-	return DefaultMM.GetVNCEndpoint(opts...)
+func GetVNCInfo(opts ...Option) (VNCInfo, error) {
+	return DefaultMM.GetVNCInfo(opts...)
 }
 
 func StartVM(opts ...Option) error {

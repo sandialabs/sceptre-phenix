@@ -39,6 +39,17 @@ describe('lazyRouteLoaders', () => {
     expect(builder.meta.prefetch).toBe(false);
     expect(lazyRouteLoaders([builder])).toEqual([]);
   });
+
+  test('the router prefetches the VNC console page', async () => {
+    const { default: router } = await import('@/router.js');
+    const consolePage = router
+      .getRoutes()
+      .find((route) => route.path === '/vnc');
+    expect(consolePage.meta.prefetch).toBeUndefined();
+    expect(lazyRouteLoaders([consolePage])).toEqual([
+      consolePage.components.default,
+    ]);
+  });
 });
 
 describe('prefetchSequentially', () => {

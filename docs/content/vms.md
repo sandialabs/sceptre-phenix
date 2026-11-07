@@ -88,8 +88,164 @@ While ELF memory dumps can be created via `phenix vm memory-snapshot`, there is 
 
 ### From the Web-UI
 
-The experiment must be started; click on the VM screenshot to open a new browser
-tab that provides VNC access to the VM.
+The experiment must be started. The web UI shows the screen of a VM in three
+places:
+
+* The console page (`/vnc`) shows one to four VM consoles in a browser tab.
+* The VNC tab of a running experiment and the VM Tiles page show live tiles.
+* The details window of a VM shows a live console.
+
+The VM must be running or paused, and it must not be busy with an action. The
+role must have the `get` verb on the `vms/vnc` resource (see
+[User Administration](user-administration.md)).
+
+!!! note
+
+    The console needs the minimega release that adds the `vga` column to
+    `vm info`. With an older minimega, the console shows `minimega is too old:
+    vm info has no vga column, update minimega`. Port forwards to the VNC port
+    of a VM also fail. Key recordings (`vnc record kb`) of an older minimega
+    do not include the key events that noVNC sends.
+
+#### Open a Console
+
+Click the screenshot of a VM in the VMs table, a live tile in the VNC tab, or
+`Open console` in the details window of the VM. The console page opens in a
+new browser tab. Each link has a real address. You can open the link in a new
+window or copy it. When another tab already shows the same VMs, a message
+tells you. Click `Open another anyway` to open one more tab.
+
+#### The Console Page
+
+The top bar acts on the pane that has keyboard input. It shows the VM name,
+the VM state and these controls:
+
+* The VM actions: `Pause` or `Resume`, `Restart`, `Shut down` and `Snapshot`.
+  The bar shows only the actions that the role can do.
+* `Keys`: send Ctrl+Alt+Del, Esc, Tab, PrintScreen and Ctrl+Alt+F1 to F7. Hold
+  Ctrl, Alt or Win, and release all held keys.
+* `Clipboard`: send text to the VM (see [Copy and Paste](#copy-and-paste)).
+* `View`: the scaling (`Fit`, `Actual` or `Resize VM`), the quality, the
+  compression, `View only` and full screen for the pane. The browser keeps
+  these settings for each user. `Resize VM` needs a VM with `vga` `virtio`.
+  To set it, add `vga: virtio` to the `advanced` settings of the VM in the
+  topology. Linux VMs use `qxl` by default.
+* The layout buttons, `Add VM` and `Full screen` for the page.
+* The connection state, for example `Connected`. Click it to see the screen
+  size, the scaling, the encoding and the copy/paste mode.
+
+![The console page in two columns: the web pane has keyboard input, and each pane shows its VM between its two banners](images/vnc_console_split.png)
+
+#### Split View
+
+The console page shows up to four VMs. The VMs can be in different
+experiments. Use `Add VM` to add a running VM, and select a layout in the top
+bar: `One pane`, `Two columns`, `Two rows`, `One large pane and two stacked`
+or `Grid of four`. The address of the page keeps the VMs and the layout, for
+example `/vnc?vm=demo/web&vm=demo/db&layout=cols`. The layouts are `single`,
+`cols`, `rows`, `main-2` and `grid`.
+
+Each pane shows the banners of its VM and a header with the VM name, the VM
+state, the pane number and a menu. The menu has `Swap with pane N`, `Open
+alone`, `Full screen` and `Close`. Click a pane to give it keyboard input.
+That pane shows a blue ring and the `Keyboard` tag.
+
+To open many VMs in one console page, select one to four running VMs in the
+VMs tab. Then click `Open selected in split` in the VNC tab.
+
+#### The Keyboard Chord
+
+The console sends every key to the VM. To move the keyboard out of the
+console, press Ctrl+], then one more key:
+
+| Key | Action |
+|---|---|
+| Tab | Move focus to the top bar. Shift+Tab moves focus to the last control of the bar. |
+| 1 to 4 | Give keyboard input to that pane. |
+| F | Exit full screen. |
+| Esc | Cancel the chord. |
+
+Press the key in the position of ] on a US keyboard. On a German keyboard,
+that key is +. The `Keyboard` tag, the `Keys` menu and a message show this
+hint. The message shows the first time that a pane gets keyboard input in a
+browser session.
+
+#### Full Screen and HTTPS
+
+In full screen over HTTPS, Chrome and Edge send Esc, Alt+Tab and Ctrl+W to the
+VM (Keyboard Lock). To exit full screen, press Ctrl+] then F, or hold Esc.
+Over HTTP, full screen works without Keyboard Lock, and a message says
+`Keyboard capture needs HTTPS`. Firefox and Safari do not have Keyboard Lock.
+`Paste from my clipboard` in the `Clipboard` panel also needs HTTPS.
+
+#### Copy and Paste
+
+The copy/paste mode of a VM comes from its minimega setting
+`bidirectional-copy-paste`:
+
+* Paste as keys (the default): phēnix types the text into the VM as key
+  presses. It types printable ASCII characters, Tab and Enter only. Before it
+  types text with other characters, the panel lists the characters that it
+  types as "?" (above U+00FF) and the characters that it skips (U+0080 to
+  U+00FF). It also shows the typing time. Click `Type anyway` or `Cancel`.
+  For text longer than 5,000 characters, the bidirectional mode is faster.
+* Bidirectional: the VM and the `Clipboard` panel exchange UTF-8 text in the
+  two directions.
+
+#### Live Tiles
+
+The VNC tab of a running experiment and the VM Tiles page show a live,
+view-only tile for each running or paused VM. A tile sends no keys and no
+pointer events to the VM. A paused VM keeps a still tile with the `PAUSED`
+tag. Click a tile to open its console page. Move the pointer over a tile to
+show its bar, with `Open console`, `Details` and the VM actions.
+
+![The VNC tab with the Live and Snapshots switch, the Live tile limit, and live tiles for two running VMs, one paused VM and one VM that is not running](images/vnc_tiles.png)
+
+* `Live tile limit` sets how many tiles can be live at one time: 4, 8, 16 (the
+  default), 24 or 32. The browser keeps the choice. A tile over the limit
+  shows a screenshot with the `Snapshot` tag.
+* `Snapshots` turns off all live tiles, and `Live` turns them on again.
+* A tile is live only while at least 25% of it is on the screen. A tile that
+  leaves the screen, or a browser tab that is hidden, disconnects after 10
+  seconds.
+* The server does not send screenshots of live tiles.
+
+#### The Details Window
+
+The details window of a VM shows a live, view-only console with the banners of
+the VM. Click `Take control` to send keys and pointer events to the VM, and
+`View only` to stop. `Open console` opens the console page of the VM.
+
+!!! note
+
+    QEMU allows 32 shared clients for each VM. Every console, live tile,
+    details window, minimega recording and paste playback counts. Thus a
+    browser tab never opens two connections to one VM. While the details window
+    or a console pane of a VM is open, the tile of that VM in the same tab
+    disconnects and shows its last screen.
+
+#### VM Settings for VNC
+
+phēnix adds two settings to the minimega script of an experiment:
+
+* For each KVM VM, `vm config qemu-override "-vnc unix:" "-vnc
+  lossy=on,vnc=unix:"`, before the `overrides` of the topology. With lossy
+  updates, the quality level of a console or a tile selects JPEG for regions
+  that look like photos. A topology override that matches `-vnc unix:` no
+  longer matches, because this override changes that text first.
+* For each Linux VM, `vm config vga qxl`, in place of
+  `vm config qemu-append -vga qxl`. phēnix does not add it when the `advanced`
+  settings of the VM set `vga`. minimega then shows the video card in the
+  `vga` column of `vm info`.
+
+!!! note
+
+    The phēnix host must connect to the VNC port of each VM on the compute
+    node that runs the VM. minimega selects a random high TCP port for each
+    VM. Make sure that the network lets the phēnix host connect to these ports
+    on each compute node. When phēnix cannot connect, the console shows
+    `phēnix cannot connect to the VNC port of <vm> on <host> (port <n>)`.
 
 ### From the Command Line Binary
 

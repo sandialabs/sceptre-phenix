@@ -228,10 +228,55 @@ var routesOfAnyMethod = map[string]string{
 	"/api/v1":      "the API's subrouter; its routes are walked one by one",
 	"/webshark/":   "WebShark's pages and scripts, behind its own routes",
 	"/docs/":       "the documentation site",
-	"/novnc/":      "noVNC, which the VNC page loads",
-	"/xterm.js/":   "xterm.js, which the console page loads",
 	"/assets/":     "the UI's hashed scripts, styles and images",
 	"/favicon.ico": "the UI's icon",
+}
+
+// The router serves no vendored noVNC or xterm.js: the UI builds its VNC console and terminals from npm packages.
+func TestRouterServesNoVendoredConsoles(t *testing.T) {
+	ops, anyMethod := routerOperations(t)
+
+	for _, prefix := range []string{"/novnc/", "/xterm.js/"} {
+		if slices.Contains(anyMethod, prefix) {
+			t.Errorf("the router serves %s, want no such route", prefix)
+		}
+
+		for key := range ops {
+			if strings.Contains(key, prefix) {
+				t.Errorf("the router serves %s, want no route under %s", key, prefix)
+			}
+		}
+	}
+}
+
+// openapi.yml documents the VNC session as JSON, with its probe parameter.
+func TestOpenAPIVNCSessionIsJSON(t *testing.T) {
+	item := loadOpenAPIDocument(t).Paths.Find("/experiments/{exp}/vms/{name}/vnc")
+	if item == nil || item.Get == nil {
+		t.Fatal("openapi.yml has no GET /experiments/{exp}/vms/{name}/vnc")
+	}
+
+	for _, status := range []int{http.StatusOK, http.StatusBadGateway} {
+		resp := item.Get.Responses.Get(status)
+		if resp == nil || resp.Value == nil {
+			t.Errorf("openapi.yml GET /experiments/{exp}/vms/{name}/vnc has no %d response", status)
+
+			continue
+		}
+
+		var types []string
+		for mediaType := range resp.Value.Content {
+			types = append(types, mediaType)
+		}
+
+		if diff := cmp.Diff([]string{mimeJSON}, types); diff != "" {
+			t.Errorf("openapi.yml GET /experiments/{exp}/vms/{name}/vnc %d media types mismatch (-want +got):\n%s", status, diff)
+		}
+	}
+
+	if item.Get.Parameters.GetByInAndName("query", "probe") == nil {
+		t.Error("openapi.yml GET /experiments/{exp}/vms/{name}/vnc has no probe query parameter")
+	}
 }
 
 // Every router operation is in openapi.yml and vice versa, except any-method routes;

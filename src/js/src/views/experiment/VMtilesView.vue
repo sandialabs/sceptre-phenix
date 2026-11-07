@@ -3,7 +3,8 @@ The VM Tiles component displays the VM tiles available to the
 VM Viewer user role. The user can drill into available VMs per 
 experiment as well as all assigned VMs. The VM information is 
 available to the user, however, their only available action is 
-to access the VM VNC by clicking on the screenshot.
+to access the VM VNC by clicking on the tile. Each tile is live
+(view only) within the live tile limit, else a screenshot.
  -->
 
 <template>
@@ -66,44 +67,37 @@ to access the VM VNC by clicking on the screenshot.
         </b-dropdown>
       </b-field>
     </b-field>
-    <div v-for="(chunk, chunkIndex) in chunkedVMs" :key="chunkIndex">
-      <div class="tile is-ancestor">
-        <div class="tile is-parent">
-          <div
-            v-for="v in chunk"
-            :key="vmFullName(v)"
-            :ref="(el) => trackTile(v, el)"
-            class="tile is-child box is-4">
-            <h4 class="title" style="font-size: medium">
-              {{ vmFullName(v) }}
-            </h4>
-            <figure class="image">
-              <template v-if="v.running">
-                <a :href="vncLoc(v)" target="_blank">
-                  <img
-                    :src="shotOf(v)"
-                    :alt="`Open the console of VM ${vmFullName(v)}`" /><span
-                    class="is-sr-only">
-                    (opens in new tab)</span
-                  >
-                </a>
-              </template>
-              <template v-else>
-                <img
-                  :src="notRunningImage(v)"
-                  :alt="`VM ${vmFullName(v)} is not running`" />
-              </template>
-            </figure>
-          </div>
+    <VncTileToolbar class="vm-tiles-toolbar" />
+    <div class="vm-tiles-grid">
+      <div
+        v-for="v in getVms"
+        :key="tileKey(v)"
+        :ref="(el) => trackTile(v, el)"
+        class="tile is-child box">
+        <div class="vm-tile-head">
+          <h4 class="title" style="font-size: medium">
+            {{ vmFullName(v) }}
+          </h4>
+          <b-tag :type="vmStateInfo(v).type ?? 'is-dark'" size="is-small">
+            {{ vmStateInfo(v).label }}
+          </b-tag>
         </div>
+        <VncTile
+          :experiment="v.experiment"
+          :vm="v"
+          :picture="hasScreen(v) ? shotOf(v) : notRunningImage(v)"
+          :alt="altOf(v)"
+          :link-label="linkLabelOf(v)"
+          @live="(on) => onLive(v, on)" />
       </div>
     </div>
   </div>
 </template>
 
 <script>
-  import { chunk, sortBy } from 'lodash-es';
+  import { sortBy } from 'lodash-es';
   import loadingScreenshotImg from '@/assets/imgs/loading-screenshot.svg';
+  import { vmStateInfo } from '@/components/experiment/vmActions.js';
   import { placeholderImage } from '@/components/experiment/vmPlaceholder.js';
   import * as vmsApi from '@/api/vms.js';
   import { createPageLoader } from '@/utils/pageLoader.js';
@@ -112,7 +106,9 @@ to access the VM VNC by clicking on the screenshot.
   import { RESOURCES, startPoll } from '@/utils/freshness.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import { trackVisibility } from '@/utils/visibility.js';
-  import { usePhenixStore } from '@/store';
+  import VncTile from '@/vnc/VncTile.vue';
+  import VncTileToolbar from '@/vnc/VncTileToolbar.vue';
+  import { vmPaused } from '@/vnc/vmScreen.js';
 
   // the tiles' screenshot width, one of the widths the server takes them at
   const TILE_SCREENSHOT_WIDTH = 600;
@@ -123,6 +119,11 @@ to access the VM VNC by clicking on the screenshot.
   const tileKey = (vm) => `${vm.experiment}/${vm.name}`;
 
   export default {
+    components: { VncTile, VncTileToolbar },
+    setup() {
+      return { vmStateInfo, tileKey };
+    },
+
     beforeUnmount() {
       this.stopPoll?.();
       this.loader.stop();
@@ -139,6 +140,8 @@ to access the VM VNC by clicking on the screenshot.
       this.shotsFetching = 0;
       this.vmLoad = 0;
       this.shotLoad = new Map();
+      // the tiles that draw a live screen need no screenshot
+      this.liveKeys = new Set();
 
       this.loader = createPageLoader({
         key: 'vmtiles',
@@ -181,10 +184,6 @@ to access the VM VNC by clicking on the screenshot.
         return [...new Set(this.vms.map((e) => e.experiment))];
       },
 
-      chunkedVMs() {
-        return chunk(this.getVms, 3);
-      },
-
       filteredData() {
         // getVms holds only the VMs whose names match the search
         return this.getVms.map((vm) => this.vmFullName(vm));
@@ -213,6 +212,33 @@ to access the VM VNC by clicking on the screenshot.
         });
       },
 
+      // a paused VM keeps its screen
+      hasScreen(vm) {
+        return Boolean(vm?.running) || vmPaused(vm);
+      },
+
+      altOf(vm) {
+        return this.hasScreen(vm)
+          ? `Screenshot of VM ${this.vmFullName(vm)}`
+          : `VM ${this.vmFullName(vm)} is not running`;
+      },
+
+      linkLabelOf(vm) {
+        return `Open the console of VM ${this.vmFullName(vm)}`;
+      },
+
+      // a tile that stops drawing a live screen gets a screenshot again
+      onLive(vm, on) {
+        const key = tileKey(vm);
+        if (on) {
+          this.liveKeys.add(key);
+          return;
+        }
+        this.liveKeys.delete(key);
+        this.shotLoad.delete(key);
+        this.fetchShots([key]);
+      },
+
       shotOf(vm) {
         return this.shots[tileKey(vm)] || vm.screenshot || loadingScreenshotImg;
       },
@@ -223,7 +249,13 @@ to access the VM VNC by clicking on the screenshot.
         const byKey = new Map(this.vms.map((vm) => [tileKey(vm), vm]));
         for (const key of keys) {
           const vm = byKey.get(key);
-          if (!vm?.running || this.shotLoad.get(key) === this.vmLoad) continue;
+          if (
+            !this.hasScreen(vm) ||
+            this.liveKeys.has(key) ||
+            this.shotLoad.get(key) === this.vmLoad
+          ) {
+            continue;
+          }
           this.shotLoad.set(key, this.vmLoad);
           if (!roleAllowed('vms/screenshot', 'get', key)) {
             this.shots[key] = placeholderImage('notAvailable', {
@@ -285,17 +317,6 @@ to access the VM VNC by clicking on the screenshot.
 
         return vm.experiment + '/' + vm.name;
       },
-
-      vncLoc(vm) {
-        return this.$router.resolve({
-          name: 'vnc',
-          params: {
-            id: vm.experiment,
-            name: vm.name,
-            token: usePhenixStore().token,
-          },
-        }).href;
-      },
     },
 
     data() {
@@ -310,3 +331,26 @@ to access the VM VNC by clicking on the screenshot.
     },
   };
 </script>
+
+<style scoped>
+  .vm-tiles-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.5rem;
+  }
+
+  .vm-tiles-toolbar {
+    margin-bottom: 0.75rem;
+  }
+
+  .vm-tile-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .vm-tile-head .title {
+    margin: 0 !important;
+  }
+</style>

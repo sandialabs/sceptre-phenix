@@ -355,7 +355,7 @@ Global Viewer does not have `builder` `use`. See the policies in
 |      |      |
 |------|------|
 | Verb | get |
-| Desc | get VNC address for a specific experiment VM |
+| Desc | open the console of a specific experiment VM and read its VNC session information |
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 

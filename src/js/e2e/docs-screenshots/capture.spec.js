@@ -4,6 +4,7 @@
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { pageDataLoaded } = require('../tests/helpers');
+const { COLORS, standInExperiment } = require('../tests/vnc-support');
 const fixtures = require('./fixtures.json');
 
 const IMAGES =
@@ -255,4 +256,75 @@ test('soh_overview_detail', async ({ page }) => {
   const detail = page.locator('tr.detail').first();
   await expect(detail).toContainText('problems in bennu');
   await shoot(detail, 'soh_overview_detail');
+});
+
+// A desktop for the VNC images: a top panel and a terminal window with lines
+// of text, in a different place and color for each VM.
+function desktop(vm, x, y) {
+  const accent = COLORS[vm] ?? [120, 120, 120];
+  const left = vm === 'db' ? 180 : 60;
+  if (y < 22) {
+    return x >= 8 && x < 64 && y >= 7 && y < 15
+      ? [200, 200, 200]
+      : [32, 32, 32];
+  }
+  if (x >= left && x < left + 400 && y >= 70 && y < 380) {
+    if (y < 92) return accent;
+    const row = Math.floor((y - 100) / 18);
+    const inText = y >= 100 && (y - 100) % 18 < 8;
+    const length = 40 + ((row * 97) % 300);
+    return inText && x >= left + 16 && x < left + 16 + length
+      ? [190, 220, 190]
+      : [16, 16, 16];
+  }
+  return [
+    24 + Math.floor(y / 30),
+    48 + Math.floor(y / 20),
+    64 + Math.floor(y / 16),
+  ];
+}
+
+const vncExperiment = (page) =>
+  standInExperiment(page, { experiment: 'demo', screen: desktop });
+
+const drawn = (page, name) =>
+  expect(
+    page.getByRole('application', { name }).locator('canvas'),
+  ).toHaveJSProperty('width', 640);
+
+// The console page in two columns, with keyboard input in the first pane.
+test('vnc_console_split', async ({ page }) => {
+  await vncExperiment(page);
+  await page.goto('/vnc?vm=demo/web&vm=demo/db');
+  await drawn(page, 'Console of VM web in experiment demo');
+  await drawn(page, 'Console of VM db in experiment demo');
+  await page
+    .getByRole('application', { name: 'Console of VM web in experiment demo' })
+    .locator('canvas')
+    .click();
+  await expect(
+    page.getByRole('region', { name: 'Pane 1: web' }).getByText('Keyboard'),
+  ).toBeVisible();
+  // the toast of the chord hint covers the panes
+  await page
+    .locator('.toast')
+    .evaluateAll((toasts) => toasts.forEach((t) => t.remove()));
+  await shoot(page.locator('.vnc-page'), 'vnc_console_split');
+});
+
+// The live tiles of the VNC tab: two running VMs, one paused and one shut down.
+test('vnc_tiles', async ({ page }) => {
+  await vncExperiment(page);
+  await page.goto('/experiment/demo?tab=vnc');
+  await expect(page.locator('.vnc-tile.is-live')).toHaveCount(3);
+  await drawn(page, 'Live screen of VM web in experiment demo');
+  const tiles = page.locator('.vnc-tile-item');
+  // the phēnix picture of the page background shows between the tiles
+  await page.addStyleTag({ content: 'html { background-image: none; }' });
+  await shootRegion(
+    page,
+    [page.locator('.vnc-tiles-toolbar'), tiles.first(), tiles.last()],
+    'vnc_tiles',
+    0,
+  );
 });

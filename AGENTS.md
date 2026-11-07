@@ -51,8 +51,8 @@ leave a one-line pointer to it from `SKILL.md`.
 - The web UI targets desktop browsers only; phēnix is not used on phones or
   other mobile devices, so mobile support is out of scope.
 - `src/go/web/public/` holds what `//go:embed all:public` in
-  `src/go/web/assets.go` embeds: the copied UI build and the bundled noVNC
-  and xterm.js. It is excluded from every formatting and lint hook in
+  `src/go/web/assets.go` embeds: the copied UI build and the API
+  reference in `docs/`. It is excluded from every formatting and lint hook in
   `prek.toml`, so `make check` will not catch anything under it, and a
   change there only appears after the Go binary is rebuilt.
 

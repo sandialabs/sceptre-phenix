@@ -609,3 +609,60 @@ func TestEncodeFrame(t *testing.T) {
 		t.Errorf("encodeFrame() policy = %v, seq = %d; want none and a seq", out.pub.RequestPolicy, got.Seq)
 	}
 }
+
+// A client is sent no screenshots of the VMs whose live tiles it draws. Once
+// a tile stops, the client is sent that VM's screenshot again, unchanged or
+// not.
+//
+//nolint:paralleltest // replaces the client's dependencies and the frame cache
+func TestLiveTilesGetNoScreenshots(t *testing.T) {
+	fake := useFakeShots(t, map[string]string{"exp/vm1": "one", "exp/vm2": "two"})
+	c := viewer("200", "vm1", "vm2")
+
+	pushFrames(context.Background(), wantedShots([]*Client{c}))
+	fake.requests()
+	received(c)
+
+	// names that are not exp/vm are skipped
+	if left := c.setLiveTiles([]string{"exp/vm1", "bad", "exp/", "/vm2"}); left {
+		t.Error("setLiveTiles(exp/vm1) with no live tile before = true, want false")
+	}
+
+	pushFrames(context.Background(), wantedShots([]*Client{c}))
+
+	want := map[shotKey]int{{exp: "exp", vm: "vm2", width: "200"}: 1}
+	if diff := cmp.Diff(want, fake.requests()); diff != "" {
+		t.Errorf("screenshots asked for with vm1 live mismatch (-want +got):\n%s", diff)
+	}
+
+	// vm2's picture is unchanged, so nothing is sent
+	if got := shotsOf(t, c); len(got) != 0 {
+		t.Errorf("screenshots sent with vm1 live = %v, want none", got)
+	}
+
+	if left := c.setLiveTiles(nil); !left {
+		t.Error("setLiveTiles(nil) after exp/vm1 = false, want true")
+	}
+
+	pushFrames(context.Background(), wantedShots([]*Client{c}))
+
+	if diff := cmp.Diff(map[string]string{"exp/vm1": "data:image/png;base64,b25l"}, shotsOf(t, c)); diff != "" {
+		t.Errorf("screenshots sent once vm1 is not live mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// A frame taken before the client's tile went live is not sent.
+//
+//nolint:paralleltest // replaces the client's dependencies and the frame cache
+func TestLiveTileDropsFrameTakenBefore(t *testing.T) {
+	useFakeShots(t, map[string]string{"exp/vm1": "one"})
+	c := viewer("200", "vm1")
+	wanted := wantedShots([]*Client{c})
+
+	c.setLiveTiles([]string{"exp/vm1"})
+	pushFrames(context.Background(), wanted)
+
+	if got := shotsOf(t, c); len(got) != 0 {
+		t.Errorf("screenshots sent to a live tile = %v, want none", got)
+	}
+}

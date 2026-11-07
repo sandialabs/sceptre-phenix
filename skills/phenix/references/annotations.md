@@ -80,17 +80,19 @@ config for a VyOS router node.
 An interface name or IP address. When set, SSH access is enabled on the router,
 templated to listen on that interface's address (or the literal IP given).
 
-## `vncBanner` (web server, VNC page)
+## `vncBanner` (web server, VNC console)
 
-Sets the banners above and below the VM's screen on the web UI's VNC page,
-which otherwise read `EXP: <exp> - VM: <vm>`. A string is the text of both
+Sets the banners above and below the VM's screen in the web UI's VNC console
+(the `/vnc` page, each pane of its split view, and the details window), which
+otherwise read `EXP: <exp> - VM: <vm>`. A string is the text of both
 banners, split into lines at its newlines. A map takes `topBanner` and
 `bottomBanner`, each with `banner` (a list of lines), `backgroundColor` and
 `textColor`, or `disabled: true` for no banners. A banner the map leaves out is
 not shown. Colors must be CSS color names or hex colors (`#a91f3d`); others
 fall back to white and black, and unknown keys are ignored, each with a logged
-warning. The page shows banner text as text, never as HTML. The VM's screen
-and the noVNC controls fit in the space between the banners.
+warning. The console shows banner text as text, never as HTML. The VM's
+screen fits in the space between the banners. `GET .../vms/{name}/vnc` returns
+the banners as JSON (see `web-api.md`, VNC Console).
 
 ## Example
 

@@ -14,6 +14,10 @@ const TEST_EXCLUDE = ['e2e/**', 'perf/**', 'node_modules/**', 'dist/**'];
 // share workers and run in any order (`--project contract --sequence.shuffle`).
 const CONTRACT_TESTS = ['test/**/*.contract.test.js'];
 
+// noVNC 1.7.0 uses top-level await, so the build targets its own browser
+// minimums instead of the Vite default (es2020, Safari 14).
+const BROWSER_TARGET = ['es2022', 'chrome89', 'firefox89', 'safari15'];
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   process.env = {
@@ -54,6 +58,8 @@ export default defineConfig(({ mode }) => {
         },
       ],
     },
+    build: { target: BROWSER_TARGET },
+    optimizeDeps: { esbuildOptions: { target: BROWSER_TARGET } },
     // applies to npm run dev
     server: {
       proxy: {

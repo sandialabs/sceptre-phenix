@@ -84,8 +84,9 @@ type testMM struct {
 	vms      mm.VMs
 	captures []mm.Capture // of the experiment, and of each VM
 	states   map[string]string
-	err      error  // from reading VM states and stopping captures
-	vnc      string // every VM's VNC endpoint
+	err      error      // from reading VM states and stopping captures
+	vnc      mm.VNCInfo // every VM's VNC info
+	vncErr   error      // from reading VNC info
 
 	screenshot    []byte // every VM's screenshot
 	screenshotErr error  // from taking a screenshot
@@ -135,7 +136,7 @@ func (m *testMM) GetBridgeMirrors(...mm.Option) ([]mm.BridgeMirror, error) {
 
 func (m *testMM) GetVMHost(...mm.Option) (string, error) { return "headnode", nil }
 
-func (m *testMM) GetVNCEndpoint(...mm.Option) (string, error) { return m.vnc, nil }
+func (m *testMM) GetVNCInfo(...mm.Option) (mm.VNCInfo, error) { return m.vnc, m.vncErr }
 
 func (m *testMM) GetVMScreenshot(...mm.Option) ([]byte, error) {
 	return m.screenshot, m.screenshotErr
@@ -531,7 +532,7 @@ func testPublic() fstest.MapFS {
 		"assets/index-abc123.js": {Data: []byte(strings.Repeat("console.log('phenix');\n", 500))},
 		"assets/logo-abc123.png": {Data: []byte("\x89PNG not really")},
 		"docs/index.html":        {Data: []byte(strings.Repeat("<p>phenix docs</p>\n", 200))},
-		"novnc/app/readme.txt":   {Data: []byte("no index here")},
+		"docs/images/readme.txt": {Data: []byte("no index here")},
 	}
 }
 

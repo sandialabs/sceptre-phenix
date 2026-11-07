@@ -1,19 +1,29 @@
 // Mounts the VM details card and the Actions buttons with real Buefy.
 import fc from 'fast-check';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { flushPromises } from '@vue/test-utils';
 import { nextTick } from 'vue';
 
-const { modules, rbac, resetMocks } = await vi.hoisted(
+const { axios, modules, rbac, resetMocks } = await vi.hoisted(
   () => import('./helpers/mocks.js'),
+);
+const { FakeRfb, rfbs, resetRfbs } = await vi.hoisted(
+  () => import('./helpers/fakeRfb.js'),
 );
 vi.mock('@/utils/rbac.js', modules.rbac);
 vi.mock('@/store.js', modules.store);
+vi.mock('@/utils/axios.js', modules.axios);
+vi.mock('@/utils/websocket', modules.websocket);
+vi.mock('@/vnc/loadRfb.js', () => ({ loadRfb: async () => FakeRfb }));
 
 import { icon, library } from '@fortawesome/fontawesome-svg-core';
 
 import { faSharkFin } from '@/utils/icons.js';
 import VmDetailsCard from '@/components/experiment/VmDetailsCard.vue';
 import VmRowActions from '@/components/experiment/VmRowActions.vue';
+import { CHORD_HINT } from '@/vnc/chord.js';
+import { sharedLiveTilePool } from '@/vnc/liveTilePool.js';
+import { never } from './helpers/async.js';
 import { componentDeclarations, contrast } from './helpers/css.js';
 import { disk, vm as makeVm } from './helpers/fixtures.js';
 import { allowAll, denyOnly } from './helpers/permissions.js';
@@ -32,7 +42,18 @@ const OUTSIDE = 'Outside the standard images directory';
 // whether `wrapper` holds an element `selector` matches
 const has = (wrapper, selector) => wrapper.find(selector).exists();
 
-beforeEach(() => resetMocks({ store: {} }));
+beforeEach(() => {
+  resetMocks({ store: {} });
+  resetRfbs();
+  // the live console of a running VM waits for its session
+  axios.get.mockImplementation(never);
+});
+
+afterEach(() => {
+  sharedLiveTilePool().dispose();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 const card = (props) =>
   mountComponent(VmDetailsCard, {
@@ -757,7 +778,8 @@ describe("VmDetailsCard of a stopped experiment's VM", () => {
     ]);
     for (const selector of [
       '.vm-power-buttons',
-      '.vm-screenshot',
+      '.vnc-preview',
+      '.vm-open-console',
       '.vm-no-screen',
       '.vm-tool-buttons',
       '.vm-captureAll',
@@ -922,5 +944,199 @@ describe("VmDetailsCard of a stopped experiment's VM", () => {
     expect(has(wrapper, '.vm-settings')).toBe(false);
     expect(has(wrapper, '.vm-startup-forwards')).toBe(false);
     expect(textOf(wrapper.find('.vm-state-tag'))).not.toBe('Stopped');
+  });
+});
+
+// M3a: the console of a running VM on the left, live and view only, with
+// "Open console" in the Power row.
+describe('VmDetailsCard live console', () => {
+  const session = {
+    experiment: 'demo',
+    vm: 'web',
+    websocket: 'experiments/demo/vms/web/vnc/ws',
+    banners: {
+      top: {
+        lines: ['EXP: demo - VM: web'],
+        backgroundColor: 'white',
+        textColor: 'black',
+      },
+      bottom: { lines: [], backgroundColor: 'white', textColor: 'black' },
+    },
+    display: { vga: 'std', remoteResize: false },
+    clipboard: { mode: 'pasteAsKeys' },
+  };
+  const SHOT = 'data:image/png;base64,c2hvdA==';
+  let open;
+
+  beforeEach(() => {
+    vi.stubGlobal('IntersectionObserver', undefined);
+    vi.stubGlobal('BroadcastChannel', undefined);
+    open = vi.spyOn(window, 'open').mockReturnValue({});
+    axios.get.mockImplementation(async (url) =>
+      url === 'experiments/demo/vms/web/vnc'
+        ? { data: session }
+        : Promise.reject(new Error(url)),
+    );
+  });
+
+  const liveCard = async (props) => {
+    const wrapper = await mountComponent(VmDetailsCard, {
+      props: {
+        vm,
+        fullName: 'demo/web',
+        experiment: 'demo',
+        screenshot: SHOT,
+        ...props,
+      },
+      attachTo: document.body,
+    });
+    await flushPromises();
+    return wrapper;
+  };
+  const shot = (wrapper) => {
+    const img = wrapper.find('.vnc-preview img');
+    return img.exists() && img.isVisible() ? img.attributes('src') : null;
+  };
+
+  it('is the larger modal: console left, details right', () => {
+    expect(
+      componentDeclarations(
+        'src/components/experiment/VmDetailsCard.vue',
+        '.vm-card--console',
+      ),
+    ).toMatchObject({
+      width: 'min(96rem, calc(100vw - 40px))',
+      height: '90vh',
+    });
+    expect(
+      componentDeclarations(
+        'src/components/experiment/VmDetailsCard.vue',
+        '.vm-console-column',
+      ),
+    ).toMatchObject({ width: '60%' });
+    expect(
+      componentDeclarations('src/vnc/VncPreview.vue', '.vnc-preview-screen'),
+    ).toMatchObject({ 'aspect-ratio': '16 / 10' });
+  });
+
+  it('shows a live, view-only console with the banners of the VM', async () => {
+    const wrapper = await liveCard();
+    expect(wrapper.classes()).toContain('vm-card--console');
+    expect(rfbs).toHaveLength(1);
+    expect(rfbs[0].viewOnly).toBe(true);
+    expect(rfbs[0].options).toEqual({ shared: true });
+    expect(wrapper.get('.vnc-console').attributes('aria-label')).toBe(
+      'Console of VM web in experiment demo',
+    );
+    expect(textOf(wrapper.get('.vnc-banner--top'))).toBe('EXP: demo - VM: web');
+    expect(wrapper.find('.vnc-banner--bottom').exists()).toBe(false);
+
+    // the screenshot shows until the console draws
+    expect(shot(wrapper)).toBe(SHOT);
+    rfbs[0].connect();
+    await flushPromises();
+    expect(shot(wrapper)).toBeNull();
+    expect(textOf(wrapper.get('.vnc-preview-bar'))).toContain('View only');
+  });
+
+  it('takes the tile of the VM off while it is open', async () => {
+    const tile = sharedLiveTilePool().register('demo/web');
+    expect(tile.live.value).toBe(true);
+    const wrapper = await liveCard();
+    expect(tile.live.value).toBe(false);
+    wrapper.unmount();
+    expect(tile.live.value).toBe(true);
+    tile.unregister();
+  });
+
+  it('gives the console keyboard input on Take control, and takes it back on View only', async () => {
+    const wrapper = await liveCard();
+    rfbs[0].connect();
+    await flushPromises();
+
+    await wrapper.get('.vnc-preview-control').trigger('click');
+    await flushPromises();
+    expect(rfbs[0].viewOnly).toBe(false);
+    expect(document.activeElement).toBe(rfbs[0].canvas);
+    expect(textOf(wrapper.get('.vnc-preview-bar'))).toContain(CHORD_HINT);
+    // in control, a click on the screen goes to the VM, not to a link
+    expect(wrapper.find('.vnc-preview-link').exists()).toBe(false);
+
+    await wrapper.get('.vnc-preview-control').trigger('click');
+    expect(rfbs[0].viewOnly).toBe(true);
+    expect(textOf(wrapper.get('.vnc-preview-control'))).toBe('Take control');
+  });
+
+  it('leaves the console with the chord', async () => {
+    const wrapper = await liveCard();
+    rfbs[0].connect();
+    await flushPromises();
+    await wrapper.get('.vnc-preview-control').trigger('click');
+    await flushPromises();
+
+    const screen = wrapper.get('.vnc-preview-screen');
+    await screen.trigger('keydown', { code: 'BracketRight', ctrlKey: true });
+    await screen.trigger('keydown', { code: 'Tab', key: 'Tab' });
+    expect(document.activeElement).toBe(
+      wrapper.get('.vnc-preview-control').element,
+    );
+  });
+
+  it('opens the console page from Open console and from a click on the screen', async () => {
+    const wrapper = await liveCard();
+    const button = wrapper.get('.vm-open-console');
+    expect(button.attributes('href')).toBe('/vnc?vm=demo/web');
+    expect(textOf(button)).toBe('Open console');
+    // the Power row has it at its end
+    expect(button.element.closest('.vm-power-row')).not.toBeNull();
+    const screenLink = wrapper.get('.vnc-preview-link');
+    expect(screenLink.attributes('href')).toBe('/vnc?vm=demo/web');
+
+    await button.trigger('click', { button: 0 });
+    await flushPromises();
+    await screenLink.trigger('click', { button: 0 });
+    await flushPromises();
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(open.mock.calls.map(([href]) => href)).toEqual([
+      expect.stringMatching(/\/vnc\?vm=demo\/web$/),
+      expect.stringMatching(/\/vnc\?vm=demo\/web$/),
+    ]);
+    // a new console tab each time
+    expect(open.mock.calls[0][1]).not.toBe(open.mock.calls[1][1]);
+  });
+
+  it('keeps a paused VM live', async () => {
+    const wrapper = await liveCard({
+      vm: makeVm({ state: 'PAUSED', running: false }),
+    });
+    expect(has(wrapper, '.vm-no-screen')).toBe(false);
+    expect(rfbs).toHaveLength(1);
+  });
+
+  it.each([
+    ['may', allowAll, true],
+    ['may not', denyOnly(['vms/vnc', 'get']), false],
+  ])(
+    'shows the live console and Open console only when the role %s get vms/vnc',
+    async (_, allowed, live) => {
+      rbac.allowed = allowed;
+      const wrapper = await liveCard();
+      expect(rfbs).toHaveLength(live ? 1 : 0);
+      expect(has(wrapper, '.vm-open-console')).toBe(live);
+      expect(has(wrapper, '.vnc-preview-link')).toBe(live);
+      if (!live) {
+        expect(shot(wrapper)).toBe(SHOT);
+        expect(wrapper.get('.vnc-preview img').attributes('alt')).toBe(
+          'VM screenshot',
+        );
+      }
+    },
+  );
+
+  it('shows the screenshot of a busy VM, with no console', async () => {
+    const wrapper = await liveCard({ vm: makeVm({ busy: true }) });
+    expect(rfbs).toEqual([]);
+    expect(has(wrapper, '.vm-open-console')).toBe(false);
+    expect(shot(wrapper)).toBe(SHOT);
   });
 });

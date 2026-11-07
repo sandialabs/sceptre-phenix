@@ -39,4 +39,5 @@ Add a test named after the image file, without `.png`. Put the responses the
 page needs in `fixtures.json`, or pass a variant to `open()`, as `empty_table`
 does. Images of a running experiment, the console, WebShark and the State of
 Health graph need live minimega data or websockets, so they are still taken by
-hand.
+hand. The VNC images (`vnc_console_split` and `vnc_tiles`) are the exception:
+they use the stand-in experiment and RFB servers of `tests/vnc-support.js`.

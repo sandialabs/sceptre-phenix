@@ -118,12 +118,12 @@
           width="200"
           height="150" />
       </template>
-      <template
-        v-else-if="
-          (props.row.running && !props.row.busy) ||
-          (props.row.delayed_start && props.row.state == 'BUILDING')
-        ">
-        <a :href="vncLoc(props.row)" target="_blank">
+      <template v-else-if="canConsole(props.row)">
+        <a
+          :href="consoleOf(props.row)"
+          @click="
+            (event) => handleConsoleLinkClick(event, [consoleKey(props.row)])
+          ">
           <img
             class="vm-screenshot"
             :alt="consoleLinkAlt(props.row, screenshotsDue)"
@@ -376,12 +376,10 @@
     vmStateType,
   } from './vmActions.js';
   import { tagCount } from '@/utils/tagCount';
-  import {
-    consoleLinkAlt,
-    screenshotAlt,
-    vmScreenshot,
-    vncHref,
-  } from './vmScreens.js';
+  import { consoleLinkAlt, screenshotAlt, vmScreenshot } from './vmScreens.js';
+  import { consoleHref } from '@/vnc/consoleUrl.js';
+  import { handleConsoleLinkClick } from '@/vnc/openConsole.js';
+  import { consoleAvailable } from '@/vnc/vmScreen.js';
 
   // The running experiment's VM table: a row per VM with its screenshot,
   // interfaces, labels and Actions column. It asks the page, by event, to
@@ -398,6 +396,7 @@
         vmScreenshot,
         vlanAlias,
         vlanPendingKey,
+        handleConsoleLinkClick,
       };
     },
     props: {
@@ -502,8 +501,18 @@
         return !vm.busy && !vm.external;
       },
 
-      vncLoc(vm) {
-        return vncHref(this.$router, this.$route.params.id, vm);
+      // the VM as the console page names it
+      consoleKey(vm) {
+        return `${this.experiment || this.$route.params.id}/${vm.name}`;
+      },
+
+      consoleOf(vm) {
+        return consoleHref(this.$router, [this.consoleKey(vm)]);
+      },
+
+      // the rule of the tiles and the details modal: a screen and vms/vnc get
+      canConsole(vm) {
+        return consoleAvailable(this.experiment || this.$route.params.id, vm);
       },
 
       decorator(state, busy) {

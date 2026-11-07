@@ -1,11 +1,10 @@
 import loadingScreenshotImg from '@/assets/imgs/loading-screenshot.svg';
-import { usePhenixStore } from '@/store';
 import { osTypeInfo } from './osType.js';
 import { placeholderImage } from './vmPlaceholder.js';
 
 // The picture of a running experiment's VM that its VM table, VNC tiles and
-// details show, and the link to its VNC console. `due` says whether VMs still
-// without a screenshot have waited long enough for one.
+// details show. `due` says whether VMs still without a screenshot have waited
+// long enough for one.
 
 // What vmScreenshot shows for a VM: 'screenshot', 'loading', or the kind of
 // placeholder picture (see vmPlaceholder.js). Keep the alt text the same.
@@ -59,16 +58,4 @@ export function consoleLinkAlt(vm, due) {
   const link = `Open the console of VM ${vm.name}`;
   const alt = screenshotAlt(vm, due);
   return alt == `Screenshot of VM ${vm.name}` ? link : `${link}: ${alt}`;
-}
-
-// the URL of a VM's VNC console in an experiment
-export function vncHref(router, experiment, vm) {
-  return router.resolve({
-    name: 'vnc',
-    params: {
-      id: experiment,
-      name: vm.name,
-      token: usePhenixStore().token,
-    },
-  }).href;
 }

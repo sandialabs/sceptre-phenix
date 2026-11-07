@@ -448,8 +448,13 @@
               <a
                 class="button is-success"
                 :href="vncLoc(detailsModal.vm)"
-                target="_blank"
-                :aria-label="`Open VNC console for VM ${detailsModal.vm} (opens in new tab)`">
+                :aria-label="`Open VNC console for VM ${detailsModal.vm} (opens in new tab)`"
+                @click="
+                  (event) =>
+                    handleConsoleLinkClick(event, [
+                      `${$route.params.id}/${detailsModal.vm}`,
+                    ])
+                ">
                 <b-icon icon="tv" />
               </a>
             </b-tooltip>
@@ -839,7 +844,8 @@
   import { showError, useErrorNotification } from '@/utils/errorNotif';
   import { createPageLoader, pageStatus } from '@/utils/pageLoader.js';
   import { addWsHandler, removeWsHandler } from '@/utils/websocket';
-  import { usePhenixStore } from '@/store.js';
+  import { consoleHref } from '@/vnc/consoleUrl.js';
+  import { handleConsoleLinkClick } from '@/vnc/openConsole.js';
   import { docsPage } from '@/utils/docs.js';
   import { plural, pluralWord } from '@/utils/plural.js';
   import { roomInWindow } from '@/utils/viewportFit.js';
@@ -870,6 +876,7 @@
         docsPage,
         pluralWord,
         updatedMessage: UPDATED_MESSAGE,
+        handleConsoleLinkClick,
       };
     },
     mounted() {
@@ -1914,15 +1921,7 @@
       },
 
       vncLoc(vm) {
-        const store = usePhenixStore();
-        return this.$router.resolve({
-          name: 'vnc',
-          params: {
-            id: this.$route.params.id,
-            name: vm,
-            token: store.token,
-          },
-        }).href;
+        return consoleHref(this.$router, [`${this.$route.params.id}/${vm}`]);
       },
 
       showTagsModal(vm, tags) {

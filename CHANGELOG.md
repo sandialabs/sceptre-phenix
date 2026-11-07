@@ -24,6 +24,8 @@ All notable changes to this project will be documented in this file.
 - **CLI**: Added `phenix minimega` as an alias for `phenix mm`, and `-a` and `-n` as shorthands for `--attach` and `--namespace`.
 - **CLI**: Added tab completion for `phenix mm`, which will now suggest minimega commands from the running minimega and `--namespace` from the names of running experiments.
 - **CLI**: `phenix vlan alias <experiment> <alias>` now prints the VLAN ID of that alias, or an error if the alias doesn't exist or doesn't have a VLAN ID yet. Its shell completion also completes experiment and alias names.
+- **VNC Console**: Added a VNC console page (`/vnc`) that shows one to four VMs in split layouts, and a live console in the VM details window.
+- **VNC Live Tiles**: The VNC tab and the VM Tiles page show live, view-only screens of running and paused VMs, with a "Live tile limit" option.
 
 ### Changed
 
@@ -42,10 +44,13 @@ All notable changes to this project will be documented in this file.
 - **Workflow Schema (breaking)**: Workflow configs are validated against the new `Workflow` schema, so unknown or misspelled keys, values of the wrong type and a missing `spec` return 400 instead of being ignored. ([#445](https://github.com/sandialabs/sceptre-phenix/pull/445))
 - **CLI**: `phenix mm` now stops parsing its own flags at the first minimega argument, so flags meant for minimega (for example the `-a` in `phenix mm cc exec ls -a`) are passed through. `phenix mm` and global flags must now come *before* the minimega command.
 - **CLI**: Upgraded cobra from v1.0.0 to v1.10.2 and pflag from v1.0.3 to v1.0.9. `phenix completion bash` now generates cobra's V2 Bash script, and `phenix completion powershell` includes descriptions.
+- **VNC Session API (breaking)**: `GET /api/v1/experiments/{exp}/vms/{name}/vnc` returns the VNC session as JSON instead of an HTML page.
+- **VM Templates**: The minimega script turns on lossy VNC updates for each KVM VM and sets the video card of Linux VMs with `vm config vga qxl`.
 
 ### Removed
 
 - **Topology v0 (breaking)**: Topology configs with apiVersion `phenix.sandia.gov/v0` are no longer supported.
+- **Vendored noVNC and xterm.js**: Removed the vendored noVNC and xterm.js files and the `/novnc/` and `/xterm.js/` routes. The web UI now uses noVNC 1.7.0 from npm.
 
 ### Removed
 

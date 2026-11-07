@@ -13,7 +13,7 @@ type MM interface { //nolint:interfacebloat // legacy interface
 
 	GetVMInfo(...Option) VMs
 	GetVMScreenshot(...Option) ([]byte, error)
-	GetVNCEndpoint(...Option) (string, error)
+	GetVNCInfo(...Option) (VNCInfo, error)
 	StartVM(...Option) error
 	StopVM(...Option) error
 	RedeployVM(...Option) error

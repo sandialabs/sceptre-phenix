@@ -85,6 +85,9 @@ export const modules = {
     sendWsMsg: (msg) => ws.sent.push(msg),
   }),
   fileSaver: () => ({ default: saver }),
+  // the VNC session of a live console, which a page test leaves loading so
+  // that it asks for nothing more
+  vnc: () => ({ getVncSession: () => new Promise(() => {}) }),
   notify: () => ({
     openNotification: (...args) => notices.open(...args),
     setNotificationApp: () => {},

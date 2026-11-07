@@ -33,6 +33,9 @@ const (
 	// CodeVLANInUse is a start that failed because minimega gives a VLAN ID that the experiment pins to another
 	// alias; details.vlan names the ID.
 	CodeVLANInUse Code = "vlan_in_use"
+	// CodeVNCUnreachable is a VNC probe that could not connect to the VM's VNC server; details.host and details.port
+	// name the server.
+	CodeVNCUnreachable Code = "vnc_unreachable"
 )
 
 // CodeFor is the code of an error answered with status.

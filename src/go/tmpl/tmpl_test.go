@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 
 	"phenix/tmpl"
+	v1 "phenix/types/version/v1"
 )
 
 const hostnameScript = "#!/bin/bash\n\nsed -i -e 's/phenix/host-01/g' /etc/hosts\nhostnamectl set-hostname host-01"
@@ -211,5 +213,191 @@ func TestCreateFileFromTemplateReadOnlyFolder(t *testing.T) {
 
 	if got, err := os.ReadFile(path); err != nil || string(got) != "old content" {
 		t.Errorf("file after a failed CreateFileFromTemplate = %q, %v, want %q", got, err, "old content")
+	}
+}
+
+// lossyOverride is the minimega script line that turns on lossy VNC updates for a KVM VM.
+const lossyOverride = `.preprocess false vm config qemu-override "-vnc unix:" "-vnc lossy=on,vnc=unix:"`
+
+// scriptNode is a VM of the given type and OS for the script tests, with one interface.
+func scriptNode(hostname, vmType, osType string) *v1.Node {
+	snapshot := false
+
+	return &v1.Node{
+		TypeF:     "VirtualMachine",
+		GeneralF:  &v1.General{HostnameF: hostname, VMTypeF: vmType, SnapshotF: &snapshot},
+		HardwareF: &v1.Hardware{OSTypeF: osType, DrivesF: []*v1.Drive{{ImageF: "image.qc2"}}},
+		NetworkF:  &v1.Network{InterfacesF: []*v1.Interface{{NameF: "eth0", VLANF: "EXP_1", BridgeF: "phenix"}}},
+	}
+}
+
+// scriptBlocks splits a minimega script into the lines of each VM, from the VM's "## VM: <name> ##" header to the
+// next "## " header.
+func scriptBlocks(script string) map[string][]string {
+	blocks := map[string][]string{}
+
+	var vm string
+
+	for line := range strings.SplitSeq(script, "\n") {
+		line = strings.TrimSpace(line)
+
+		if strings.HasPrefix(line, "## ") {
+			name, ok := strings.CutPrefix(line, "## VM: ")
+			vm = ""
+
+			if ok {
+				vm = strings.TrimSuffix(name, " ##")
+			}
+
+			continue
+		}
+
+		if vm != "" && line != "" {
+			blocks[vm] = append(blocks[vm], line)
+		}
+	}
+
+	return blocks
+}
+
+// The minimega script turns on lossy VNC updates once for each KVM VM that is not external, before the
+// topology's overrides. A Linux VM gets the qxl video card through vm config vga, unless the topology sets vga.
+func TestMinimegaScriptVNCSettings(t *testing.T) {
+	t.Parallel()
+
+	external := true
+
+	linux := scriptNode("linux-vm", "kvm", "linux")
+	linux.OverridesF = map[string]string{"-vnc unix:": "-vnc lossy=on,share=force-shared,vnc=unix:"}
+
+	virtio := scriptNode("virtio-vm", "kvm", "linux")
+	virtio.AdvancedF = map[string]string{"vga": "virtio"}
+
+	container := scriptNode("container-vm", "container", "linux")
+
+	externalVM := scriptNode("external-vm", "kvm", "linux")
+	externalVM.ExternalF = &external
+
+	spec := &v1.ExperimentSpec{
+		ExperimentNameF: "vnc-exp",
+		TopologyF: &v1.TopologySpec{NodesF: []*v1.Node{
+			linux, virtio, scriptNode("windows-vm", "kvm", "windows"), container, externalVM,
+		}},
+	}
+
+	var script bytes.Buffer
+
+	if err := tmpl.GenerateFromTemplate("minimega_script.tmpl", spec, &script); err != nil {
+		t.Fatalf("GenerateFromTemplate(minimega_script.tmpl) error = %v", err)
+	}
+
+	blocks := scriptBlocks(script.String())
+
+	want := []string{
+		"clear vm config",
+		"vm config vcpus 0",
+		"vm config cpu",
+		"vm config memory 0",
+		"vm config snapshot false",
+		"vm config disk image.qc2",
+		"vm config vga qxl",
+		"vm config net phenix,EXP_1",
+		lossyOverride,
+		`.preprocess false vm config qemu-override "-vnc unix:" "-vnc lossy=on,share=force-shared,vnc=unix:"`,
+		"vm launch kvm linux-vm",
+	}
+
+	if diff := cmp.Diff(want, blocks["linux-vm"]); diff != "" {
+		t.Errorf("minimega script for linux-vm mismatch (-want +got):\n%s", diff)
+	}
+
+	tests := map[string]struct {
+		lossy   bool
+		vga     []string
+		missing bool
+	}{
+		"virtio-vm":    {lossy: true, vga: []string{"vm config vga virtio"}},
+		"windows-vm":   {lossy: true},
+		"container-vm": {lossy: false, vga: []string{"vm config vga qxl"}},
+		"external-vm":  {missing: true},
+	}
+
+	for vm, tc := range tests {
+		lines, ok := blocks[vm]
+		if ok == tc.missing {
+			t.Errorf("minimega script has %s = %t, want %t:\n%s", vm, ok, !tc.missing, script.String())
+
+			continue
+		}
+
+		if got := slices.Contains(lines, lossyOverride); got != tc.lossy {
+			t.Errorf("minimega script for %s has the lossy override = %t, want %t", vm, got, tc.lossy)
+		}
+
+		var vga []string
+
+		for _, line := range lines {
+			if strings.HasPrefix(line, "vm config vga ") {
+				vga = append(vga, line)
+			}
+
+			if strings.Contains(line, "-vga") {
+				t.Errorf("minimega script for %s has %q, want no -vga", vm, line)
+			}
+		}
+
+		if diff := cmp.Diff(tc.vga, vga); diff != "" {
+			t.Errorf("minimega script for %s vga lines mismatch (-want +got):\n%s", vm, diff)
+		}
+	}
+}
+
+// The packet capture script gives each capture VM the qxl video card through vm config vga, and turns on lossy
+// VNC updates for it.
+func TestPacketCaptureScriptVNCSettings(t *testing.T) {
+	t.Parallel()
+
+	elastic := scriptNode("elastic", "kvm", "linux")
+	elastic.LabelsF = map[string]string{"soh-elastic-server": "true"}
+
+	monitor := scriptNode("monitor", "kvm", "linux")
+	monitor.LabelsF = map[string]string{"soh-monitor-node": "true"}
+
+	data := struct {
+		Exp *v1.ExperimentSpec
+		Mon map[string][]string
+	}{
+		Exp: &v1.ExperimentSpec{
+			ExperimentNameF: "soh-exp",
+			TopologyF:       &v1.TopologySpec{NodesF: []*v1.Node{elastic, monitor}},
+		},
+		Mon: map[string][]string{},
+	}
+
+	var script bytes.Buffer
+
+	if err := tmpl.GenerateFromTemplate("packet_capture_script.tmpl", data, &script); err != nil {
+		t.Fatalf("GenerateFromTemplate(packet_capture_script.tmpl) error = %v", err)
+	}
+
+	blocks := scriptBlocks(script.String())
+
+	for _, vm := range []string{"elastic", "monitor"} {
+		lines := blocks[vm]
+
+		vga := slices.Index(lines, "vm config vga qxl")
+		lossy := slices.Index(lines, lossyOverride)
+		launch := slices.Index(lines, "vm launch kvm "+vm)
+
+		if vga < 0 || lossy < 0 || launch < 0 || lossy > launch || vga > launch {
+			t.Errorf("packet capture script for %s = %q, want vm config vga qxl and the lossy override before the launch",
+				vm, lines)
+		}
+
+		for _, line := range lines {
+			if strings.Contains(line, "-vga") {
+				t.Errorf("packet capture script for %s has %q, want no -vga", vm, line)
+			}
+		}
 	}
 }

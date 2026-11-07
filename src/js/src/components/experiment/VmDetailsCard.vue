@@ -1,5 +1,5 @@
 <template>
-  <div class="modal-card vm-card">
+  <div :class="['modal-card', 'vm-card', { 'vm-card--console': !stopped }]">
     <header
       class="modal-card-head vm-card-head"
       :class="[stateClass, { 'has-description': vm.description }]">
@@ -98,28 +98,38 @@
           format="percent" />
       </div>
 
-      <div v-if="!stopped && power.length" class="vm-section">
-        <h3 class="vm-section-title">Power</h3>
-        <div class="vm-power-buttons">
-          <b-tooltip
-            v-for="action in power"
-            :key="action.name"
-            :label="action.reason || action.description || action.label"
-            type="is-dark"
-            multilined>
-            <b-button
-              :class="['vm-action', `vm-action-${action.name}`]"
-              :type="action.type"
-              :outlined="action.outlined"
-              :icon-left="action.icon"
-              :aria-disabled="action.disabled ? 'true' : undefined"
-              :loading="pendingActions.includes(action.name)"
-              :aria-busy="pendingActions.includes(action.name)"
-              expanded
-              @click="action.disabled || $emit('action', action.name)">
-              {{ action.label }}
-            </b-button>
-          </b-tooltip>
+      <div v-if="!stopped && (power.length || consoleLink)" class="vm-section">
+        <h3 v-if="power.length" class="vm-section-title">Power</h3>
+        <div class="vm-power-row">
+          <div v-if="power.length" class="vm-power-buttons">
+            <b-tooltip
+              v-for="action in power"
+              :key="action.name"
+              :label="action.reason || action.description || action.label"
+              type="is-dark"
+              multilined>
+              <b-button
+                :class="['vm-action', `vm-action-${action.name}`]"
+                :type="action.type"
+                :outlined="action.outlined"
+                :icon-left="action.icon"
+                :aria-disabled="action.disabled ? 'true' : undefined"
+                :loading="pendingActions.includes(action.name)"
+                :aria-busy="pendingActions.includes(action.name)"
+                expanded
+                @click="action.disabled || $emit('action', action.name)">
+                {{ action.label }}
+              </b-button>
+            </b-tooltip>
+          </div>
+          <a
+            v-if="consoleLink"
+            class="button is-info vm-open-console"
+            :href="consoleLink"
+            @click="(event) => handleConsoleLinkClick(event, [consoleKey])">
+            <span>Open console</span>
+            <b-icon icon="up-right-from-square" size="is-small" />
+          </a>
         </div>
       </div>
 
@@ -168,25 +178,16 @@
             </div>
           </div>
         </div>
-        <div v-else class="column is-5">
+        <div v-else class="column vm-console-column">
           <div v-if="noScreen" class="vm-no-screen">
             <b-icon :icon="state.icon" size="is-large" />
             <p>No screen: the VM is {{ state.label.toLowerCase() }}</p>
           </div>
-          <figure v-else class="vm-screenshot">
-            <a
-              v-if="vncHref"
-              :href="vncHref"
-              target="_blank"
-              title="Open the VM's console in a new tab">
-              <img :src="screenshot" alt="VM screenshot" />
-              <span class="vm-screenshot-hint">
-                <b-icon icon="up-right-from-square" size="is-small" />
-                Open console
-              </span>
-            </a>
-            <img v-else :src="screenshot" alt="VM screenshot" />
-          </figure>
+          <VncPreview
+            v-else
+            :experiment="experiment"
+            :vm="vm"
+            :screenshot="screenshot" />
 
           <div v-if="tools.length" class="vm-section">
             <h3 class="vm-section-title">More actions</h3>
@@ -680,6 +681,10 @@
   import { formattingMixin } from '@/utils/formattingMixin.js';
   import { plural, pluralWord } from '@/utils/plural.js';
   import { webSharkInstalled } from '@/utils/webshark.js';
+  import { consoleHref } from '@/vnc/consoleUrl.js';
+  import { handleConsoleLinkClick } from '@/vnc/openConsole.js';
+  import VncPreview from '@/vnc/VncPreview.vue';
+  import { consoleAvailable, vmPaused } from '@/vnc/vmScreen.js';
   import { osTypeInfo } from './osType.js';
   import VmSettingControl from './VmSettingControl.vue';
   import {
@@ -717,7 +722,7 @@
   // shows its settings to edit instead of its screen and live actions.
   export default {
     name: 'VmDetailsCard',
-    components: { AnnotationList, DiskWarning, VmSettingControl },
+    components: { AnnotationList, DiskWarning, VmSettingControl, VncPreview },
     mixins: [formattingMixin],
     setup() {
       return {
@@ -735,6 +740,7 @@
         vlanPendingKey,
         AUTOTUNNEL,
         SETTING_ROWS,
+        handleConsoleLinkClick,
       };
     },
     props: {
@@ -758,9 +764,8 @@
       disk: { type: Object, default: null },
       cdRomDisk: { type: Object, default: null },
       filesDir: { type: String, default: '' },
+      // the screenshot or placeholder shown without a live console
       screenshot: { type: String, default: '' },
-      // the VNC console's URL, when the VM has one to open
-      vncHref: { type: String, default: null },
       // the VM's snapshot names; false until they have loaded
       snapshots: { type: [Array, Boolean], default: false },
       forwards: { type: Array, default: () => [] },
@@ -825,7 +830,22 @@
       noScreen() {
         const vm = this.vm;
         const delayed = vm.delayed_start && vm.state == 'BUILDING';
-        return !vm.running && !vm.busy && !vm.external && !delayed;
+        return (
+          !vm.running && !this.paused && !vm.busy && !vm.external && !delayed
+        );
+      },
+      paused() {
+        return vmPaused(this.vm);
+      },
+      // the VM as the console page names it
+      consoleKey() {
+        return `${this.experiment}/${this.vm.name}`;
+      },
+      // the console page of a VM with a screen the role may see, or null
+      consoleLink() {
+        return consoleAvailable(this.experiment, this.vm)
+          ? consoleHref(this.$router, [this.consoleKey])
+          : null;
       },
       agentClass() {
         return this.vm.ccActive ? 'is-positive' : 'is-muted';
@@ -1048,6 +1068,47 @@
     width: min(68rem, calc(100vw - 40px));
   }
 
+  /* M3a: the console on the left 60%, the details scroll on the right */
+  .vm-card--console {
+    width: min(96rem, calc(100vw - 40px));
+    height: 90vh;
+  }
+
+  .vm-card--console .vm-card-body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .vm-card--console .vm-columns {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .vm-card--console .vm-columns > .column {
+    overflow-y: auto;
+  }
+
+  .vm-console-column {
+    flex: none;
+    width: 60%;
+  }
+
+  .vm-power-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .vm-power-row .vm-power-buttons {
+    flex: 1 1 auto;
+  }
+
+  .vm-open-console {
+    flex: none;
+    margin-left: auto;
+  }
+
   .vm-card-head {
     align-items: flex-start;
     gap: 1rem;
@@ -1058,6 +1119,13 @@
   /* below 68rem plus two gutters the modal's close X sits on the head's corner */
   @media screen and (max-width: 1191px) {
     .vm-card-head {
+      padding-right: 3.5rem;
+    }
+  }
+
+  /* the same for the console card's 96rem */
+  @media screen and (max-width: 1639px) {
+    .vm-card--console .vm-card-head {
       padding-right: 3.5rem;
     }
   }
@@ -1362,51 +1430,6 @@
 
   .vm-no-screen p {
     margin: 0 !important;
-  }
-
-  .vm-screenshot {
-    margin: 0 0 0.75rem 0 !important;
-    position: relative;
-    background-color: #2b2b2b;
-    border-radius: 8px;
-    overflow: hidden;
-    aspect-ratio: 4 / 3;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .vm-screenshot a {
-    display: flex;
-    width: 100%;
-    height: 100%;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .vm-screenshot img {
-    display: block;
-    max-width: 100%;
-    max-height: 100%;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-  }
-
-  .vm-screenshot-hint {
-    position: absolute;
-    right: 0.5rem;
-    bottom: 0.5rem;
-    padding: 0.2rem 0.6rem;
-    border-radius: 999px;
-    background-color: rgba(0, 0, 0, 0.65);
-    color: white;
-    font-size: 0.8rem;
-  }
-
-  /* the darker orange fill: white is 6.5:1 on it */
-  .vm-screenshot a:hover .vm-screenshot-hint {
-    background-color: #9a4420;
   }
 
   .vm-stats {

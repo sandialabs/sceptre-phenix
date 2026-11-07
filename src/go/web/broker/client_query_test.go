@@ -451,6 +451,51 @@ func TestScreenshotsOfRunningVMs(t *testing.T) {
 	}
 }
 
+// A client that says which of its VMs have live tiles is sent screenshots of
+// the others only.
+//
+//nolint:paralleltest // replaces minimega and the web cache
+func TestScreenshotsSkipLiveTiles(t *testing.T) {
+	fake := new(screenshotMM)
+
+	originalMM, originalCache := mm.DefaultMM, cache.DefaultWebCache
+	mm.DefaultMM, cache.DefaultWebCache = fake, cache.NewGoWebCache() //nolint:reassign // install test doubles
+
+	t.Cleanup(func() {
+		mm.DefaultMM, cache.DefaultWebCache = originalMM, originalCache //nolint:reassign // restore test doubles
+	})
+
+	c, conn := dialTestClient(t, rbac.Role{Spec: &v1.RoleSpec{}})
+	// the live VM sorts first, so a screenshot of it would be asked for first
+	setVMs(c, vmScope{exp: "exp", name: "a", running: true}, vmScope{exp: "exp", name: "b", running: true})
+
+	for _, msg := range []string{
+		`{"resource": {"type": "metadata/screenshot", "action": "live"}, "request": {"vms": ["exp/a"]}}`,
+		`{"resource": {"type": "metadata/screenshot", "action": "resize"}, "request": {"size": "300"}}`,
+	} {
+		if err := conn.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
+			t.Fatalf("conn.WriteMessage(%s) = %v", msg, err)
+		}
+	}
+
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("conn.SetReadDeadline() = %v", err)
+	}
+
+	var reply bt.Publish
+	if err := conn.ReadJSON(&reply); err != nil {
+		t.Fatalf("reading the reply to the resize: %v", err)
+	}
+
+	if diff := cmp.Diff(bt.NewResource("experiment/vm/screenshot", "exp/b", "update"), reply.Resource); diff != "" {
+		t.Fatalf("reply to the resize: resource mismatch (-want +got):\n%s", diff)
+	}
+
+	if n := fake.calls.Load(); n != 1 {
+		t.Errorf("resize with exp/a live asked minimega for %d screenshots, want 1", n)
+	}
+}
+
 func TestSendGivesUpOnceClientIsDone(t *testing.T) {
 	c := &Client{
 		publish: make(chan any), // unbuffered and never drained

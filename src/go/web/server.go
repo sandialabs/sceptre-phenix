@@ -382,14 +382,6 @@ func newRouter(assets http.FileSystem, builderOpts ...builderOption) (*mux.Route
 		StaticHandler(assets, false),
 	)
 
-	router.PathPrefix("/novnc/").Handler(
-		StaticHandler(assets, false),
-	)
-
-	router.PathPrefix("/xterm.js/").Handler(
-		StaticHandler(assets, false),
-	)
-
 	router.PathPrefix("/assets/").Handler(
 		builderAssetHandler(assets, StaticHandler(assets, true)),
 	)

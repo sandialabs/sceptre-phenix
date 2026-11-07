@@ -187,15 +187,13 @@ func createPortForward(ctx context.Context, exp, vm, src, host, dst, user string
 
 	switch strings.ToUpper(dst) {
 	case "VNC":
-		endpoint, err := mm.GetVNCEndpoint(mm.NS(exp), mm.VMName(vm), mm.Context(ctx))
+		info, err := mm.GetVNCInfo(mm.NS(exp), mm.VMName(vm), mm.Context(ctx))
 		if err != nil {
 			return fmt.Errorf("getting VNC endpoint for vm %s in experiment %s: %w", vm, exp, err)
 		}
 
-		tokens := strings.Split(endpoint, ":")
-
-		listener.ClusterHost = tokens[0]
-		listener.ClusterPort, _ = strconv.Atoi(tokens[1])
+		listener.ClusterHost = info.Host
+		listener.ClusterPort = info.Port
 
 		listener.DstPort = 5900
 

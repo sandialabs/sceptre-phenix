@@ -561,6 +561,40 @@ is still running, and answers its pid and namespace. Starting, resizing and
 ending need `miniconsole` `post`; checking and attaching need `miniconsole`
 `get`.
 
+## VNC Console
+
+`GET /experiments/{exp}/vms/{name}/vnc` (`vms/vnc` `get`) answers the VNC
+session of a VM as JSON, with no-cache headers; the web UI's `/vnc` console
+page, live tiles and details window read it, then connect noVNC to its
+`websocket`:
+
+```json
+{"experiment": "demo", "vm": "web",
+ "websocket": "experiments/demo/vms/web/vnc/ws",
+ "banners": {"top": {"lines": ["EXP: demo - VM: web"], "backgroundColor": "white", "textColor": "black"},
+             "bottom": {"lines": ["EXP: demo - VM: web"], "backgroundColor": "white", "textColor": "black"}},
+ "display": {"vga": "std", "remoteResize": false},
+ "clipboard": {"mode": "pasteAsKeys"}}
+```
+
+- `websocket` is relative to the API root (`<base path>api/v1/`); add
+  `?token=<jwt>` when auth is on. Banners come from the `vncBanner` annotation
+  (`annotations.md`); `lines` is `[]` for a banner that is off, and the lines
+  are plain text.
+- `display.remoteResize` is true only for `vga` `virtio`. `clipboard.mode` is
+  `bidirectional` when minimega's `bidirectional-copy-paste` is on for the VM,
+  else `pasteAsKeys`.
+- `?probe=true` also dials the VM's VNC port (3 s timeout); a failed dial
+  answers `502` with code `vnc_unreachable` and `details.host` and
+  `details.port`. The UI probes after a websocket failure, because a websocket
+  handshake cannot carry the HTTP error.
+- `404` for a VM not in the topology, `409` (`VM is not running`) when minimega
+  has no KVM VM of that name, `500` (`minimega is too old: vm info has
+  no vga column, update minimega`) for a minimega without the `vga` column of
+  `vm info`, which phēnix needs. A refusal is audited as `vnc-attach`.
+- The old HTML VNC page, `/novnc/` and `/xterm.js/` are gone; noVNC is an npm
+  dependency of the UI build.
+
 ## Creating an experiment
 
 `POST /experiments` takes JSON and answers `204 No Content`; websocket clients

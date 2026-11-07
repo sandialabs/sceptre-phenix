@@ -5,7 +5,8 @@ machine to forward TCP traffic from VMs in a running experiment down to
 local ports. This lets a user interact with a VM directly using command line tools, instead of having to go through noVNC in a browser. A common
 example is using a real RDP client to connect to a Windows VM instead of
 interacting with it through noVNC (which enables things like copy/paste
-support that noVNC does not).
+support that noVNC does not). For copy and paste in the web console, see
+[Copy and Paste](vms.md#copy-and-paste).
 
 Traffic is proxied through the phēnix UI server over a WebSocket
 connection, so the local machine only needs network access to the phēnix

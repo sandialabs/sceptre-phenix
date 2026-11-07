@@ -38,8 +38,12 @@ vi.mock('@/views/experiment/Base.vue', () => ({ default: {} }));
 vi.mock('@/views/experiment/VMtilesView.vue', () => ({ default: {} }));
 vi.mock('@/views/ProxySignUp.vue', () => ({ default: {} }));
 vi.mock('@/views/NotFound.vue', () => ({ default: {} }));
+vi.mock('@/views/VncView.vue', () => ({ default: {} }));
 const getProxyLogin = vi.hoisted(() => vi.fn());
 vi.mock('@/api/auth.js', () => ({ getProxyLogin }));
+// the token another signed-in tab gives a console tab
+const signInFromOtherTab = vi.hoisted(() => vi.fn());
+vi.mock('@/utils/authHandoff.js', () => ({ signInFromOtherTab }));
 
 let router;
 let store;
@@ -50,6 +54,7 @@ beforeEach(async () => {
   sessionStorage.clear();
   document.title = '';
   toast.mockReset();
+  signInFromOtherTab.mockReset().mockResolvedValue(false);
 
   // a new router for each test, so every visit starts from nowhere
   vi.resetModules();
@@ -260,6 +265,39 @@ describe('with no one signed in', () => {
   });
 });
 
+describe('a console tab with no one signed in', () => {
+  const admin = role('Admin', ['*', '*']);
+
+  it('signs in with the token of another tab and opens the console', async () => {
+    signInFromOtherTab.mockImplementation(async () => {
+      signIn(admin);
+      return true;
+    });
+    const to = await visit('/vnc?vm=demo/web');
+    expect(to.name).toBe('vnc');
+    expect(to.query).toEqual({ vm: 'demo/web' });
+    expect(signInFromOtherTab).toHaveBeenCalledTimes(1);
+    expect(document.title).toBe('VNC console - phēnix');
+  });
+
+  it('sends a visit to sign in when no tab answers', async () => {
+    const to = await visit('/vnc?vm=demo/web');
+    expect(to.name).toBe('signin');
+    expect(store.next.fullPath).toBe('/vnc?vm=demo/web');
+  });
+
+  it('asks no other tab for a page that is not the console', async () => {
+    expect((await visit('/hosts')).name).toBe('signin');
+    expect(signInFromOtherTab).not.toHaveBeenCalled();
+  });
+
+  it('asks no other tab when this tab is signed in', async () => {
+    signIn(admin);
+    expect((await visit('/vnc?vm=demo/web')).name).toBe('vnc');
+    expect(signInFromOtherTab).not.toHaveBeenCalled();
+  });
+});
+
 describe('behind an authenticating proxy', () => {
   // the proxy's user has no phenix user: the server's 404 names it
   const unknownUser = (data) =>
@@ -419,6 +457,35 @@ describe('page width', () => {
     expect(wide).toEqual(['soh']);
     // the Builder fills the window and has no footer instead
     expect(router.resolve('/builder').meta).toMatchObject({ fullBleed: true });
+    // the console page also has its own top bar in place of the header
+    expect(router.resolve('/vnc').meta).toMatchObject({
+      fullBleed: true,
+      header: false,
+    });
     expect(router.resolve('/soh').meta.wide).toBeUndefined();
+  });
+});
+
+describe('the VNC console route', () => {
+  it('is the /vnc page; the server page with the token in its URL is gone', () => {
+    expect(
+      router.resolve({ name: 'vnc', query: { vm: 'demo/web' } }).href,
+    ).toBe('/vnc?vm=demo/web');
+    expect(
+      router.resolve('/api/v1/experiments/demo/vms/web/vnc?token=t').name,
+    ).toBe('notfound');
+    expect(router.getRoutes().map((r) => r.path)).not.toContain(
+      '/api/v1/experiments/:id/vms/:name/vnc?token=:token',
+    );
+  });
+
+  it('is the only route the test routers name vnc', async () => {
+    const { ROUTES } = await import('./helpers/routes.js');
+    const named = (routes) =>
+      routes
+        .filter((r) => r.name && r.name !== 'notfound')
+        .map((r) => [r.path, r.name])
+        .sort();
+    expect(named(ROUTES)).toEqual(named(router.getRoutes()));
   });
 });

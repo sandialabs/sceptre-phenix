@@ -25,6 +25,7 @@ import * as settingsApi from '@/api/settings.js';
 import * as topologiesApi from '@/api/topologies.js';
 import * as usersApi from '@/api/users.js';
 import * as vmsApi from '@/api/vms.js';
+import * as vncApi from '@/api/vnc.js';
 import * as webSharkApi from '@/api/webshark.js';
 import { useJobStore } from '@/utils/jobs.js';
 
@@ -748,6 +749,18 @@ const requests = [
     ],
   ],
   [
+    'getVncSession',
+    () => vncApi.getVncSession('e x', 'a/b'),
+    'get',
+    ['experiments/e%20x/vms/a%2Fb/vnc', {}],
+  ],
+  [
+    'getVncSession probe',
+    () => vncApi.getVncSession('exp', 'web', { probe: true }),
+    'get',
+    ['experiments/exp/vms/web/vnc', { params: { probe: true } }],
+  ],
+  [
     'listVmForwards',
     () => vmsApi.listVmForwards('exp', 'a'),
     'get',
@@ -1027,6 +1040,7 @@ describe('the API modules', () => {
       topologiesApi,
       usersApi,
       vmsApi,
+      vncApi,
       webSharkApi,
     ].flatMap((mod) => Object.keys(mod));
     // builds a link's URL rather than sending a request (tested below)
@@ -1084,6 +1098,11 @@ describe('names encoded into a path', () => {
       'getVmScreenshot',
       (name) => vmsApi.getVmScreenshot(name, name, 1, signal),
       (name) => ['experiments', name, 'vms', name, 'screenshot.png'],
+    ],
+    [
+      'getVncSession',
+      (name) => vncApi.getVncSession(name, name),
+      (name) => ['experiments', name, 'vms', name, 'vnc'],
     ],
     [
       'getExperimentFile',

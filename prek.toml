@@ -114,7 +114,7 @@ id = "codespell"
 args = [
   "--ignore-words-list",
   "ue,ot,ues,fo,nd,ist,te,parm,parms,ser,iif,iam,nin,filetest",
-  # vendored UI assets and generated/binary content are noisy for codespell
+  # UI build output and generated/binary content are noisy for codespell
   "--skip",
   "*.svg,*.lock,*.sum,*package-lock.json,docs/content/images/*,docs/content/stylesheets/*,docs/theme/*,src/js/dist/*,src/go/web/public/*,src/go/web/proto/*.pb.go,src/go/store/mock.go,src/go/web/rbac/known_policy.go,**/*.min.js,**/*.min.css"
 ]
@@ -196,7 +196,7 @@ args = [
     "--disable",
     "MD013,MD033,MD041,MD024",  # MD013: line length, MD033: inline HTML, MD041: first line heading, MD024: multiple headers with the same content
 ]
-# vendored UI docs (novnc, xterm.js) are third-party content, not ours to fix
+# src/go/web/public/ holds the copied UI build, which is not source
 exclude = '^src/go/web/public/'
 priority = "format"
 
@@ -220,7 +220,7 @@ id = "hadolint"
 # DL3062 - go install ./... builds local source already pinned via git clone --branch; no remote version to pin
 # DL3008/DL3015 - pinning every apt/apt-get package version is impractical for base images rebuilt regularly
 args = ["--ignore", "DL3059", "--ignore", "DL3062", "--ignore", "DL3008", "--ignore", "DL3015"]
-# vendored xterm.js Dockerfile isn't ours to fix
+# src/go/web/public/ holds the copied UI build, which is not source
 exclude = '^src/go/web/public/'
 priority = "format"
 
@@ -347,7 +347,7 @@ priority = "format"
 [[repos.hooks]]
 id = "mixed-line-ending"
 args = ["--fix=no"]
-# vendored xterm.js test fixtures intentionally contain mixed line endings
+# src/go/web/public/ holds the copied UI build, which is not source
 exclude = '^src/go/web/public/'
 priority = "fixers"
 
