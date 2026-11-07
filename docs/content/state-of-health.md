@@ -116,6 +116,11 @@ the `src` or `dst` in a
 [`testCustomReachability`](#configuration-options) entry to verify connectivity
 to/from the device from another VM in the experiment.
 
+When `testReachability` is `sample` or `full`, the other VMs also ping the
+addresses of external nodes on the VLANs that they share. To stop these pings,
+add the external node's hostname to `skipHosts`. Custom reachability tests can
+still reach an external node in `skipHosts`.
+
 !!! tip "Getting a line to draw to an external device"
     The topology graph only draws a line between two nodes when they share a
     common VLAN name on one of their network interfaces (the VLAN name becomes
@@ -336,7 +341,8 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
 * `skipHosts`: a list of VM hostnames and/or disk image names to skip health
   monitoring for. For disk image names, any host using the disk image as its
   primary image will be skipped. A disk image name ends in `.qc2`, `.qcow2`,
-  or `.qcow`. The default is `nil`.
+  or `.qcow`. An [external node](#external-devices) in the list is not a target
+  of the ICMP reachability test. The default is `nil`.
 
 * `testReachability`: reachability testing is the process of making sure each VM
   can reach other VMs within the experiment over the network. See [Network

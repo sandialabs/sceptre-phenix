@@ -1204,8 +1204,47 @@ func TestSOHIsRegistered(t *testing.T) {
 	}
 }
 
+// An external node in skipHosts is not an ICMP reachability target, but a custom
+// reachability test can still reach it.
+func TestRunningSkipsExternalTarget(t *testing.T) { //nolint:paralleltest // replaces package globals
+	ext := true
+
+	exp := sohExperiment(t, map[string]any{
+		"c2Timeout":        "1m",
+		"testReachability": "full",
+		"skipHosts":        []any{"ext"},
+		"testCustomReachability": []any{
+			map[string]any{"src": "web", "dst": "ext|eth0", "proto": "tcp", "port": 502},
+		},
+	}, []*v1.Node{
+		{
+			TypeF: "VirtualMachine", GeneralF: &v1.General{HostnameF: "ext"}, ExternalF: &ext,
+			NetworkF: &v1.Network{InterfacesF: []*v1.Interface{sohIface("eth0", "A", "static", "10.0.0.9", "")}},
+		},
+		sohNode("web", "linux", sohIface("eth0", "A", "static", "10.0.0.1", "")),
+	})
+
+	answers := map[string]string{
+		"exp/web: ip addr":                            "inet 10.0.0.1/24 scope global eth0",
+		"exp/web: ping -c 1 10.0.0.1":                 "1 packets transmitted, 1 received",
+		"exp/web: test-conn tcp 10.0.0.9 502 wait 5s": "success",
+		"exp/web: cat /proc/loadavg":                  "0.25 0.30 0.35 1/200 4242",
+	}
+
+	fake := useSOHMM(t, answerFrom(answers), nil)
+
+	if err := newSOH().Running(t.Context(), exp); err != nil {
+		t.Fatalf("Running(exp) error = %v", err)
+	}
+
+	// no ping to 10.0.0.9, the external node
+	if diff := cmp.Diff(slices.Sorted(maps.Keys(answers)), fake.commands()); diff != "" {
+		t.Errorf("Running(exp) C2 commands mismatch (-want +got):\n%s", diff)
+	}
+}
+
 // gatherNodeIPs records each address of a node for its host, its VLAN (when
-// it has one) and its interface.
+// it has one and the node is a reachability target) and its interface.
 func TestGatherNodeIPs(t *testing.T) {
 	t.Parallel()
 
@@ -1219,9 +1258,13 @@ func TestGatherNodeIPs(t *testing.T) {
 		sohIface("eth2", "", "static", "10.0.2.1", ""),
 	)
 
-	s.gatherNodeIPs(node)
+	s.gatherNodeIPs(node, true)
 
-	if diff := cmp.Diff(map[string]string{"10.0.0.1": "web", "10.0.2.1": "web"}, s.addrHosts); diff != "" {
+	// not a target: the address is known for custom reachability, but no VLAN lists it
+	s.gatherNodeIPs(sohNode("ext", "linux", sohIface("eth0", "A", "static", "10.0.0.7", "")), false)
+
+	wantHosts := map[string]string{"10.0.0.1": "web", "10.0.2.1": "web", "10.0.0.7": "ext"}
+	if diff := cmp.Diff(wantHosts, s.addrHosts); diff != "" {
 		t.Errorf("gatherNodeIPs(web) addrHosts mismatch (-want +got):\n%s", diff)
 	}
 
@@ -1229,7 +1272,10 @@ func TestGatherNodeIPs(t *testing.T) {
 		t.Errorf("gatherNodeIPs(web) vlans mismatch (-want +got):\n%s", diff)
 	}
 
-	wantIPs := map[string]map[string]string{"web": {"old": "10.9.9.9", "eth0": "10.0.0.1", "eth2": "10.0.2.1"}}
+	wantIPs := map[string]map[string]string{
+		"web": {"old": "10.9.9.9", "eth0": "10.0.0.1", "eth2": "10.0.2.1"},
+		"ext": {"eth0": "10.0.0.7"},
+	}
 	if diff := cmp.Diff(wantIPs, s.hostIPs); diff != "" {
 		t.Errorf("gatherNodeIPs(web) hostIPs mismatch (-want +got):\n%s", diff)
 	}

@@ -305,9 +305,10 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 
 	for _, node := range exp.Spec.Topology().Nodes() {
 		if node.External() {
-			// track IP addresses so custom reachability tests still work
+			// track IP addresses so custom reachability tests still work; skipHosts
+			// removes the node from the ICMP reachability targets
 			ipsMu.Lock()
-			s.gatherNodeIPs(node)
+			s.gatherNodeIPs(node, !skip(node, s.md.SkipHosts))
 			ipsMu.Unlock()
 
 			continue
@@ -371,7 +372,7 @@ func (s *SOH) runChecks(ctx context.Context, exp *types.Experiment) error {
 		// once per node, so each address is listed once in its VLAN
 		if static {
 			ipsMu.Lock()
-			s.gatherNodeIPs(node)
+			s.gatherNodeIPs(node, true)
 			ipsMu.Unlock()
 		}
 
@@ -714,7 +715,9 @@ func (s *SOH) waitForDHCP(
 	}
 }
 
-func (s *SOH) gatherNodeIPs(node ifaces.NodeSpec) {
+// gatherNodeIPs records each address of node for its host and its interface. With target, it also records each
+// address for its VLAN, which makes the address a target of the ICMP reachability test.
+func (s *SOH) gatherNodeIPs(node ifaces.NodeSpec, target bool) {
 	host := node.General().Hostname()
 
 	for _, iface := range node.Network().Interfaces() {
@@ -724,7 +727,7 @@ func (s *SOH) gatherNodeIPs(node ifaces.NodeSpec) {
 
 		s.addrHosts[iface.Address()] = host
 
-		if iface.VLAN() != "" {
+		if target && iface.VLAN() != "" {
 			s.vlans[iface.VLAN()] = append(s.vlans[iface.VLAN()], iface.Address())
 		}
 
