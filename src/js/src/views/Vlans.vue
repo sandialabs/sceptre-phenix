@@ -193,6 +193,7 @@ experiment, and a grid of the whole ID space.
               :selected="selected === card.key"
               :removable="data.minimega.blacklistRemoval"
               :minimega-ok="data.minimega.ok"
+              :busy="blacklistBusy"
               @select="select"
               @open="openVlan"
               @act="act" />
@@ -205,6 +206,7 @@ experiment, and a grid of the whole ID space.
               :selected="selected === card.key"
               :removable="data.minimega.blacklistRemoval"
               :minimega-ok="data.minimega.ok"
+              :busy="blacklistBusy"
               :suggestions="suggestionsFor(card)"
               @select="select"
               @open="openVlan"
@@ -220,6 +222,7 @@ experiment, and a grid of the whole ID space.
         :states="states"
         :cards="cards"
         :removable="data.minimega.blacklistRemoval"
+        :busy="blacklistBusy"
         @close="closePanel"
         @act="act"
         @show-card="showCard" />
@@ -299,6 +302,8 @@ experiment, and a grid of the whole ID space.
         selected: null,
         activeId: MIN_VLAN,
         finderOpen: false,
+        // the blacklist changes in progress, such as 'add:42' and 'remove:7'
+        blacklistBusy: [],
         block: null,
         dialog: {
           active: false,
@@ -594,8 +599,18 @@ experiment, and a grid of the whole ID space.
           message: escapeHTML(message),
           type: 'is-success',
         });
-        this.reload();
+        await this.reload();
         return true;
+      },
+      // sends a blacklist change, marked busy (op:id) until the page reloads
+      async changeBlacklist(op, id, request, message) {
+        const key = `${op}:${id}`;
+        this.blacklistBusy = [...this.blacklistBusy, key];
+        try {
+          return await this.send(request, message);
+        } finally {
+          this.blacklistBusy = this.blacklistBusy.filter((k) => k !== key);
+        }
       },
       async pinLive(card) {
         const changes = card.aliases
@@ -672,7 +687,9 @@ experiment, and a grid of the whole ID space.
               showError(error);
               return;
             }
-            this.send(
+            this.changeBlacklist(
+              'add',
+              Number(value),
               () => vlansApi.addVlanToBlacklist(Number(value)),
               `Added ${Number(value)} to the blacklist`,
             );
@@ -689,7 +706,9 @@ experiment, and a grid of the whole ID space.
           type: 'is-warning',
         });
         if (!sure) return;
-        await this.send(
+        await this.changeBlacklist(
+          'add',
+          id,
           () => vlansApi.addVlanToBlacklist(id),
           `Added ${id} to the blacklist`,
         );
@@ -703,7 +722,9 @@ experiment, and a grid of the whole ID space.
           type: 'is-warning',
         });
         if (!sure) return;
-        await this.send(
+        await this.changeBlacklist(
+          'remove',
+          id,
           () => vlansApi.removeVlanFromBlacklist(id),
           `Removed ${id} from the blacklist`,
         );

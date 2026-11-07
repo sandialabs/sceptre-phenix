@@ -72,13 +72,23 @@
           position="is-left">
           <button
             type="button"
-            class="button is-small is-light vlan-blacklist-remove"
+            :class="[
+              'button',
+              'is-small',
+              'is-light',
+              'vlan-blacklist-remove',
+              { 'is-loading': removing.includes(id) },
+            ]"
             :aria-label="`Remove ${id} from the blacklist`"
             :aria-disabled="removable ? undefined : 'true'"
             :aria-describedby="
               removable ? undefined : `${headingId}-no-removal`
             "
-            @click="removable && act('blacklist-remove', { id })">
+            @click="
+              removable &&
+              !removing.includes(id) &&
+              act('blacklist-remove', { id })
+            ">
             <b-icon icon="trash" size="is-small" aria-hidden="true" />
           </button>
         </b-tooltip>
@@ -142,6 +152,19 @@
       </li>
     </ul>
 
+    <p v-if="card.kind === 'blacklist'" class="vlan-card-busy" role="status">
+      <template v-for="text in busyTexts" :key="text">
+        <span class="vlan-card-busy-item">
+          <b-icon
+            icon="spinner"
+            size="is-small"
+            custom-class="fa-spin"
+            aria-hidden="true" />
+          <span>{{ text }}</span>
+        </span>
+      </template>
+    </p>
+
     <p v-for="message in card.messages" :key="message" class="vlan-card-note">
       {{ message }}
     </p>
@@ -149,38 +172,65 @@
     <div v-if="actions.length || openRoute" class="vlan-card-actions">
       <template v-for="(action, index) in actions" :key="action.name">
         <b-tooltip
-          v-if="action.disabledTip"
-          :label="action.disabledTip"
+          v-if="action.disabledTip || action.icon"
+          :label="actionTip(action)"
           type="is-light"
           position="is-top"
+          :delay="action.disabledTip ? null : 500"
           multilined>
           <button
             type="button"
             :class="['button', 'is-small', action.type ?? 'is-light']"
-            aria-disabled="true"
-            :aria-describedby="`${headingId}-why-${index}`">
-            {{ action.label }}
+            :data-action="action.disabledTip ? undefined : action.name"
+            :aria-label="action.icon ? action.label : undefined"
+            :aria-disabled="action.disabledTip ? 'true' : undefined"
+            :aria-describedby="
+              action.disabledTip || action.description
+                ? `${headingId}-why-${index}`
+                : undefined
+            "
+            @click="!action.disabledTip && act(action.name, action.args)">
+            <b-icon
+              v-if="action.icon"
+              :icon="action.icon"
+              size="is-small"
+              aria-hidden="true" />
+            <template v-else>{{ action.label }}</template>
           </button>
-          <span :id="`${headingId}-why-${index}`" class="is-sr-only">{{
-            action.disabledTip
-          }}</span>
+          <span
+            v-if="action.disabledTip || action.description"
+            :id="`${headingId}-why-${index}`"
+            class="is-sr-only"
+            >{{ action.disabledTip ?? action.description }}</span
+          >
         </b-tooltip>
         <button
           v-else
           type="button"
-          :class="['button', 'is-small', action.type ?? 'is-light']"
+          :class="[
+            'button',
+            'is-small',
+            action.type ?? 'is-light',
+            { 'is-loading': action.loading },
+          ]"
           :data-action="action.name"
-          @click="act(action.name, action.args)">
+          @click="!action.loading && act(action.name, action.args)">
           {{ action.label }}
         </button>
       </template>
-      <router-link
+      <b-tooltip
         v-if="openRoute"
-        :to="openRoute"
-        class="button is-small is-light"
-        :aria-label="`Open the experiment ${card.name}`"
-        >Open</router-link
-      >
+        label="Open the experiment"
+        type="is-light"
+        position="is-top"
+        :delay="500">
+        <router-link
+          :to="openRoute"
+          class="button is-small is-light"
+          :aria-label="`Open the experiment ${card.name}`">
+          <b-icon icon="flask" size="is-small" aria-hidden="true" />
+        </router-link>
+      </b-tooltip>
     </div>
   </article>
 </template>
@@ -198,6 +248,17 @@
     worstKind,
     worstSeverity,
   } from '@/utils/vlans.js';
+
+  const PIN_LIVE_TIP =
+    'Pin live IDs: copy the VLAN IDs that minimega allocated to this ' +
+    'running experiment into its spec, so that the next start gives the ' +
+    'same IDs';
+
+  // the IDs of the busy entries for op, such as 42 for 'add:42'
+  const busyIds = (busy, op) =>
+    busy
+      .filter((key) => key.startsWith(`${op}:`))
+      .map((key) => Number(key.slice(op.length + 1)));
 
   const SEVERITY_TEXT = {
     conflict: 'Conflict',
@@ -219,6 +280,8 @@
       minimegaOk: { type: Boolean, default: true },
       // a free ID to offer each conflicting alias, by alias
       suggestions: { type: Object, default: () => ({}) },
+      // the blacklist changes in progress, such as 'add:42' and 'remove:7'
+      busy: { type: Array, default: () => [] },
     },
     // select(key); open(id): show an ID's details; act({ name, card, ... })
     emits: ['select', 'open', 'act'],
@@ -278,13 +341,31 @@
         if (!roleAllowed('experiments', 'get', this.card.name)) return null;
         return { name: 'experiment', params: { id: this.card.name } };
       },
-      // the card's buttons, each { name, label, type?, args?, disabledTip? }
+      // the IDs that are being added to or removed from the blacklist
+      adding() {
+        return busyIds(this.busy, 'add');
+      },
+      removing() {
+        return busyIds(this.busy, 'remove');
+      },
+      busyTexts() {
+        return [
+          ...this.adding.map((id) => `Adding ${id} to the blacklist…`),
+          ...this.removing.map((id) => `Removing ${id} from the blacklist…`),
+        ];
+      },
+      // the card's buttons, each { name, label, type?, args?, disabledTip?,
+      // loading? }, and for an icon button its icon, tip and description?
       actions() {
         const card = this.card;
         const list = [];
         if (card.kind === 'blacklist') {
           if (roleAllowed('vlans/blacklist', 'create', '*')) {
-            list.push({ name: 'blacklist-add', label: 'Add an ID…' });
+            list.push({
+              name: 'blacklist-add',
+              label: 'Add an ID…',
+              loading: this.adding.length > 0,
+            });
           }
           return list;
         }
@@ -315,13 +396,22 @@
           );
         }
         if (card.aliases.length) {
-          list.push(locked({ name: 'edit-ids', label: 'Edit IDs…' }));
+          list.push(
+            locked({
+              name: 'edit-ids',
+              label: 'Edit IDs…',
+              icon: 'pencil',
+              tip: 'Edit IDs',
+            }),
+          );
         }
         const overlap = card.issues.includes('range-overlap');
         list.push(
           locked({
             name: 'range',
             label: overlap ? 'Suggest a range…' : 'Set range…',
+            icon: 'arrows-left-right',
+            tip: overlap ? 'Suggest a range' : 'Set range',
             args: { suggest: overlap },
           }),
         );
@@ -329,13 +419,26 @@
           running &&
           card.aliases.some((a) => a.live && a.live !== a.pinned)
         ) {
-          list.push({ name: 'pin-live', label: 'Pin live IDs…' });
+          list.push({
+            name: 'pin-live',
+            label: 'Pin live IDs…',
+            icon: 'thumbtack',
+            tip: PIN_LIVE_TIP,
+            description: PIN_LIVE_TIP,
+          });
         }
         return list;
       },
     },
     methods: {
       validVlan,
+      // the tooltip of an action: its tip, and why it is disabled
+      actionTip(action) {
+        if (!action.disabledTip) return action.tip;
+        return action.icon
+          ? `${action.tip}: ${action.disabledTip}`
+          : action.disabledTip;
+      },
       // what minimega gives the alias, in words
       liveText(a) {
         if (a.live) return `allocated ${a.live}`;
@@ -535,6 +638,22 @@
     margin: 0;
     font-size: 0.85rem;
     color: #ffe08a;
+  }
+
+  /* a live region, so it is there (and empty) while nothing is busy */
+  .content p.vlan-card-busy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    margin: 0;
+    font-size: 0.85rem;
+    color: #e6e6e6;
+  }
+
+  .vlan-card-busy-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
   }
 
   .vlan-card-actions {

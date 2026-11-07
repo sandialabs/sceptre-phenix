@@ -68,11 +68,11 @@ const cardNames = (wrapper) =>
   wrapper.findAll('.vlan-card-select').map((b) => textOf(b));
 const query = (wrapper) => wrapper.router.currentRoute.value.query;
 
-// clicks the button with this text in node
+// clicks the button with this text, or this label for an icon button, in node
 async function click(node, text) {
   const button = node
     .findAll('button, a.button')
-    .find((b) => textOf(b) === text);
+    .find((b) => (textOf(b) || b.attributes('aria-label')) === text);
   if (!button) throw new Error(`no button ${text}: ${buttons(node)}`);
   await button.trigger('click');
   await flushPromises();
@@ -165,7 +165,38 @@ describe('the By experiment view', () => {
       'Pin live IDs…',
     ]);
     const tips = tooltipButtons(sub).filter((t) => t.disabled);
-    expect(tips.map((t) => t.tooltip)).toEqual([RUNNING_TIP, RUNNING_TIP]);
+    expect(tips.map((t) => t.tooltip)).toEqual([
+      `Edit IDs: ${RUNNING_TIP}`,
+      `Suggest a range: ${RUNNING_TIP}`,
+    ]);
+  });
+
+  it('draws the ID, range and pin fixes and the experiment link as icons with tooltips', async () => {
+    const wrapper = await page();
+    const tips = tooltipButtons(expCard(wrapper, 'substation-a'));
+    expect(tips.map((t) => [t.label, t.tooltip])).toEqual([
+      ['Edit IDs…', `Edit IDs: ${RUNNING_TIP}`],
+      ['Suggest a range…', `Suggest a range: ${RUNNING_TIP}`],
+      [
+        'Pin live IDs…',
+        'Pin live IDs: copy the VLAN IDs that minimega allocated to this ' +
+          'running experiment into its spec, so that the next start gives ' +
+          'the same IDs',
+      ],
+      ['Open the experiment substation-a', 'Open the experiment'],
+    ]);
+    // each shows its icon only; the words are its tooltip and its name
+    expect(tips.map((t) => textOf(t.control))).toEqual(['', '', '', '']);
+    expect(
+      tips.map((t) => t.control.findComponent({ name: 'BIcon' }).props('icon')),
+    ).toEqual(['pencil', 'arrows-left-right', 'thumbtack', 'flask']);
+    expect(tips.at(-1).control.attributes('href')).toContain('substation-a');
+    const ranged = tooltipButtons(expCard(wrapper, 'scratch'));
+    expect(ranged.map((t) => t.tooltip)).toEqual([
+      'Edit IDs',
+      'Set range',
+      'Open the experiment',
+    ]);
   });
 
   it.each([
@@ -728,6 +759,55 @@ describe('the dialogs', () => {
     expect(axios.delete).toHaveBeenCalledWith(
       'experiments/ics-training/vlans/range',
     );
+  });
+
+  // a request that stays open until finish() resolves it
+  const held = () => {
+    let finish;
+    const promise = new Promise((resolve) => {
+      finish = () => resolve({ data: {} });
+    });
+    return { promise, finish: () => finish() };
+  };
+  const busyText = (wrapper) =>
+    textOf(card(wrapper, 'blacklist').find('[role="status"]'));
+
+  it('spins an ID until the blacklist removes it', async () => {
+    const request = held();
+    axios.delete.mockReturnValue(request.promise);
+    const wrapper = await page('/vlans?view=blacklist');
+    await click(card(wrapper, 'blacklist'), 'Remove 100 from the blacklist');
+    await confirmDialog();
+    expect(buttons(card(wrapper, 'blacklist'))).toContain(
+      'Remove 100 from the blacklist (spinning)',
+    );
+    expect(busyText(wrapper)).toBe('Removing 100 from the blacklist…');
+    request.finish();
+    await flushPromises();
+    expect(buttons(card(wrapper, 'blacklist'))).not.toContain(
+      'Remove 100 from the blacklist (spinning)',
+    );
+    expect(busyText(wrapper)).toBe('');
+    expect(toasts().at(-1).text).toBe('Removed 100 from the blacklist');
+  });
+
+  it('spins the Add button until the blacklist adds the ID', async () => {
+    const request = held();
+    axios.put.mockReturnValue(request.promise);
+    const wrapper = await page('/vlans?view=blacklist');
+    await click(card(wrapper, 'blacklist'), 'Add an ID…');
+    await confirmDialog('42');
+    expect(axios.put).toHaveBeenCalledWith('vlans/blacklist/42');
+    expect(
+      buttons(card(wrapper, 'blacklist').find('.vlan-card-actions')),
+    ).toEqual(['Add an ID… (spinning)']);
+    expect(busyText(wrapper)).toBe('Adding 42 to the blacklist…');
+    request.finish();
+    await flushPromises();
+    expect(
+      buttons(card(wrapper, 'blacklist').find('.vlan-card-actions')),
+    ).toEqual(['Add an ID…']);
+    expect(busyText(wrapper)).toBe('');
   });
 
   it('pins the live IDs of a running experiment after a confirm', async () => {
