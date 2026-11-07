@@ -2233,72 +2233,34 @@ func (m Minimega) TapVLAN(opts ...TapOption) error { //nolint:funlen // complex 
 	if o.netns != "" {
 		plog.Info(
 			plog.TypeSystem,
-			"creating network namespace for tap on host",
+			"configuring network namespace for tap on host",
 			"tap",
 			o.name,
 			hostColumn,
 			o.host,
 		)
 
-		cmd := "ip netns add " + o.name
-
-		err := m.MeshShell(o.host, cmd)
-		if err != nil {
-			return fmt.Errorf("creating network namespace on host %s: %w", o.host, err)
-		}
-
-		plog.Info(
-			plog.TypeSystem,
-			"moving tap to network namespace on host",
-			"tap",
-			o.name,
-			hostColumn,
-			o.host,
-		)
-
-		cmd = fmt.Sprintf("ip link set dev %s netns %s", o.name, o.name)
-
-		err = m.MeshShell(o.host, cmd)
-		if err != nil {
-			return fmt.Errorf("moving tap to network namespace on host %s: %w", o.host, err)
-		}
-
-		plog.Info(
-			plog.TypeSystem,
-			"bringing tap up in network namespace on host",
-			"tap",
-			o.name,
-			hostColumn,
-			o.host,
-		)
-
-		cmd = fmt.Sprintf("ip netns exec %s ip link set dev %s up", o.name, o.name)
-
-		err = m.MeshShell(o.host, cmd)
-		if err != nil {
-			return fmt.Errorf("bringing tap up in network namespace on host %s: %w", o.host, err)
+		steps := []ShellStep{
+			{Action: "creating network namespace on host " + o.host, Command: "ip netns add " + o.name},
+			{
+				Action:  "moving tap to network namespace on host " + o.host,
+				Command: fmt.Sprintf("ip link set dev %s netns %s", o.name, o.name),
+			},
+			{
+				Action:  "bringing tap up in network namespace on host " + o.host,
+				Command: fmt.Sprintf("ip netns exec %s ip link set dev %s up", o.name, o.name),
+			},
 		}
 
 		if o.ip != "" {
-			plog.Info(
-				plog.TypeSystem,
-				"setting IP address for tap in network namespace on host",
-				"tap",
-				o.name,
-				hostColumn,
-				o.host,
-			)
+			steps = append(steps, ShellStep{
+				Action:  "setting IP address for tap in network namespace on host " + o.host,
+				Command: fmt.Sprintf("ip netns exec %s ip addr add %s dev %s", o.name, o.ip, o.name),
+			})
+		}
 
-			cmd := fmt.Sprintf("ip netns exec %s ip addr add %s dev %s", o.name, o.ip, o.name)
-
-			err := m.MeshShell(o.host, cmd)
-			if err != nil {
-				return fmt.Errorf(
-					"setting IP address for tap in network namespace on host %s: %w",
-					o.host,
-					err,
-				)
-			}
+		if err := shellSteps(m.MeshShell, o.host, steps); err != nil {
+			return err
 		}
 	}
 
@@ -2331,6 +2293,19 @@ func validateTap(o tapOptions) error {
 
 		if err := ValidateArg(a.value); err != nil {
 			return fmt.Errorf("tap %s: %w", a.what, err)
+		}
+	}
+
+	// a create in a network namespace writes the name and IP into one sh script
+	if !o.untap && o.netns != "" {
+		if err := ValidateShellWord(o.name); err != nil {
+			return fmt.Errorf("tap name: %w", err)
+		}
+
+		if o.ip != "" {
+			if err := ValidateShellWord(o.ip); err != nil {
+				return fmt.Errorf("tap IP: %w", err)
+			}
 		}
 	}
 

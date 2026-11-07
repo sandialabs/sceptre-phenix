@@ -98,6 +98,21 @@ var registerTapPatterns = sync.OnceFunc(func() {
 // tapFuzzSafe matches values every minimega command takes as one argument.
 var tapFuzzSafe = regexp.MustCompile(`^[A-Za-z0-9_./-]+$`)
 
+// tapNetnsScript is the sh script TapVLAN runs to move tap name, with IP ip ("" for none), into its network namespace.
+func tapNetnsScript(name, ip string) string {
+	steps := []string{
+		"ip netns add " + name + " || exit 100",
+		"ip link set dev " + name + " netns " + name + " || exit 101",
+		"ip netns exec " + name + " ip link set dev " + name + " up || exit 102",
+	}
+
+	if ip != "" {
+		steps = append(steps, "ip netns exec "+name+" ip addr add "+ip+" dev "+name+" || exit 103")
+	}
+
+	return strings.Join(steps, "; ")
+}
+
 // FuzzTapVLAN checks that every command TapVLAN sends reaches minimega's
 // handlers with exactly the values it was given, that it refuses a value
 // otherwise without sending anything, and that it takes plain values.
@@ -174,10 +189,7 @@ func FuzzTapVLAN(f *testing.F) {
 		}
 
 		shell := [][]string{
-			{"ip", "netns", "add", name},
-			{"ip", "link", "set", "dev", name, "netns", name},
-			{"ip", "netns", "exec", name, "ip", "link", "set", "dev", name, "up"},
-			{"ip", "netns", "exec", name, "ip", "addr", "add", ip, "dev", name},
+			{"sh", "-c", tapNetnsScript(name, ip)},
 			{"ip", "netns", "delete", name},
 		}
 
