@@ -18,6 +18,7 @@ import (
 	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
 	"phenix/util"
+	"phenix/util/mm"
 	"phenix/util/mm/mmcli"
 	"phenix/util/plog"
 )
@@ -416,7 +417,6 @@ func (v *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-//nolint:cyclop,funlen,gocyclo,maintidx // complex logic
 func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 	var app ifaces.ScenarioApp
 
@@ -447,327 +447,13 @@ func (Vrouter) PostStart(ctx context.Context, exp *types.Experiment) error {
 			continue
 		}
 
-		cmd := mmcli.NewNamespacedCommand(exp.Metadata.Name)
-
-		for idx, iface := range node.Network().Interfaces() {
-			switch strings.ToLower(iface.Proto()) {
-			case "static":
-				// We only want to set a default route if OSPF isn't being used.
-				if iface.Gateway() != "" {
-					cmd.Command = fmt.Sprintf(
-						"router %s gw %s",
-						node.General().Hostname(),
-						iface.Gateway(),
-					)
-
-					err := mmcli.ErrorResponse(mmcli.Run(cmd))
-					if err != nil {
-						return fmt.Errorf(
-							"configuring default gateway for router %s: %w",
-							node.General().Hostname(),
-							err,
-						)
-					}
-				}
-
-				// We need to set the IP address for both static and OSPF interfaces, so we fallthrough here.
-				fallthrough
-			case "ospf":
-				cmd.Command = fmt.Sprintf(
-					"router %s interface %d %s/%d",
-					node.General().Hostname(),
-					idx,
-					iface.Address(),
-					iface.Mask(),
-				)
-
-				err := mmcli.ErrorResponse(mmcli.Run(cmd))
-				if err != nil {
-					return fmt.Errorf(
-						"configuring interface for router %s: %w",
-						node.General().Hostname(),
-						err,
-					)
-				}
-			case "dhcp":
-				cmd.Command = fmt.Sprintf(
-					"router %s interface %d dhcp",
-					node.General().Hostname(),
-					idx,
-				)
-
-				err := mmcli.ErrorResponse(mmcli.Run(cmd))
-				if err != nil {
-					return fmt.Errorf(
-						"configuring interface for router %s: %w",
-						node.General().Hostname(),
-						err,
-					)
-				}
-			}
+		// check every command first, so that a bad value does not leave the router half configured
+		if err := configureRouter(checkRouterCommand, exp.Metadata.Name, node, app); err != nil {
+			return err
 		}
 
-		for _, route := range node.Network().Routes() {
-			cmd.Command = fmt.Sprintf(
-				"router %s route static %s %s",
-				node.General().Hostname(),
-				route.Destination(),
-				route.Next(),
-			)
-
-			err := mmcli.ErrorResponse(mmcli.Run(cmd))
-			if err != nil {
-				return fmt.Errorf(
-					"configuring static route for router %s: %w",
-					node.General().Hostname(),
-					err,
-				)
-			}
-		}
-
-		if node.Network().OSPF() != nil {
-			cmd.Command = fmt.Sprintf(
-				"router %s rid %s",
-				node.General().Hostname(),
-				node.Network().OSPF().RouterID(),
-			)
-
-			err := mmcli.ErrorResponse(mmcli.Run(cmd))
-			if err != nil {
-				return fmt.Errorf(
-					"configuring router ID for router %s: %w",
-					node.General().Hostname(),
-					err,
-				)
-			}
-
-			for _, area := range node.Network().OSPF().Areas() {
-				for idx, iface := range node.Network().Interfaces() {
-					if !strings.EqualFold(iface.Proto(), "ospf") {
-						continue
-					}
-
-					ip := net.ParseIP(iface.Address())
-					if ip == nil {
-						continue
-					}
-
-					for _, network := range area.AreaNetworks() {
-						_, ipnet, err := net.ParseCIDR(network.Network())
-						if err != nil {
-							continue
-						}
-
-						if ipnet.Contains(ip) {
-							var aid int // assume area ID of 0 if not provided
-
-							if area.AreaID() != nil {
-								aid = *area.AreaID()
-							}
-
-							cmd.Command = fmt.Sprintf(
-								"router %s route ospf %d %d",
-								node.General().Hostname(),
-								aid,
-								idx,
-							)
-
-							err := mmcli.ErrorResponse(mmcli.Run(cmd))
-							if err != nil {
-								return fmt.Errorf(
-									"configuring OSPF area network for router %s: %w",
-									node.General().Hostname(),
-									err,
-								)
-							}
-						}
-					}
-				}
-			}
-		}
-
-		for idx, iface := range node.Network().Interfaces() {
-			if name := iface.RulesetIn(); name != "" {
-				for _, ruleset := range node.Network().Rulesets() {
-					if ruleset.Name() == name {
-						err := addChainRules(cmd, node.General().Hostname(), ruleset)
-						if err != nil {
-							return fmt.Errorf("processing ruleset rules: %w", err)
-						}
-
-						cmd.Command = fmt.Sprintf(
-							"router %s fw chain %s apply in %d",
-							node.General().Hostname(),
-							ruleset.Name(),
-							idx,
-						)
-
-						err = mmcli.ErrorResponse(mmcli.Run(cmd))
-						if err != nil {
-							return fmt.Errorf(
-								"applying firewall chain to interface for router %s: %w",
-								node.General().Hostname(),
-								err,
-							)
-						}
-
-						break
-					}
-				}
-			}
-
-			if name := iface.RulesetOut(); name != "" {
-				for _, ruleset := range node.Network().Rulesets() {
-					if ruleset.Name() == name {
-						err := addChainRules(cmd, node.General().Hostname(), ruleset)
-						if err != nil {
-							return fmt.Errorf("processing ruleset rules: %w", err)
-						}
-
-						cmd.Command = fmt.Sprintf(
-							"router %s fw chain %s apply out %d",
-							node.General().Hostname(),
-							ruleset.Name(),
-							idx,
-						)
-
-						err = mmcli.ErrorResponse(mmcli.Run(cmd))
-						if err != nil {
-							return fmt.Errorf(
-								"applying firewall chain to interface for router %s: %w",
-								node.General().Hostname(),
-								err,
-							)
-						}
-
-						break
-					}
-				}
-			}
-		}
-
-		if app != nil {
-			for _, host := range app.Hosts() {
-				if host.Hostname() != node.General().Hostname() {
-					continue
-				}
-
-				md := host.Metadata()
-
-				if _, ok := md["dhcp"]; ok {
-					var dhcp []DHCPConfig
-
-					err := mapstructure.Decode(md["dhcp"], &dhcp)
-					if err != nil {
-						return fmt.Errorf("decoding DHCP config: %w", err)
-					}
-
-					for _, d := range dhcp {
-						for _, r := range d.Ranges {
-							cmd.Command = fmt.Sprintf(
-								"router %s dhcp %s range %s %s",
-								host.Hostname(),
-								d.ListenAddr,
-								r.LowAddr,
-								r.HighAddr,
-							)
-
-							err := mmcli.ErrorResponse(mmcli.Run(cmd))
-							if err != nil {
-								return fmt.Errorf(
-									"configuring DHCP range for router %s: %w",
-									host.Hostname(),
-									err,
-								)
-							}
-						}
-
-						if d.DefaultRoute != "" {
-							cmd.Command = fmt.Sprintf(
-								"router %s dhcp %s router %s",
-								host.Hostname(),
-								d.ListenAddr,
-								d.DefaultRoute,
-							)
-
-							err := mmcli.ErrorResponse(mmcli.Run(cmd))
-							if err != nil {
-								return fmt.Errorf(
-									"configuring DHCP default route for router %s: %w",
-									host.Hostname(),
-									err,
-								)
-							}
-						}
-
-						for _, ns := range d.DNS {
-							cmd.Command = fmt.Sprintf(
-								"router %s dhcp %s dns %s",
-								host.Hostname(),
-								d.ListenAddr,
-								ns,
-							)
-
-							err := mmcli.ErrorResponse(mmcli.Run(cmd))
-							if err != nil {
-								return fmt.Errorf(
-									"configuring DHCP DNS server for router %s: %w",
-									host.Hostname(),
-									err,
-								)
-							}
-						}
-
-						for mac, ip := range d.Static {
-							cmd.Command = fmt.Sprintf(
-								"router %s dhcp %s static %s %s",
-								host.Hostname(),
-								d.ListenAddr,
-								mac,
-								ip,
-							)
-
-							err := mmcli.ErrorResponse(mmcli.Run(cmd))
-							if err != nil {
-								return fmt.Errorf(
-									"configuring DHCP static assignment for router %s: %w",
-									host.Hostname(),
-									err,
-								)
-							}
-						}
-					}
-				}
-
-				if _, ok := md["dns"]; ok {
-					var dns map[string]string
-
-					err := mapstructure.Decode(md["dns"], &dns)
-					if err != nil {
-						return fmt.Errorf("decoding DNS config: %w", err)
-					}
-
-					for ip, name := range dns {
-						cmd.Command = fmt.Sprintf("router %s dns %s %s", host.Hostname(), ip, name)
-
-						err := mmcli.ErrorResponse(mmcli.Run(cmd))
-						if err != nil {
-							return fmt.Errorf(
-								"configuring DNS mapping for router %s: %w",
-								host.Hostname(),
-								err,
-							)
-						}
-					}
-				}
-			}
-		}
-
-		cmd.Command = fmt.Sprintf("router %s commit", node.General().Hostname())
-
-		err := mmcli.ErrorResponse(mmcli.Run(cmd))
-		if err != nil {
-			return fmt.Errorf("committing config for router %s: %w", node.General().Hostname(), err)
+		if err := configureRouter(runRouterCommand, exp.Metadata.Name, node, app); err != nil {
+			return err
 		}
 	}
 
@@ -1092,7 +778,9 @@ func configureNTP(exp *types.Experiment, hostname string) (string, error) {
 	return "", ErrNTPConfigNotFound
 }
 
-func addChainRules(cmd *mmcli.Command, node string, ruleset ifaces.NodeNetworkRuleset) error {
+func addChainRules(
+	run func(*mmcli.Command) error, cmd *mmcli.Command, node string, ruleset ifaces.NodeNetworkRuleset,
+) error {
 	for _, rule := range ruleset.Rules() {
 		dst := rule.Destination().Address()
 
@@ -1129,7 +817,7 @@ func addChainRules(cmd *mmcli.Command, node string, ruleset ifaces.NodeNetworkRu
 			)
 		}
 
-		err := mmcli.ErrorResponse(mmcli.Run(cmd))
+		err := run(cmd)
 		if err != nil {
 			return fmt.Errorf("adding firewall rule for router %s: %w", node, err)
 		}
@@ -1141,7 +829,7 @@ func addChainRules(cmd *mmcli.Command, node string, ruleset ifaces.NodeNetworkRu
 			ruleset.Default(),
 		)
 
-		err = mmcli.ErrorResponse(mmcli.Run(cmd))
+		err = run(cmd)
 		if err != nil {
 			return fmt.Errorf("setting default firewall chain action for router %s: %w", node, err)
 		}
@@ -1163,4 +851,355 @@ func generateSecret(n int) string {
 	}
 
 	return string(b)
+}
+
+// configureRouter sends the minimega router commands that configure node, a
+// minirouter in namespace ns, with run. app is the vrouter app of the scenario, or nil.
+//
+//nolint:cyclop,funlen,gocyclo,maintidx // complex logic
+func configureRouter(run func(*mmcli.Command) error, ns string, node ifaces.NodeSpec, app ifaces.ScenarioApp) error {
+	cmd := mmcli.NewNamespacedCommand(ns)
+
+	for idx, iface := range node.Network().Interfaces() {
+		switch strings.ToLower(iface.Proto()) {
+		case "static":
+			// We only want to set a default route if OSPF isn't being used.
+			if iface.Gateway() != "" {
+				cmd.Command = fmt.Sprintf(
+					"router %s gw %s",
+					node.General().Hostname(),
+					iface.Gateway(),
+				)
+
+				err := run(cmd)
+				if err != nil {
+					return fmt.Errorf(
+						"configuring default gateway for router %s: %w",
+						node.General().Hostname(),
+						err,
+					)
+				}
+			}
+
+			// We need to set the IP address for both static and OSPF interfaces, so we fallthrough here.
+			fallthrough
+		case "ospf":
+			cmd.Command = fmt.Sprintf(
+				"router %s interface %d %s/%d",
+				node.General().Hostname(),
+				idx,
+				iface.Address(),
+				iface.Mask(),
+			)
+
+			err := run(cmd)
+			if err != nil {
+				return fmt.Errorf(
+					"configuring interface for router %s: %w",
+					node.General().Hostname(),
+					err,
+				)
+			}
+		case "dhcp":
+			cmd.Command = fmt.Sprintf(
+				"router %s interface %d dhcp",
+				node.General().Hostname(),
+				idx,
+			)
+
+			err := run(cmd)
+			if err != nil {
+				return fmt.Errorf(
+					"configuring interface for router %s: %w",
+					node.General().Hostname(),
+					err,
+				)
+			}
+		}
+	}
+
+	for _, route := range node.Network().Routes() {
+		cmd.Command = fmt.Sprintf(
+			"router %s route static %s %s",
+			node.General().Hostname(),
+			route.Destination(),
+			route.Next(),
+		)
+
+		err := run(cmd)
+		if err != nil {
+			return fmt.Errorf(
+				"configuring static route for router %s: %w",
+				node.General().Hostname(),
+				err,
+			)
+		}
+	}
+
+	if node.Network().OSPF() != nil {
+		cmd.Command = fmt.Sprintf(
+			"router %s rid %s",
+			node.General().Hostname(),
+			node.Network().OSPF().RouterID(),
+		)
+
+		err := run(cmd)
+		if err != nil {
+			return fmt.Errorf(
+				"configuring router ID for router %s: %w",
+				node.General().Hostname(),
+				err,
+			)
+		}
+
+		for _, area := range node.Network().OSPF().Areas() {
+			for idx, iface := range node.Network().Interfaces() {
+				if !strings.EqualFold(iface.Proto(), "ospf") {
+					continue
+				}
+
+				ip := net.ParseIP(iface.Address())
+				if ip == nil {
+					continue
+				}
+
+				for _, network := range area.AreaNetworks() {
+					_, ipnet, err := net.ParseCIDR(network.Network())
+					if err != nil {
+						continue
+					}
+
+					if ipnet.Contains(ip) {
+						var aid int // assume area ID of 0 if not provided
+
+						if area.AreaID() != nil {
+							aid = *area.AreaID()
+						}
+
+						cmd.Command = fmt.Sprintf(
+							"router %s route ospf %d %d",
+							node.General().Hostname(),
+							aid,
+							idx,
+						)
+
+						err := run(cmd)
+						if err != nil {
+							return fmt.Errorf(
+								"configuring OSPF area network for router %s: %w",
+								node.General().Hostname(),
+								err,
+							)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	for idx, iface := range node.Network().Interfaces() {
+		if name := iface.RulesetIn(); name != "" {
+			for _, ruleset := range node.Network().Rulesets() {
+				if ruleset.Name() == name {
+					err := addChainRules(run, cmd, node.General().Hostname(), ruleset)
+					if err != nil {
+						return fmt.Errorf("processing ruleset rules: %w", err)
+					}
+
+					cmd.Command = fmt.Sprintf(
+						"router %s fw chain %s apply in %d",
+						node.General().Hostname(),
+						ruleset.Name(),
+						idx,
+					)
+
+					err = run(cmd)
+					if err != nil {
+						return fmt.Errorf(
+							"applying firewall chain to interface for router %s: %w",
+							node.General().Hostname(),
+							err,
+						)
+					}
+
+					break
+				}
+			}
+		}
+
+		if name := iface.RulesetOut(); name != "" {
+			for _, ruleset := range node.Network().Rulesets() {
+				if ruleset.Name() == name {
+					err := addChainRules(run, cmd, node.General().Hostname(), ruleset)
+					if err != nil {
+						return fmt.Errorf("processing ruleset rules: %w", err)
+					}
+
+					cmd.Command = fmt.Sprintf(
+						"router %s fw chain %s apply out %d",
+						node.General().Hostname(),
+						ruleset.Name(),
+						idx,
+					)
+
+					err = run(cmd)
+					if err != nil {
+						return fmt.Errorf(
+							"applying firewall chain to interface for router %s: %w",
+							node.General().Hostname(),
+							err,
+						)
+					}
+
+					break
+				}
+			}
+		}
+	}
+
+	if app != nil {
+		for _, host := range app.Hosts() {
+			if host.Hostname() != node.General().Hostname() {
+				continue
+			}
+
+			md := host.Metadata()
+
+			if _, ok := md["dhcp"]; ok {
+				var dhcp []DHCPConfig
+
+				err := mapstructure.Decode(md["dhcp"], &dhcp)
+				if err != nil {
+					return fmt.Errorf("decoding DHCP config: %w", err)
+				}
+
+				for _, d := range dhcp {
+					for _, r := range d.Ranges {
+						cmd.Command = fmt.Sprintf(
+							"router %s dhcp %s range %s %s",
+							host.Hostname(),
+							d.ListenAddr,
+							r.LowAddr,
+							r.HighAddr,
+						)
+
+						err := run(cmd)
+						if err != nil {
+							return fmt.Errorf(
+								"configuring DHCP range for router %s: %w",
+								host.Hostname(),
+								err,
+							)
+						}
+					}
+
+					if d.DefaultRoute != "" {
+						cmd.Command = fmt.Sprintf(
+							"router %s dhcp %s router %s",
+							host.Hostname(),
+							d.ListenAddr,
+							d.DefaultRoute,
+						)
+
+						err := run(cmd)
+						if err != nil {
+							return fmt.Errorf(
+								"configuring DHCP default route for router %s: %w",
+								host.Hostname(),
+								err,
+							)
+						}
+					}
+
+					for _, ns := range d.DNS {
+						cmd.Command = fmt.Sprintf(
+							"router %s dhcp %s dns %s",
+							host.Hostname(),
+							d.ListenAddr,
+							ns,
+						)
+
+						err := run(cmd)
+						if err != nil {
+							return fmt.Errorf(
+								"configuring DHCP DNS server for router %s: %w",
+								host.Hostname(),
+								err,
+							)
+						}
+					}
+
+					for mac, ip := range d.Static {
+						cmd.Command = fmt.Sprintf(
+							"router %s dhcp %s static %s %s",
+							host.Hostname(),
+							d.ListenAddr,
+							mac,
+							ip,
+						)
+
+						err := run(cmd)
+						if err != nil {
+							return fmt.Errorf(
+								"configuring DHCP static assignment for router %s: %w",
+								host.Hostname(),
+								err,
+							)
+						}
+					}
+				}
+			}
+
+			if _, ok := md["dns"]; ok {
+				var dns map[string]string
+
+				err := mapstructure.Decode(md["dns"], &dns)
+				if err != nil {
+					return fmt.Errorf("decoding DNS config: %w", err)
+				}
+
+				for ip, name := range dns {
+					cmd.Command = fmt.Sprintf("router %s dns %s %s", host.Hostname(), ip, name)
+
+					err := run(cmd)
+					if err != nil {
+						return fmt.Errorf(
+							"configuring DNS mapping for router %s: %w",
+							host.Hostname(),
+							err,
+						)
+					}
+				}
+			}
+		}
+	}
+
+	cmd.Command = fmt.Sprintf("router %s commit", node.General().Hostname())
+
+	err := run(cmd)
+	if err != nil {
+		return fmt.Errorf("committing config for router %s: %w", node.General().Hostname(), err)
+	}
+
+	return nil
+}
+
+// checkRouterCommand returns an error if minimega would change one of the
+// topology values phenix wrote into cmd, a minimega router command (see
+// [mm.ValidateUnexpanded]).
+func checkRouterCommand(cmd *mmcli.Command) error {
+	if err := mm.ValidateUnexpanded(cmd.Command); err != nil {
+		return fmt.Errorf("router command: %w", err)
+	}
+
+	return nil
+}
+
+// runRouterCommand runs cmd, a minimega router command, if checkRouterCommand takes it.
+func runRouterCommand(cmd *mmcli.Command) error {
+	if err := checkRouterCommand(cmd); err != nil {
+		return err
+	}
+
+	return mmcli.ErrorResponse(mmcli.Run(cmd)) //nolint:wrapcheck // callers add the step that failed
 }

@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -20,26 +18,22 @@ import (
 )
 
 const (
-	forwardVMArgs   = 2
-	forwardDstArgs  = 3
-	forwardVNC      = "vnc"
-	forwardVNCPort  = 5900
-	maxForwardPort  = 65535
-	defaultFwdHost  = "127.0.0.1"
-	forwardsHeldBy  = "port forwards exist only in the running server"
-	maxHostnameSize = 253
+	forwardVMArgs  = 2
+	forwardDstArgs = 3
+	forwardVNC     = "vnc"
+	forwardVNCPort = 5900
+	maxForwardPort = 65535
+	defaultFwdHost = "127.0.0.1"
+	forwardsHeldBy = "port forwards exist only in the running server"
 )
 
 var (
 	// errBadForwardPort is returned for a port that is not a whole number from 1 to 65535.
 	errBadForwardPort = errors.New("not a port")
 	// errBadForwardHost is returned for a destination host that is not an IP address or a host name.
-	errBadForwardHost = errors.New("not a host")
+	errBadForwardHost = ft.ErrBadHost
 	// errNoForward is returned by a dry run of phenix vm forward remove for a forward that the server does not hold.
 	errNoForward = errors.New("forward not found")
-
-	// forwardHostRegex matches a DNS host name: labels of letters, digits and inner hyphens, joined by dots.
-	forwardHostRegex = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$`)
 )
 
 // parseForwardPort parses a port argument or flag: a whole number from 1 to 65535.
@@ -71,11 +65,7 @@ func parseForwardDestination(value string) (string, int, error) {
 // checkForwardHost checks the destination host of a forward, which minimega
 // gets in a command: an IP address or a DNS host name.
 func checkForwardHost(host string) error {
-	if net.ParseIP(host) != nil || (len(host) <= maxHostnameSize && forwardHostRegex.MatchString(host)) {
-		return nil
-	}
-
-	return fmt.Errorf("%w: %q is not an IP address or a host name", errBadForwardHost, host)
+	return ft.CheckHost(host) //nolint:wrapcheck // the error names the host
 }
 
 // forwardsPath is the API path of the port forwards of the VM vmName of the experiment expName.

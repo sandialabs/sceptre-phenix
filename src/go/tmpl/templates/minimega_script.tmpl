@@ -64,10 +64,10 @@ vm config net {{ .Network.InterfaceConfig }}
 vm config {{ $config }} {{ $value }}
         {{- end }}
         {{- range $match, $replacement := .Overrides }}
-vm config qemu-override "{{ $match }}" "{{ $replacement }}"
+.preprocess false vm config qemu-override "{{ escapeQuoted $match }}" "{{ escapeQuoted $replacement }}"
         {{- end }}
         {{- range $label, $value := .Labels }}
-vm config tags "{{ escapeQuoted $label }}" "{{ escapeQuoted $value }}"
+.preprocess false vm config tags "{{ escapeQuoted $label }}" "{{ escapeQuoted $value }}"
         {{- end }}
 vm launch {{ .General.VMType }} {{ .General.Hostname }}
     {{- end }}

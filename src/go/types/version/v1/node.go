@@ -10,6 +10,7 @@ import (
 	"time"
 
 	ifaces "phenix/types/interfaces"
+	"phenix/util/mm"
 	"phenix/util/plog"
 )
 
@@ -624,6 +625,12 @@ func (n Node) validate() error {
 		)
 	}
 
+	if n.HardwareF != nil && n.HardwareF.CPUF != "" {
+		if err := mm.ValidateUnexpanded(n.HardwareF.CPUF); err != nil {
+			return fmt.Errorf("hardware cpu: %w", err)
+		}
+	}
+
 	if n.DelayF != nil && n.DelayF.TimerF != "" {
 		if _, err := time.ParseDuration(n.DelayF.TimerF); err != nil {
 			return fmt.Errorf("delay timer %q is not a duration such as 5m: %w", n.DelayF.TimerF, err)
@@ -653,6 +660,10 @@ func (n Node) validate() error {
 			seenIfaces[name] = struct{}{}
 		}
 
+		if err := iface.validateUnexpanded(); err != nil {
+			return err
+		}
+
 		if iface.GatewayF == "" {
 			continue
 		}
@@ -670,6 +681,26 @@ func (n Node) validate() error {
 		gateways++
 		if gateways > 1 {
 			return errors.New("internal nodes should not have more than one gateway interface")
+		}
+	}
+
+	return nil
+}
+
+// validateUnexpanded returns an error for a value of iface that phenix writes
+// into a minimega command and that minimega would change (see
+// [mm.ValidateUnexpanded]).
+func (iface *Interface) validateUnexpanded() error {
+	for _, field := range []struct{ name, value string }{
+		{"bridge", iface.BridgeF}, {"vlan", iface.VLANF}, {"driver", iface.DriverF},
+		{"address", iface.AddressF}, {"gateway", iface.GatewayF},
+	} {
+		if field.value == "" {
+			continue
+		}
+
+		if err := mm.ValidateUnexpanded(field.value); err != nil {
+			return fmt.Errorf("interface %q %s: %w", iface.NameF, field.name, err)
 		}
 	}
 

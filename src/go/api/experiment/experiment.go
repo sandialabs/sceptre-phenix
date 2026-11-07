@@ -87,7 +87,13 @@ func hookStartup(exp *types.Experiment, c *store.Config) error {
 		exp.Spec.SetDefaultBridge(defaultBridgeName)
 
 		err := exp.Spec.Init()
-		if err != nil {
+
+		// a stored experiment with a value minimega would change must not stop phenix
+		// from starting; creating or updating it reports the value
+		if errors.Is(err, mm.ErrUnsafeArg) {
+			plog.Warn(plog.TypeSystem, "stored experiment has a value minimega would change",
+				"exp", c.Metadata.Name, "err", err)
+		} else if err != nil {
 			return fmt.Errorf("re-initializing experiment with default bridge: %w", err)
 		}
 

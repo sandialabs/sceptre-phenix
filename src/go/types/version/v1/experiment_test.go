@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -606,5 +607,70 @@ func TestExperimentStatusAppStatus(t *testing.T) {
 	want := ExperimentStatus{AppsF: map[string]any{}, CleanupF: map[string]bool{"app": true}}
 	if diff := cmp.Diff(want, s, cmpopts.EquateEmpty()); diff != "" {
 		t.Errorf("ExperimentStatus after ResetAppStatus() (-want +got):\n%s", diff)
+	}
+}
+
+// Init refuses a value that phenix writes into a minimega command or script
+// and that minimega would change, and names the value.
+func TestInitRefusesValuesMinimegaWouldChange(t *testing.T) {
+	t.Parallel()
+
+	node := func(change func(*Node)) *Node {
+		n := &Node{
+			TypeF:     "VirtualMachine",
+			GeneralF:  &General{HostnameF: "host-01"},
+			HardwareF: &Hardware{OSTypeF: "linux", DrivesF: []*Drive{{ImageF: "$IMAGES/a.qc2"}}},
+			NetworkF: &Network{InterfacesF: []*Interface{
+				{NameF: "eth0", BridgeF: "br0", VLANF: "EXP_1", AddressF: "10.0.0.2", GatewayF: "10.0.0.1", ProtoF: "static"},
+			}},
+		}
+
+		if change != nil {
+			change(n)
+		}
+
+		return n
+	}
+
+	for name, tc := range map[string]struct {
+		node    *Node
+		change  func(*ExperimentSpec)
+		wantMsg string // "" for no error
+	}{
+		// disk paths are not checked
+		"plain values":   {node: node(nil)},
+		"cpu":            {node: node(func(n *Node) { n.HardwareF.CPUF = "$CPU" }), wantMsg: "hardware cpu"},
+		"bridge":         {node: node(func(n *Node) { n.NetworkF.InterfacesF[0].BridgeF = "${BR}" }), wantMsg: `"eth0" bridge`},
+		"vlan":           {node: node(func(n *Node) { n.NetworkF.InterfacesF[0].VLANF = "$1" }), wantMsg: `"eth0" vlan`},
+		"driver":         {node: node(func(n *Node) { n.NetworkF.InterfacesF[0].DriverF = "file:x" }), wantMsg: `"eth0" driver`},
+		"address":        {node: node(func(n *Node) { n.NetworkF.InterfacesF[0].AddressF = "$IP" }), wantMsg: `"eth0" address`},
+		"gateway":        {node: node(func(n *Node) { n.NetworkF.InterfacesF[0].GatewayF = "$GW" }), wantMsg: `"eth0" gateway`},
+		"default bridge": {node: node(nil), change: func(e *ExperimentSpec) { e.DefaultBridgeF = "$B" }, wantMsg: "default bridge"},
+		"VLAN alias": {
+			node: node(nil), change: func(e *ExperimentSpec) { e.VLANsF = &VLANSpec{AliasesF: map[string]int{"$V": 0}} },
+			wantMsg: "VLAN alias",
+		},
+		"schedule": {
+			node: node(nil), change: func(e *ExperimentSpec) { e.SchedulesF = map[string]string{"host-01": "${HOST}"} },
+			wantMsg: "schedule of node",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			spec := &ExperimentSpec{ExperimentNameF: "exp", TopologyF: &TopologySpec{NodesF: []*Node{tc.node}}}
+			if tc.change != nil {
+				tc.change(spec)
+			}
+
+			err := spec.Init()
+
+			switch {
+			case tc.wantMsg == "" && err != nil:
+				t.Errorf("Init() error = %v, want nil", err)
+			case tc.wantMsg != "" && (!errors.Is(err, mm.ErrUnsafeArg) || !strings.Contains(err.Error(), tc.wantMsg)):
+				t.Errorf("Init() error = %v, want %v holding %q", err, mm.ErrUnsafeArg, tc.wantMsg)
+			}
+		})
 	}
 }

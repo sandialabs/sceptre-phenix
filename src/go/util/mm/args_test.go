@@ -182,3 +182,19 @@ func TestUnsafeArgumentsSendNothing(t *testing.T) { //nolint:paralleltest // sha
 		})
 	}
 }
+
+func TestValidateUnexpanded(t *testing.T) {
+	t.Parallel()
+
+	for _, s := range []string{"", "br0", "a b c", "$(df /)", "price $", "10.0.0.1/24", "fileserver:x", "a$"} {
+		if err := ValidateUnexpanded(s); err != nil {
+			t.Errorf("ValidateUnexpanded(%q) = %v, want nil", s, err)
+		}
+	}
+
+	for _, s := range []string{"$HOME", "${X}", "a$1b", "$@", "x ${", "file:a", "router a http://b", `"tar:x"`, "HTTPS://x"} {
+		if err := ValidateUnexpanded(s); !errors.Is(err, ErrUnsafeArg) {
+			t.Errorf("ValidateUnexpanded(%q) = %v, want %v", s, err, ErrUnsafeArg)
+		}
+	}
+}

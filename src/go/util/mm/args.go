@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"slices"
 	"strings"
 	"unicode"
@@ -43,10 +44,42 @@ func ValidateQuotedArg(s string) error {
 		return unsafeRune(s, i)
 	}
 
-	if u, err := url.Parse(s); err == nil {
-		switch u.Scheme {
-		case "file", "http", "https", "tar":
-			return fmt.Errorf("%w: %q starts with the %s: scheme minimega fetches", ErrUnsafeArg, s, u.Scheme)
+	if scheme, ok := fetchedScheme(s); ok {
+		return fmt.Errorf("%w: %q starts with the %s: scheme minimega fetches", ErrUnsafeArg, s, scheme)
+	}
+
+	return nil
+}
+
+// fetchedScheme returns the URL scheme of s if minimega replaces an argument s
+// with a local file it fetches: file:, http:, https: or tar:.
+func fetchedScheme(s string) (string, bool) {
+	u, err := url.Parse(s)
+	if err != nil {
+		return "", false
+	}
+
+	switch u.Scheme {
+	case "file", "http", "https", "tar":
+		return u.Scheme, true
+	}
+
+	return "", false
+}
+
+// ValidateUnexpanded returns an error wrapping ErrUnsafeArg if minimega would
+// change s before it runs a command with s in it. minimega expands environment
+// variables ($VAR, ${VAR}, $1) in every argument, also in quotes, and replaces
+// an argument that starts with a file:, http:, https: or tar: scheme with a
+// local file. s can hold several words, such as a whole command.
+func ValidateUnexpanded(s string) error {
+	if os.Expand(s, func(string) string { return "" }) != s {
+		return fmt.Errorf("%w: minimega expands the $ in %q as an environment variable", ErrUnsafeArg, s)
+	}
+
+	for _, word := range append([]string{s}, strings.Fields(s)...) {
+		if scheme, ok := fetchedScheme(strings.Trim(word, `"'`)); ok {
+			return fmt.Errorf("%w: minimega reads %q in %q as a %s URL", ErrUnsafeArg, word, s, scheme)
 		}
 	}
 

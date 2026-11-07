@@ -16,6 +16,7 @@ import (
 	"phenix/store/storetest"
 	"phenix/types"
 	"phenix/util/common"
+	"phenix/util/mm"
 )
 
 // hookConfig is a config of experiment name, as a config hook gets it.
@@ -107,6 +108,29 @@ func TestStartupHookSetsAMissingDefaultBridge(t *testing.T) { //nolint:parallelt
 				t.Errorf("experimentConfigHook(startup) spec mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// The startup hook keeps a stored experiment with a value that minimega would change, so that phenix still starts;
+// creating the same experiment refuses the value.
+func TestStartupHookKeepsAStoredUnsafeValue(t *testing.T) { //nolint:paralleltest // replaces the package store
+	storetest.Use(t)
+
+	base := t.TempDir()
+	spec := map[string]any{"experimentName": "exp", "baseDir": base, "schedules": map[string]any{"vm": "$HOST"}}
+
+	c := hookConfig("exp", spec, nil)
+	if err := experimentConfigHook("startup", c); err != nil {
+		t.Fatalf("experimentConfigHook(startup) error = %v, want nil", err)
+	}
+
+	if diff := cmp.Diff(hookedSpec{Name: "exp", BaseDir: base, Bridge: defaultBridgeName}, decodeHooked(t, c)); diff != "" {
+		t.Errorf("experimentConfigHook(startup) spec mismatch (-want +got):\n%s", diff)
+	}
+
+	created := hookConfig("exp", map[string]any{"experimentName": "exp", "baseDir": base, "schedules": map[string]any{"vm": "$HOST"}}, nil)
+	if err := experimentConfigHook("create", created); !errors.Is(err, mm.ErrUnsafeArg) {
+		t.Errorf("experimentConfigHook(create) error = %v, want %v", err, mm.ErrUnsafeArg)
 	}
 }
 

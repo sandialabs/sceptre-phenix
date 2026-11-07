@@ -187,6 +187,10 @@ func TestOneCommandFunctions(t *testing.T) { //nolint:paralleltest // shares the
 			sent:    []string{inExp("ns bridge br0 gre")},
 			wantMsg: "bridge exists",
 		},
+		"CreateBridge refuses a bridge minimega would expand": {
+			call:   errOnly(func() error { return CreateBridge(NS("exp"), Bridge("$BRIDGE")) }),
+			wantIs: ErrUnsafeArg,
+		},
 		"ClearC2Responses": {
 			call: errOnly(func() error { return ClearC2Responses(C2NS("exp")) }),
 			sent: []string{inExp("clear cc responses")},
