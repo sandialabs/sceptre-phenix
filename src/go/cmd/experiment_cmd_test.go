@@ -1070,10 +1070,12 @@ func TestExpCmdLifecycle(t *testing.T) { //nolint:paralleltest // replaces the p
 				}
 			}
 
-			// each start gives how long it took
-			for _, r := range logs.Records(t, plogtest.Message("experiment started")) {
-				if d, _ := r["duration"].(string); d == "" || !strings.HasSuffix(d, "s") {
-					t.Errorf("experiment %q logged experiment started with duration %v, want a duration", tt.args, r["duration"])
+			// each start and stop gives how long it took
+			for _, msg := range []string{"experiment started", "experiment stopped"} {
+				for _, r := range logs.Records(t, plogtest.Message(msg)) {
+					if d, _ := r["duration"].(string); d == "" || !strings.HasSuffix(d, "s") {
+						t.Errorf("experiment %q logged %s with duration %v, want a duration", tt.args, msg, r["duration"])
+					}
 				}
 			}
 

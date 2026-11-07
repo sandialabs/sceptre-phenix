@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"time"
 
 	"github.com/gorilla/mux"
 
@@ -828,12 +829,16 @@ func StopExperiment(w http.ResponseWriter, r *http.Request) error {
 		fields.Extra = append(fields.Extra, "phenix.experiment.keep_injection_snapshots", true)
 	}
 
+	begun := time.Now()
+
 	body, err := stopExperiment(name, force, keep)
 	if err != nil {
 		audit.Failure(r, audit.ExperimentStop, "stopping experiment failed", fields, err)
 
 		return err
 	}
+
+	fields.Extra = append(fields.Extra, "phenix.duration", time.Since(begun).Round(time.Millisecond).String())
 
 	audit.Success(r, audit.ExperimentStop, "experiment stopped", fields)
 

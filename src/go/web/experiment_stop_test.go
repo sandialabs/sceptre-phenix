@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -138,9 +139,14 @@ func TestStopExperimentOffersAForcedRetry(t *testing.T) {
 
 	got := events()
 	wantAudit(t, got, "experiment-stop", "failure", map[string]any{"phenix.experiment.name": "running"})
-	wantAudit(t, got, "experiment-stop", "success", map[string]any{
+	stopped := wantAudit(t, got, "experiment-stop", "success", map[string]any{
 		"phenix.experiment.name": "running", "phenix.experiment.force": true,
 	})
+
+	// the success gives how long the stop took
+	if d, _ := stopped["phenix.duration"].(string); stopped != nil && !strings.HasSuffix(d, "s") {
+		t.Errorf("experiment-stop success phenix.duration = %v, want a duration", stopped["phenix.duration"])
+	}
 }
 
 // A stop that leaves the experiment running re-arms what it canceled first:

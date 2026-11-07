@@ -596,11 +596,13 @@ func stopBeforeDelete(dry dryRun, name string) *util.HumanizedError {
 		return nil
 	}
 
+	begun := time.Now()
+
 	if err := experiment.Stop(name, experiment.StopWithForce(true)); err != nil {
 		return util.HumanizeError(err, "%s", "Unable to stop the "+name+" experiment before deleting it")
 	}
 
-	plog.Info(plog.TypeSystem, "experiment stopped", "exp", name)
+	plog.Info(plog.TypeSystem, "experiment stopped", "exp", name, "duration", sinceText(begun))
 
 	return nil
 }
@@ -771,7 +773,7 @@ func newExperimentStartCmd() *cobra.Command {
 					"deploy-mode",
 					exp.Spec.DeployMode(),
 					"duration",
-					time.Since(begun).Round(time.Millisecond).String(),
+					sinceText(begun),
 				)
 
 				if periodic {
@@ -920,12 +922,14 @@ func newExperimentStopCmd() *cobra.Command {
 					continue
 				}
 
+				begun := time.Now()
+
 				err := experiment.Stop(exp.Metadata.Name, stopOptions(cmd)...)
 				if err != nil {
 					return stopError(err, "Problem encountered while stopping the "+exp.Metadata.Name+" experiment")
 				}
 
-				plog.Info(plog.TypeSystem, "experiment stopped", "exp", exp.Metadata.Name)
+				plog.Info(plog.TypeSystem, "experiment stopped", "exp", exp.Metadata.Name, "duration", sinceText(begun))
 			}
 
 			return nil
@@ -1833,4 +1837,9 @@ func init() { //nolint:gochecknoinits // cobra command
 	experimentCmd.AddCommand(newExperimentCaptureCmd())
 
 	addCommandToRoot(experimentCmd, true)
+}
+
+// sinceText returns the time since begun to the millisecond, as text such as 1.25s.
+func sinceText(begun time.Time) string {
+	return time.Since(begun).Round(time.Millisecond).String()
 }
