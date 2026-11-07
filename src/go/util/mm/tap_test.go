@@ -22,17 +22,21 @@ func tapInExpOn(base string) string {
 }
 
 func TestTapVLAN(t *testing.T) { //nolint:paralleltest // shares the fake minimega
-	netns := []string{
-		tapInExpOn("tap create exp//EXP_1 bridge br0 name t1"),
-		tapOn("shell ip netns add t1"),
-		tapOn("shell ip link set dev t1 netns t1"),
-		tapOn("shell ip netns exec t1 ip link set dev t1 up"),
-		tapOn("shell ip netns exec t1 ip addr add 10.0.0.1/24 dev t1"),
+	nsSteps := []string{
+		"ip netns add t1 || exit 100",
+		"ip link set dev t1 netns t1 || exit 101",
+		"ip netns exec t1 ip link set dev t1 up || exit 102",
+		"ip netns exec t1 ip addr add 10.0.0.1/24 dev t1 || exit 103",
 	}
+
+	create := tapInExpOn("tap create exp//EXP_1 bridge br0 name t1")
+	netns := []string{create, tapOn(`shell sh -c "` + strings.Join(nsSteps, "; ") + `"`)}
+	netnsNoIP := []string{create, tapOn(`shell sh -c "` + strings.Join(nsSteps[:3], "; ") + `"`)}
 
 	for name, tc := range map[string]struct {
 		opts    []TapOption
 		failing string // the command minimega fails, "" for none
+		status  string // the error of the failing command, "boom" when ""
 		want    []string
 		wantMsg string // a part of the error, "" for none
 	}{
@@ -57,7 +61,7 @@ func TestTapVLAN(t *testing.T) { //nolint:paralleltest // shares the fake minime
 		},
 		"in a network namespace without an IP": {
 			opts: []TapOption{TapNS("exp"), TapHost("compute1"), TapName("t1"), TapVLANAlias("EXP_1"), TapBridge("br0"), TapNetNS("t1")},
-			want: netns[:4],
+			want: netnsNoIP,
 		},
 		"reports a failed create": {
 			opts: []TapOption{
@@ -71,28 +75,28 @@ func TestTapVLAN(t *testing.T) { //nolint:paralleltest // shares the fake minime
 				TapNS("exp"), TapHost("compute1"), TapName("t1"), TapVLANAlias("EXP_1"), TapBridge("br0"),
 				TapIP("10.0.0.1/24"), TapNetNS("t1"),
 			},
-			failing: netns[1], want: netns[:2], wantMsg: "boom",
+			failing: netns[1], status: "exit status 100", want: netns, wantMsg: "creating network namespace",
 		},
 		"reports a failed move": {
 			opts: []TapOption{
 				TapNS("exp"), TapHost("compute1"), TapName("t1"), TapVLANAlias("EXP_1"), TapBridge("br0"),
 				TapIP("10.0.0.1/24"), TapNetNS("t1"),
 			},
-			failing: netns[2], want: netns[:3], wantMsg: "boom",
+			failing: netns[1], status: "exit status 101", want: netns, wantMsg: "moving tap to network namespace",
 		},
 		"reports a failed link up": {
 			opts: []TapOption{
 				TapNS("exp"), TapHost("compute1"), TapName("t1"), TapVLANAlias("EXP_1"), TapBridge("br0"),
 				TapIP("10.0.0.1/24"), TapNetNS("t1"),
 			},
-			failing: netns[3], want: netns[:4], wantMsg: "boom",
+			failing: netns[1], status: "exit status 102", want: netns, wantMsg: "bringing tap up",
 		},
 		"reports a failed address": {
 			opts: []TapOption{
 				TapNS("exp"), TapHost("compute1"), TapName("t1"), TapVLANAlias("EXP_1"), TapBridge("br0"),
 				TapIP("10.0.0.1/24"), TapNetNS("t1"),
 			},
-			failing: netns[4], want: netns, wantMsg: "boom",
+			failing: netns[1], status: "exit status 103", want: netns, wantMsg: "setting IP address for tap",
 		},
 		"deletes the tap and its network namespace": {
 			opts: []TapOption{TapNS("exp"), TapHost("compute1"), TapName("t1"), TapNetNS("t1"), TapDelete()},
@@ -118,7 +122,12 @@ func TestTapVLAN(t *testing.T) { //nolint:paralleltest // shares the fake minime
 		t.Run(name, func(t *testing.T) {
 			received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
 				if cmd.Raw == tc.failing {
-					return []*minicli.Response{mmtest.Error("compute1", "boom")}
+					msg := tc.status
+					if msg == "" {
+						msg = "boom"
+					}
+
+					return []*minicli.Response{mmtest.Error("compute1", msg)}
 				}
 
 				return answering(nil)(cmd)
