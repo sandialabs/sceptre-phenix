@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"phenix/store"
 	"phenix/types"
 	"phenix/util/mm/mmtest"
+	"phenix/util/plog/plogtest"
 )
 
 // useStartMM answers each minimega command of the real mm.DefaultMM with an
@@ -100,10 +102,17 @@ func TestStartExperimentDryRun(t *testing.T) {
 	useJobs(t)
 
 	received := useStartMM(t)
+	logs := plogtest.Capture(t)
 
 	path := "/api/v1/experiments/down/start"
 	resp := do(t, http.MethodPost, serveAs(t, "alice", testRole("experiments/start", "update", "down")).URL+path,
 		`{"dryRun": true, "vlanMin": 100, "vlanMax": 200}`)
+
+	// the audit record gives how long the start took
+	if records := logs.Records(t, plogtest.Message("experiment started")); len(records) != 1 ||
+		!strings.HasSuffix(fmt.Sprint(records[0]["phenix.duration"]), "s") {
+		t.Errorf("POST %s dry run audit records = %v, want one with phenix.duration", path, records)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("POST %s dry run = %d, want %d: %s", path, resp.StatusCode, http.StatusOK, readBody(t, resp))

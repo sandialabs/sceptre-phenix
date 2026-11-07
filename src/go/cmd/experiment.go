@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -751,6 +752,8 @@ func newExperimentStartCmd() *cobra.Command {
 					continue
 				}
 
+				begun := time.Now()
+
 				err := experiment.Start(ctx, opts.StartOptions(exp.Metadata.Name)...)
 				if err != nil {
 					return startError(err, exp.Metadata.Name)
@@ -767,6 +770,8 @@ func newExperimentStartCmd() *cobra.Command {
 					dryrun,
 					"deploy-mode",
 					exp.Spec.DeployMode(),
+					"duration",
+					time.Since(begun).Round(time.Millisecond).String(),
 				)
 
 				if periodic {

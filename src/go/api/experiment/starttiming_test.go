@@ -38,7 +38,8 @@ func startSteps(t *testing.T, logs *plogtest.Logs) []map[string]any {
 	return steps
 }
 
-// The timer logs each step and the time since the start as the step begins, then the time of each step and the total.
+// The timer logs each step, its time and the time since the start as the step ends, then the time of each step and
+// the total.
 func TestStartTimerLogsEachStep(t *testing.T) {
 	logs := plogtest.Capture(t)
 
@@ -54,14 +55,14 @@ func TestStartTimerLogsEachStep(t *testing.T) {
 	clock = clock.Add(8*time.Second + 123456*time.Microsecond)
 	timer.done()
 
-	records := logs.Records(t, plogtest.Message("experiment start step"))
+	records := logs.Records(t, plogtest.Message(startStepMessage))
 
-	begun := make([][2]any, 0, len(records))
+	ended := make([][3]any, 0, len(records))
 	for _, r := range records {
-		begun = append(begun, [2]any{r["step"], r["elapsed"]})
+		ended = append(ended, [3]any{r["step"], r["time"], r["elapsed"]})
 	}
 
-	if diff := cmp.Diff([][2]any{{"claim", "250ms"}, {"disk-check", "1.75s"}}, begun); diff != "" {
+	if diff := cmp.Diff([][3]any{{"claim", "1.5s", "1.75s"}, {"disk-check", "8.123s", "9.873s"}}, ended); diff != "" {
 		t.Errorf("debug step records mismatch (-want +got):\n%s", diff)
 	}
 

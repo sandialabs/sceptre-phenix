@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/mux"
 
@@ -87,12 +88,16 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	started.Extra = opts.Fields()
 
+	begun := time.Now()
+
 	outcome, err := startExperiment(name, middleware.UserFromContext(ctx), opts)
 	if err != nil {
 		audit.Failure(r, audit.ExperimentStart, "starting experiment failed", started, err)
 
 		return err
 	}
+
+	started.Extra = append(started.Extra, "phenix.duration", time.Since(begun).Round(time.Millisecond).String())
 
 	if outcome.periodic != nil {
 		started.Extra = append(started.Extra, "phenix.job.id", outcome.periodic.ID)

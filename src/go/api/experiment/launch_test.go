@@ -290,7 +290,19 @@ func TestStartLaunchesTheExperiment(t *testing.T) { //nolint:paralleltest // rep
 				}
 			},
 			launches: []mmtest.Command{ns("vm launch"), ns("vm start a"), ns("ns bridge br-exp gre")},
-			info:     []string{"VM b delayed - to be started by user"},
+			info:     []string{"1 VM delayed - to be started by user: b"},
+		},
+		{
+			name: "lists the VMs that the user starts in one note",
+			nodes: func(image string) []map[string]any {
+				return []map[string]any{
+					launchNode("a", image, nil),
+					launchNode("b", image, map[string]any{"delay": map[string]any{"user": true}}),
+					launchNode("c", image, map[string]any{"delay": map[string]any{"user": true}}),
+				}
+			},
+			launches: []mmtest.Command{ns("vm launch"), ns("vm start a")},
+			info:     []string{"2 VMs delayed - to be started by user: b, c"},
 		},
 	}
 
@@ -497,7 +509,7 @@ func TestStartStartsATimerDelayedVM(t *testing.T) { //nolint:paralleltest // rep
 		},
 		Deleted: []string{"exp/miniccc_responses", "head_exp_a_snapshot", "head_exp_c_snapshot"},
 		Info: []string{
-			"VM c delayed - will be started after 1ms", "Waiting for delayed VMs to be started...",
+			"1 VM delayed - will be started after a set time: c (after 1ms)", "Waiting for delayed VMs to be started...",
 			"Time delayed VM c started",
 		},
 		Running:   true,
@@ -565,7 +577,10 @@ func TestStartWithAnErrorChannelWaitsInTheBackground(t *testing.T) { //nolint:pa
 	}
 
 	// a C2 delay with no hostname is left out of the note
-	wantInfo := []string{"VM c delayed - will be started after C2 for [a] is active", "Waiting for delayed VMs to be started..."}
+	wantInfo := []string{
+		"1 VM delayed - will be started when C2 is active on other VMs: c (after a)",
+		"Waiting for delayed VMs to be started...",
+	}
 	if diff := cmp.Diff(wantInfo, notes.Info(ctx, true)); diff != "" {
 		t.Errorf("Start(exp) info mismatch (-want +got):\n%s", diff)
 	}

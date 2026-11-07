@@ -785,6 +785,8 @@ func Start(ctx context.Context, opts ...StartOption) error {
 			start    = make([]string, 0) // nil vs. slice makes a difference here
 		)
 
+		var userDelayed, c2Delayed, timerDelayed []string
+
 		for _, node := range bootable {
 			if node.External() {
 				continue
@@ -793,11 +795,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 			hostname := node.General().Hostname()
 
 			if node.Delay().User() {
-				notes.AddInfo(
-					ctx,
-					true,
-					fmt.Sprintf("VM %s delayed - to be started by user", hostname),
-				)
+				userDelayed = append(userDelayed, hostname)
 
 				continue
 			}
@@ -819,15 +817,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 
 				if len(c2) > 0 {
 					c2s[hostname] = c2
-					notes.AddInfo(
-						ctx,
-						true,
-						fmt.Sprintf(
-							"VM %s delayed - will be started after C2 for %v is active",
-							hostname,
-							hosts,
-						),
-					)
+					c2Delayed = append(c2Delayed, fmt.Sprintf("%s (after %s)", hostname, strings.Join(hosts, ", ")))
 
 					continue
 				}
@@ -835,18 +825,17 @@ func Start(ctx context.Context, opts ...StartOption) error {
 
 			if d := node.Delay().Timer(); d != 0 {
 				delays[hostname] = d
-
-				notes.AddInfo(
-					ctx,
-					true,
-					fmt.Sprintf("VM %s delayed - will be started after %v", hostname, d),
-				)
+				timerDelayed = append(timerDelayed, fmt.Sprintf("%s (after %v)", hostname, d))
 
 				continue
 			}
 
 			start = append(start, hostname)
 		}
+
+		noteDelayed(ctx, "to be started by user", userDelayed)
+		noteDelayed(ctx, "will be started when C2 is active on other VMs", c2Delayed)
+		noteDelayed(ctx, "will be started after a set time", timerDelayed)
 
 		if len(start) == len(bootable) {
 			// Reset start slice so the call to mm.LaunchVMs results in `vm start all`
@@ -967,6 +956,21 @@ func mmStepFailed(ctx context.Context, ns string, asWarn bool, step string, err 
 	}
 
 	return nil
+}
+
+// noteDelayed adds one info note, which is also logged, that counts and lists the VMs of one type of delayed start;
+// it adds nothing when vms is empty.
+func noteDelayed(ctx context.Context, how string, vms []string) {
+	if len(vms) == 0 {
+		return
+	}
+
+	noun := "VMs"
+	if len(vms) == 1 {
+		noun = "VM"
+	}
+
+	notes.AddInfo(ctx, true, fmt.Sprintf("%d %s delayed - %s: %s", len(vms), noun, how, strings.Join(vms, ", ")))
 }
 
 // startStep is a step of Start that runs after the VMs launch.
