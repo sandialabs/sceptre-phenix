@@ -373,6 +373,11 @@ func CreatePortForward(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
+	// an empty host is the default one (see createPortForward)
+	if host != "" && ft.CheckHost(host) != nil {
+		return weberror.New(http.StatusBadRequest, "host must be an IP address or a host name")
+	}
+
 	change, cancel := context.WithTimeout(ctx, changeTimeout)
 	defer cancel()
 
@@ -444,6 +449,10 @@ func DeletePortForward(w http.ResponseWriter, r *http.Request) error {
 
 	if host == "" {
 		host = "127.0.0.1"
+	}
+
+	if err := ft.CheckHost(host); err != nil {
+		return weberror.New(http.StatusBadRequest, "host must be an IP address or a host name")
 	}
 
 	change, cancel := context.WithTimeout(ctx, changeTimeout)

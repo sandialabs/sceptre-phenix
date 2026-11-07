@@ -1121,6 +1121,10 @@ func (Minimega) DisconnectVMInterface(opts ...Option) error {
 func (Minimega) CreateBridge(opts ...Option) error {
 	o := NewOptions(opts...)
 
+	if err := ValidateArg(o.bridge); err != nil {
+		return fmt.Errorf("creating bridge: %w", err)
+	}
+
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = fmt.Sprintf("ns bridge %s gre", o.bridge)
 
@@ -1892,7 +1896,7 @@ func (m Minimega) ExecC2Command(opts ...C2Option) (string, error) { //nolint:fun
 	}
 
 	if o.testConn != "" {
-		cmd := "cc test-conn " + o.testConn
+		cmd := ".preprocess false cc test-conn " + o.testConn
 
 		id, err := exec(cmd)
 		if err != nil {

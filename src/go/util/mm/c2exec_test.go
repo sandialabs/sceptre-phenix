@@ -314,6 +314,12 @@ func TestExecC2CommandMoreOptions(t *testing.T) { //nolint:paralleltest // share
 			wantID: "1",
 			want:   []string{"cc filter uuid=uuid-vm1", "cc test-conn tcp 10.0.0.1 22", clearCCFilterCmd},
 		},
+		// minimega does not expand the packet: the fake fails a command it would expand
+		"tests a connection with a $ in its packet": {
+			opts:   []C2Option{C2VM("vm1"), C2TestConn("udp 10.0.0.1 53 wait 5s $HOME")},
+			wantID: "1",
+			want:   []string{"cc filter uuid=uuid-vm1", "cc test-conn udp 10.0.0.1 53 wait 5s $HOME", clearCCFilterCmd},
+		},
 		"mounts in the local mount directory": {
 			opts:   []C2Option{C2VM("vm1"), C2Mount()},
 			wantID: "",

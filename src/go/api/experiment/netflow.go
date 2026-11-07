@@ -301,6 +301,11 @@ func startNetflow(exp string, maxSize int64) (*Netflow, error) {
 		}
 	}
 
+	if err := mm.ValidateArg(spec.Spec.DefaultBridge()); err != nil {
+		failed()
+		return nil, fmt.Errorf("netflow capture bridge: %w", err)
+	}
+
 	addr := strings.Split(conn.LocalAddr().String(), ":")
 	// The mode command is already broadcast by minimega. Sending it through
 	// every cluster node can cause overlapping mesh broadcasts while a new

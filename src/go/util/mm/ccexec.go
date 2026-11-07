@@ -3,7 +3,6 @@ package mm
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"unicode/utf8"
@@ -44,11 +43,8 @@ func ccExecWord(arg string) (string, error) {
 	}
 
 	// The minimega preprocessor replaces these URLs with a local file path.
-	if u, err := url.Parse(arg); err == nil {
-		switch u.Scheme {
-		case "file", "http", "https", "tar":
-			return "", fmt.Errorf("%w: minimega reads %q as a %s URL", ErrUnsafeC2Arg, arg, u.Scheme)
-		}
+	if scheme, ok := fetchedScheme(arg); ok {
+		return "", fmt.Errorf("%w: minimega reads %q as a %s URL", ErrUnsafeC2Arg, arg, scheme)
 	}
 
 	if arg != "" && strings.Trim(arg, ccExecBareChars) == "" {

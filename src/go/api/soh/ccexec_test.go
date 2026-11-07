@@ -13,6 +13,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
 	"pgregory.net/rapid"
+
+	"phenix/util/mm"
 )
 
 //nolint:gochecknoinits // minicli keeps its command handlers in package state
@@ -440,4 +442,29 @@ func TestCheckCommandsProperties(t *testing.T) {
 			}
 		})
 	})
+}
+
+// pingCommand pings once with the count flag of the node's OS, and refuses a
+// target that minimega would change.
+func TestPingCommand(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		os, target, want string
+	}{
+		{os: "linux", target: "10.0.0.1", want: "ping -c 1 10.0.0.1"},
+		{os: "windows", target: "10.0.0.1", want: "ping -n 1 10.0.0.1"},
+		{os: "linux", target: "a b", want: "ping -c 1 'a b'"},
+	} {
+		got, err := pingCommand(sohNode("web", tc.os), tc.target)
+		if err != nil || got != tc.want {
+			t.Errorf("pingCommand(%s, %q) = %q, %v, want %q, nil", tc.os, tc.target, got, err, tc.want)
+		}
+	}
+
+	for _, target := range []string{"$GATEWAY", "${IP}", "file:x"} {
+		if got, err := pingCommand(sohNode("web", "linux"), target); !errors.Is(err, mm.ErrUnsafeC2Arg) {
+			t.Errorf("pingCommand(linux, %q) = %q, %v, want %v", target, got, err, mm.ErrUnsafeC2Arg)
+		}
+	}
 }

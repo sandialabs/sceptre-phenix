@@ -980,10 +980,9 @@ func (s SOH) isNetworkingConfigured( //nolint:funlen // complex logic
 					return nil
 				}
 
-				exec := "ping -c 1 " + gateway
-
-				if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
-					exec = "ping -n 1 " + gateway
+				exec, err := pingCommand(node, gateway)
+				if err != nil {
+					return fmt.Errorf("pinging gateway: %w", err)
 				}
 
 				cmd := s.newParallelCommand(ns, host, exec)
@@ -1030,6 +1029,16 @@ func (s SOH) isNetworkingConfigured( //nolint:funlen // complex logic
 	mm.ScheduleC2ParallelCommand(ctx, cmd)
 }
 
+// pingCommand returns the cc exec command that pings target once from node.
+func pingCommand(node ifaces.NodeSpec, target string) (string, error) {
+	count := "-c"
+	if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
+		count = "-n"
+	}
+
+	return ccExecCommand("ping", count, "1", target)
+}
+
 func (s SOH) pingTest(
 	ctx context.Context,
 	wg *mm.StateGroup,
@@ -1037,16 +1046,17 @@ func (s SOH) pingTest(
 	node ifaces.NodeSpec,
 	target string,
 ) {
-	exec := "ping -c 1 " + target
-
-	if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
-		exec = "ping -n 1 " + target
-	}
-
 	var (
 		host = node.General().Hostname()
 		meta = map[string]any{hostKey: host, targetKey: target}
 	)
+
+	exec, err := pingCommand(node, target)
+	if err != nil {
+		wg.AddError(fmt.Errorf("pinging %s: %w", target, err), meta)
+
+		return
+	}
 
 	expected := func(resp string) error {
 		if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {

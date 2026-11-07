@@ -172,6 +172,8 @@ func TestCreatePortForward(t *testing.T) {
 				ClusterHost: "node2", ClusterPort: 5905, QEMU: true,
 			}},
 		},
+		"host minimega would expand":    {query: "?src=2222&host=%24HOST&dst=22", status: http.StatusBadRequest},
+		"host not a host name":          {query: "?src=2222&host=a%3Bb&dst=22", status: http.StatusBadRequest},
 		"source port not a number":      {query: "?src=x&dst=22", status: http.StatusBadRequest},
 		"destination port not a number": {query: "?src=2222&dst=ssh", status: http.StatusBadRequest},
 		"VM not found": {
@@ -326,6 +328,10 @@ func TestDeletePortForward(t *testing.T) {
 			status: http.StatusBadRequest, want: []ft.Listener{othersVNC},
 		},
 		"no forward": {query: "?dst=22", running: true, status: http.StatusBadRequest},
+		"host minimega would expand": {
+			query: "?host=%24%7BHOST%7D&dst=22", running: true, tunnels: tunnelRow, forwarded: []ft.Listener{tunnel},
+			status: http.StatusBadRequest, want: []ft.Listener{tunnel},
+		},
 		"destination port not a number": {
 			query: "?dst=ssh", running: true, tunnels: tunnelRow, forwarded: []ft.Listener{tunnel},
 			status: http.StatusBadRequest, want: []ft.Listener{tunnel},

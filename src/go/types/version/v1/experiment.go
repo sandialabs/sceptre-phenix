@@ -145,6 +145,29 @@ func (e *ExperimentSpec) Init() error {
 		}
 	}
 
+	return e.validateUnexpanded()
+}
+
+// validateUnexpanded returns an error for a value of e that phenix writes into
+// a minimega command or script and that minimega would change (see
+// [mm.ValidateUnexpanded]): the default bridge, VLAN aliases and schedules.
+func (e ExperimentSpec) validateUnexpanded() error {
+	if err := mm.ValidateUnexpanded(e.DefaultBridgeF); err != nil {
+		return fmt.Errorf("default bridge: %w", err)
+	}
+
+	for alias := range e.VLANsF.AliasesF {
+		if err := mm.ValidateUnexpanded(alias); err != nil {
+			return fmt.Errorf("VLAN alias: %w", err)
+		}
+	}
+
+	for node, host := range e.SchedulesF {
+		if err := mm.ValidateUnexpanded(node + " " + host); err != nil {
+			return fmt.Errorf("schedule of node %q: %w", node, err)
+		}
+	}
+
 	return nil
 }
 

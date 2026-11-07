@@ -181,8 +181,15 @@ func Count(cmds []Command, prefix string) int {
 	return count
 }
 
-// expands reports whether minimega's [os.ExpandEnv] of the arguments would change raw. No environment is assumed: a
-// variable that is not set expands to "".
+// Expands reports whether minimega would change raw, one command or one line of a script that minimega reads, before
+// it runs it: minimega's [os.ExpandEnv] of the arguments would change it, and it has no ".preprocess false" prefix.
+// No environment is assumed: a variable that is not set expands to "".
+func Expands(raw string) bool {
+	_, noPreprocess := parse(raw)
+
+	return !noPreprocess && expands(raw)
+}
+
 func expands(raw string) bool {
 	return os.Expand(raw, func(string) string { return "" }) != raw
 }
@@ -278,7 +285,8 @@ func serve(conn net.Conn) {
 		// report under the lock, so the test cannot end and leave Use before Errorf
 		if expanded && len(current.tbs) > 0 {
 			current.tbs[len(current.tbs)-1].Errorf(
-				"mmtest: minimega would expand the $ in %q to %q", req.Command, os.ExpandEnv(req.Command),
+				"mmtest: minimega would expand the $ in %q (to %q with no variables set)",
+				req.Command, os.Expand(req.Command, func(string) string { return "" }),
 			)
 		}
 		current.mu.Unlock()
