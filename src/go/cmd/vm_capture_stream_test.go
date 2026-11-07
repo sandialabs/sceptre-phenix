@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -531,6 +532,9 @@ func (n *fakeNode) listen(t *testing.T, dir string) {
 	}()
 }
 
+// meshReadRange matches the offset and byte count of a mesh read script.
+var meshReadRange = regexp.MustCompile(` skip=(\d+) count=(\d+) `)
+
 func (n *fakeNode) serve(conn net.Conn) {
 	defer conn.Close()
 
@@ -561,10 +565,19 @@ func (n *fakeNode) serve(conn net.Conn) {
 			continue
 		}
 
-		// the read ends with its offset and byte count
-		args := strings.Fields(req.Command)
-		off, _ := strconv.Atoi(args[len(args)-2])
-		count, _ := strconv.Atoi(args[len(args)-1])
+		// the read script names its offset and byte count
+		args := meshReadRange.FindStringSubmatch(req.Command)
+		if args == nil {
+			unexpected := miniclient.Response{Resp: minicli.Responses{{Host: "head", Error: "unexpected " + req.Command}}}
+			if err := enc.Encode(unexpected); err != nil {
+				return
+			}
+
+			continue
+		}
+
+		off, _ := strconv.Atoi(args[1])
+		count, _ := strconv.Atoi(args[2])
 
 		n.mu.Lock()
 		part := n.captured[min(off, len(n.captured)):min(off+count, len(n.captured))]
