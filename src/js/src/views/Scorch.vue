@@ -757,4 +757,10 @@
     align-items: center;
     gap: 0.5rem;
   }
+
+  /* one width for every status word (the longest is "stopping"), so the
+     buttons after it line up from row to row */
+  .status-cell > .tag {
+    min-width: 6.25em;
+  }
 </style>
