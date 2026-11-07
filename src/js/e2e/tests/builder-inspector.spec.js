@@ -2430,7 +2430,7 @@ test.describe('Builder inspector', () => {
       await expect
         .soft(summary)
         .toHaveText(
-          'More settings: miniccc commands, Delay, Injections, Advanced settings, Labels, Annotations',
+          'More settings: miniccc commands, Delay, Injections, Deletions, Advanced settings, Overrides, Labels, Annotations',
         );
       await expect.soft(section).toHaveJSProperty('open', false);
       await summary.focus();
@@ -2523,7 +2523,7 @@ test.describe('Builder inspector', () => {
       await expect
         .soft(summary)
         .toHaveText(
-          'More settings: miniccc commands, Delay (1), Injections, Advanced settings (1), Labels (1), Annotations (1)',
+          'More settings: miniccc commands, Delay (1), Injections, Deletions, Advanced settings (1), Overrides, Labels (1), Annotations (1)',
         );
       await expect
         .soft(labels.getByLabel('Label 1 Name'))

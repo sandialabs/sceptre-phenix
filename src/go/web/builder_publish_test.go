@@ -3028,7 +3028,7 @@ func TestIncludeClashRefusal(t *testing.T) {
 				t.Fatalf("includeClashRefusal(root, %d clashes) = %v, want a *weberror.WebError", len(tt.clashes), err)
 			}
 
-			got := []any{werr.Status, werr.Code, werr.Message}
+			got := []any{werr.Status, string(werr.Code), werr.Message}
 			want := []any{http.StatusConflict, string(bdoc.CodePublishIncludeClash), tt.want}
 
 			if diff := cmp.Diff(want, got); diff != "" {
@@ -3060,11 +3060,11 @@ func TestBuilderPublishOpsBroadcast(t *testing.T) {
 		t.Errorf("broadcastConfig(Experiment/exp, create) = %v, want nil", err)
 	}
 
-	if err := ops.broadcastExperiment("exp", "update"); err != nil {
+	if err := ops.broadcastExperiment(t.Context(), "exp", "update"); err != nil {
 		t.Errorf("broadcastExperiment(exp, update) = %v, want nil", err)
 	}
 
-	if err := ops.broadcastExperiment("missing", "update"); !errors.Is(err, store.ErrNotExist) {
+	if err := ops.broadcastExperiment(t.Context(), "missing", "update"); !errors.Is(err, store.ErrNotExist) {
 		t.Errorf("broadcastExperiment(missing, update) = %v, want store.ErrNotExist", err)
 	}
 }
@@ -3088,7 +3088,7 @@ func builderPublishRefusalOf(err error) (builderPublishRefusalView, bool) {
 		return builderPublishRefusalView{}, false
 	}
 
-	return builderPublishRefusalView{Status: werr.Status, Code: werr.Code, Message: werr.Message}, true
+	return builderPublishRefusalView{Status: werr.Status, Code: string(werr.Code), Message: werr.Message}, true
 }
 
 // TestIncludedHostnameRefusal checks the refusal for each number of refused
@@ -3684,7 +3684,7 @@ func TestBuilderPublishExperimentStageWarnings(t *testing.T) {
 
 						return nil
 					},
-					broadcastExperiment: func(string, string) error { return errors.New("injected broadcast failure") },
+					broadcastExperiment: func(context.Context, string, string) error { return errors.New("injected broadcast failure") },
 				},
 			}
 			plan := builderPublishExperimentPlan{action: builderPublishActionCreate, name: "exp", applied: tt.applied}

@@ -30,6 +30,35 @@ var AllKinds = []string{"Topology", "Scenario", kindExperiment, "Image", "User",
 
 var NameRegex = regexp.MustCompile(`^[a-zA-Z0-9_@.-]*$`)
 
+var (
+	// ErrUnknownKind is the error of List for a kind it does not know.
+	ErrUnknownKind = errors.New("unknown config kind provided")
+
+	// ErrStoreFailed matches an error of the config store itself, not of the config given to it.
+	ErrStoreFailed = errors.New("config store failed")
+)
+
+// storeError is an error of the config store. It keeps the message of Err and matches ErrStoreFailed.
+type storeError struct {
+	Err error
+}
+
+func (e *storeError) Error() string { return e.Err.Error() }
+
+func (e *storeError) Unwrap() []error { return []error{e.Err, ErrStoreFailed} }
+
+// storeFailed returns err as a *storeError, unless the store refused the config for its state: it exists, does not
+// exist, has another revision or has an invalid format.
+func storeFailed(err error) error {
+	for _, refused := range []error{store.ErrExist, store.ErrNotExist, store.ErrConflict, store.ErrInvalidFormat} {
+		if errors.Is(err, refused) {
+			return err
+		}
+	}
+
+	return &storeError{Err: err}
+}
+
 // ConfigHook is called at the "startup", "create", "update", "delete" and
 // "rename" stages of a config. It may change the config, or return an error to
 // halt the stage. "rename" gets the config under its old name after the store
@@ -279,11 +308,11 @@ func List(which string) (store.Configs, error) {
 	case "role":
 		configs, err = store.List("Role")
 	default:
-		return nil, util.HumanizeError(fmt.Errorf("unknown config kind provided: %s", which), "")
+		return nil, util.HumanizeError(fmt.Errorf("%w: %s", ErrUnknownKind, which), "")
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("getting list of configs from store: %w", err)
+		return nil, fmt.Errorf("getting list of configs from store: %w", storeFailed(err))
 	}
 
 	return configs, nil
@@ -356,6 +385,12 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 		return nil, errors.New("no config, path, or data provided")
 	}
 
+	if o.check != nil {
+		if err := o.check(c); err != nil {
+			return nil, err
+		}
+	}
+
 	if o.validate {
 		if err := Validate(c); err != nil {
 			return nil, err
@@ -379,7 +414,7 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 
 	err := store.Create(c)
 	if err != nil {
-		return nil, fmt.Errorf("storing config: %w", err)
+		return nil, fmt.Errorf("storing config: %w", storeFailed(err))
 	}
 
 	return c, nil
@@ -427,6 +462,9 @@ func Edit(name string, force bool) (*store.Config, error) {
 		delete(c.Spec, "experimentName")
 	}
 
+	// the update is refused if the config changes while it is being edited
+	revision := c.Metadata.Revision
+
 	var body []byte
 	body, err = yaml.Marshal(c)
 	if err != nil {
@@ -441,6 +479,10 @@ func Edit(name string, force bool) (*store.Config, error) {
 	if err = yaml.Unmarshal(body, c); err != nil {
 		return nil, fmt.Errorf("unmarshaling config as YAML: %w", err)
 	}
+
+	// the store sets the revision; an edited one means nothing
+	c.Metadata.Revision = 0
+	c.IfRevision = revision
 
 	if c.Kind == kindExperiment {
 		c.Spec["experimentName"] = expName
@@ -463,7 +505,16 @@ func Update(name string, c *store.Config) error {
 	}
 
 	if err = store.Get(old); err != nil {
-		return fmt.Errorf("getting config to update: %w", err)
+		return fmt.Errorf("getting config to update: %w", storeFailed(err))
+	}
+
+	// Checked before the hooks run, and before a rename, whose create and
+	// delete the store cannot make atomic. The store checks again as it writes.
+	if c.IfRevision != 0 && old.Metadata.Revision != c.IfRevision {
+		return fmt.Errorf(
+			"updating config %s: %w: at revision %d, not %d",
+			name, store.ErrConflict, old.Metadata.Revision, c.IfRevision,
+		)
 	}
 
 	c.Metadata.Created = old.Metadata.Created
@@ -472,37 +523,53 @@ func Update(name string, c *store.Config) error {
 		return err
 	}
 
-	for _, hook := range hooks[c.Kind] {
-		hookErr := hook("update", c)
-		if hookErr != nil {
-			return fmt.Errorf("calling config hook: %w", hookErr)
-		}
-
-		// Validate again since config hooks can modify the config.
-		err = types.ValidateConfigSpec(*c)
-		if err != nil {
-			return fmt.Errorf("validating config after config hooks: %w", err)
-		}
+	if err = updateHooks(c, old); err != nil {
+		return err
 	}
 
 	if err = store.Update(c); err != nil {
 		if errors.Is(err, store.ErrNotExist) { // name changed during update
 			createErr := store.Create(c)
 			if createErr != nil {
-				return fmt.Errorf("renaming updated config in store: %w", createErr)
+				return fmt.Errorf("renaming updated config in store: %w", storeFailed(createErr))
 			}
+
+			old.IfRevision = c.IfRevision
 
 			deleteErr := store.Delete(old)
 			if deleteErr != nil {
-				_ = store.Delete(c) // don't offer a path to creation via updates
+				// Don't offer a path to creation via updates. Remove the copy
+				// just created, unless something changed it meanwhile.
+				c.IfRevision = c.Metadata.Revision
+				_ = store.Delete(c)
 
-				return fmt.Errorf("renaming updated config in store: %w", deleteErr)
+				return fmt.Errorf("renaming updated config in store: %w", storeFailed(deleteErr))
 			}
 
 			return renamed(name, old)
 		}
 
-		return fmt.Errorf("updating config in store: %w", err)
+		return fmt.Errorf("updating config in store: %w", storeFailed(err))
+	}
+
+	return nil
+}
+
+// updateHooks runs the "update" stage of the config hooks for c, with
+// c.Stored set to old, the config as the store holds it, while they run.
+func updateHooks(c, old *store.Config) error {
+	c.Stored = old
+	defer func() { c.Stored = nil }()
+
+	for _, hook := range hooks[c.Kind] {
+		if err := hook("update", c); err != nil {
+			return fmt.Errorf("calling config hook: %w", err)
+		}
+
+		// Validate again since config hooks can modify the config.
+		if err := types.ValidateConfigSpec(*c); err != nil {
+			return fmt.Errorf("validating config after config hooks: %w", err)
+		}
 	}
 
 	return nil
@@ -534,6 +601,16 @@ func renamed(name string, old *store.Config) error {
 // are removed. It returns any errors encountered while removing the config from
 // the store.
 func Delete(name string) error {
+	return DeleteAtRevision(name, 0)
+}
+
+// DeleteAtRevision deletes the named config as Delete does. When revision is
+// not zero, it returns an error wrapping store.ErrConflict, and deletes
+// nothing, unless the config is at that revision. A revision is ignored when
+// name is "all".
+func DeleteAtRevision(name string, revision uint64, opts ...DeleteOption) error {
+	o := newDeleteOptions(opts...)
+
 	if name == "" {
 		return errors.New("no config name provided")
 	}
@@ -544,6 +621,8 @@ func Delete(name string) error {
 		configs, _ := List("all")
 
 		for _, c := range configs {
+			c.FilesRoot = o.filesRoot
+
 			deleteErr := store.Delete(&c)
 			if deleteErr != nil {
 				errs = multierror.Append(
@@ -577,6 +656,9 @@ func Delete(name string) error {
 	if err != nil {
 		return fmt.Errorf("getting config %s: %w", name, err)
 	}
+
+	c.IfRevision = revision
+	c.FilesRoot = o.filesRoot
 
 	if err = store.Delete(c); err != nil {
 		return fmt.Errorf("deleting config %s: %w", name, err)

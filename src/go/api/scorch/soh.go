@@ -86,12 +86,12 @@ func (s SOH) check(ctx context.Context, stage Action) error {
 	}
 
 	var (
-		exp = &s.options.Exp
-		md  SOHMetadata
+		name = s.options.Exp.Metadata.Name
+		md   SOHMetadata
 	)
 
 	update := scorch.ComponentUpdate{ //nolint:exhaustruct // partial update
-		Exp:     exp.Spec.ExperimentName(),
+		Exp:     s.options.Exp.Spec.ExperimentName(),
 		CmpName: s.options.Name,
 		CmpType: s.options.Type,
 		Run:     s.options.Run,
@@ -106,6 +106,15 @@ func (s SOH) check(ctx context.Context, stage Action) error {
 		scorch.UpdateComponent(update)
 	}
 
+	// The run's copy of the experiment is from the start of the run; the checks
+	// below and the app need the status as it is now.
+	exp, err := experiment.Get(name)
+	if err != nil {
+		updateComponent("Unable to load the experiment.\n")
+
+		return fmt.Errorf("state of health checks: %w", err)
+	}
+
 	if !soh.Configured(exp) {
 		updateComponent("State of health app is not configured for this experiment.\n")
 
@@ -118,6 +127,13 @@ func (s SOH) check(ctx context.Context, stage Action) error {
 		return errors.New("state of health checks: soh app not initialized")
 	}
 
+	err = mapstructure.Decode(s.options.Meta, &md)
+	if err != nil {
+		updateComponent("Unable to parse metadata for this component.\n")
+
+		return fmt.Errorf("decoding soh component metadata: %w", err)
+	}
+
 	if soh.Running(exp) {
 		updateComponent("State of health app is currently already running.\n")
 
@@ -126,13 +142,6 @@ func (s SOH) check(ctx context.Context, stage Action) error {
 		}
 
 		return nil
-	}
-
-	err := mapstructure.Decode(s.options.Meta, &md)
-	if err != nil {
-		updateComponent("Unable to parse metadata for this component.\n")
-
-		return fmt.Errorf("decoding soh component metadata: %w", err)
 	}
 
 	if md.C2Timeout != "" {
@@ -166,7 +175,12 @@ func (s SOH) check(ctx context.Context, stage Action) error {
 
 	plog.RemoveHandler(handlerName)
 
-	exp, _ = experiment.Get(exp.Metadata.Name)
+	exp, err = experiment.Get(name)
+	if err != nil {
+		updateComponent("Unable to load the experiment for the results.\n")
+
+		return fmt.Errorf("state of health checks results: %w", err)
+	}
 
 	var results map[string]any
 
@@ -188,7 +202,7 @@ func (s SOH) check(ctx context.Context, stage Action) error {
 			runDir,
 			s.options.Name,
 			fmt.Sprintf("loop-%d-count-%d", s.options.Loop, s.options.Count),
-			"soh.json",
+			fmt.Sprintf("soh-%s.json", stage),
 		)
 	)
 

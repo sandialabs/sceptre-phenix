@@ -4,7 +4,7 @@
 // suggest the names of the device's interfaces.
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises } from '@vue/test-utils';
+import { flushPromises } from '@vue/test-utils';
 
 import { closeSections } from '@/components/builder/inspector/InspectorSectionRenderer.vue';
 
@@ -13,7 +13,6 @@ import { updateNode } from '@/builder/model.js';
 import { sampleDocument } from './fixtures.js';
 import { mountInspector } from './inspector-mount.js';
 
-enableAutoUnmount(afterEach);
 afterEach(closeSections);
 
 // The Inspector on the sample's alpha device, with labels and annotations.

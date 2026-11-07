@@ -13,9 +13,9 @@ import (
 
 	"phenix/util/plog"
 	"phenix/web/broker"
-	bt "phenix/web/broker/brokertypes"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/weberror"
 )
 
 const (
@@ -26,8 +26,36 @@ const (
 	mmLogPartLog       = 3
 )
 
+// parseLogRange reads the start and end of GET /logs, both RFC 3339 times.
+// start is necessary; an empty end is DefaultLogDuration after now. It returns
+// a 400 for a time that does not parse.
+func parseLogRange(start, end string, now time.Time) (time.Time, time.Time, error) {
+	startTime, err := time.Parse(time.RFC3339, start)
+	if err != nil {
+		plog.Warn(plog.TypeSystem, "Invalid start time provided", "start", start, "error", err)
+
+		return time.Time{}, time.Time{}, weberror.New(
+			http.StatusBadRequest, "Missing or invalid start time. Expected RFC3339 format: "+err.Error(),
+		)
+	}
+
+	endTime := now.Add(DefaultLogDuration)
+	if end != "" {
+		endTime, err = time.Parse(time.RFC3339, end)
+		if err != nil {
+			plog.Warn(plog.TypeSystem, "Invalid end time provided", "end", end, "error", err)
+
+			return time.Time{}, time.Time{}, weberror.New(
+				http.StatusBadRequest, "Invalid end time. Expected RFC3339 format: "+err.Error(),
+			)
+		}
+	}
+
+	return startTime, endTime, nil
+}
+
 // GetLogs handles GET requests for /logs?start=<start>&end=<end>.
-func GetLogs(w http.ResponseWriter, r *http.Request) {
+func GetLogs(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetLogs")
 
 	var (
@@ -45,40 +73,20 @@ func GetLogs(w http.ResponseWriter, r *http.Request) {
 			"user",
 			user,
 		)
-		http.Error(w, "forbidden", http.StatusForbidden)
+
+		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	startTime, err := time.Parse(time.RFC3339, start)
+	startTime, endTime, err := parseLogRange(start, end, time.Now())
 	if err != nil {
-		plog.Warn(plog.TypeSystem, "Invalid start time provided", "start", start, "error", err)
-		http.Error(
-			w,
-			"Missing or invalid start time. Expected RFC3339 format: "+err.Error(),
-			http.StatusBadRequest,
-		)
-
-		return
-	}
-
-	endTime := time.Now().Add(DefaultLogDuration)
-	if end != "" {
-		endTime, err = time.Parse(time.RFC3339, end)
-		if err != nil {
-			plog.Warn(plog.TypeSystem, "Invalid start time provided", "start", start, "error", err)
-			http.Error(
-				w,
-				"Invalid end time. Expected RFC3339 format: "+err.Error(),
-				http.StatusBadRequest,
-			)
-
-			return
-		}
+		return err
 	}
 
 	logs, err := plog.GetLogs(startTime, endTime)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "Error getting logs in handler", "error", err)
-		http.Error(w, "error with fetching logs", http.StatusInternalServerError)
+
+		return weberror.New(http.StatusInternalServerError, "error with fetching logs")
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -91,10 +99,13 @@ func GetLogs(w http.ResponseWriter, r *http.Request) {
 	body, err := json.Marshal(logs)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "error marshaling loglist", "error", err)
-		http.Error(w, "error with converting logs to protobuf", http.StatusInternalServerError)
+
+		return weberror.New(http.StatusInternalServerError, "error with converting logs to protobuf")
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	_, _ = w.Write(body)
+
+	return nil
 }
 
 var mmLogRegex = regexp.MustCompile(
@@ -139,8 +150,12 @@ func SyncMinimegaLogs(ctx context.Context, minimega string) {
 	}
 
 	go func() {
+		// drains the tail until it stops, so stopping it never blocks
 		for l := range mmLogs.Lines {
-			logs <- l.Text
+			select {
+			case logs <- l.Text:
+			case <-ctx.Done():
+			}
 		}
 	}()
 
@@ -150,6 +165,8 @@ func SyncMinimegaLogs(ctx context.Context, minimega string) {
 	for {
 		select {
 		case <-ctx.Done():
+			mmLogs.Kill(nil)
+
 			return
 		case log := <-logs:
 			if log == "" {
@@ -193,9 +210,5 @@ func PublishPhenixLog(ts time.Time, level, logtype, log string) {
 
 	marshalled, _ := json.Marshal(body)
 
-	broker.Broadcast(
-		nil,
-		bt.NewResource("log", "phenix", "update"),
-		marshalled,
-	)
+	broker.BroadcastLog(marshalled)
 }

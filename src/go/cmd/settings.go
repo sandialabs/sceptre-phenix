@@ -1,18 +1,20 @@
 package cmd
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"strconv"
+	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
-	"gopkg.in/yaml.v3"
 
+	"phenix/api/runtimesettings"
 	"phenix/api/settings"
 	"phenix/types"
 	"phenix/util"
@@ -24,7 +26,6 @@ const (
 	editArgsMin = 2
 	editArgsMax = 3
 	setArgs     = 2
-	keyParts    = 2
 )
 
 func newSettingsCmd() *cobra.Command {
@@ -53,9 +54,13 @@ func newSettingsDBCmd() *cobra.Command {
 }
 
 func newSettingsDBListCmd() *cobra.Command {
+	var out *outputFlag
+
 	cmd := &cobra.Command{
-		Use:   "list [category]",
-		Short: "List settings in the database",
+		Use:               "list [category]",
+		Short:             "List settings in the database",
+		Args:              argsWithUsage(cobra.MaximumNArgs(1)),
+		ValidArgsFunction: completeArgs(completeValues(dbSettingCategories()...)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := settings.List()
 			if err != nil {
@@ -67,7 +72,7 @@ func newSettingsDBListCmd() *cobra.Command {
 			if len(args) > 0 {
 				category := args[0]
 
-				var filtered []types.Setting
+				filtered := make([]types.Setting, 0, len(s))
 
 				for _, setting := range s {
 					// Filter by category prefix (e.g. "Category.Name")
@@ -82,26 +87,32 @@ func newSettingsDBListCmd() *cobra.Command {
 				s = filtered
 			}
 
-			if MustGetBool(cmd.Flags(), "json") {
-				b, err := json.MarshalIndent(s, "", "  ")
-				if err != nil {
-					return err
-				}
+			return out.print(cmd, s, outputViews{
+				formatTable: func(w io.Writer) error {
+					printer.PrintTableOfSettings(w, s)
 
-				fmt.Fprintln(os.Stdout, string(b))
-
-				return nil
-			}
-
-			printer.PrintTableOfSettings(os.Stdout, s)
-
-			return nil
+					return nil
+				},
+			})
 		},
 	}
 
-	cmd.Flags().Bool("json", false, "Output as JSON")
+	out = addOutputFlag(cmd, formatTable, []string{formatTable, FormatJSON, FormatYAML}, withJSONFlag())
 
 	return cmd
+}
+
+// dbSettingCategories returns the categories of the database settings.
+func dbSettingCategories() []string {
+	var categories []string
+
+	for _, s := range settings.DefaultSettings {
+		if !slices.Contains(categories, s.Category) {
+			categories = append(categories, s.Category)
+		}
+	}
+
+	return categories
 }
 
 func newSettingsDBEditCmd() *cobra.Command {
@@ -110,8 +121,11 @@ func newSettingsDBEditCmd() *cobra.Command {
   phenix settings db edit Password MinLength 20`
 
 	cmd := &cobra.Command{
-		Use:     "edit",
-		Short:   "Edit a setting in the database",
+		Use:               "edit <category> <name> <value>",
+		ValidArgsFunction: completeArgs(completeDBEditCategories, completeDBSettingNames),
+		Short:             "Edit a setting in the database",
+		Long: "Edit a setting in the database. This command does not change the log settings: use " +
+			"'phenix settings set' for them (for example, phenix settings set log.system.max-size 100).",
 		Example: example,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			switch {
@@ -131,11 +145,8 @@ func newSettingsDBEditCmd() *cobra.Command {
 			name := args[1]
 			value := args[2]
 
-			if category == "Logging" {
-				plog.Warn(
-					plog.TypeSystem,
-					"Logging settings via 'phenix settings db edit' are deprecated and will be ignored. Please use 'phenix settings set' (e.g. phenix settings set log.system.max-size 100).",
-				)
+			if err := checkDBEditCategory(category); err != nil {
+				return err
 			}
 
 			err := settings.UpdateWithVerification(category, name, value)
@@ -152,117 +163,90 @@ func newSettingsDBEditCmd() *cobra.Command {
 	return cmd
 }
 
-func settingsKeyCompletion(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	if len(args) > 0 {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
+// dbLoggingCategory is the database settings category that phenix settings db
+// edit refuses: phenix reads the log settings from its runtime settings.
+const dbLoggingCategory = "Logging"
 
-	settings := getEffectiveSettings()
-	flat := make(map[string]any)
-	flattenSettingsMap("", settings, flat)
+// errDBCategory is returned for a category that phenix settings db edit does
+// not change.
+var errDBCategory = errors.New("unknown setting category")
 
-	var keys []string
-	for k := range flat {
-		if strings.HasPrefix(k, toComplete) {
-			keys = append(keys, k)
+// checkDBEditCategory refuses a category that phenix settings db edit does not
+// change, and names the categories that it changes.
+// completeDBEditCategories completes the categories of the database settings
+// that phenix settings db edit changes.
+func completeDBEditCategories(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	var categories []string
+
+	for _, c := range dbSettingCategories() {
+		if checkDBEditCategory(c) == nil {
+			categories = append(categories, c)
 		}
 	}
-	return keys, cobra.ShellCompDirectiveNoFileComp
+
+	return completionMatches(categories, toComplete), cobra.ShellCompDirectiveNoFileComp
 }
 
-func newSettingsSetCmd() *cobra.Command {
+// completeDBSettingNames completes the names of the database settings of the
+// category in the first argument.
+func completeDBSettingNames(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	var names []string
+
+	for _, s := range settings.DefaultSettings {
+		if len(args) > 0 && s.Category == args[0] {
+			names = append(names, s.Name)
+		}
+	}
+
+	return completionMatches(names, toComplete), cobra.ShellCompDirectiveNoFileComp
+}
+
+func checkDBEditCategory(category string) error {
+	var valid []string
+
+	for _, s := range settings.DefaultSettings {
+		if s.Category != dbLoggingCategory && !slices.Contains(valid, s.Category) {
+			valid = append(valid, s.Category)
+		}
+	}
+
+	if slices.Contains(valid, category) {
+		return nil
+	}
+
+	if category == dbLoggingCategory {
+		return fmt.Errorf(
+			"%w %s: a change to the Logging database settings has no effect. Use 'phenix settings set' "+
+				"(for example, phenix settings set log.system.max-size 100). The categories are %s",
+			errDBCategory, category, strings.Join(valid, ", "),
+		)
+	}
+
+	return fmt.Errorf("%w %s: the categories are %s", errDBCategory, category, strings.Join(valid, ", "))
+}
+
+func newSettingsSetCmd(v *viper.Viper) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set <key> <value>",
 		Short: "Set a configuration value",
-		Long:  "Sets a configuration value in the config file. If the file does not exist, it will be created.",
+		Long: "Sets a configuration value in the YAML config file phenix read, or, when it read none, in " +
+			"$HOME/.config/phenix/config.yaml (/etc/phenix/config.yaml as root), creating it. " +
+			"A flag or PHENIX_ environment variable for the key still overrides the file. " +
+			"The value of a phenix setting must have the type of its flag, such as an integer for " +
+			"log.system.max-size; a string setting keeps the text as it is. For other keys, true or false " +
+			"becomes a boolean and a number becomes a number. Comments and the other keys in the file stay.",
 		Example: `
   phenix settings set log.level debug
   phenix settings set log.system.max-size 200`,
 		Args:              cobra.ExactArgs(setArgs),
-		ValidArgsFunction: settingsKeyCompletion,
+		ValidArgsFunction: settingsKeyCompletion(v),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			key := args[0]
-			val := inferType(args[1])
-
-			configFile := viper.ConfigFileUsed()
-			if configFile == "" {
-				uid, home := getCurrentUserInfo()
-				targetDir := configDir
-
-				if uid != "0" {
-					targetDir = filepath.Join(home, ".config", appName)
-				}
-
-				err := os.MkdirAll(targetDir, 0o750)
-				if err != nil {
-					return fmt.Errorf("creating config directory: %w", err)
-				}
-
-				configFile = filepath.Join(targetDir, "config.yaml")
-			}
-
-			// Read existing config file
-			data, err := os.ReadFile(configFile)
-			if err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("reading config file: %w", err)
-			}
-
-			configMap := make(map[string]any)
-			if len(data) > 0 {
-				err := yaml.Unmarshal(data, &configMap)
-				if err != nil {
-					return fmt.Errorf("parsing config file: %w", err)
-				}
-			}
-
-			// Helper to set nested keys
-			var setKey func(m map[string]any, k string, v any)
-
-			setKey = func(m map[string]any, k string, v any) {
-				parts := strings.SplitN(k, ".", keyParts)
-				target := parts[0]
-
-				// Find existing key with case-insensitive match
-				for mk := range m {
-					if strings.EqualFold(mk, target) {
-						target = mk
-						break
-					}
-				}
-
-				if len(parts) == 1 {
-					m[target] = v
-
-					return
-				}
-
-				if _, ok := m[target]; !ok {
-					m[target] = make(map[string]any)
-				}
-
-				if next, ok := m[target].(map[string]any); ok {
-					setKey(next, parts[1], v)
-				} else {
-					// Overwrite if it's not a map (e.g. changing a leaf to a branch, which shouldn't happen in valid config but good for robustness)
-					next := make(map[string]any)
-					m[target] = next
-					setKey(next, parts[1], v)
-				}
-			}
-
-			setKey(configMap, key, val)
-
-			newData, err := yaml.Marshal(configMap)
+			change, err := runtimeSettings(cmd.Root(), v).Set(args[0], args[1])
 			if err != nil {
-				return fmt.Errorf("marshaling config: %w", err)
+				return err //nolint:wrapcheck // the setting's error as it is
 			}
 
-			// Write back to file
-			if err := os.WriteFile(configFile, newData, 0o600); err != nil {
-				return fmt.Errorf("writing config file: %w", err)
-			}
-
-			plog.Info(plog.TypeSystem, "configuration updated", "file", configFile)
+			plog.Info(plog.TypeSystem, "configuration updated", "file", change.File)
 
 			return nil
 		},
@@ -271,16 +255,47 @@ func newSettingsSetCmd() *cobra.Command {
 	return cmd
 }
 
-func newSettingsListCmd() *cobra.Command {
+// runtimeSettings returns the runtime settings of v, whose flags are those of
+// root, as phenix settings and phenix ui change them: in settingsFile.
+func runtimeSettings(root *cobra.Command, v *viper.Viper) *runtimesettings.Settings {
+	return runtimesettings.New(
+		v,
+		runtimesettings.WithFlags(func(key string) *pflag.Flag { return settingFlag(root, v, key) }),
+		runtimesettings.WithFile(func() string {
+			uid, home := getCurrentUserInfo()
+
+			return settingsFile(v.ConfigFileUsed(), uid, home)
+		}),
+	)
+}
+
+// settingsFile is the config file phenix settings set and unset change: used,
+// the file phenix read, or else config.yaml in the user's config directory.
+func settingsFile(used, uid, home string) string {
+	if used != "" {
+		return used
+	}
+
+	if uid == "0" {
+		return filepath.Join(configDir, "config.yaml")
+	}
+
+	return filepath.Join(home, ".config", appName, "config.yaml")
+}
+
+func newSettingsListCmd(v *viper.Viper) *cobra.Command {
+	var out *outputFlag
+
 	cmd := &cobra.Command{
 		Use:   commandList,
 		Short: "List all runtime settings",
+		Args:  argsWithUsage(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			settings := getEffectiveSettings()
+			settings := v.AllSettings()
 
-			if filter := MustGetString(cmd.Flags(), "filter"); filter != "" {
+			if filter := mustGet(cmd.Flags().GetString, "filter"); filter != "" {
 				flat := make(map[string]any)
-				flattenSettingsMap("", settings, flat)
+				runtimesettings.Flatten("", settings, flat)
 
 				filtered := make(map[string]any)
 				for k, v := range flat {
@@ -291,126 +306,117 @@ func newSettingsListCmd() *cobra.Command {
 				settings = filtered
 			}
 
-			format := MustGetString(cmd.Flags(), "format")
+			return out.print(cmd, settings, outputViews{
+				formatTable: func(w io.Writer) error {
+					printer.PrintTableOfRuntimeSettings(w, settings)
 
-			if MustGetBool(cmd.Flags(), "json") {
-				format = FormatJSON
-			}
-
-			switch format {
-			case FormatJSON:
-				b, err := json.MarshalIndent(settings, "", "  ")
-				if err != nil {
-					return err
-				}
-				fmt.Fprintln(os.Stdout, string(b))
-			case FormatYAML:
-				b, err := yaml.Marshal(settings)
-				if err != nil {
-					return err
-				}
-				fmt.Fprint(os.Stdout, string(b))
-			case "table":
-				printer.PrintTableOfRuntimeSettings(os.Stdout, settings)
-			default:
-				return fmt.Errorf("unsupported output format: %s", format)
-			}
-
-			return nil
+					return nil
+				},
+			})
 		},
 	}
 
-	cmd.Flags().Bool("json", false, "Output as JSON")
-	cmd.Flags().StringP("format", "f", "table", "Output format (table, "+FormatJSON+", "+FormatYAML+")")
+	out = addOutputFlag(
+		cmd, formatTable, []string{formatTable, FormatJSON, FormatYAML}, withJSONFlag(), withFormatFlag(),
+	)
 	cmd.Flags().String("filter", "", "Filter settings by key prefix")
+	_ = cmd.RegisterFlagCompletionFunc("filter", completeSettingsKeys(v))
 
 	return cmd
 }
 
-func newSettingsGetCmd() *cobra.Command {
+// errSettingNotFound is the error of phenix settings get for a key that has no value.
+var errSettingNotFound = errors.New("setting not found")
+
+func newSettingsGetCmd(v *viper.Viper) *cobra.Command {
+	var out *outputFlag
+
 	cmd := &cobra.Command{
 		Use:   "get [key]",
 		Short: "Get configuration value(s)",
 		Long:  "Gets a configuration value from the runtime configuration. If no key is provided, returns all settings.",
 		Example: `
   phenix settings get
-  phenix settings get log.level`,
+  phenix settings get log.level
+  phenix settings get log -o json`,
 		Args:              cobra.MaximumNArgs(1),
-		ValidArgsFunction: settingsKeyCompletion,
+		ValidArgsFunction: settingsKeyCompletion(v),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var val any
-			outputFormat := MustGetString(cmd.Flags(), "format")
 
 			if len(args) == 0 {
-				val = getEffectiveSettings()
+				val = v.AllSettings()
 			} else {
 				key := args[0]
-				val = getEffectiveValue(key)
+				val = v.Get(key)
 				if val == nil {
-					return errors.New("setting not found")
+					return errSettingNotFound
 				}
 			}
 
-			if MustGetBool(cmd.Flags(), "json") {
-				outputFormat = FormatJSON
+			return out.print(cmd, val, settingsGetViews(val, args))
+		},
+	}
+
+	out = addOutputFlag(
+		cmd, FormatYAML, []string{formatTable, FormatJSON, FormatYAML}, withJSONFlag(), withFormatFlag(),
+	)
+
+	return cmd
+}
+
+// settingsGetViews returns the table view of the value of phenix settings get,
+// and a YAML view that prints a value that is not a map or a list as it is.
+func settingsGetViews(val any, args []string) outputViews {
+	views := outputViews{
+		formatTable: func(w io.Writer) error {
+			m, ok := val.(map[string]any)
+			if !ok {
+				k := "value"
+				if len(args) > 0 {
+					k = args[0]
+				}
+
+				m = map[string]any{k: val}
 			}
 
-			switch outputFormat {
-			case FormatJSON:
-				b, err := json.MarshalIndent(val, "", "  ")
-				if err != nil {
-					return err
-				}
-				fmt.Fprintln(os.Stdout, string(b))
-			case "table":
-				var m map[string]any
-				if v, ok := val.(map[string]any); ok {
-					m = v
-				} else {
-					k := "value"
-					if len(args) > 0 {
-						k = args[0]
-					}
-					m = map[string]any{k: val}
-				}
-				printer.PrintTableOfRuntimeSettings(os.Stdout, m)
-			case FormatYAML:
-				switch v := val.(type) {
-				case map[string]any, []any:
-					b, err := yaml.Marshal(v)
-					if err != nil {
-						return err
-					}
-					fmt.Fprint(os.Stdout, string(b))
-				default:
-					fmt.Fprintln(os.Stdout, v)
-				}
-			default:
-				return fmt.Errorf("unsupported output format: %s", outputFormat)
-			}
+			printer.PrintTableOfRuntimeSettings(w, m)
 
 			return nil
 		},
 	}
 
-	cmd.Flags().StringP("format", "f", FormatYAML, "Output format (table, "+FormatJSON+", "+FormatYAML+")")
-	cmd.Flags().Bool("json", false, "Output as JSON")
+	// a list from a flag, such as ui.users, is a []string, not a []any
+	switch reflect.ValueOf(val).Kind() { //nolint:exhaustive // other kinds print as they are
+	case reflect.Map, reflect.Slice, reflect.Array:
+	default:
+		views[FormatYAML] = func(w io.Writer) error {
+			_, err := fmt.Fprintln(w, val)
 
-	return cmd
+			return err //nolint:wrapcheck // the writer's own error
+		}
+	}
+
+	return views
 }
 
-//nolint:funlen // command definition
-func newSettingsUnsetCmd() *cobra.Command {
+func newSettingsUnsetCmd(v *viper.Viper) *cobra.Command {
+	var dry dryRun
+
 	cmd := &cobra.Command{
 		Use:   "unset [key]",
 		Short: "Unset configuration value(s)",
-		Long:  "Unsets a configuration value in the config file, reverting it to the default. Use --all to reset all settings.",
+		Long: "Unsets a configuration value in the config file phenix read, so a PHENIX_ environment variable " +
+			"or the default applies. Comments and the other keys in the file stay. A key that is not in the " +
+			"file does not change the file. Use --all to reset all settings. With --dry-run, phenix shows " +
+			"the key that it would remove, or the config file that it would delete, and changes nothing.",
 		Example: `
   phenix settings unset log.level
+  phenix settings unset log.level --dry-run
   phenix settings unset --all`,
-		ValidArgsFunction: settingsKeyCompletion,
+		ValidArgsFunction: settingsKeyCompletion(v),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			all := MustGetBool(cmd.Flags(), "all")
+			all := mustGet(cmd.Flags().GetBool, "all")
 
 			if !all && len(args) == 0 {
 				return errors.New("must provide a configuration key to unset, or use --all")
@@ -429,139 +435,104 @@ func newSettingsUnsetCmd() *cobra.Command {
 				key = args[0]
 			}
 
-			configFile := viper.ConfigFileUsed()
-			if configFile == "" {
-				uid, home := getCurrentUserInfo()
-				targetDir := configDir
-
-				if uid != "0" {
-					targetDir = filepath.Join(home, ".config", appName)
+			if !all {
+				var opts []runtimesettings.UnsetOption
+				if dry.enabled() {
+					opts = append(opts, runtimesettings.UnsetDryRun())
 				}
 
-				configFile = filepath.Join(targetDir, "config.yaml")
-
-				if _, err := os.Stat(configFile); os.IsNotExist(err) {
-					return errors.New("no configuration file found")
-				}
-			}
-
-			if all {
-				err := os.Remove(configFile)
+				change, err := runtimeSettings(cmd.Root(), v).Unset(key, opts...)
 				if err != nil {
-					return fmt.Errorf("failed to remove config file %s: %w", configFile, err)
+					return err //nolint:wrapcheck // the setting's error as it is
 				}
 
-				plog.Info(
-					plog.TypeSystem,
-					"configuration file deleted; settings reset to defaults",
-					"file",
-					configFile,
-				)
+				if change.Changed && dry.skip("unset", "setting "+key+" in "+change.File) {
+					return nil
+				}
+
+				if !change.Changed {
+					plog.Info(
+						plog.TypeSystem, "configuration value not set in the config file; the file did not change",
+						"key", key, "file", change.File,
+					)
+
+					return nil
+				}
+
+				plog.Info(plog.TypeSystem, "configuration value unset", "key", key, "file", change.File)
 
 				return nil
 			}
 
-			data, err := os.ReadFile(configFile)
-			if err != nil {
-				return fmt.Errorf("reading config file: %w", err)
+			uid, home := getCurrentUserInfo()
+			configFile := settingsFile(v.ConfigFileUsed(), uid, home)
+
+			if _, err := os.Stat(configFile); os.IsNotExist(err) {
+				return runtimesettings.ErrNoConfigFile
 			}
 
-			var configMap map[string]any
-			if err := yaml.Unmarshal(data, &configMap); err != nil {
-				return fmt.Errorf("parsing config file: %w", err)
+			if dry.skip("delete", "config file "+configFile) {
+				return nil
 			}
 
-			var deleteKey func(m map[string]any, k string)
-
-			deleteKey = func(m map[string]any, k string) {
-				parts := strings.SplitN(k, ".", keyParts)
-				target := parts[0]
-
-				var actualKey string
-
-				for mk := range m {
-					if strings.EqualFold(mk, target) {
-						actualKey = mk
-
-						break
-					}
-				}
-
-				if actualKey == "" {
-					return
-				}
-
-				if len(parts) == 1 {
-					delete(m, actualKey)
-
-					return
-				}
-
-				if next, ok := m[actualKey].(map[string]any); ok {
-					deleteKey(next, parts[1])
-				}
+			if err := os.Remove(configFile); err != nil {
+				return fmt.Errorf("failed to remove config file %s: %w", configFile, err)
 			}
 
-			deleteKey(configMap, key)
-
-			newData, err := yaml.Marshal(configMap)
-			if err != nil {
-				return fmt.Errorf("marshaling config: %w", err)
-			}
-
-			if err := os.WriteFile(configFile, newData, 0o600); err != nil {
-				return fmt.Errorf("writing config file: %w", err)
-			}
-
-			plog.Info(plog.TypeSystem, "configuration value unset", "key", key, "file", configFile)
+			plog.Info(
+				plog.TypeSystem,
+				"configuration file deleted; settings reset to defaults",
+				"file",
+				configFile,
+			)
 
 			return nil
 		},
 	}
 
 	cmd.Flags().Bool("all", false, "Unset all settings (delete configuration file)")
+	dry = addDryRunFlag(cmd)
 
 	return cmd
 }
 
-func flattenSettingsMap(prefix string, src map[string]any, dst map[string]any) {
-	for k, v := range src {
-		newKey := k
-		if prefix != "" {
-			newKey = prefix + "." + k
-		}
-		if child, ok := v.(map[string]any); ok {
-			flattenSettingsMap(newKey, child, dst)
-		} else {
-			dst[newKey] = v
-		}
-	}
-}
+// settingFlag returns the flag of a known setting, or nil for another key:
+// a persistent flag of root, the flag <name> of the subcommand <command> for
+// the key <command>.<name>, or a flag of a subcommand that v has at its own
+// name, such as unix-socket-gid.
+func settingFlag(root *cobra.Command, v *viper.Viper, key string) *pflag.Flag {
+	key = strings.ToLower(key)
 
-func inferType(s string) any {
-	// Check for boolean
-	if strings.ToLower(s) == boolStringTrue {
-		return true
-	}
-
-	if strings.ToLower(s) == "false" {
-		return false
-	}
-
-	// Check for integer
-	if i, err := strconv.Atoi(s); err == nil {
-		return i
-	}
-
-	// Check for float
-	if f, err := strconv.ParseFloat(s, 64); err == nil && strings.Contains(s, ".") {
+	if f := root.PersistentFlags().Lookup(key); f != nil {
 		return f
 	}
 
-	return s
+	if command, name, ok := strings.Cut(key, "."); ok {
+		for _, sub := range root.Commands() {
+			if sub.Name() == command {
+				if f := sub.LocalFlags().Lookup(name); f != nil {
+					return f
+				}
+			}
+		}
+	}
+
+	if !slices.Contains(v.AllKeys(), key) {
+		return nil
+	}
+
+	for _, sub := range root.Commands() {
+		if f := sub.LocalFlags().Lookup(key); f != nil {
+			return f
+		}
+	}
+
+	return nil
 }
 
-func init() { //nolint:gochecknoinits // cobra command
+// newSettingsCommands returns phenix settings and its subcommands, which read
+// and change the settings of v.
+func newSettingsCommands(v *viper.Viper) *cobra.Command {
 	settingsCmd := newSettingsCmd()
 
 	dbCmd := newSettingsDBCmd()
@@ -569,10 +540,14 @@ func init() { //nolint:gochecknoinits // cobra command
 	dbCmd.AddCommand(newSettingsDBEditCmd())
 	settingsCmd.AddCommand(dbCmd)
 
-	settingsCmd.AddCommand(newSettingsSetCmd())
-	settingsCmd.AddCommand(newSettingsListCmd())
-	settingsCmd.AddCommand(newSettingsGetCmd())
-	settingsCmd.AddCommand(newSettingsUnsetCmd())
+	settingsCmd.AddCommand(newSettingsSetCmd(v))
+	settingsCmd.AddCommand(newSettingsListCmd(v))
+	settingsCmd.AddCommand(newSettingsGetCmd(v))
+	settingsCmd.AddCommand(newSettingsUnsetCmd(v))
 
-	addCommandToRoot(settingsCmd, true)
+	return settingsCmd
+}
+
+func init() { //nolint:gochecknoinits // cobra command
+	addCommandToRoot(newSettingsCommands(viper.GetViper()), true)
 }

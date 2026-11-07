@@ -135,6 +135,10 @@ func (n *Node) SetLabels(m map[string]string) {
 	n.LabelsF = m
 }
 
+func (n *Node) SetAnnotations(m map[string]any) {
+	n.AnnotationsF = m
+}
+
 func (n *Node) AddAnnotation(k string, i any) {
 	if n.AnnotationsF == nil {
 		n.AnnotationsF = make(map[string]any)
@@ -144,19 +148,25 @@ func (n *Node) AddAnnotation(k string, i any) {
 }
 
 func (n *Node) AddTimerDelay(delay string) {
-	n.DelayF.TimerF = delay
+	n.delay().TimerF = delay
 }
 
 func (n *Node) AddUserDelay(delay bool) {
-	n.DelayF.UserF = delay
+	n.delay().UserF = delay
 }
 
 func (n *Node) AddC2Delay(hostname string, useuuid bool) {
-	n.DelayF = new(Delay)
-	d := new(C2Delay)
-	d.HostnameF = hostname
-	d.UseUUIDF = useuuid
-	n.DelayF.C2F = append(n.DelayF.C2F, *d)
+	d := n.delay()
+	d.C2F = append(d.C2F, C2Delay{HostnameF: hostname, UseUUIDF: useuuid})
+}
+
+// delay returns the delay of the node, and makes it first when the node has none.
+func (n *Node) delay() *Delay {
+	if n.DelayF == nil {
+		n.DelayF = new(Delay)
+	}
+
+	return n.DelayF
 }
 
 func (n *Node) AddLabel(k, v string) {
@@ -614,6 +624,12 @@ func (n Node) validate() error {
 		)
 	}
 
+	if n.DelayF != nil && n.DelayF.TimerF != "" {
+		if _, err := time.ParseDuration(n.DelayF.TimerF); err != nil {
+			return fmt.Errorf("delay timer %q is not a duration such as 5m: %w", n.DelayF.TimerF, err)
+		}
+	}
+
 	if n.NetworkF == nil {
 		return nil
 	}
@@ -755,17 +771,18 @@ func (n Node) FileInjects(baseDir string) string {
 	injects := make([]string, len(n.InjectionsF))
 
 	for i, inject := range n.InjectionsF {
-		if strings.HasPrefix(inject.SrcF, "/") {
-			injects[i] = fmt.Sprintf(`"%s":"%s"`, inject.SrcF, inject.DstF)
-		} else {
-			injects[i] = fmt.Sprintf(`"%s/%s":"%s"`, baseDir, inject.SrcF, inject.DstF)
+		src := inject.SrcF
+		if !strings.HasPrefix(src, "/") {
+			src = baseDir + "/" + src
 		}
 
+		injects[i] = fmt.Sprintf(`"%s":"%s"`, src, inject.DstF)
+
 		if inject.PermissionsF != "" && len(inject.PermissionsF) <= 4 {
-			if perms, err := strconv.ParseInt(inject.PermissionsF, 8, 64); err == nil {
+			if perms, err := strconv.ParseUint(strings.TrimPrefix(inject.PermissionsF, "+"), 8, 32); err == nil {
 				// Update file permissions on local disk before it gets injected into
 				// disk image.
-				_ = os.Chmod(inject.SrcF, os.FileMode(perms)) //nolint:gosec // integer overflow conversion int64 -> uint32
+				_ = os.Chmod(src, os.FileMode(perms))
 			}
 		}
 	}

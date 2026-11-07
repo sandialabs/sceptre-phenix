@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -141,6 +142,32 @@ func TestECMAPattern(t *testing.T) {
 		if got := pattern.MatchString(value); got != want {
 			t.Errorf("%q matches = %v, want %v", value, got, want)
 		}
+	}
+}
+
+// A branch that only requires a property of its parent declares it, as strict
+// validators need, and a property the branch defines itself is kept as it is.
+func TestRewriteSchemaDeclaresBranchRequiredProperties(t *testing.T) {
+	got := rewriteSchema(map[string]any{
+		"type": "object",
+		"anyOf": []any{
+			map[string]any{"required": []any{"nodes"}},
+			map[string]any{"required": []any{"includes", "other"}, "properties": map[string]any{"other": map[string]any{}}},
+		},
+		"properties": map[string]any{"nodes": map[string]any{}, "includes": map[string]any{}},
+	})
+
+	want := []any{
+		map[string]any{"type": "object", "required": []any{"nodes"}, "properties": map[string]any{"nodes": true}},
+		map[string]any{
+			"type":       "object",
+			"required":   []any{"includes", "other"},
+			"properties": map[string]any{"other": map[string]any{}, "includes": true},
+		},
+	}
+
+	if !reflect.DeepEqual(got["anyOf"], want) {
+		t.Errorf("anyOf = %#v, want %#v", got["anyOf"], want)
 	}
 }
 

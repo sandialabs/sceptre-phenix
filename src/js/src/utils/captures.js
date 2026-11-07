@@ -17,10 +17,9 @@ export function isInterfaceCapturing(captures, iface) {
   return (captures || []).some((c) => c.interface === iface);
 }
 
-// Returns true if more than one packet capture is currently running for a
-// VM. Used to decide whether stopping a capture on a specific interface
-// should first prompt the user to choose between stopping just that
-// interface or all of the VM's running captures.
-export function hasMultipleCaptures(captures) {
-  return (captures || []).length > 1;
+// The file a packet capture started from the UI writes to the experiment's
+// files: <vm>_<interface>_<stamp>.pcap, so captures started together on
+// several interfaces each get their own file.
+export function captureFilename(vmName, iface, time) {
+  return `${[vmName, iface, time].join('_')}.pcap`;
 }

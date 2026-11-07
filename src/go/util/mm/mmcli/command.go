@@ -15,6 +15,9 @@ type Command struct {
 	Filters   []string
 	Namespace string
 	Timeout   time.Duration
+	// Background commands, such as screenshots, wait for the shared connection
+	// behind every other command waiting, so they do not hold up user actions.
+	Background bool
 }
 
 // NewCommand returns a pointer to a new, initialized command.
@@ -39,14 +42,18 @@ func (c *Command) String() string {
 		cmd = fmt.Sprintf(".filter %v %v", f, cmd)
 	}
 
-	if len(c.Columns) > 0 {
-		columns := make([]string, len(c.Columns))
+	// minicli gives the answering node as the response's host, not as a column, so
+	// `host` is never asked for: the mappers in tabular.go fill it in.
+	columns := make([]string, 0, len(c.Columns))
 
-		// Quote all the columns in case there are spaces.
-		for i := range c.Columns {
-			columns[i] = fmt.Sprintf("%q", c.Columns[i])
+	for _, column := range c.Columns {
+		if column != hostColumn {
+			// Quote the column in case it has spaces.
+			columns = append(columns, fmt.Sprintf("%q", column))
 		}
+	}
 
+	if len(columns) > 0 {
 		cmd = fmt.Sprintf(".columns %v %v", strings.Join(columns, ","), cmd)
 	}
 

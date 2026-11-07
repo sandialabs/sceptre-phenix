@@ -12,6 +12,8 @@ import (
 	ft "phenix/web/forward/forwardtypes"
 )
 
+// The web page lists each listener, and its forms move, activate and
+// deactivate a listener.
 func TestWebInterfaceListsAndManagesListeners(t *testing.T) {
 	previousManager := localListeners
 	previousOrigin := origin
@@ -61,8 +63,8 @@ func TestWebInterfaceListsAndManagesListeners(t *testing.T) {
 	port := freeTCPPort(t)
 	response = serveWebRequest(t, handler, http.MethodPost, "/listeners/1/move", "port="+strconv.Itoa(port))
 
-	if response.Code != http.StatusSeeOther {
-		t.Fatalf("second move status = %d, want %d", response.Code, http.StatusSeeOther)
+	if response.Code != http.StatusSeeOther || listener.SrcPort != port {
+		t.Fatalf("second move response = (%d, port %d), want (%d, port %d)", response.Code, listener.SrcPort, http.StatusSeeOther, port)
 	}
 
 	response = serveWebRequest(t, handler, http.MethodPost, "/listeners/1/activate", "")
@@ -176,4 +178,100 @@ func serveWebRequest(t *testing.T, handler http.Handler, method, path, form stri
 
 	handler.ServeHTTP(response, request)
 	return response
+}
+
+// The web interface rejects a request with a wrong method, path, listener or form.
+func TestWebInterfaceRejectsBadRequests(t *testing.T) {
+	manager := useListenerManager(t)
+	manager.add(ft.Listener{Exp: "experiment", VM: "vm", DstHost: "127.0.0.1", DstPort: 80})
+
+	handler, err := newWebHandler()
+	if err != nil {
+		t.Fatalf("creating web handler: %v", err)
+	}
+
+	tests := []struct {
+		method     string
+		path       string
+		form       string
+		wantStatus int
+		wantAllow  string
+	}{
+		{method: http.MethodGet, path: "/missing", wantStatus: http.StatusNotFound},
+		{method: http.MethodPost, path: "/", wantStatus: http.StatusMethodNotAllowed, wantAllow: http.MethodGet},
+		{
+			method:     http.MethodGet,
+			path:       "/listeners/1/activate",
+			wantStatus: http.StatusMethodNotAllowed,
+			wantAllow:  http.MethodPost,
+		},
+		{method: http.MethodPost, path: "/listeners/1", wantStatus: http.StatusNotFound},
+		{method: http.MethodPost, path: "/listeners/1/activate/now", wantStatus: http.StatusNotFound},
+		{method: http.MethodPost, path: "/listeners/0/activate", wantStatus: http.StatusBadRequest},
+		{method: http.MethodPost, path: "/listeners/1/explode", wantStatus: http.StatusNotFound},
+		{method: http.MethodPost, path: "/listeners/1/move", form: "%zz", wantStatus: http.StatusBadRequest},
+		{method: http.MethodPost, path: "/listeners/1/move", form: "port=x", wantStatus: http.StatusBadRequest},
+		{method: http.MethodPost, path: "/listeners/1/deactivate", wantStatus: http.StatusBadRequest},
+	}
+
+	for _, test := range tests {
+		t.Run(test.method+" "+test.path+" "+test.form, func(t *testing.T) {
+			response := serveWebRequest(t, handler, test.method, test.path, test.form)
+
+			if response.Code != test.wantStatus {
+				t.Errorf("status = %d, want %d", response.Code, test.wantStatus)
+			}
+
+			if got := response.Header().Get("Allow"); got != test.wantAllow {
+				t.Errorf("Allow header = %q, want %q", got, test.wantAllow)
+			}
+		})
+	}
+}
+
+// A full client queue keeps only the newest message.
+func TestWebEventClientKeepsNewestMessage(t *testing.T) {
+	client := &webEventClient{messages: make(chan string, 1)}
+
+	client.send("old")
+	client.send("new")
+
+	if got := <-client.messages; got != "new" {
+		t.Errorf("queued message = %q, want %q", got, "new")
+	}
+}
+
+// A hub without a template sends nothing, and a removed client leaves the hub.
+func TestWebEventHubWithoutTemplate(t *testing.T) {
+	useListenerManager(t)
+
+	hub := &webEventHub{clients: make(map[*webEventClient]struct{})}
+	client := &webEventClient{messages: make(chan string, 1)}
+	hub.clients[client] = struct{}{}
+
+	hub.broadcast(Listeners{{ID: 1}})
+
+	select {
+	case message := <-client.messages:
+		t.Errorf("broadcast without a template sent %q, want nothing", message)
+	default:
+	}
+
+	hub.remove(client)
+
+	if got := len(hub.clients); got != 0 {
+		t.Errorf("client count after remove = %d, want 0", got)
+	}
+}
+
+func TestStartWebServer(t *testing.T) {
+	useListenerManager(t)
+
+	if err := startWebServer("127.0.0.1:0"); err != nil {
+		t.Errorf("startWebServer(127.0.0.1:0) error = %v, want nil", err)
+	}
+
+	if err := startWebServer("127.0.0.1:not-a-port"); err == nil {
+		t.Error("startWebServer(127.0.0.1:not-a-port) error = nil, want error")
+	}
 }

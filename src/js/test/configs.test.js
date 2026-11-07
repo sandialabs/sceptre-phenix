@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { describe, expect, test, vi } from 'vitest';
+import { flushPromises, mount } from '@vue/test-utils';
 import Configs from '@/views/Configs.vue';
 
 vi.mock('@/components/configs/ConfigsEditor.vue', () => ({
@@ -19,8 +19,6 @@ const ListStub = {
 };
 
 const site = { kind: 'Topology', metadata: { name: 'site' } };
-
-enableAutoUnmount(afterEach);
 
 async function mountView() {
   const wrapper = mount(Configs, {

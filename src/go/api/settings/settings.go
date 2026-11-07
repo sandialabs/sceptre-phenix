@@ -7,6 +7,7 @@ import (
 	"github.com/activeshadow/structs"
 	"github.com/mitchellh/mapstructure"
 
+	"phenix/api/runtimesettings"
 	"phenix/store"
 	"phenix/types"
 	v2 "phenix/types/version/v2"
@@ -25,6 +26,9 @@ Adding a new setting:
 		- create new file for the category, make Get and Update function
 		- Add new category to GetSettings and UpdateAllSettings (settings.go)
 4. Update Settings.vue for UI visibility
+
+The logging settings are not in the store: they are the runtime settings
+log.system.max-size, max-backups and max-age (see logfile.go).
 */
 
 type Settings struct {
@@ -48,10 +52,7 @@ func GetSettings() (*Settings, error) {
 		return nil, fmt.Errorf("error getting password settings: %w", err)
 	}
 
-	settings.LoggingSettings, err = GetLoggingSettingsFromList(settingList)
-	if err != nil {
-		return nil, fmt.Errorf("error getting logging settings: %w", err)
-	}
+	settings.LoggingSettings = GetLoggingSettings()
 
 	settings.TimeoutSettings, err = GetTimeoutSettingsFromList(settingList)
 	if err != nil {
@@ -61,19 +62,27 @@ func GetSettings() (*Settings, error) {
 	return settings, nil
 }
 
-func UpdateAllSettings(newSettings Settings) error {
-	err := UpdatePasswordSettings(newSettings.PasswordSettings)
-	if err != nil {
-		return fmt.Errorf("error updating password settings: %w", err)
-	}
-
-	err = UpdateLoggingSettings(newSettings.LoggingSettings)
+// UpdateAllSettings changes the settings to newSettings. It writes each
+// changed logging setting to the config file of rs and applies it at once. It
+// checks the logging and password settings before it changes a setting, so a
+// refused request changes nothing.
+func UpdateAllSettings(rs *runtimesettings.Settings, newSettings Settings) error {
+	logChanges, err := logLimitChanges(rs, newSettings.LoggingSettings)
 	if err != nil {
 		return fmt.Errorf("error updating logging settings: %w", err)
 	}
 
+	err = UpdatePasswordSettings(newSettings.PasswordSettings)
+	if err != nil {
+		return fmt.Errorf("error updating password settings: %w", err)
+	}
+
 	if err := UpdateTimeoutSettings(newSettings.TimeoutSettings); err != nil {
 		return fmt.Errorf("error updating timeout settings: %w", err)
+	}
+
+	if err := applyLogLimitChanges(rs, logChanges); err != nil {
+		return fmt.Errorf("error updating logging settings: %w", err)
 	}
 
 	return nil
@@ -83,17 +92,19 @@ func GetStoreName(category, name string) string {
 	return fmt.Sprintf("%s.%s", category, name)
 }
 
-func Update(category, name, value string) (bool, error) {
+// Update stores value as the setting category.name, when it differs from
+// the stored value.
+func Update(category, name, value string) error {
 	oldSetting, err := GetSetting(category, name)
 	if err != nil {
-		return false, fmt.Errorf("error getting existing setting: %w", err)
+		return fmt.Errorf("error getting existing setting: %w", err)
 	}
 
 	settingName := GetStoreName(category, name)
 
 	if oldSetting.Spec.Value == value {
 		// don't need to update
-		return false, nil
+		return nil
 	}
 
 	oldSetting.Spec.Value = value
@@ -108,10 +119,10 @@ func Update(category, name, value string) (bool, error) {
 	}
 
 	if err = store.Update(&c); err != nil {
-		return false, fmt.Errorf("storing setting %s: %w", settingName, err)
+		return fmt.Errorf("storing setting %s: %w", settingName, err)
 	}
 
-	return true, nil
+	return nil
 }
 
 // UpdateWithVerification is the same as update but verify the value is of the correct type.
@@ -175,6 +186,8 @@ func verify(settingType v2.SettingValueType, value string) (bool, error) {
 	return true, nil
 }
 
+// List returns the settings of the store, and stores each default that is
+// missing. It leaves out the Logging settings that older versions stored.
 func List() ([]types.Setting, error) {
 	configs, err := store.List(settingKind)
 	if err != nil {
@@ -189,6 +202,11 @@ func List() ([]types.Setting, error) {
 		err = mapstructure.Decode(c.Spec, spec)
 		if err != nil {
 			return nil, fmt.Errorf("decoding setting %s: %w", c.Metadata.Name, err)
+		}
+
+		// an old store can hold these; SetDefaults deletes them
+		if spec.Category == legacyCategoryLogging {
+			continue
 		}
 
 		sett := types.Setting{Metadata: c.Metadata, Spec: spec}

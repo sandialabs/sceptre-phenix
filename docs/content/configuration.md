@@ -45,6 +45,45 @@ begin with a capital letter.
     When we say this, we mean passing a YAML or JSON configuration file of any
     type to the `phenix config create` command.
 
+## Revisions
+
+phēnix stamps every stored config with `metadata.created`, `metadata.updated`
+and `metadata.revision`. The revision is a number that increases on every
+write to the config. phēnix ignores the revision and the timestamps in files
+and requests.
+
+```yaml
+metadata:
+  name: foobar
+  created: "2026-10-14T09:12:44-06:00"
+  updated: "2026-10-14T09:30:02-06:00"
+  revision: 42
+```
+
+`phenix config edit` remembers the revision it opened. If someone else saves
+the config before you close the editor, it refuses to save your edits with
+`<kind/name> changed while you edited it, so run phenix config edit again`.
+
+## Applying Files
+
+`phenix config apply` creates each config in the given files that is not
+stored, and updates each stored config that is different. `phenix config diff`
+shows the differences first, as a unified diff, and changes nothing. Both
+compare the `apiVersion`, `kind`, name, annotations and `spec`. They ignore
+the fields that phēnix sets, such as the revision.
+
+```bash
+phenix config diff ./configs
+phenix config apply -f ./configs --dry-run
+phenix config apply -f ./configs
+```
+
+`apply` does not apply `User` configs, because their files do not hold the
+password hash and the tokens. An update goes through the checks of
+`phenix config edit`, and phēnix refuses to update the config of a running
+experiment. `diff` exits with `0` when no config differs, `1` when one or more
+differ, and `2` when it cannot compare a config.
+
 ## Topology
 
 The `Topology` configuration is one of the core configuration types for
@@ -135,7 +174,9 @@ three options available to set, but on only one option can be set:
    start either through the phēnix UI or command line (the latter can be by
    phēnix or minimega commands).
 
-1. `timer` is a string that is set as a delay in minutes; e.g., `5m`.
+1. `timer` is a
+   [Golang duration string](https://pkg.go.dev/time#ParseDuration) such as
+   `30s`, `5m`, or `1h30m`. A timer that is not a duration is rejected.
 
 1. `c2` requires minimega command and control. Note in the example below that
    the hostname `AD1` will be delayed starting until the VM `host-00` has
@@ -147,8 +188,21 @@ three options available to set, but on only one option can be set:
 !!! note
     If one or more VMs are set with a delayed start, the UI will display a blue
     tag in the Delay column next to the Screenshot column. The tag will indicate
-    what type of dealy was set. Once all the delayed VMs have started, the Delay
+    what type of delay was set. Once all the delayed VMs have started, the Delay
     column will no longer be visible.
+
+    While VMs wait for a delayed start, the summary at the top of the running
+    experiment page shows a blue tag, for example `2 delayed VMs waiting`, next
+    to the `Running` status. The VMs tile of the summary also shows the number
+    of delayed VMs. To see the tiles, click `Details` in the summary.
+
+!!! note
+    An experiment started from the web UI or the API counts as running while
+    its `timer` and `c2` delayed VMs are still pending. If `phenix ui`
+    restarts before they start, it resumes them. A delayed VM that minimega
+    no longer holds cannot start. The experiment is then marked interrupted
+    in the Experiments table, and its post-start apps do not run. Restart
+    the experiment to run them.
 
 #### Network Address Translation (NAT)
 
@@ -512,12 +566,14 @@ spec:
 scenarios to form an experiment (it should be note that an experiments do not
 require a scenario).
 
-Typically experiment configurations are
-[created automatically](experiments.md#create-a-new-experiment), but it is
-possible to create them manually using a configuration file similar to the one
-shown below. In this case, an experiment named `foobar` would be created based
-on an existing topology named `foobar` and an existing scenario named `foobar`
-(note that none of the names are required to match).
+Experiment configurations are
+[created](experiments.md#create-a-new-experiment) from an existing topology and
+an optional scenario, with `phenix experiment create` or the web UI. A
+configuration file holding only the header below is not enough: its `spec` must
+already hold the experiment, so `phenix config create` rejects it. The header
+of an experiment named `foobar`, created from a topology named `foobar` and a
+scenario named `foobar` (none of the names are required to match), looks like
+this:
 
 ```yaml
 apiVersion: phenix.sandia.gov/v1
@@ -527,12 +583,16 @@ metadata:
   annotations:
     topology: foobar # this is required
     scenario: foobar # this is optional
+spec:
+  ...
 ```
 
-Once created, either manually or automatically, the experiment configuration
-will be expanded to have the topology and scenario configurations embedded in
-it, as well as additional details like cluster host schedules for VMs, VLAN
-ranges, etc. The advantage of embedding the topology and scenario
+The experiment configuration has the topology and scenario configurations
+embedded in it, as well as additional details like cluster host schedules for
+VMs, VLAN ranges, etc. When you create or change an experiment configuration
+through the Web-UI or the API, its `spec.baseDir` must be a folder in
+`<base-dir.phenix>/experiments`. An update can keep a stored base directory
+that is outside that folder. `phenix config create` has no such limit. The advantage of embedding the topology and scenario
 into the experiment is that they can be modified in the experiment without
 modifying the originals.
 
@@ -640,9 +700,10 @@ that user should have is specified, and using that role name the appropriate
 RBAC permissions are copied from the role configuration into the user
 configuration.
 
-There are six (6) default role configurations that get created automatically,
-and are described under [default roles](user-administration.md#roles). An example role
-configuration is shown below for completeness.
+There are eight (8) default role configurations that get created automatically:
+the seven described under [default roles](user-administration.md#roles), and
+`Disabled`, which allows nothing. An example role configuration is shown below
+for completeness.
 
 ```yaml
 apiVersion: phenix.sandia.gov/v1
@@ -654,12 +715,18 @@ spec:
   policies:
   - resourceNames:
     - '*'
+    - '*/*'
     resources:
     - '*'
     - '*/*'
     verbs:
     - '*'
 ```
+
+Resource names are matched with the same `Kind/name` or `experiment/vm` shape
+as the resource they belong to, and a `*` never crosses the `/`, which is why
+this role lists both `*` and `*/*`. See
+[Resources](user-administration.md#resources).
 
 ## Web-UI
 
@@ -669,13 +736,20 @@ The `Configs` component will initially load with a table presenting all the
 available configuration files. It is possible to filter in two ways:
 
 1. There is a pull-down selector, which will allow filtering on a specific
-   `Kind` of config.
-  ![screenshot](images/filter_kind.png){: width=350 .center}
-2. A filter field will allow filtering on `Name` (if you have filtered on
-   `Kind`, it will be limited to that kind of config).
-  ![screenshot](images/filter.png){: width=600 .center}
+   `Kind` of config. Choosing `All kinds` puts every kind back in the table.
+  ![Filter on Kind drop-down beside the Find a Config search box.](images/filter_kind.png){: width=350 .center}
+2. A separate `Find a Config` field will allow filtering on `Name` (if you have
+   filtered on `Kind`, it will be limited to that kind of config).
+  ![Find a Config search box with a magnifying-glass icon.](images/filter.png){: width=600 .center}
 
 Clicking on the `X` next to the `Find a Config` field will reset both filters.
+
+Above the table, the page counts the configs in all and by kind, whatever the
+filters show. Click the count of a kind to filter on that kind. Click the
+`Configs` total, or the count of the kind again, to show all kinds. The `Kind`
+selector shows the same filter. Click the `Name`, `Kind` or `Last Updated`
+heading to sort the table by it. `Last Updated` shows when the config last
+changed and how long ago that was (see [Timestamps](web-ui.md#timestamps)).
 
 ### View a Config
 
@@ -684,15 +758,22 @@ There are two ways to view a specific config:
 1. Clicking the name of the config entry will open a modal to view the config.
    It is possible to select text and copy from this modal. However, it is not
    possible to edit the config directly in this view. Instead, there is an
-   `Edit Config` button, which will open an editor. It is also possible to
-   download a copy of the config. From the keyboard, Tab to the name and press
-   Enter.
-  ![screenshot](images/view.png){: width=800 .center}
+   `Edit` button to the right of `Copy`, which will open an editor. The
+   `Download` button downloads a copy of the config. From the keyboard, Tab to the name and press
+   Enter. A topology or scenario name on the `Experiments` page opens its
+   config in this viewer, too. The annotations of the config show next to
+   its title. Above the text, the viewer shows the kind, name, creation time
+   and update time of the config. Use the `YAML` and `JSON` buttons to change the format of the
+   text. Use `Wrap lines` to wrap long lines, and `Copy` to copy the text.
+   The viewer of an experiment config has a flask button to the right of its
+   title. The button closes the viewer and opens the experiment page. The
+   viewer of a topology or scenario lists the experiments that use it.
+  ![Config viewer dialog of Role/vm-viewer with its kind, name, creation and update times, the YAML, JSON, Wrap lines, Copy, Download and Edit controls, and its YAML.](images/view.png){: width=800 .center}
 2. Selecting the `Edit` button for a given config will open the editor window.
    It is possible to edit the config in this window and save the update to the
    phēnix store. The config will be validated against the schema, and if
    invalid, an error will be presented.
-  ![screenshot](images/view_edit.png){: width=800 .center}
+  ![Config editor with the name mirror, the kind Scenario and the YAML format selected, beside the scenario's YAML and Save and Exit buttons.](images/view_edit.png){: width=800 .center}
 
 ### Create a Config
 
@@ -701,7 +782,7 @@ There are two ways to create a new config:
 1. Selecting the `Upload` button located to the far right of the search field
    will allow you to upload a file from disk. It is possible to drag and drop in
    the upload modal or click the upload icon to open a file browser.
-  ![screenshot](images/upload.png){: width=350 .center}
+  ![Upload a Config dialog with a drop zone that accepts .yaml, .yml and .json files.](images/upload.png){: width=350 .center}
 
     !!! note
         Only files with the extensions `.yml`, `.yaml`, and `.json` will be allowed.
@@ -715,7 +796,7 @@ There are two ways to create a new config:
    completed, clicking the `Create` button will post it server-side where it
    will be validated, similar to file upload. If invalid, an error will be
    presented.
-  ![screenshot](images/new_edit.png){: width=800 .center}
+  ![New config editor with the placeholder name TODO, no kind selected, the YAML format, and a template config beside Create and Exit buttons.](images/new_edit.png){: width=800 .center}
 
 ### Editor Window
 
@@ -728,8 +809,20 @@ The editor window allows direct editing of an existing or new config file.
   button under `File Format`.
 
 - It is also possible to set keybindings to the Vim editor by enabling them with
-  the sliding selector under `Vim Keybindings`.
-  ![screenshot](images/edit_settings.png){: width=150 .center}
+  the sliding selector under `Vim Mode`.
+  ![Editor settings with the File Format radio buttons set to YAML and the Vim Mode toggle disabled.](images/edit_settings.png){: width=150 .center}
+
+When you leave the editor with unsaved changes, phēnix asks whether to discard
+them. A config the server rejects as invalid opens the `Validation Error`
+dialog, which keeps the config open so you can correct it. Any other failure,
+such as a missing permission, is reported in the usual error notification.
+
+A save only overwrites the config if nobody saved it since you opened it (see
+[Revisions](#revisions)). Otherwise the `Config Changed` dialog offers to
+`Reload it (your edits are lost)`, to `Overwrite anyway`, or to `Cancel` and
+keep editing.
+
+![The Config Changed dialog naming the revision opened and the current one, with Reload it (your edits are lost), Overwrite anyway and Cancel buttons](images/config_conflict.png){: width=500 .center}
 
 #### New Config
 
@@ -738,7 +831,7 @@ text field to the left or within the config editor directly. Similarly, use the
 pull-down selector to the left to select the kind of config or within the config
 editor.
 
-  ![screenshot](images/name_kind.png){: width=200 .center}
+  ![Config Kind drop-down open below the Config Name field, listing Topology, Scenario, Experiment, Image, User and Role.](images/name_kind.png){: width=200 .center}
 
 Selecting the `Create` button will post the new config server-side for
 validation and addition to the store. Choosing the `Exit` button will leave the
@@ -749,7 +842,7 @@ editor window; nothing will be saved.
 Changing the name in an existing config is only available through the editor
 window.
 
-  ![screenshot](images/disabled.png){: width=600 .center}
+  ![Editor for an existing Experiment config, with the Config Name and Config Kind fields grayed out beside its YAML.](images/disabled.png){: width=600 .center}
 
 Selecting the `Save` button will post any updates server-side for validation and
 addition to the store. Selecting the `Exit` button will leave the editor window;
@@ -759,10 +852,13 @@ nothing will be saved.
 
 Selecting the delete icon will delete a config. A confirmation dialog will be
 presented to confirm the selection. Once the config is deleted, it cannot be
-restored to the store. If an experiment config is deleted, the corresponding
+restored to the store. From the command line, `phenix config delete all
+[kind]` deletes every config, or every config of one kind, except the config
+of a running experiment. Add `--dry-run` to show the configs that it would
+delete. If an experiment config is deleted, the corresponding
 experiment will not longer be presented in the `Experiments` tab.
 
-  ![screenshot](images/actions.png){: width=150 .center}
+  ![Edit, download and delete icon buttons from a config row.](images/actions.png){: width=150 .center}
 
 ## Environment Variables
 

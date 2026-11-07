@@ -875,7 +875,7 @@ func TestBuilderPreviewRefusal(t *testing.T) {
 		},
 		{
 			name: "a 409 with its code", refused: true,
-			err:  weberror.NewWebError(nil, "draft changed").SetStatus(http.StatusConflict).WithCode(string(bdoc.CodeDraftConflict)),
+			err:  weberror.NewWebError(nil, "draft changed").SetStatus(http.StatusConflict).WithCode(weberror.Code(bdoc.CodeDraftConflict)),
 			want: asErrors(bdoc.NewIssue(bdoc.CodeDraftConflict, "", "draft changed")),
 		},
 		{

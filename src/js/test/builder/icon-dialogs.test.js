@@ -2,9 +2,9 @@
 // Download embeds the custom icons after reading the library, and Upload
 // holds on icon warnings. Each dialog is mounted and driven as a user would.
 
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import YAML from 'js-yaml';
 
 // The files the dialogs save, in order.
@@ -31,8 +31,6 @@ const OURS = base64Of(png(2, 2, [10, 120, 40, 255]));
 
 const CLASH =
   "The server already has an icon named hmi that differs from this diagram's. The diagram keeps its own copy, which it shows in place of the server's.";
-
-enableAutoUnmount(afterEach);
 
 // Opens a dialog in the page, as Builder does, after `prepare` sets up the
 // Builder store.

@@ -74,14 +74,14 @@ positional args and rejected with "must provide an image name as the only argume
 
 | Command | Behavior |
 |---|---|
-| `phenix image list [-f] [-c] [-m]` | Table of configs; optional format/compressed/mirror columns |
+| `phenix image list [-f] [-c] [-m] [-o table\|json\|yaml]` | Table of configs; optional format/compressed/mirror columns, which JSON and YAML always have |
 | `phenix image build <name\|file.vmdb>` | `-o` output dir (default cwd), `-c` write the rootfs tar, `-v`/`-x` verbosity, `--dry-run` prints the vmdb2 command. Any argument containing `.vmdb` is treated as a file; the image name becomes its basename without extension |
 | `phenix image create-from <src> <new>` | Copy a config, optionally adding `-O/-P/-T` |
 | `phenix image append <name>` | Add overlays/packages/scripts to an existing config (scripts are appended to `script_order`) |
-| `phenix image remove <name>` | Remove overlays/packages/scripts from a config. Removing a script deletes its `scripts` entry but leaves the `script_order` entry, so a later `append` of the same path lists it twice |
-| `phenix image update <name>` | Re-read on-disk scripts into the config; each refreshed key is removed from `script_order` and re-appended at the end, in map-iteration (random) order when several scripts are refreshed |
+| `phenix image remove <name>` | Remove overlays/packages/scripts from a config; a removed script also leaves `script_order` |
+| `phenix image update <name>` | Re-read on-disk scripts into the config. The scripts keep their order; a URL or a file not on disk keeps its stored contents. It does not add or remove scripts, or change packages or overlays |
 | `phenix image edit <name>` | Open the config in `$EDITOR` |
-| `phenix image delete <name>` | Same as `phenix config delete image/<name>`; aliased as `del` |
+| `phenix image delete <name>...` | Same as `phenix config delete image/<name>`; aliased as `del`. Takes several names, carries on past a failure and names each one; `--dry-run` deletes nothing |
 | `phenix image inject-miniexe <exe> <disk[:part]>` | `--init-system systemd` (default) or `sysinitv` for Linux, `startup` for Windows; partition defaults to `1`. Linux: binary to `/usr/local/bin/<exe>` plus unit/init script and enable symlink. Windows: `.exe` to `C:\minimega\`, plus a Startup-folder scheduler for `miniccc.exe` when `startup` |
 
 `build` runs: `vmdb2 <out>/<name>.vmdb --output <out>/<name> --rootfs-tarball <out>/<name>.tar`
@@ -141,11 +141,16 @@ tarball first, with or without `--cache`.
 
 ## Consuming built images
 
-- Known image extensions in phenix: `.qcow2`, `.qc2`, `_rootfs.tgz`, `.hdd`, `.iso`
-  (qcow2 and `.hdd` are VM images, `_rootfs.tgz` is a container image, `.iso` an ISO).
+- Known image extensions in phenix: `.qcow2`, `.qc2`, `.qcow`, `_rootfs.tgz`, `.hdd`, `.iso`
+  (qcow2, qcow version 1 and `.hdd` are VM images, `_rootfs.tgz` is a container image,
+  `.iso` an ISO). The Disks page and `phenix doctor` find only these in the files directory.
 - Copy built images into the minimega files directory; phenix's base dir defaults to
   `/phenix` (`--base-dir.phenix`) with images conventionally under `/phenix/images`.
-- Topologies reference images by file name:
+- Topologies reference images by path relative to the minimega files directory
+  (`foo.qc2`, or `win/win10.qcow2` in a folder) or by absolute path. minimega
+  copies only images in its files directory to other cluster nodes, so an image
+  outside it must exist at the same path on every node that may run the VM; the
+  Disks page marks such images with a warning and does not change them:
 
 ```yaml
 hardware:

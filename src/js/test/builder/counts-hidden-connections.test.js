@@ -3,7 +3,7 @@
 // struck through, says how to show them, and selects nothing.
 
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 import { createPinia } from 'pinia';
 
 import BuilderCounts from '@/components/builder/BuilderCounts.vue';
@@ -12,8 +12,6 @@ import { resetSettings, setSetting } from '@/builder/settings.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument } from './fixtures.js';
-
-enableAutoUnmount(afterEach);
 
 function mountCounts() {
   const pinia = createPinia();

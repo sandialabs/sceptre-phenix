@@ -60,6 +60,8 @@ phēnix quotes each argument for minimega as needed, so empty arguments and argu
 
 If minimega errors or the minimega daemon is unreachable, `phenix mm` will exit with a non-zero status and record the error in the phēnix log.
 
+The REST API sends one minimega command with `POST /api/v1/minimega/commands`, as `phenix mm` does. It needs the `minimega/commands` `create` permission, which only `Global Admin` has of the built-in roles, and each command is audited as `minimega-command`.
+
 ### Namespace Scoping
 
 When working with experiment-specific VMs or VLANs, use the `--namespace` (`-n`) flag to target a specific minimega namespace. Each running experiment has a minimega namespace with the same name as the experiment.
@@ -93,6 +95,48 @@ To exit the attached console session, type `disconnect` or press `Ctrl+D`.
 
 !!! warning
     Typing `quit` in the console stops the minimega daemon itself, not just the console session. minimega asks you to enter `quit` a second time to confirm.
+
+### From the Web-UI
+
+When the phēnix server is started with `phenix ui --minimega-console` (or
+`PHENIX_UI_MINIMEGA_CONSOLE=true`), the `Console` link in the `Admin` menu
+opens a minimega console in the browser. The link is shown to roles with
+`post` on `miniconsole`.
+
+The console belongs to the user who started it, and keeps running while you
+use other pages or reload. It ends when you press `Ctrl+D` or type
+`disconnect` in it, when you log out, or shortly after the last tab that has
+it open closes. `Start a new console` then starts another one, and
+`Reconnect` attaches to a console whose connection was lost.
+
+The toolbar above the terminal has these controls:
+
+* **State**: The connection state: Connecting, Connected, Ended, or Connection lost.
+* **Namespace**: The experiment whose minimega namespace the console uses. "All (no namespace)" uses no namespace. Running experiments are first in the list. A change starts a new console in the namespace that you select, and then ends the old console. The page asks you to confirm first. If the new console does not start, the old console stays.
+* **Commands**: A menu of common minimega commands, and a link to the [minimega API Reference](https://sandia-minimega.github.io/minimega/reference/minimega/). The page erases the text on the command line, and then types the command that you select. It also enters commands that only read data. You must enter commands that change data, such as `vm start`, yourself.
+* **Search**: Finds text in the output. Press `Enter` for the next match and `Shift+Enter` for the previous match.
+* **Text size**: Makes the text smaller or larger. The browser keeps the size for the next visit.
+* **Clear**, **Copy all**, and **Download**: Clear the terminal, copy all of the output, or download the output as a text file. The terminal keeps approximately the last 10,000 lines of output. If the output has more lines, the page tells you that the copy or the file has only the last lines.
+* **End console**: Ends your minimega command line after you confirm. minimega and its experiments continue to run.
+
+Keyboard shortcuts:
+
+| Action | Linux and Windows | macOS |
+|---|---|---|
+| Copy the selected text | `Ctrl+Shift+C` | `Cmd+C` |
+| Paste | `Ctrl+Shift+V` | `Cmd+V` |
+| Search the output | `Ctrl+F` | `Cmd+F` |
+| Clear the terminal, as **Clear** does | `Ctrl+L` | `Ctrl+L` |
+| Scroll the output up or down one page | `PageUp` or `PageDown` | `PageUp` or `PageDown` |
+| Scroll to the top or bottom of the output | `Shift+Home` or `Shift+End` | `Shift+Home` or `Shift+End` |
+| Show the previous or next command | `Up` or `Down` | `Up` or `Down` |
+| Search the command history (reverse search) | `Ctrl+R` | `Ctrl+R` |
+
+When you enter `quit`, the page shows a warning. The page does not stop the command, and minimega asks for a second `quit`. `quit` with a delay, such as `quit 10`, stops minimega with no second request.
+
+If the connection to the console stops, the page tries to connect again after 1, 2, 4, 8, and 15 seconds. Select **Reconnect now** to try immediately, or **Cancel** to stop.
+
+![Console page with its toolbar (Connected, the bennu namespace, Commands, Search, text size, Clear, Copy all and Download, with End console at the right) above a minimega session in the bennu namespace that shows the output of vm info with each VM's host, name, state and IP addresses.](images/console_tab.png){: width=800 .center}
 
 ## minimega Command and Control (`miniccc`)
 
