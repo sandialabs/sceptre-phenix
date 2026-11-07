@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"path"
@@ -156,6 +157,7 @@ type otherTest struct {
 
 	name     string
 	failed   bool
+	errors   []string
 	cleanups []func()
 }
 
@@ -164,6 +166,10 @@ func (o *otherTest) Name() string { return o.name }
 func (o *otherTest) Helper() {}
 
 func (o *otherTest) Cleanup(f func()) { o.cleanups = append(o.cleanups, f) }
+
+func (o *otherTest) Errorf(format string, args ...any) {
+	o.errors = append(o.errors, fmt.Sprintf(format, args...))
+}
 
 func (o *otherTest) Fatalf(string, ...any) {
 	o.failed = true
@@ -203,7 +209,7 @@ func TestUseRefusesAnotherTestAtTheSameTime(t *testing.T) {
 		{name: t.Name() + "Other", wantFailed: true},
 		{name: "TestOther", wantFailed: true},
 	} {
-		other := &otherTest{TB: t, name: tc.name, failed: false, cleanups: nil}
+		other := &otherTest{TB: t, name: tc.name, failed: false, errors: nil, cleanups: nil}
 
 		useAs(other)
 		other.cleanup()
@@ -214,15 +220,15 @@ func TestUseRefusesAnotherTestAtTheSameTime(t *testing.T) {
 	}
 
 	// a subtest's sibling fails while the subtest runs, but not once it ended
-	first := &otherTest{TB: t, name: t.Name() + "/a", failed: false, cleanups: nil}
+	first := &otherTest{TB: t, name: t.Name() + "/a", failed: false, errors: nil, cleanups: nil}
 	useAs(first)
 
-	during := &otherTest{TB: t, name: t.Name() + "/b", failed: false, cleanups: nil}
+	during := &otherTest{TB: t, name: t.Name() + "/b", failed: false, errors: nil, cleanups: nil}
 	useAs(during)
 	during.cleanup()
 	first.cleanup()
 
-	after := &otherTest{TB: t, name: t.Name() + "/b", failed: false, cleanups: nil}
+	after := &otherTest{TB: t, name: t.Name() + "/b", failed: false, errors: nil, cleanups: nil}
 	useAs(after)
 	after.cleanup()
 
@@ -326,6 +332,7 @@ func TestFakeParsesCommands(t *testing.T) {
 		{raw: `namespace exp vm info`, base: `namespace exp vm info`},
 		{raw: `.filter name=vm1`, base: `.filter name=vm1`},
 		{raw: `.record true vm info`, base: `.record true vm info`},
+		{raw: `.record false .preprocess false shell echo $HOME`, base: `shell echo $HOME`},
 		{raw: `vm info .filter name=vm1 `, base: `vm info .filter name=vm1 `},
 	}
 
@@ -356,6 +363,51 @@ func TestFakeParsesCommands(t *testing.T) {
 
 	if diff := cmp.Diff(want, received()); diff != "" {
 		t.Errorf("received() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// As minimega expands environment variables in every argument, the fake fails the test for a command whose "$" would
+// expand, unless the command turns preprocessing off, and answers it with an error.
+func TestFakeFailsCommandsMinimegaWouldExpand(t *testing.T) {
+	other := &otherTest{TB: t, name: t.Name(), failed: false, errors: nil, cleanups: nil}
+	received := mmtest.Use(other, func(mmtest.Command) []*minicli.Response {
+		return []*minicli.Response{mmtest.Text("head", "handled")}
+	})
+
+	conn := mmtestDial(t)
+	enc, dec := json.NewEncoder(conn), json.NewDecoder(conn)
+
+	for _, tc := range []struct {
+		raw     string
+		wantErr bool
+	}{
+		{raw: `shell sh -c "dd if=\"$1\" count=1"`, wantErr: true},
+		{raw: `namespace "exp" vm config disk ${DISK}.qcow2`, wantErr: true},
+		{raw: `.record false .preprocess false shell sh -c "echo $1"`, wantErr: false},
+		{raw: `shell sh -c "echo $(df /) $"`, wantErr: false}, // os.ExpandEnv keeps "$(" and a trailing "$"
+		{raw: "vm info", wantErr: false},
+	} {
+		other.errors = nil
+
+		if err := enc.Encode(miniclient.Request{Command: tc.raw}); err != nil {
+			t.Fatalf("sending %q: %v", tc.raw, err)
+		}
+
+		var resp miniclient.Response
+		if err := dec.Decode(&resp); err != nil {
+			t.Fatalf("reading the answer to %q: %v", tc.raw, err)
+		}
+
+		gotErr := len(resp.Resp) == 1 && strings.Contains(resp.Resp[0].Error, "would expand")
+		if gotErr != tc.wantErr || (len(other.errors) > 0) != tc.wantErr {
+			t.Errorf("answer to %q = %+v with test errors %q, want an expansion error %t", tc.raw, resp.Resp, other.errors, tc.wantErr)
+		}
+	}
+
+	other.cleanup()
+
+	if got := len(received()); got != 5 {
+		t.Errorf("received() = %d commands, want 5", got)
 	}
 }
 

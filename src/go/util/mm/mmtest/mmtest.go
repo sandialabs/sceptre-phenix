@@ -31,8 +31,8 @@ type Command struct {
 	Raw string
 	// Namespace is the namespace the command was sent in, "" for none.
 	Namespace string
-	// Base is the command without its .record, namespace, .columns and
-	// .filter prefixes.
+	// Base is the command without its .record, .preprocess, namespace,
+	// .columns and .filter prefixes.
 	Base string
 }
 
@@ -45,26 +45,29 @@ type fake struct {
 	mu       sync.Mutex
 	handle   Handler
 	received []Command
-	users    []string // names of the tests in Use, outermost first
+	users    []string     // names of the tests in Use, outermost first
+	tbs      []testing.TB // the tests in Use, in the order of users
 }
 
 //nolint:gochecknoglobals // mmcli keeps one connection to the fake for the process
 var (
 	startOnce sync.Once
 	errStart  error
-	current   = &fake{mu: sync.Mutex{}, handle: nil, received: nil, users: nil}
+	current   = &fake{mu: sync.Mutex{}, handle: nil, received: nil, users: nil, tbs: nil}
 
 	// disconnect and truncate mark the replies Disconnect and Truncated return.
 	disconnect = &minicli.Response{Host: "mmtest: disconnect"} //nolint:exhaustruct // a marker, never sent
 	truncate   = &minicli.Response{Host: "mmtest: truncate"}   //nolint:exhaustruct // a marker, never sent
 
 	prefixes = regexp.MustCompile(
-		`^(\.record false |namespace "([^"]*)" |\.columns ("[^"]*",)*"[^"]*" |\.filter ('[^']*'\S*|\S+) )`,
+		`^(\.record false |\.preprocess false |namespace "([^"]*)" |\.columns ("[^"]*",)*"[^"]*" |\.filter ('[^']*'\S*|\S+) )`,
 	)
 )
 
 // Use points mmcli at the fake minimega, which answers with handle (nil answers every command with an empty success)
-// until the test ends, and returns a function listing the commands received since. The fake and mmcli's connection to it
+// until the test ends, and returns a function listing the commands received since. As minimega runs [os.ExpandEnv] on
+// every argument, the fake fails the test for a command with a "$" that expansion would change, and answers it with an
+// error instead of calling handle, unless the command starts with ".preprocess false". The fake and mmcli's connection to it
 // outlive a test, so tests using it must not run in parallel: Use fails a test while a test that is not it or its parent
 // uses the fake.
 func Use(tb testing.TB, handle Handler) func() []Command {
@@ -89,6 +92,7 @@ func Use(tb testing.TB, handle Handler) func() []Command {
 	}
 
 	current.users = append(current.users, name)
+	current.tbs = append(current.tbs, tb)
 	current.handle, current.received = handle, nil
 	current.mu.Unlock()
 
@@ -98,6 +102,7 @@ func Use(tb testing.TB, handle Handler) func() []Command {
 
 		if i := slices.Index(current.users, name); i >= 0 {
 			current.users = slices.Delete(current.users, i, i+1)
+			current.tbs = slices.Delete(current.tbs, i, i+1)
 		}
 
 		current.mu.Unlock()
@@ -176,9 +181,17 @@ func Count(cmds []Command, prefix string) int {
 	return count
 }
 
-// parse splits a command as mmcli sends it into its namespace and base.
-func parse(raw string) Command {
+// expands reports whether minimega's [os.ExpandEnv] of the arguments would change raw. No environment is assumed: a
+// variable that is not set expands to "".
+func expands(raw string) bool {
+	return os.Expand(raw, func(string) string { return "" }) != raw
+}
+
+// parse splits a command as mmcli sends it into its namespace and base, and reports whether it has a ".preprocess
+// false" prefix.
+func parse(raw string) (Command, bool) {
 	cmd := Command{Raw: raw, Namespace: "", Base: ""}
+	noPreprocess := false
 
 	rest := raw
 
@@ -192,12 +205,14 @@ func parse(raw string) Command {
 			cmd.Namespace = rest[m[4]:m[5]]
 		}
 
+		noPreprocess = noPreprocess || rest[:m[1]] == ".preprocess false "
+
 		rest = rest[m[1]:]
 	}
 
 	cmd.Base = rest
 
-	return cmd
+	return cmd, noPreprocess
 }
 
 // start listens on a minimega command socket and points common.MinimegaBase
@@ -253,16 +268,27 @@ func serve(conn net.Conn) {
 			return
 		}
 
-		cmd := parse(req.Command)
+		cmd, noPreprocess := parse(req.Command)
 
 		current.mu.Lock()
 		current.received = append(current.received, cmd)
 		handle := current.handle
+		expanded := !noPreprocess && expands(req.Command)
+
+		// report under the lock, so the test cannot end and leave Use before Errorf
+		if expanded && len(current.tbs) > 0 {
+			current.tbs[len(current.tbs)-1].Errorf(
+				"mmtest: minimega would expand the $ in %q to %q", req.Command, os.ExpandEnv(req.Command),
+			)
+		}
 		current.mu.Unlock()
 
 		var resps []*minicli.Response
 
-		if handle != nil {
+		switch {
+		case expanded:
+			resps = []*minicli.Response{{Host: "head", Error: "mmtest: minimega would expand the $ in this command"}}
+		case handle != nil:
 			resps = handle(cmd)
 		}
 
