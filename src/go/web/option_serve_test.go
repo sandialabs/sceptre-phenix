@@ -85,6 +85,10 @@ func TestServeOptions(t *testing.T) {
 			opts: []ServerOption{ServeWithNetflowMaxSize(1 << 10)},
 			set:  func(o *serverOptions) { o.netflowMaxSize = 1 << 10 },
 		},
+		"capture max size": {
+			opts: []ServerOption{ServeWithCaptureMaxSize(0)},
+			set:  func(o *serverOptions) { o.captureMaxSize = 0 },
+		},
 		"the last of an option": {
 			opts: []ServerOption{ServeOnEndpoint(":1"), ServeOnEndpoint(":2")},
 			set:  func(o *serverOptions) { o.endpoint = ":2" },
@@ -117,7 +121,7 @@ func TestServerOptionDefaults(t *testing.T) {
 	want := serverOptions{
 		endpoint: ":3000", users: []string{DefaultAdminName + ":foobar:Global Admin"}, basePath: "/",
 		jwtLifetime: 24 * time.Hour, features: got.features, websharkDir: got.websharkDir,
-		shutdownGrace: 5 * time.Second, netflowMaxSize: 100 << 20,
+		shutdownGrace: 5 * time.Second, netflowMaxSize: 100 << 20, captureMaxSize: 10240,
 	}
 
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(serverOptions{}), cmpopts.IgnoreFields(serverOptions{}, "systemLog")); diff != "" {

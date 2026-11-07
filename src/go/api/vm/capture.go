@@ -32,6 +32,9 @@ var (
 	// ErrUnknownInterface is wrapped by the error of ResolveInterface for an
 	// identifier that names no interface of the VM.
 	ErrUnknownInterface = errors.New("unknown interface")
+
+	// ErrInvalidFormat is the error of a capture start for a format that is not pcapng or pcap.
+	ErrInvalidFormat = errors.New("capture format must be pcapng or pcap")
 )
 
 // interfaceError is an error of ResolveInterface: its message, which wraps
@@ -43,6 +46,61 @@ type interfaceError struct {
 func (e *interfaceError) Error() string { return e.msg }
 
 func (e *interfaceError) Unwrap() error { return ErrUnknownInterface }
+
+// CaptureOptions are the file format and the size limit of the VM interface captures that a start makes.
+type CaptureOptions struct {
+	// Format is pcapng or pcap. Empty is pcapng with minimega 3.4.0 or later. An older minimega writes only pcap,
+	// whatever the format.
+	Format string
+
+	// MaxSizeMiB is the most MiB of each capture file with minimega 3.4.0 or later; 0 sets no limit.
+	MaxSizeMiB int64
+}
+
+// validate returns ErrInvalidFormat for a format that is not pcapng, pcap or empty.
+func (o CaptureOptions) validate() error {
+	switch o.Format {
+	case "", mm.CaptureFormatPcapng, mm.CaptureFormatPcap:
+		return nil
+	}
+
+	return fmt.Errorf("%w: %q", ErrInvalidFormat, o.Format)
+}
+
+// format is the format that minimega writes the captures in: pcap when minimega has no capture support.
+func (o CaptureOptions) format(ctx context.Context) (string, error) {
+	if err := o.validate(); err != nil {
+		return "", err
+	}
+
+	switch {
+	case !mm.QueryCaptureSupport(ctx).Available:
+		return mm.CaptureFormatPcap, nil
+	case o.Format == "":
+		return mm.CaptureFormatPcapng, nil
+	}
+
+	return o.Format, nil
+}
+
+// captureFile is the file, relative to minimega's files directory, of a capture of the experiment expName into out in
+// format: the base name of out in the experiment's files, its .pcap or .pcapng extension replaced by the format's.
+func captureFile(expName, out, format string) string {
+	base := filepath.Base(out)
+	if base == "/" || base == "." || base == ".." {
+		base = "capture"
+	}
+
+	for _, ext := range []string{"." + mm.CaptureFormatPcapng, "." + mm.CaptureFormatPcap} {
+		if len(base) > len(ext) && strings.EqualFold(base[len(base)-len(ext):], ext) {
+			base = base[:len(base)-len(ext)]
+
+			break
+		}
+	}
+
+	return fmt.Sprintf("%s/files/%s.%s", expName, base, format)
+}
 
 // ResolveInterface resolves the given interface identifier - either a
 // zero-based index (e.g. "0") or the interface name as declared in the
@@ -78,10 +136,11 @@ func ResolveInterface(v *mm.VM, iface string) (int, error) {
 
 // StartCapture starts a packet capture on the given interface for the given VM
 // in the given experiment. The captured packets are written to the experiment's
-// files directory using the base name of the provided output file in PCAP
-// format. It returns any errors encountered while starting the packet capture.
-// Once ctx is done, minimega commands not yet sent give up (see mm.Context).
-func StartCapture(ctx context.Context, expName, vmName string, iface int, out string) error {
+// files directory using the base name of the provided output file, in the
+// format of opts, whose extension the file name gets. It returns any errors
+// encountered while starting the packet capture. Once ctx is done, minimega
+// commands not yet sent give up (see mm.Context).
+func StartCapture(ctx context.Context, expName, vmName string, iface int, out string, opts CaptureOptions) error {
 	if expName == "" {
 		return errors.New("no experiment name provided")
 	}
@@ -99,7 +158,7 @@ func StartCapture(ctx context.Context, expName, vmName string, iface int, out st
 		return fmt.Errorf("getting VM details: %w", err)
 	}
 
-	return StartCaptureForVM(ctx, v, expName, vmName, iface, out)
+	return StartCaptureForVM(ctx, v, expName, vmName, iface, out, opts)
 }
 
 // StartCaptureForVM behaves like StartCapture, but accepts an already-fetched
@@ -107,7 +166,9 @@ func StartCapture(ctx context.Context, expName, vmName string, iface int, out st
 // details on hand (e.g. because they resolved an interface name to an index
 // via ResolveInterface, which also requires the VM's details) should use this
 // to avoid an extra, redundant VM lookup.
-func StartCaptureForVM(ctx context.Context, v *mm.VM, expName, vmName string, iface int, out string) error {
+func StartCaptureForVM(
+	ctx context.Context, v *mm.VM, expName, vmName string, iface int, out string, opts CaptureOptions,
+) error {
 	if v == nil {
 		return errors.New("no VM details provided")
 	}
@@ -124,6 +185,11 @@ func StartCaptureForVM(ctx context.Context, v *mm.VM, expName, vmName string, if
 		return ErrNoCaptureFile
 	}
 
+	format, err := opts.format(ctx)
+	if err != nil {
+		return err
+	}
+
 	if !v.Running {
 		return ErrVMNotRunning
 	}
@@ -136,17 +202,13 @@ func StartCaptureForVM(ctx context.Context, v *mm.VM, expName, vmName string, if
 		return ErrDisconnectedInterface
 	}
 
-	if ext := filepath.Ext(out); ext != ".pcap" {
-		out += ".pcap"
-	}
-
-	out = fmt.Sprintf("%s/files/%s", expName, filepath.Base(out))
-
 	if err := mm.StartVMCapture(
 		mm.NS(expName),
 		mm.VMName(vmName),
 		mm.CaptureInterface(iface),
-		mm.CaptureFile(out),
+		mm.CaptureFile(captureFile(expName, out, format)),
+		mm.CaptureFormat(format),
+		mm.CaptureMaxSize(opts.MaxSizeMiB),
 		mm.Context(ctx),
 	); err != nil {
 		return fmt.Errorf(
@@ -397,8 +459,12 @@ func runningCaptureVMs(ctx context.Context, expName, verb string, vmList []strin
 // capture that started, in order, and the interfaces it started them on. A capture that minimega fails to start is
 // left out. ctx is checked only until the first capture starts; scope names the interfaces in the error.
 func startMatchingCaptures(
-	ctx context.Context, expName, scope string, vms []mm.VM, match ifaceMatcher,
+	ctx context.Context, expName, scope string, vms []mm.VM, match ifaceMatcher, opts CaptureOptions,
 ) ([]string, map[string]struct{}, error) {
+	if err := opts.validate(); err != nil {
+		return nil, nil, err
+	}
+
 	var (
 		matchedVMs []string
 		started    = make(map[string]struct{})
@@ -421,7 +487,7 @@ func startMatchingCaptures(
 				run = committed
 			}
 
-			err := StartCaptureForVM(run, &v, expName, v.Name, iface, filename)
+			err := StartCaptureForVM(run, &v, expName, v.Name, iface, filename, opts)
 			if err == nil {
 				started[captureKey(v.Name, iface)] = struct{}{}
 				vmStarted = true
@@ -463,11 +529,15 @@ func onVLAN(vlan string) ifaceMatcher {
 }
 
 // CaptureVLAN starts a capture on each interface on the VLAN with the alias vlan of every running VM (of vmList, if
-// given). It returns the captures that it started, in the VMs' order. A capture that minimega fails to start is left
-// out. ctx is checked only until the first capture starts (see mm.Context).
-func CaptureVLAN(ctx context.Context, expName, vlan string, vmList []string) ([]mm.Capture, error) {
+// given), in the format of opts. It returns the captures that it started, in the VMs' order. A capture that minimega
+// fails to start is left out. ctx is checked only until the first capture starts (see mm.Context).
+func CaptureVLAN(ctx context.Context, expName, vlan string, vmList []string, opts CaptureOptions) ([]mm.Capture, error) {
 	if vlan == "" {
 		return nil, ErrNoVLAN
+	}
+
+	if err := opts.validate(); err != nil {
+		return nil, err
 	}
 
 	vms, err := runningCaptureVMs(ctx, expName, "started", vmList)
@@ -475,7 +545,7 @@ func CaptureVLAN(ctx context.Context, expName, vlan string, vmList []string) ([]
 		return nil, err
 	}
 
-	matchedVMs, started, err := startMatchingCaptures(ctx, expName, "VLAN "+vlan, vms, onVLAN(vlan))
+	matchedVMs, started, err := startMatchingCaptures(ctx, expName, "VLAN "+vlan, vms, onVLAN(vlan), opts)
 	if err != nil {
 		return nil, err
 	}

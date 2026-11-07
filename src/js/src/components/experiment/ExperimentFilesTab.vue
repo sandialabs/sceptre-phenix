@@ -274,7 +274,7 @@
   import { plural } from '@/utils/plural.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import { useTable } from '@/utils/useTable.js';
-  import { isCaptureFile, webSharkInstalled } from '@/utils/webshark.js';
+  import { isCaptureRow, webSharkInstalled } from '@/utils/webshark.js';
 
   // how long a download the browser takes over keeps its button spinning
   const LINK_DOWNLOAD_SPIN_MS = 1500;
@@ -554,11 +554,7 @@
       // the WebShark page for a row's capture file, or null when the row is
       // no capture file or WebShark cannot open it
       webSharkLink(file) {
-        if (
-          !this.canOpenInWebShark ||
-          file.isDir ||
-          !isCaptureFile(file.name)
-        ) {
+        if (!this.canOpenInWebShark || file.isDir || !isCaptureRow(file)) {
           return null;
         }
         return {

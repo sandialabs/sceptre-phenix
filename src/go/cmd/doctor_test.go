@@ -1124,3 +1124,33 @@ func TestNetflowMaxSizeCheck(t *testing.T) {
 		})
 	}
 }
+
+// The ui.captures.max-size check passes for a size phenix ui accepts, naming
+// it, and fails for one it refuses.
+func TestCaptureMaxSizeCheck(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		value string
+		want  doctorCheck
+	}{
+		"default": {value: "10240", want: doctorCheck{Name: keyCaptureMaxSize, Status: doctorPass, Detail: "10240 MiB"}},
+		"no limit": {value: "0", want: doctorCheck{
+			Name: keyCaptureMaxSize, Status: doctorPass, Detail: "0, so minimega sets no limit on capture files",
+		}},
+		"negative": {value: "-5", want: doctorCheck{
+			Name: keyCaptureMaxSize, Status: doctorFail, Detail: `invalid ui.captures.max-size "-5": it must not be negative`,
+		}},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got := captureMaxSizeCheck(viperWith(keyCaptureMaxSize, tt.value))
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("captureMaxSizeCheck() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

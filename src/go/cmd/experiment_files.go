@@ -148,7 +148,7 @@ func newExperimentFilesGetCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, path := args[0], args[1]
 
-			local, err := experiment.LocalFile(name, path)
+			local, err := experiment.LocalFile(commandContext(cmd), name, path)
 			if err != nil {
 				return fmt.Errorf("getting file %s of experiment %s: %w", path, name, err)
 			}
@@ -208,7 +208,7 @@ func newExperimentFilesChecksumCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, path := args[0], args[1]
 
-			local, err := experiment.LocalFile(name, path)
+			local, err := experiment.LocalFile(commandContext(cmd), name, path)
 			if err != nil {
 				return fmt.Errorf("getting file %s of experiment %s: %w", path, name, err)
 			}
@@ -258,7 +258,7 @@ func newExperimentFilesDeleteCmd() *cobra.Command {
 				opts = append(opts, experiment.DeleteFilesDryRun())
 			}
 
-			deleted, refused, err := experiment.DeleteFiles(name, paths, opts...)
+			deleted, refused, err := experiment.DeleteFiles(commandContext(cmd), name, paths, opts...)
 			if err != nil {
 				return fmt.Errorf("deleting files of experiment %s: %w", name, err)
 			}
@@ -315,7 +315,7 @@ func newExperimentFilesArchiveCmd() *cobra.Command {
 				return errors.New("give the path of the zip file with --output-file")
 			}
 
-			plan, err := experiment.PlanZip(name, paths, experiment.DefaultZipLimits())
+			plan, err := experiment.PlanZip(commandContext(cmd), name, paths, experiment.DefaultZipLimits())
 			if err != nil {
 				return fmt.Errorf("archiving files of experiment %s: %w", name, err)
 			}

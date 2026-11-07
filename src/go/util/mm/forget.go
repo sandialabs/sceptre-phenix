@@ -3,9 +3,11 @@ package mm
 import "time"
 
 // ForgetCluster drops what is reused from minimega's earlier answers (the
-// headnode's name, the cluster hosts, their disk usage and the images behind
-// snapshot disks), so the next calls ask minimega again.
+// headnode's name, the cluster hosts, their disk usage, the images behind
+// snapshot disks and minimega's version), so the next calls ask minimega again.
 func ForgetCluster() {
+	forgetVersion()
+
 	headnode.mu.Lock()
 	headnode.name = ""
 	headnode.mu.Unlock()

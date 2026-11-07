@@ -312,6 +312,9 @@ func TestFeaturesSettingCheck(t *testing.T) {
 	}{
 		"none":     {want: row("", doctorPass, "none set")},
 		"vm-mount": {features: []string{"vm-mount"}, want: row("", doctorPass, "vm-mount")},
+		"minimega-captures": {
+			features: []string{"minimega-captures"}, want: row("", doctorPass, "minimega-captures"),
+		},
 		"misspelled": {
 			features: []string{"vm-mount", "vmmount", "ksjdhf"},
 			want:     row("", doctorWarn, `unknown feature "vmmount" (did you mean vm-mount?). unknown feature "ksjdhf"`),
@@ -472,11 +475,13 @@ func TestFeaturesHint(t *testing.T) {
 	}{
 		"unknown": {
 			check: row("", doctorWarn, `unknown feature "vmmount". webshark is set by hand without a WebShark build`),
-			want:  "remove or fix the unknown features (phenix ui knows vm-mount, webshark, tunneler-download, file-server)",
+			want: "remove or fix the unknown features (phenix ui knows vm-mount, minimega-captures, webshark, " +
+				"tunneler-download, file-server)",
 		},
 		"set by hand": {
 			check: row("", doctorFail, "webshark is set by hand without a WebShark build"),
-			want: "keep only vm-mount in ui.features, because phenix ui enables webshark, tunneler-download, " +
+			want: "keep only vm-mount and minimega-captures in ui.features, because phenix ui enables webshark, " +
+				"tunneler-download, " +
 				"file-server by itself when it finds what each needs",
 		},
 	}
@@ -487,6 +492,58 @@ func TestFeaturesHint(t *testing.T) {
 
 			if got := featuresHint(tc.check); got != tc.want {
 				t.Errorf("featuresHint() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The minimega-captures check reads the version that the minimega check found, and never asks minimega.
+func TestMinimegaCapturesCheck(t *testing.T) {
+	t.Parallel()
+
+	up := func(version string) *doctorFound {
+		return &doctorFound{minimegaUp: true, minimegaVersion: version}
+	}
+
+	tests := map[string]struct {
+		features []string
+		found    *doctorFound
+		want     doctorCheck
+	}{
+		"minimega 3.4.0": {
+			found: up("minimega 3.4.0 abc 2026-10-01"),
+			want:  row("", doctorPass, "minimega 3.4.0 supports experiment captures"),
+		},
+		"older minimega": {
+			found: up("minimega 3.3.0 abc 2026-01-01"),
+			want:  row("", doctorPass, "off: requires minimega 3.4.0 or later; the head node runs 3.3.0"),
+		},
+		"a version doctor cannot read": {
+			found: up("minimega devel"),
+			want:  row("", doctorWarn, `off: requires minimega 3.4.0 or later; cannot read the minimega version "minimega devel"`),
+		},
+		"forced on an older minimega": {
+			features: []string{"vm-mount", "minimega-captures"},
+			found:    up("minimega 3.3.0 abc 2026-01-01"),
+			want: row("", doctorPass,
+				`on, because ui.features has minimega-captures (minimega gives "minimega 3.3.0 abc 2026-01-01")`),
+		},
+		"no minimega": {
+			found: &doctorFound{},
+			want:  row("", doctorSkip, "not checked, because minimega gave no version"),
+		},
+		"forced without minimega": {
+			features: []string{"minimega-captures"},
+			want:     row("", doctorPass, "on, because ui.features has minimega-captures"),
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if diff := cmp.Diff(tc.want, minimegaCapturesCheck(tc.features, tc.found)); diff != "" {
+				t.Errorf("minimegaCapturesCheck(%q) mismatch (-want +got):\n%s", tc.features, diff)
 			}
 		})
 	}

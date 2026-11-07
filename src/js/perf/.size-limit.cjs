@@ -36,7 +36,7 @@ module.exports = [
     gzip: true,
     // includes the State of Health layout libraries, loaded when a layout is
     // picked: ELK (elkjs, about 460 kB, shared with the Builder), dagre, cola.js
-    limit: '1280 kB',
+    limit: '1310 kB',
   },
   {
     name: 'Builder JS (lazy-loaded)',

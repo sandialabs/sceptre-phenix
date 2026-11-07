@@ -67,6 +67,55 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('one interface', () => {
+  it.each([
+    ['pcapng', /^web_2_.*\.pcapng$/],
+    ['pcap', /^web_2_.*\.pcap$/],
+  ])(
+    'starts one in the format %s the format dialog picked',
+    async (format, file) => {
+      const { captures } = await useCaptures();
+      listCaptures([])();
+      axios.post.mockResolvedValue({});
+      await captures.handlePcap(web, 2, format);
+      expect(axios.post.mock.calls).toEqual([
+        [url, { interface: 2, filename: expect.stringMatching(file), format }],
+      ]);
+    },
+  );
+
+  it('starts one when the list answer names no captures', async () => {
+    const { captures } = await useCaptures();
+    axios.get.mockResolvedValue({ data: {} });
+    axios.post.mockResolvedValue({});
+    await captures.handlePcap(web, 0, 'pcapng');
+    expect(axios.get).toHaveBeenCalledWith(url);
+    expect(axios.post.mock.calls).toEqual([
+      [
+        url,
+        {
+          interface: 0,
+          filename: expect.stringMatching(/^web_0_.*\.pcapng$/),
+          format: 'pcapng',
+        },
+      ],
+    ]);
+    expect(captures.capturePending.value).toEqual({});
+  });
+
+  it('stops nothing when a format start finds the interface captured', async () => {
+    const { captures } = await useCaptures();
+    listCaptures([{ interface: 2 }])();
+    await captures.handlePcap(web, 2, 'pcapng');
+    expect(axios.delete).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(toasts()).toEqual([
+      {
+        text: 'phēnix already captures interface 2 of the web VM.',
+        type: 'is-info',
+      },
+    ]);
+  });
+
   it('marks the interface pending until the server answers, asking nothing', async () => {
     const { captures } = await useCaptures();
     const release = listCaptures([]);

@@ -1,12 +1,14 @@
 package web
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sync/atomic"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/testing/protocmp"
 
@@ -111,20 +113,26 @@ func TestGetExperimentCaptures(t *testing.T) {
 	}{
 		// a VM is named exp/vm, like every other VM resource name
 		"of the VMs the role names": {
-			started:      "2024-01-01T00:00:00Z",
-			role:         testRole("experiments/captures", "list", "test-experiment", "test-experiment/vm-a"),
-			want:         &proto.CaptureList{Captures: []*proto.Capture{{Vm: "vm-a", Filepath: "/tmp/a.pcap"}}},
+			started: "2024-01-01T00:00:00Z",
+			role:    testRole("experiments/captures", "list", "test-experiment", "test-experiment/vm-a"),
+			want: &proto.CaptureList{
+				Captures: []*proto.Capture{{Vm: "vm-a", Filepath: "/tmp/a.pcap"}},
+				Support:  &proto.CaptureSupport{Reason: "requires minimega 3.4.0 or later; minimega did not answer"},
+			},
 			wantListings: 1,
 		},
 		// asking minimega would recreate the experiment's namespace
 		"none of a stopped experiment": {
 			role: testRole("experiments/captures", "list", "test-experiment", "test-experiment/*"),
-			want: &proto.CaptureList{},
+			want: &proto.CaptureList{
+				Support: &proto.CaptureSupport{Reason: "requires minimega 3.4.0 or later; minimega did not answer"},
+			},
 		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
+			useCaptureSupport(t, false)
 			useTestStore(t, testExperiment(t, tt.started))
 
 			fake := useTestMM(t, &testMM{captures: []mm.Capture{
@@ -276,4 +284,46 @@ func TestStartVMCaptureInterface(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A subnet capture starts on each VM interface with an address in the subnet, and answers those captures.
+func TestStartCaptureSubnet(t *testing.T) {
+	fake := useVLANCaptureVMs(t, false)
+	fake.vms[0].IPv4 = []string{"10.0.1.1", "10.0.2.1"}
+	fake.vms[1].IPv4 = []string{"10.0.1.2", "10.0.3.1"}
+
+	server := serveAs(t, "alice", testRole("exp/captureSubnet", "create", "test-experiment")).URL
+	events := captureAudit(t)
+
+	const path = "/api/v1/experiments/test-experiment/captureSubnet"
+
+	resp := do(t, http.MethodPost, server+path, `{"subnet":"10.0.2.0/24"}`)
+	body := readBody(t, resp)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST %s = %d, want %d: %s", path, resp.StatusCode, http.StatusOK, body)
+	}
+
+	if n := fake.captureStarts.Load(); n != 1 {
+		t.Errorf("POST %s started %d captures, want 1", path, n)
+	}
+
+	var got vlanCaptureBody
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("POST %s = %s, not JSON: %v", path, body, err)
+	}
+
+	want := vlanCaptureBody{Captures: []struct {
+		VM        string `json:"vm"`
+		Interface int    `json:"interface"`
+		Filepath  string `json:"filepath"`
+	}{{VM: "a", Interface: 1, Filepath: "/files/a1.pcap"}}}
+
+	if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+		t.Errorf("POST %s body mismatch (-want +got):\n%s", path, diff)
+	}
+
+	wantAudit(t, events(), "capture-start", "success", map[string]any{
+		"phenix.experiment.name": "test-experiment", "file.path": "/files/a1.pcap",
+	})
 }

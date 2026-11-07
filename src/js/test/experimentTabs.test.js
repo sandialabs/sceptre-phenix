@@ -93,6 +93,7 @@ describe('the URL', () => {
       TAB.FILES,
       TAB.VMS,
       TAB.NETFLOW,
+      TAB.CAPTURES,
     ]);
   });
 });

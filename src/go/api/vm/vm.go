@@ -1993,9 +1993,9 @@ func dumpGuestMemoryCommand(vmName, path string) string {
 var ErrInvalidSubnet = errors.New("the subnet must be a CIDR prefix, such as 10.0.0.0/24")
 
 // CaptureSubnet starts a capture on each interface in subnet of every running VM (of vmList, if
-// given), and returns those VMs' captures, each once. ctx is checked only until the first capture
-// starts (see mm.Context).
-func CaptureSubnet(ctx context.Context, expName, subnet string, vmList []string) ([]mm.Capture, error) {
+// given), in the format of opts, and returns those VMs' captures, each once. ctx is checked only
+// until the first capture starts (see mm.Context).
+func CaptureSubnet(ctx context.Context, expName, subnet string, vmList []string, opts CaptureOptions) ([]mm.Capture, error) {
 	_, refNet, err := net.ParseCIDR(subnet)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %q", ErrInvalidSubnet, subnet)
@@ -2016,7 +2016,7 @@ func CaptureSubnet(ctx context.Context, expName, subnet string, vmList []string)
 		return address != nil && refNet.Contains(address)
 	}
 
-	matchedVMs, _, err := startMatchingCaptures(ctx, expName, "subnet "+subnet, vms, inSubnet)
+	matchedVMs, _, err := startMatchingCaptures(ctx, expName, "subnet "+subnet, vms, inSubnet, opts)
 	if err != nil {
 		return nil, err
 	}

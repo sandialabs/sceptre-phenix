@@ -18,8 +18,9 @@ export function isInterfaceCapturing(captures, iface) {
 }
 
 // The file a packet capture started from the UI writes to the experiment's
-// files: <vm>_<interface>_<stamp>.pcap, so captures started together on
-// several interfaces each get their own file.
-export function captureFilename(vmName, iface, time) {
-  return `${[vmName, iface, time].join('_')}.pcap`;
+// files: <vm>_<interface>_<stamp>.pcap, or .pcapng for that format, so
+// captures started together on several interfaces each get their own file.
+export function captureFilename(vmName, iface, time, format = 'pcap') {
+  const ext = format === 'pcapng' ? 'pcapng' : 'pcap';
+  return `${[vmName, iface, time].join('_')}.${ext}`;
 }

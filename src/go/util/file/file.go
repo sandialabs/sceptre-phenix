@@ -132,13 +132,23 @@ func (f MMClusterFiles) GetExperimentFiles(exp, filter string) (Files, error) {
 }
 
 // GetExperimentFilesObserved is GetExperimentFiles, also reporting when the
-// listing was read from minimega.
+// listing was read from minimega. Each listing also reads the capture format
+// of each headnode file once (see addCaptureFormats).
 func (MMClusterFiles) GetExperimentFilesObserved(
 	ctx context.Context,
 	exp, filter string,
 ) (Files, freshness.Observation, error) {
 	files, started, err := experimentListings.getContext(ctx, listingKey(exp), func(ctx context.Context) (Files, error) {
-		return listExperimentFiles(ctx, exp)
+		files, err := listExperimentFiles(ctx, exp)
+		if err != nil {
+			return nil, err
+		}
+
+		if err := addCaptureFormats(ctx, exp, files); err != nil {
+			return nil, err
+		}
+
+		return files, nil
 	})
 	if err != nil {
 		return nil, freshness.Observation{}, err
@@ -236,7 +246,7 @@ func listExperimentFiles(ctx context.Context, exp string) (Files, error) {
 			}
 
 			switch extension := filepath.Ext(name); extension {
-			case ".pcap":
+			case ".pcap", ".pcapng", ".cap":
 				file.Categories = append(file.Categories, "Packet Capture")
 			case ".elf":
 				file.Categories = append(file.Categories, "ELF Memory Snapshot")

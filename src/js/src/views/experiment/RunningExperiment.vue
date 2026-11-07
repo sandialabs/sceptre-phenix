@@ -53,6 +53,18 @@
           vlanModal.vmName,
         )
       " />
+    <CaptureFormatModal
+      v-model:active="formatModal.active"
+      :title="formatModal.title"
+      @start="startInFormat" />
+    <ExperimentCaptureModal
+      v-model:active="captureModal.active"
+      :experiment="$route.params.id"
+      :vlans="experiment.vlans ?? []"
+      :vlan="captureModal.vlan"
+      :budget="captureList?.budget ?? []"
+      @starting="captureStartsPending++"
+      @started="onCaptureStarted" />
     <VmLinkQualityModal
       v-model:active="linkQualityModal.active"
       :experiment="$route.params.id"
@@ -176,7 +188,10 @@
             </b-select>
           </b-tooltip>
         </b-field>
-        <b-field :addons="false" class="has-addons">
+        <b-field
+          v-if="activeTab != TAB.CAPTURES"
+          :addons="false"
+          class="has-addons">
           <b-autocomplete
             v-model="search.filter"
             :placeholder="searchPlaceholder"
@@ -223,6 +238,35 @@
               icon-left="circle-nodes"
               @click="handleNetflow(!netflow.capturing)">
             </b-button>
+          </b-tooltip>
+        </b-field>
+        <b-field
+          v-if="
+            roleAllowed('experiments/captures', 'create', $route.params.id)
+          ">
+          <b-tooltip
+            :label="captureButton.tooltip"
+            type="is-light"
+            :multilined="!captureSupport.available">
+            <b-button
+              class="experiment-capture-button"
+              type="is-info"
+              icon-left="circle-dot"
+              :aria-label="captureButton.label"
+              :aria-describedby="
+                captureSupport.available
+                  ? undefined
+                  : 'experiment-capture-reason'
+              "
+              :aria-disabled="captureSupport.available ? undefined : 'true'"
+              @click="captureSupport.available && openCaptureModal('')">
+            </b-button>
+            <span
+              v-if="!captureSupport.available"
+              id="experiment-capture-reason"
+              class="is-sr-only">
+              {{ captureButton.tooltip }}
+            </span>
           </b-tooltip>
         </b-field>
         <b-field>
@@ -290,8 +334,11 @@
             @sort="onSort"
             @info="getInfo"
             @details="showVmDetails"
+            :capture-support="captureSupport"
             @capture="handlePcap"
-            @capture-vlan="captureVlan"
+            @start-capture="startCaptureFromMenu"
+            @capture-vlan="captureVlanFromMenu"
+            @capture-experiment="openCaptureModal"
             @change-vlan="showVlanModal"
             @disconnect="disconnectInterface"
             @link-quality="showLinkQualityModal"
@@ -335,6 +382,40 @@
             :capturing="netflow.capturing"
             :search="netflowSearch" />
         </b-tab-item>
+        <b-tab-item
+          :value="TAB.CAPTURES"
+          label="Captures"
+          v-if="roleAllowed('experiments/captures', 'list', $route.params.id)">
+          <template #header>
+            <b-icon icon="circle-dot" />
+            <span>Captures</span>
+            <b-tag
+              v-if="runningCaptureCount"
+              class="captures-count"
+              type="is-danger"
+              rounded>
+              <span aria-hidden="true">{{ runningCaptureCount }}</span>
+              <span class="is-sr-only"
+                >, {{ runningCaptureCount }} running</span
+              >
+            </b-tag>
+          </template>
+          <ExperimentCapturesTab
+            :experiment="$route.params.id"
+            :active="activeTab == TAB.CAPTURES"
+            :captures="captureList?.experimentCaptures ?? []"
+            :budget="captureList?.budget ?? []"
+            :budget-error="captureList?.budgetError ?? ''"
+            :support="captureSupport"
+            :error="
+              captureListError || captureList?.experimentCapturesError || ''
+            "
+            :loaded="captureList !== null || !!captureListError"
+            :loading="capturesLoading"
+            @capture="openCaptureModal('')"
+            @reload="loadCaptures"
+            @stopping="(id) => hushCaptureEvent('stop', id, STOP_QUIET_MS)" />
+        </b-tab-item>
       </b-tabs>
     </div>
   </div>
@@ -342,6 +423,9 @@
 
 <script>
   import { getCurrentInstance } from 'vue';
+  import CaptureFormatModal from '@/components/experiment/CaptureFormatModal.vue';
+  import ExperimentCaptureModal from '@/components/experiment/ExperimentCaptureModal.vue';
+  import ExperimentCapturesTab from '@/components/experiment/ExperimentCapturesTab.vue';
   import ExperimentFilesTab from '@/components/experiment/ExperimentFilesTab.vue';
   import ExperimentHeader from '@/components/experiment/ExperimentHeader.vue';
   import VMLabelsModal from '@/components/VMLabelsModal.vue';
@@ -383,7 +467,14 @@
     triggerableApps,
   } from '@/components/experiment/experimentHeader.js';
   import { useNetflowCapture } from '@/components/experiment/useNetflowCapture.js';
-  import { useVmCaptures } from '@/components/experiment/useVmCaptures.js';
+  import {
+    QUIET_MS,
+    useVmCaptures,
+  } from '@/components/experiment/useVmCaptures.js';
+  import {
+    captureSupport,
+    runningCount,
+  } from '@/components/experiment/experimentCaptures.js';
   import {
     TAB,
     sameQuery,
@@ -415,7 +506,8 @@
   import { showError, useErrorNotification } from '@/utils/errorNotif';
   import { createPageLoader, loadingText } from '@/utils/pageLoader.js';
   import { cachePage } from '@/utils/pageCache.js';
-  import { FreshnessMeta } from '@/utils/freshness.js';
+  import { FreshnessMeta, RESOURCES, startPoll } from '@/utils/freshness.js';
+  import { inForeground } from '@/utils/foreground.js';
   import {
     experimentKey,
     fetchRunningExperiment,
@@ -444,6 +536,7 @@
     outcomeFromSettled,
   } from '@/utils/operations.js';
   import { wsMsgFits } from '@/utils/wsMessage.js';
+  import { errorLine } from '@/utils/operations.js';
 
   // how long a VM shows "Loading Screenshot" before "Not Available"; minimega
   // takes screenshots one at a time, so large experiments need a while
@@ -451,6 +544,10 @@
 
   // the screenshot width the server uses until the page asks for another
   const DEFAULT_SCREENSHOT_WIDTH = 200;
+
+  // how long after this page asked to stop an experiment capture its stop
+  // event shows no toast, as the page's own toast tells of it
+  const STOP_QUIET_MS = 60000;
 
   // the CD-ROM picker with nothing open
   function emptyOpticalDiscModal() {
@@ -495,6 +592,9 @@
   export default {
     emits: ['running'],
     components: {
+      CaptureFormatModal,
+      ExperimentCaptureModal,
+      ExperimentCapturesTab,
       ExperimentFilesTab,
       ExperimentHeader,
       NetflowPanel,
@@ -532,6 +632,7 @@
         roleAllowed,
         vmScreenshot,
         TAB,
+        STOP_QUIET_MS,
       };
     },
 
@@ -543,6 +644,7 @@
       removeWsHandler(this.handleWs);
       this.offWsReconnect();
       clearTimeout(this.screenshotsTimer);
+      this.stopCaptureCountPoll?.();
       this.unsubscribeVms();
 
       this.loader.stop();
@@ -581,7 +683,7 @@
       addWsHandler(this.handleWs);
       document.addEventListener('visibilitychange', this.onVisibilityChange);
       // the server drops VM subscriptions and the screenshot size when the
-      // websocket reconnects
+      // websocket reconnects, and capture events may have been missed
       this.offWsReconnect = onWsReconnect(
         () => {
           if (this.vncWidth != DEFAULT_SCREENSHOT_WIDTH) {
@@ -589,6 +691,7 @@
           }
           // a hidden tab lists its VMs, and so gets screenshots, once shown
           if (this.experiment.name && !document.hidden) this.updateTable();
+          this.loadCaptures();
         },
         { spread: true },
       );
@@ -641,6 +744,10 @@
       });
       this.loader.start();
       this.loadAppStates();
+      // the experiment capture events of this page's own requests, by
+      // "action:id", and when each stops being hushed
+      this.quietCaptures = new Map();
+      this.loadCaptures();
 
       try {
         await experimentsApi.getNetflowCapture(this.$route.params.id);
@@ -686,6 +793,33 @@
       // opens, so a copy taken when it opened could miss them
       features() {
         return usePhenixStore().features ?? [];
+      },
+
+      // whether minimega supports experiment captures, and why not
+      captureSupport() {
+        return captureSupport(this.captureList, this.features);
+      },
+
+      // a capture that turns full or failed sends no event, so the count on
+      // the Captures tab is read again while that tab, which polls, is hidden
+      polledCaptureCount() {
+        return this.runningCaptureCount > 0 && this.activeTab != TAB.CAPTURES;
+      },
+
+      runningCaptureCount() {
+        return runningCount(this.captureList?.experimentCaptures);
+      },
+
+      // the toolbar's capture button, which says why when it cannot start one
+      captureButton() {
+        const name = 'Capture all experiment traffic';
+        if (this.captureSupport.available) {
+          return { label: name, tooltip: name };
+        }
+        return {
+          label: `${name} (not available)`,
+          tooltip: `${name} is not available: ${this.captureSupport.reason}`,
+        };
       },
 
       // the search box's text, which the netflow tab filters by while open
@@ -1128,9 +1262,125 @@
           this.handleExperimentEvent(msg);
         } else if (type === 'experiment/vms') {
           this.handleVmList(msg);
+        } else if (type === 'experiment/capture') {
+          this.handleCaptureEvent(msg);
         } else if (VM_EVENT_TYPES.includes(type)) {
           this.handleVmEvent(msg);
         }
+      },
+
+      // Lists the experiment's captures, with whether minimega supports
+      // experiment captures and the mirror budget; only the newest request's
+      // answer is kept. A list that cannot be read leaves the support to the
+      // server's features.
+      async loadCaptures() {
+        const exp = this.$route.params.id;
+        if (!roleAllowed('experiments/captures', 'list', exp)) return;
+        const request = (this.capturesRequest =
+          (this.capturesRequest ?? 0) + 1);
+        this.capturesLoading = true;
+        try {
+          const resp = await experimentsApi.listExperimentCaptures(exp);
+          if (request !== this.capturesRequest || this.unmounting) return;
+          this.captureList = resp.data ?? {};
+          this.captureListError = '';
+        } catch (err) {
+          if (request !== this.capturesRequest || this.unmounting) return;
+          this.captureListError = errorLine(err);
+        } finally {
+          if (request === this.capturesRequest) this.capturesLoading = false;
+        }
+      },
+
+      // opens the experiment capture dialog on a VLAN, or on all of them for
+      // '', with a fresh mirror budget
+      openCaptureModal(vlan) {
+        if (!this.captureSupport.available) return;
+        this.captureModal = { active: true, vlan: vlan ?? '' };
+        this.loadCaptures();
+      },
+
+      // the capture dialog's start has been answered, with the capture or
+      // null
+      onCaptureStarted(capture) {
+        this.captureStartsPending = Math.max(this.captureStartsPending - 1, 0);
+        if (!capture) return;
+        this.hushCaptureEvent('start', capture.id, QUIET_MS);
+        this.loadCaptures();
+      },
+
+      // hushes the event of this page's own capture start or stop for ms
+      hushCaptureEvent(action, id, ms) {
+        this.quietCaptures.set(`${action}:${id}`, Date.now() + ms);
+      },
+
+      // whether an experiment capture event is of this page's own request:
+      // a start while the dialog's waits, or one hushed above
+      ownCaptureEvent(action, id) {
+        if (action === 'start' && this.captureStartsPending > 0) return true;
+        const now = Date.now();
+        for (const [key, until] of this.quietCaptures) {
+          if (until <= now) this.quietCaptures.delete(key);
+        }
+        return this.quietCaptures.has(`${action}:${id}`);
+      },
+
+      // An experiment capture started or stopped: the list loads again, and
+      // one this page did not start or stop shows a toast.
+      handleCaptureEvent(msg) {
+        const exp = this.$route.params.id;
+        const name = msg.resource.name ?? '';
+        if (!name.startsWith(`${exp}/`)) return;
+        const id = name.slice(exp.length + 1);
+        const action = msg.resource.action;
+        if (action !== 'start' && action !== 'stop') return;
+        this.loadCaptures();
+        // '*' is every capture, which stops with the experiment
+        if (id === '*' || this.ownCaptureEvent(action, id)) return;
+        this.$buefy.toast.open({
+          message: `Experiment capture ${id} ${action === 'start' ? 'started' : 'stopped'}.`,
+          type: 'is-info',
+        });
+      },
+
+      // Start capture on this interface, from its network menu: in a format
+      // the format dialog asks for when minimega takes one, else at once.
+      startCaptureFromMenu(vm, index) {
+        if (!this.captureSupport.available) {
+          this.handlePcap(vm, index);
+          return;
+        }
+        this.formatModal = {
+          active: true,
+          title: `Start capture on interface ${index} of ${vm.name}`,
+          target: { vm: vm.name, index },
+        };
+      },
+
+      // Start or stop interface captures on a VLAN, from a network menu: a
+      // start asks for the format, as above; a stop never asks.
+      captureVlanFromMenu(alias, start) {
+        if (!start || !this.captureSupport.available) {
+          this.captureVlan(alias, start);
+          return;
+        }
+        this.formatModal = {
+          active: true,
+          title: `Start interface captures on VLAN ${alias}`,
+          target: { alias },
+        };
+      },
+
+      // starts what the format dialog was opened for, in the format picked
+      startInFormat(format) {
+        const target = this.formatModal.target;
+        if (!target) return;
+        if (target.alias) {
+          this.captureVlan(target.alias, true, format);
+          return;
+        }
+        const vm = this.experiment.vms?.find((v) => v.name === target.vm);
+        if (vm) this.handlePcap(vm, target.index, format);
       },
 
       // the images the redeploy modal offers: those inside the minimega files
@@ -2082,6 +2332,9 @@
           ...(roleAllowed('experiments/netflow', 'get', id)
             ? [TAB.NETFLOW]
             : []),
+          ...(roleAllowed('experiments/captures', 'list', id)
+            ? [TAB.CAPTURES]
+            : []),
         ];
       },
 
@@ -2212,6 +2465,18 @@
     },
 
     watch: {
+      polledCaptureCount(on) {
+        this.stopCaptureCountPoll?.();
+        this.stopCaptureCountPoll =
+          on && !this.unmounting
+            ? startPoll(
+                () => this.loadCaptures(),
+                RESOURCES.captureCount.pollMs,
+                { when: () => inForeground() && !this.capturesLoading },
+              )
+            : null;
+      },
+
       activeTab(newVal, oldVal) {
         // each tab keeps its own search and history while another is open
         const [from, to] = [searchKey(oldVal), searchKey(newVal)];
@@ -2231,7 +2496,7 @@
           if (this.experiment.name) this.updateTable();
         } else if (newVal == TAB.NETFLOW) {
           this.$nextTick(() => this.$refs.netflowPanel?.fit());
-        } else {
+        } else if (newVal == TAB.FILES) {
           this.$refs.filesTab?.reload();
         }
       },
@@ -2350,6 +2615,17 @@
         },
         opticalDiscModal: emptyOpticalDiscModal(),
         linkQualityModal: { active: false, vmName: '', index: 0, network: '' },
+        // the format dialog of interface captures, and what it starts
+        formatModal: { active: false, title: '', target: null },
+        // the experiment capture dialog, opened on a VLAN or on all ('')
+        captureModal: { active: false, vlan: '' },
+        // GET /experiments/{name}/captures as last read, null until then,
+        // and why the last read failed
+        captureList: null,
+        captureListError: '',
+        capturesLoading: false,
+        // how many starts of the capture dialog wait on the server
+        captureStartsPending: 0,
         // apps this page triggered that have not reported back
         triggeredApps: [],
         // what each app was last heard doing, for its tile

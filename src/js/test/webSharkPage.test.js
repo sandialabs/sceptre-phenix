@@ -839,3 +839,186 @@ describe('the opening state', () => {
     expect(emptyText(page)).toContain('Pick an experiment');
   });
 });
+
+describe('experiment captures', () => {
+  const EXPERIMENT = 'Experiment captures';
+  const stream = (host) => ({
+    host,
+    bridge: 'mega_bridge_exp1',
+    state: 'running',
+    counters: {},
+    skewWarning: false,
+  });
+  const LIST = SERVER['experiments/exp1/captures'];
+
+  beforeEach(() => {
+    SERVER['experiments/exp1/captures'] = {
+      ...LIST,
+      experimentCaptures: [
+        {
+          id: '1',
+          state: 'failed',
+          running: false,
+          format: 'pcapng',
+          vlans: [],
+          streams: [],
+        },
+        {
+          id: '2',
+          state: 'stopped',
+          running: false,
+          format: 'pcap',
+          vlans: ['EXP_2'],
+          streams: [stream('compute1')],
+        },
+        {
+          id: '3',
+          state: 'running',
+          running: true,
+          format: 'pcapng',
+          vlans: [],
+          filter: 'tcp',
+          streams: [stream('compute1'), stream('compute2')],
+        },
+      ],
+    };
+  });
+
+  afterEach(() => {
+    SERVER['experiments/exp1/captures'] = LIST;
+  });
+
+  const filters = (page) =>
+    page
+      .findAll('.webshark-filter')
+      .map((f) => [textOf(f.find('.webshark-label')), textOf(f.find('code'))]);
+
+  it('lists them in their own group, newest first, the running ones live', async () => {
+    const page = await opened({ exp: 'exp1' });
+    expect(options(capturePicker(page), EXPERIMENT)).toEqual([
+      { value: 'capture:3', text: 'capture 3 · All VLANs · tcp (live)' },
+      { value: 'capture:2', text: 'capture 2 · EXP_2' },
+    ]);
+  });
+
+  it('opens a picked one by its ID, named in the URL', async () => {
+    const page = await opened({ exp: 'exp1' });
+    await pick(page, 'capture:3');
+    expect(query(page)).toEqual({ exp: 'exp1', capture: '3' });
+    expect(axios.post).toHaveBeenCalledWith('experiments/exp1/webshark', {
+      capture: '3',
+    });
+    // the Wireshark command streams VM interface captures only
+    expect(copyButton(page).exists()).toBe(false);
+  });
+
+  it('opens one a link names before the list has loaded', async () => {
+    const page = await opened({ exp: 'exp1', capture: '9' });
+    expect(axios.post).toHaveBeenCalledWith('experiments/exp1/webshark', {
+      capture: '9',
+    });
+    expect(values(capturePicker(page), EXPERIMENT)).toContain('capture:9');
+  });
+
+  it('offers a display filter for each host of a pcapng capture, to copy', async () => {
+    const writeText = vi.fn().mockResolvedValue();
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const page = await opened({ exp: 'exp1', capture: '3' });
+    expect(filters(page)).toEqual([
+      ['compute1 only:', 'frame.interface_name == "compute1/mega_bridge_exp1"'],
+      ['compute2 only:', 'frame.interface_name == "compute2/mega_bridge_exp1"'],
+    ]);
+    await byLabel(page, 'Copy the compute2 only filter').trigger('click');
+    await flushPromises();
+    expect(writeText).toHaveBeenCalledWith(
+      'frame.interface_name == "compute2/mega_bridge_exp1"',
+    );
+    expect(toasts()).toEqual([
+      {
+        text: 'Copied frame.interface_name == "compute2/mega_bridge_exp1". Paste it into the WebShark display filter box.',
+        type: 'is-success',
+      },
+    ]);
+  });
+
+  it('says so when it cannot copy a filter', async () => {
+    vi.stubGlobal('navigator', {});
+    const page = await opened({ exp: 'exp1', capture: '3' });
+    await byLabel(page, 'Copy the compute1 only filter').trigger('click');
+    await flushPromises();
+    expect(toasts()).toEqual([
+      {
+        text: 'Could not copy the filter. Select frame.interface_name == "compute1/mega_bridge_exp1" and copy it.',
+        type: 'is-warning',
+      },
+    ]);
+  });
+
+  it('offers no display filters for a classic pcap capture', async () => {
+    const page = await opened({ exp: 'exp1', capture: '2' });
+    expect(page.find('.webshark-filters').exists()).toBe(false);
+  });
+
+  it.each([
+    ['experiment captures', ['experiments/captures', 'get']],
+    ['experiment files', ['experiments/files', 'get']],
+  ])('lists none for a role that may not get %s', async (_, perm) => {
+    rbac.allowed = denyOnly(perm);
+    const page = await opened({ exp: 'exp1' });
+    expect(options(capturePicker(page), EXPERIMENT)).toEqual([]);
+    expect(values(capturePicker(page), LIVE)).not.toEqual([]);
+  });
+
+  it('asks for no captures for a role that may not list them, and lists the files', async () => {
+    rbac.allowed = denyOnly(['experiments/captures', 'list']);
+    const page = await opened({ exp: 'exp1' });
+    expect(axios.get.mock.calls.map(([url]) => url)).not.toContain(
+      'experiments/exp1/captures',
+    );
+    expect(options(capturePicker(page), LIVE)).toEqual([]);
+    expect(options(capturePicker(page), EXPERIMENT)).toEqual([]);
+    expect(values(capturePicker(page), FILES)).toEqual([
+      'file:caps/a.pcap',
+      'file:B.PCAPNG.gz',
+      'file:w1.pcap',
+    ]);
+    expect(notify.error).not.toHaveBeenCalled();
+  });
+
+  it('lists only the experiment captures when the list has no VM captures', async () => {
+    const { captures: _, ...noVms } = SERVER['experiments/exp1/captures'];
+    SERVER['experiments/exp1/captures'] = noVms;
+    const page = await opened({ exp: 'exp1' });
+    expect(options(capturePicker(page), LIVE)).toEqual([]);
+    expect(values(capturePicker(page), EXPERIMENT)).toEqual([
+      'capture:3',
+      'capture:2',
+    ]);
+  });
+
+  it('lists a saved file by the format the server read', async () => {
+    const files = SERVER['experiments/exp1/files'];
+    SERVER['experiments/exp1/files'] = {
+      files: [
+        { name: 'merged', path: 'merged', size: 9, captureFormat: 'pcapng' },
+        {
+          name: 'fake.pcap',
+          path: 'fake.pcap',
+          size: 9,
+          captureFormat: 'json',
+        },
+        { name: 'x.pcap.gz', path: 'x.pcap.gz', size: 9, captureFormat: '' },
+      ],
+      total: 3,
+    };
+    try {
+      const page = await opened({ exp: 'exp1' });
+      expect(values(capturePicker(page), FILES)).toEqual([
+        'file:merged',
+        'file:x.pcap.gz',
+      ]);
+    } finally {
+      SERVER['experiments/exp1/files'] = files;
+    }
+  });
+});

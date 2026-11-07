@@ -90,14 +90,98 @@ message VMItemError {
   string error = 3;
 }
 
+// a VM interface capture; minimega 3.4.0 or later also gives its id, state,
+// format and counters
 message Capture {
   string vm = 1;
   uint32 interface = 2;
   string filepath = 3;
+  string id = 4;
+  string state = 5;
+  string format = 6;
+  uint64 packets = 7;
+  uint64 kdrops = 8;
+  int64 size = 9;
+  string error = 10;
 }
 
 message CaptureList {
   repeated Capture captures = 1;
+  repeated ExperimentCapture experiment_captures = 2;
+  CaptureSupport support = 3;
+  repeated MirrorBudget budget = 4;
+  string budget_error = 5;
+  string experiment_captures_error = 6;
+}
+
+// whether minimega supports experiment captures, and why not
+message CaptureSupport {
+  bool available = 1;
+  string reason = 2;
+  string version = 3;
+}
+
+// the Open vSwitch mirrors of one host and bridge that an experiment uses
+message MirrorBudget {
+  string host = 1;
+  string bridge = 2;
+  uint32 total = 3;
+  uint32 experiment = 4;
+  uint32 limit = 5;
+  string level = 6;
+}
+
+message CaptureCounters {
+  uint64 ports = 1;
+  uint64 packets = 2;
+  uint64 bytes = 3;
+  uint64 kdrops = 4;
+  uint64 pdrops = 5;
+  uint64 qdrops = 6;
+  uint64 lost = 7;
+  uint64 late = 8;
+  double lag_ms = 9;
+  double skew_ms = 10;
+}
+
+// the part of an experiment capture that one host records from one bridge
+message CaptureStream {
+  string host = 1;
+  string bridge = 2;
+  string state = 3;
+  CaptureCounters counters = 4;
+  bool skew_warning = 5;
+}
+
+// one capture of an experiment's traffic on all its hosts, merged into one
+// file on the head node
+message ExperimentCapture {
+  string id = 1;
+  string state = 2;
+  bool running = 3;
+  string path = 4;
+  string file = 5;
+  string format = 6;
+  repeated string vlans = 7;
+  string filter = 8;
+  string start = 9;
+  int64 size = 10;
+  string error = 11;
+  CaptureCounters counters = 12;
+  repeated CaptureStream streams = 13;
+}
+
+message StartExperimentCaptureRequest {
+  repeated string vlans = 1;
+  string filter = 2;
+  uint32 snaplen = 3;
+  string name = 4;
+  string format = 5;
+}
+
+message StartExperimentCaptureResponse {
+  ExperimentCapture capture = 1;
+  repeated string warnings = 2;
 }
 
 message SnapshotList {
@@ -184,6 +268,7 @@ message CaptureVlanRequest {
   repeated string vms = 2;
   // a phenix VM filter expression that selects the VMs, in place of vms
   string filter = 3;
+  string format = 4;
 }
 
 message VMNameList {

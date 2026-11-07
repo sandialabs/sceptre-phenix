@@ -1451,6 +1451,16 @@ func TestSharkBaseNameAndTitle(t *testing.T) {
 			capability.Target{File: "live.pcap", VM: "vm", Interface: 2, Live: true}, "live.pcap", "vm interface 2 (live)",
 		},
 		"live without a file": {capability.Target{VM: "vm", Interface: 0, Live: true}, "vm-0.pcap", "vm interface 0 (live)"},
+		"live experiment capture": {
+			capability.Target{Exp: "exp1", File: "exp1-1.pcapng", Capture: "3", Live: true}, "exp1-1.pcapng",
+			"exp1 capture 3 (live)",
+		},
+		"experiment capture without a file": {
+			capability.Target{Exp: "exp1", Capture: "3", Live: true}, "exp1-capture-3.pcapng", "exp1 capture 3 (live)",
+		},
+		"stopped experiment capture": {
+			capability.Target{Exp: "exp1", File: "exp1-1.pcapng", Capture: "3"}, "exp1-1.pcapng", "exp1-1.pcapng",
+		},
 	}
 
 	for name, tc := range tests {

@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/activeshadow/structs"
@@ -25,7 +24,7 @@ import (
 	ifaces "phenix/types/interfaces"
 	"phenix/util"
 	"phenix/util/file"
-	"phenix/util/mm/mmcli"
+	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/util/shell"
 	"phenix/version"
@@ -488,35 +487,10 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 	}
 }
 
-// minimega's version is recorded with every run. It only changes if minimega
-// is upgraded while phenix keeps running, so it is asked for once rather than
-// at the end of every run.
-var mmVersionCache struct { //nolint:gochecknoglobals // process-wide cache
-	mu      sync.Mutex
-	version string
-}
-
-// minimegaVersion returns minimega's version, asking minimega only until it
-// has answered once.
+// minimegaVersion returns minimega's version, recorded with every run. util/mm asks minimega only until it has
+// answered once, and uses the same answer for its capture support.
 func minimegaVersion() (string, error) {
-	mmVersionCache.mu.Lock()
-	defer mmVersionCache.mu.Unlock()
-
-	if mmVersionCache.version != "" {
-		return mmVersionCache.version, nil
-	}
-
-	c := mmcli.NewCommand()
-	c.Command = "version"
-
-	v, err := mmcli.SingleResponse(mmcli.Run(c))
-	if err != nil {
-		return "", err
-	}
-
-	mmVersionCache.version = v
-
-	return v, nil
+	return mm.MinimegaVersion() //nolint:wrapcheck // mm names the command
 }
 
 func (s Scorch) recordInfo(

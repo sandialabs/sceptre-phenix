@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
 
 	"phenix/api/experiment"
+	"phenix/util/mm"
 	"phenix/util/mm/mmtest"
 	"phenix/util/plog/plogtest"
 )
@@ -39,7 +41,16 @@ func TestExpCmdScorchRun(t *testing.T) { //nolint:paralleltest // replaces the p
 			}}}
 
 			expCmdUseStore(t, cfg)
-			mmtest.Use(t, nil)
+			// a run records minimega's version, which minimega always gives; util/mm keeps it for the process
+			mm.ForgetCluster()
+			t.Cleanup(mm.ForgetCluster)
+			mmtest.Use(t, func(cmd mmtest.Command) []*minicli.Response {
+				if cmd.Base == "version" {
+					return []*minicli.Response{mmtest.Text("head", "minimega 3.4.0 abc 2026-10-01")}
+				}
+
+				return nil
+			})
 			expCmdNoServer(t)
 
 			logs := plogtest.Capture(t)

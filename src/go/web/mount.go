@@ -721,7 +721,7 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, "Expected directory not file: "+destDir)
 	}
 
-	source, err := experiment.LocalFile(vars["exp"], query.Get("source"))
+	source, err := experiment.LocalFile(r.Context(), vars["exp"], query.Get("source"))
 	if err != nil {
 		audit.Failure(r, audit.VMFileCopy, "copying file to vm mount failed", copied, err)
 

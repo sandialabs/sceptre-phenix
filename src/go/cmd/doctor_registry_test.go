@@ -72,6 +72,7 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 		"ui.jwt-signing-key":       "doctor-test-key",
 		"ui.shutdown-grace-period": "5",
 		"ui.netflow.max-size":      "100",
+		"ui.captures.max-size":     "10240",
 		"ui.jwt-lifetime":          "24h",
 		"ui.users":                 "alice:Alicepass1!:global-admin",
 		"ui.listen-endpoint":       "0.0.0.0:3000",
@@ -244,6 +245,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"base-dir.builder-templates base-dir.builder-templates pass",
 		"ui.shutdown-grace-period ui.shutdown-grace-period pass",
 		"ui.netflow.max-size ui.netflow.max-size pass",
+		"ui.captures.max-size ui.captures.max-size pass",
 		"ui.jwt-signing-key ui.jwt-signing-key pass",
 		"ui.jwt-lifetime ui.jwt-lifetime pass",
 		"ui.users ui.users pass",
@@ -301,6 +303,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"tunneler-download tunneler-download pass",
 		"webshark webshark pass",
 		"ui.features ui.features pass",
+		"minimega-captures minimega-captures pass",
 		"ui.logs.minimega-path ui.logs.minimega-path pass",
 	}
 
@@ -443,6 +446,10 @@ func TestDoctorChecksFromInput(t *testing.T) {
 			settings: map[string]string{"ui.netflow.max-size": "-1"},
 			want:     with("ui.netflow.max-size", "ui.netflow.max-size ui.netflow.max-size fail", false),
 		},
+		"bad capture size": {
+			settings: map[string]string{"ui.captures.max-size": "1.5"},
+			want:     with("ui.captures.max-size", "ui.captures.max-size ui.captures.max-size fail", false),
+		},
 		"auth settings phenix ui misreads": {
 			settings: map[string]string{"ui.jwt-lifetime": "24", "ui.users": "bob:Bobpass1!", "ui.jwt-signing-key": "dev|bob"},
 			want: replaceRows(allPass,
@@ -517,6 +524,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 			},
 			// minimega-env checks nothing, in one skip row; no <base-dir.phenix>/images to check or measure
 			want: slices.Replace(replaceNamedRows(allPass, "minimega minimega fail", "disk-chains disk chains skip",
+				"minimega-captures minimega-captures skip",
 				"disk-formats disk formats skip", "leftovers leftovers snapshots skip", "leftovers leftovers taps skip",
 				"leftovers leftovers mirrors skip",
 				"disk-space disk-space files pass => disk-space disk-space base pass"),
@@ -701,7 +709,10 @@ func TestParseDoctorSkip(t *testing.T) {
 		},
 		"comma list and repeated": {
 			args: []string{"--skip", "env, store.endpoint", "--skip", "ui"},
-			want: []string{"env", "env-overrides", "proxy-env", "store.endpoint", "ui.netflow.max-size", "ui.shutdown-grace-period"},
+			want: []string{
+				"env", "env-overrides", "proxy-env", "store.endpoint", "ui.captures.max-size", "ui.netflow.max-size",
+				"ui.shutdown-grace-period",
+			},
 		},
 		"auth, tls and socket groups": {
 			args: []string{"--skip", "auth,tls", "--skip", "socket"},
@@ -858,7 +869,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 58 passed, 25 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 59 passed, 26 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},
@@ -884,8 +895,8 @@ func TestDoctorTextOutput(t *testing.T) {
 			opts: doctorOptions{output: "text", problems: true},
 			want: []string{
 				"\nCHECK", "ui.jwt-signing-key", "WARN", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 58 passed, 25 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
-					"83 passing or skipped checks hidden\n",
+				"\nFAIL: 1 failed, 1 warned, 59 passed, 26 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
+					"85 passing or skipped checks hidden\n",
 			},
 			wantNot: []string{" PASS ", " SKIP "},
 		},

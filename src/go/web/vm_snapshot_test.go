@@ -120,6 +120,27 @@ func vmSnapshotChanges() map[string]vmChange {
 func vmSnapshotBroadcasts(t *testing.T) func() []string {
 	t.Helper()
 
+	list := brokerBroadcasts(t, "experiment/vm/")
+
+	return func() []string {
+		broadcasts := list()
+		got := make([]string, 0, len(broadcasts))
+
+		for _, b := range broadcasts {
+			fields := strings.Fields(b)
+			got = append(got, fields[0]+" "+fields[len(fields)-1])
+		}
+
+		return got
+	}
+}
+
+// brokerBroadcasts runs the broker for the rest of the test with a client that
+// may see everything, and returns a function listing the "<type> <name>
+// <action>" of the broadcasts of a type starting with prefix it has got so far.
+func brokerBroadcasts(t *testing.T, prefix string) func() []string {
+	t.Helper()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	stopped := make(chan struct{})
 
@@ -165,6 +186,7 @@ func vmSnapshotBroadcasts(t *testing.T) func() []string {
 				var m struct {
 					Resource struct {
 						Type   string `json:"type"`
+						Name   string `json:"name"`
 						Action string `json:"action"`
 					} `json:"resource"`
 				}
@@ -176,9 +198,9 @@ func vmSnapshotBroadcasts(t *testing.T) func() []string {
 				// a probe only shows the client registered; it may arrive late
 				if m.Resource.Type == "experiment/vm/probe" {
 					probed.Store(true)
-				} else if strings.HasPrefix(m.Resource.Type, "experiment/vm/") {
+				} else if strings.HasPrefix(m.Resource.Type, prefix) {
 					mu.Lock()
-					got = append(got, m.Resource.Type+" "+m.Resource.Action)
+					got = append(got, m.Resource.Type+" "+m.Resource.Name+" "+m.Resource.Action)
 					mu.Unlock()
 				}
 			}

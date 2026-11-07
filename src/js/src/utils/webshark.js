@@ -14,6 +14,16 @@ const CAPTURE_FILE = /\.(pcap|pcapng|cap)(\.gz)?$/i;
 
 export const isCaptureFile = (name) => CAPTURE_FILE.test(name ?? '');
 
+// Whether a row of the experiment's files is a packet capture: by the
+// format the server read from its first bytes, else by its name. The
+// server gives '' for a file whose bytes it did not read, such as x.pcap.gz.
+export function isCaptureRow(file) {
+  const format = file?.captureFormat;
+  if (format === 'pcap' || format === 'pcapng') return true;
+  if (format) return false;
+  return isCaptureFile(file?.name);
+}
+
 export const webSharkInstalled = (features) =>
   (features ?? []).includes(WEBSHARK_FEATURE);
 
@@ -81,17 +91,35 @@ export const liveTarget = (vm, iface, network = null) => ({
   query: { vm, iface: String(iface) },
 });
 
+// An experiment capture, merged from every host, by its ID; `scope` says
+// what it covers (see experimentCaptures.js). A target from the URL alone
+// has no format or streams until the list gives them.
+export const experimentCaptureTarget = (id, fields = {}) => ({
+  key: `capture:${id}`,
+  live: !!fields.live,
+  capture: id,
+  format: fields.format ?? '',
+  streams: fields.streams ?? [],
+  label: `capture ${id}${fields.scope ? ` · ${fields.scope}` : ''}`,
+  body: { capture: id },
+  query: { capture: id },
+});
+
 // a query value, which the router gives as an array when repeated
 const one = (value) => (Array.isArray(value) ? value[0] : value);
 
 // The experiment and target a WebShark page URL names:
-// ?exp=<name>&file=<path> or ?exp=<name>&vm=<vm>&iface=<index>
+// ?exp=<name>&file=<path>, ?exp=<name>&vm=<vm>&iface=<index> or
+// ?exp=<name>&capture=<id>
 export function queryTarget(query) {
   const exp = one(query?.exp) || null;
   if (!exp) return { exp, target: null };
 
   const file = one(query.file);
   if (file) return { exp, target: fileTarget(file) };
+
+  const capture = one(query.capture);
+  if (capture) return { exp, target: experimentCaptureTarget(capture) };
 
   const vm = one(query.vm);
   const iface = one(query.iface);

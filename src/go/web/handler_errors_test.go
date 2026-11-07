@@ -148,6 +148,10 @@ func handlerErrorCases() map[string]handlerErrorCase {
 		"subnet capture from bad JSON": {
 			handler: StartCaptureSubnet, method: http.MethodPost, vars: vm, body: `{`, want: http.StatusBadRequest,
 		},
+		"experiment capture from unreadable body": {
+			handler: StartExperimentCapture, method: http.MethodPost, vars: vm, broken: true,
+			want: http.StatusInternalServerError,
+		},
 		"subnet capture stop from unreadable body": {
 			handler: StopCaptureSubnet, method: http.MethodPost, vars: vm, broken: true, want: http.StatusInternalServerError,
 		},

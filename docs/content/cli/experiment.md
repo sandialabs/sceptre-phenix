@@ -22,6 +22,7 @@ phenix experiment [flags]
 
 * [phenix](index.md) - A cli application for phēnix
 * [phenix experiment apps](experiment.md#phenix-experiment-apps) - List the apps that a scenario can add to an experiment
+* [phenix experiment capture](experiment.md#phenix-experiment-capture) - Experiment capture management
 * [phenix experiment captures](experiment.md#phenix-experiment-captures) - List the running packet captures of an experiment
 * [phenix experiment create](experiment.md#phenix-experiment-create) - Create an experiment
 * [phenix experiment delete](experiment.md#phenix-experiment-delete) - Delete an experiment
@@ -66,6 +67,133 @@ phenix experiment apps [flags]
 ### SEE ALSO
 
 * [phenix experiment](experiment.md) - Experiment management
+
+## phenix experiment capture
+
+Experiment capture management
+
+### Synopsis
+
+```text
+Experiment capture management
+
+  An experiment capture records the traffic of all the VLANs, or of the given
+  VLANs, of a running experiment on all its hosts into one file in the
+  experiment's files directory. It needs minimega 3.4.0 or later.
+```
+
+```text
+phenix experiment capture [flags]
+```
+
+### Options
+
+```text
+  -h, --help   help for capture
+```
+
+### SEE ALSO
+
+* [phenix experiment](experiment.md) - Experiment management
+* [phenix experiment capture list](experiment.md#phenix-experiment-capture-list) - List the experiment captures of an experiment
+* [phenix experiment capture start](experiment.md#phenix-experiment-capture-start) - Start an experiment capture
+* [phenix experiment capture stop](experiment.md#phenix-experiment-capture-stop) - Stop an experiment capture
+
+## phenix experiment capture list
+
+List the experiment captures of an experiment
+
+### Synopsis
+
+```text
+List the experiment captures of an experiment
+
+  Prints each experiment capture with a row for each host and bridge that it
+  records, then the Open vSwitch mirror budget of each host and bridge that
+  the experiment uses.
+```
+
+```text
+phenix experiment capture list <experiment name> [flags]
+```
+
+### Options
+
+```text
+  -h, --help   help for list
+```
+
+### SEE ALSO
+
+* [phenix experiment capture](experiment.md#phenix-experiment-capture) - Experiment capture management
+
+## phenix experiment capture start
+
+Start an experiment capture
+
+### Synopsis
+
+```text
+Start an experiment capture
+
+  Starts one packet capture of the running experiment's traffic, on every
+  VLAN or on the VLANs that --vlan gives, and prints its ID, its file and the
+  Open vSwitch mirror budget warnings. phenix refuses the start when a host
+  and bridge that the capture needs has 32 mirrors.
+```
+
+```text
+phenix experiment capture start <experiment name> [flags]
+```
+
+### Examples
+
+```text
+phenix experiment capture start exp1
+phenix experiment capture start exp1 --vlan EXP_1 --vlan EXP_2 --filter "tcp port 502" --format pcap
+```
+
+### Options
+
+```text
+      --filter string      BPF filter of the frames to capture
+      --format string      capture file format, pcapng or pcap (minimega before 3.4.0 writes only pcap) (default "pcapng")
+  -h, --help               help for start
+      --name string        file name in the experiment's files directory (default <exp>[-<vlan>]-<time>)
+      --snaplen int        most bytes of each frame to keep, from 14 to 65535 (0 keeps 1600)
+      --vlan stringArray   VLAN alias to capture (repeat for more; all VLANs when not given)
+```
+
+### SEE ALSO
+
+* [phenix experiment capture](experiment.md#phenix-experiment-capture) - Experiment capture management
+
+## phenix experiment capture stop
+
+Stop an experiment capture
+
+### Synopsis
+
+```text
+Stop an experiment capture
+
+  Stops the experiment capture and prints its final counters. Its file stays
+  in the experiment's files directory.
+```
+
+```text
+phenix experiment capture stop <experiment name> <capture ID> [flags]
+```
+
+### Options
+
+```text
+  -h, --help   help for stop
+```
+
+### SEE ALSO
+
+* [phenix experiment capture](experiment.md#phenix-experiment-capture) - Experiment capture management
 
 ## phenix experiment captures
 

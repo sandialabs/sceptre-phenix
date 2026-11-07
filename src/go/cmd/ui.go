@@ -26,9 +26,9 @@ const (
 	signalExitBase = 128
 	// the longest ui.shutdown-grace-period a [time.Duration] holds.
 	maxShutdownGraceSeconds = int64(math.MaxInt64 / time.Second)
-	// ui.netflow.max-size is in MiB, 1 << mibShift bytes, and its bytes fit an int64.
-	mibShift             = 20
-	maxNetflowMaxSizeMiB = int64(math.MaxInt64 >> mibShift)
+	// ui.netflow.max-size and ui.captures.max-size are in MiB, 1 << mibShift bytes, and their bytes fit an int64.
+	mibShift      = 20
+	maxSizeMaxMiB = int64(math.MaxInt64 >> mibShift)
 )
 
 var uiCmd *cobra.Command //nolint:gochecknoglobals // ui command
@@ -40,7 +40,7 @@ var uiCmd *cobra.Command //nolint:gochecknoglobals // ui command
 var uiSettings = []string{
 	"listen-endpoint", "base-path", "jwt-signing-key", "jwt-lifetime", "file-server-endpoint",
 	"proxy-auth-header", "users", "tls-key", "tls-cert", "logs.minimega-path", "logs.level",
-	"features", "minimega-console", "shutdown-grace-period", "netflow.max-size", "unix-socket-gid",
+	"features", "minimega-console", "shutdown-grace-period", "netflow.max-size", "unix-socket-gid", "captures.max-size",
 }
 
 const (
@@ -81,6 +81,11 @@ func newUICmd() *cobra.Command {
 				return err
 			}
 
+			captureMax, err := captureMaxSize(viper.GetViper())
+			if err != nil {
+				return err
+			}
+
 			watchRestartSettings()
 
 			gidKey, deprecated := unixSocketGIDKey(viper.GetViper())
@@ -108,6 +113,7 @@ func newUICmd() *cobra.Command {
 				web.ServeWithShutdownGracePeriod(grace),
 				web.ServeWithNetflowMaxSize(netflowMax),
 				web.ServeWithRuntimeSettings(runtimeSettings(cmd.Root(), viper.GetViper())),
+				web.ServeWithCaptureMaxSize(captureMax),
 			}
 
 			if level := viper.GetString("ui.logs.level"); level != "" {
@@ -167,7 +173,9 @@ func newUICmd() *cobra.Command {
 	uiCmd.Flags().Int("unix-socket-gid", -1, "ID of a group that may write to the unix socket (-1 does not change the group)")
 	uiCmd.Flags().String("logs.minimega-path", "", "path to minimega log file to publish to UI")
 	uiCmd.Flags().String("logs.level", "", "log level to publish to UI. Defaults to file level")
-	uiCmd.Flags().StringSlice("features", nil, "list of features to enable (options: vm-mount)")
+	uiCmd.Flags().StringSlice(
+		"features", nil, "list of features to enable (options: vm-mount, minimega-captures)",
+	)
 	uiCmd.Flags().Bool("minimega-console", false, "enable minimega console access in UI")
 	uiCmd.Flags().Int(
 		"shutdown-grace-period",
@@ -178,6 +186,11 @@ func newUICmd() *cobra.Command {
 		"netflow.max-size",
 		web.DefaultNetflowMaxSize>>mibShift,
 		"maximum size in megabytes of each recorded netflow capture (0 does not record)",
+	)
+	uiCmd.Flags().Int64(
+		"captures.max-size",
+		web.DefaultCaptureMaxSize,
+		"maximum size in megabytes of each packet capture file that minimega 3.4.0 or later writes (0 sets no limit)",
 	)
 
 	for _, name := range uiSettings {
@@ -224,22 +237,39 @@ func shutdownGracePeriod(v *viper.Viper) (time.Duration, error) {
 // netflowMaxSize returns ui.netflow.max-size from v, a whole number of MiB
 // that is not negative, in bytes.
 func netflowMaxSize(v *viper.Viper) (int64, error) {
-	value := v.GetString("ui.netflow.max-size")
-
-	mib, err := strconv.ParseInt(value, 10, 64)
-	if err != nil && !errors.Is(err, strconv.ErrRange) {
-		return 0, fmt.Errorf("invalid ui.netflow.max-size %q: it must be a whole number of megabytes, such as 100", value)
-	}
-
-	if mib < 0 {
-		return 0, fmt.Errorf("invalid ui.netflow.max-size %q: it must not be negative", value)
-	}
-
-	if mib > maxNetflowMaxSizeMiB {
-		return 0, fmt.Errorf("invalid ui.netflow.max-size %q: it must be at most %d megabytes", value, maxNetflowMaxSizeMiB)
+	mib, err := mibSetting(v, "ui.netflow.max-size", "100")
+	if err != nil {
+		return 0, err
 	}
 
 	return mib << mibShift, nil
+}
+
+// captureMaxSize returns ui.captures.max-size from v, a whole number of MiB
+// that is not negative, in MiB.
+func captureMaxSize(v *viper.Viper) (int64, error) {
+	return mibSetting(v, keyCaptureMaxSize, "10240")
+}
+
+// mibSetting returns the setting key from v, a whole number of MiB, such as
+// example, that is not negative and whose bytes fit an int64.
+func mibSetting(v *viper.Viper, key, example string) (int64, error) {
+	value := v.GetString(key)
+
+	mib, err := strconv.ParseInt(value, 10, 64)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0, fmt.Errorf("invalid %s %q: it must be a whole number of megabytes, such as %s", key, value, example)
+	}
+
+	if mib < 0 {
+		return 0, fmt.Errorf("invalid %s %q: it must not be negative", key, value)
+	}
+
+	if mib > maxSizeMaxMiB {
+		return 0, fmt.Errorf("invalid %s %q: it must be at most %d megabytes", key, value, maxSizeMaxMiB)
+	}
+
+	return mib, nil
 }
 
 // notifyShutdown returns a copy of parent canceled, with a web.SignalError, by

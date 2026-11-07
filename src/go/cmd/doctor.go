@@ -159,7 +159,9 @@ const doctorDesc = `Check the phenix configuration without a running server
   qcow2 version 2, or one that qemu refuses. The tools and features checks look for
   qemu-img, vmdb2 and filebeat on PATH, measure free disk space, report
   whether phenix ui turns on tunneler downloads and WebShark (relative to the
-  working directory), and check ui.features and ui.logs.minimega-path. --skip takes a check or a group of
+  working directory), report from the minimega version whether phenix ui uses
+  the capture commands of minimega 3.4.0, and check ui.features and
+  ui.logs.minimega-path. --skip takes a check or a group of
   checks; an unknown name fails and lists the valid ones. Secret values, such
   as the JWT signing key and initial users, are redacted. doctor exits 1 when
   a check fails, or with --strict when one warns, and 0 otherwise.
@@ -552,6 +554,24 @@ func netflowMaxSizeCheck(v *viper.Viper) doctorCheck {
 		check.Detail = "0, so phenix ui records no netflow captures"
 	default:
 		check.Detail = strconv.FormatInt(size>>mibShift, 10) + " MiB"
+	}
+
+	return check
+}
+
+// captureMaxSizeCheck fails for a ui.captures.max-size in v phenix ui refuses.
+func captureMaxSizeCheck(v *viper.Viper) doctorCheck {
+	check := doctorCheck{Name: keyCaptureMaxSize, Status: doctorPass, Detail: ""}
+
+	size, err := captureMaxSize(v)
+
+	switch {
+	case err != nil:
+		check.Status, check.Detail = doctorFail, err.Error()
+	case size == 0:
+		check.Detail = "0, so minimega sets no limit on capture files"
+	default:
+		check.Detail = strconv.FormatInt(size, 10) + " MiB"
 	}
 
 	return check

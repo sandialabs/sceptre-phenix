@@ -50,7 +50,8 @@ func TestListExperimentFilesCategorizes(t *testing.T) {
 		switch {
 		case strings.HasPrefix(cmd.Base, "mesh send all file list"):
 			return []*minicli.Response{mmtest.Tabular("compute1", listingHeader,
-				row("vm_eth0.pcap", "10"), row("notes.txt", "1"))}
+				row("vm_eth0.pcap", "10"), row("notes.txt", "1"), row("exp-20261105-142233.pcapng", "12"),
+				row("old.cap", "13"))}
 		case strings.HasPrefix(cmd.Base, "file list"):
 			return []*minicli.Response{mmtest.Tabular("head", listingHeader,
 				row("notes.txt", "2"),
@@ -93,6 +94,8 @@ func TestListExperimentFilesCategorizes(t *testing.T) {
 
 	want := Files{
 		file("vm_eth0.pcap", 10, false, "Packet Capture"),
+		file("exp-20261105-142233.pcapng", 12, false, "Packet Capture"),
+		file("old.cap", 13, false, "Packet Capture"),
 		file("notes.txt", 1, true, "Unknown"),
 		file("scorch/1/tap/out.log", 3, true, "Scorch Artifact", "1", "tap"),
 		file("scorch/1/filebeat/filebeat.log", 4, true, "Scorch Artifact", "1", "Filebeat"),

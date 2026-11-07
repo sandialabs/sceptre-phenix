@@ -1825,6 +1825,7 @@ func init() { //nolint:gochecknoinits // cobra command
 	experimentCmd.AddCommand(newExperimentTriggerCmd())
 	experimentCmd.AddCommand(newExperimentTriggerRunningCmd())
 	experimentCmd.AddCommand(newExperimentScorchCmd())
+	experimentCmd.AddCommand(newExperimentCaptureCmd())
 
 	addCommandToRoot(experimentCmd, true)
 }

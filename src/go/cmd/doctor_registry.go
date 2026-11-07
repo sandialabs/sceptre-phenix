@@ -22,6 +22,7 @@ import (
 	"phenix/api/disk"
 	"phenix/api/runtimesettings"
 	"phenix/store"
+	"phenix/util/mm"
 	"phenix/web"
 	"phenix/web/health"
 )
@@ -551,6 +552,13 @@ func doctorChecks() []doctorCheckDef {
 			},
 		},
 		{
+			id: keyCaptureMaxSize, group: doctorGroupUI, name: keyCaptureMaxSize,
+			hint: hintText("set " + keyCaptureMaxSize + " to a whole number of MiB, such as 10240"),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				return one(captureMaxSizeCheck(viperWith(keyCaptureMaxSize, in.text(keyCaptureMaxSize))))
+			},
+		},
+		{
 			id: "ui.jwt-signing-key", group: doctorGroupAuth, name: "ui.jwt-signing-key",
 			hint: func(c doctorCheck) string {
 				if c.Status == doctorFail {
@@ -698,6 +706,10 @@ func doctorChecks() []doctorCheckDef {
 				check := minimegaCheck(ctx, base, in.timeout, probe)
 				in.found.minimegaUp = check.Status == doctorPass
 
+				if in.found.minimegaUp {
+					in.found.minimegaVersion = check.Detail
+				}
+
 				return one(check)
 			},
 		},
@@ -834,6 +846,17 @@ func doctorChecks() []doctorCheckDef {
 			},
 		},
 		{
+			id: minimegaCapturesName, group: doctorGroupFeatures, name: minimegaCapturesName,
+			hint: hintText("add " + web.FeatureMinimegaCaptures + " to ui.features only when this minimega build " +
+				"has the capture commands of minimega " + strings.TrimPrefix(mm.MinCaptureVersion, "v")),
+			run: func(_ context.Context, in *doctorInput) []doctorCheck {
+				v := viper.New()
+				v.Set("ui.features", in.settings["ui.features"].value)
+
+				return one(minimegaCapturesCheck(v.GetStringSlice("ui.features"), in.found))
+			},
+		},
+		{
 			id: "ui.logs.minimega-path", group: doctorGroupFeatures, name: "ui.logs.minimega-path",
 			hint: hintText("set ui.logs.minimega-path to the file minimega logs to, readable by this user"),
 			run: func(_ context.Context, in *doctorInput) []doctorCheck {
@@ -903,8 +926,9 @@ func runDoctorChecksFound(
 
 	run := *input
 	run.found = &doctorFound{
-		minimegaUp: false, minimegaArgs: nil, images: nil, experiments: nil, inventory: nil, ovsShow: nil, leftovers: nil,
-		mesh: nil, stored: nil, storeBusy: "", users: nil, ui: nil, procs: nil, certNames: nil,
+		minimegaUp: false, minimegaVersion: "", minimegaArgs: nil, images: nil, experiments: nil, inventory: nil,
+		ovsShow: nil, leftovers: nil, mesh: nil, stored: nil, storeBusy: "", users: nil, ui: nil, procs: nil,
+		certNames: nil,
 	}
 	in := &run
 

@@ -6,4 +6,6 @@ const (
 	keyUseGREMesh  = "use-gre-mesh"
 	keyJWTLifetime = "ui.jwt-lifetime"
 	keyUIUsers     = "ui.users"
+
+	keyCaptureMaxSize = "ui.captures.max-size"
 )

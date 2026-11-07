@@ -26,6 +26,15 @@ If you see "malformed log entry" warnings in the main phēnix system log, it's l
 
 Ensure timestamps in your JSON logs are in a consistent format that phēnix can parse, such as RFC3339. The core now enforces a `2006-01-02 15:04:05.000` format for its own file logs for easier reading, but is flexible on ingest.
 
+## Packet Capture Issues
+
+### Experiment Captures Are Not Available
+
+Experiment captures need minimega 3.4.0 or later on every node. phēnix reads
+the minimega version only when it starts. Restart phēnix after you upgrade
+minimega. For the disabled controls, a refused start, and a skew warning, see
+[Experiment Packet Captures](packet-captures.md#troubleshooting).
+
 ## Configuration Issues
 
 ### Do Not Delete `config.yaml`

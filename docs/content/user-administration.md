@@ -247,6 +247,27 @@ Global Viewer does not have `builder` `use`. See the policies in
 | Exp. Scoped | yes (list is filtered to only include experiments in scope) |
 | Res. Scoped | yes (list is filtered to only include VMs in scope) |
 
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | start an [experiment capture](packet-captures.md) |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | get a specific experiment capture (with `experiments/files` get, also stream it and open it in WebShark) |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | stop a specific experiment capture |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
 #### Resource: `experiments/files`
 
 |      |      |

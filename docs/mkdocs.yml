@@ -119,6 +119,7 @@ nav:
     - Bridge Mode: bridge-mode.md
     - GRE Mesh: gre-mesh.md
     - Netflow: netflow.md
+    - Packet Captures: packet-captures.md
     - Tunneler: tunneler.md
   - Integrations:
     - API: api.md

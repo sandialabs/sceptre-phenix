@@ -124,6 +124,7 @@ message StartCaptureRequest {
   optional uint32 interface = 1;
   string filename = 2;
   optional string interface_name = 3;
+  string format = 4;
 }
 
 message UpdateScheduleRequest {

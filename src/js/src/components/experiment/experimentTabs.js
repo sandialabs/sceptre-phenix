@@ -5,6 +5,7 @@ export const TAB = Object.freeze({
   FILES: 'files',
   VNC: 'vnc',
   NETFLOW: 'netflow',
+  CAPTURES: 'captures',
 });
 
 // The tab a URL's query names, when the page offers it, or the VMs tab.

@@ -9,13 +9,7 @@ import (
 
 // GetFeatures handles GET requests for /features.
 func GetFeatures(w http.ResponseWriter, r *http.Request) {
-	features := make([]string, 0, len(o.features))
-
-	for f := range o.features {
-		features = append(features, f)
-	}
-
-	body, _ := json.Marshal(util.WithRoot("features", features))
+	body, _ := json.Marshal(util.WithRoot("features", o.featureNames()))
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)

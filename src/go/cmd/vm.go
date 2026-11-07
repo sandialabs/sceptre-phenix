@@ -1363,70 +1363,8 @@ func newVMCaptureCmd() *cobra.Command {
 		vlanCompletion    = completeArgs(completeExperiments(expRunning, false), completeVLANAliases)
 	)
 
-	startVMCapture := &cobra.Command{
-		Use:               "start <experiment name> <vm name> <iface name/index> <output file>",
-		Short:             "Start a packet capture for a VM specifying the interface (by name or index) and using given output file as name of capture file",
-		ValidArgsFunction: vmIfaceCompletion,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != startCaptureArgs {
-				return errors.New(
-					"must provide an experiment name, VM name, iface name/index, and output file",
-				)
-			}
-
-			var (
-				expName  = args[0]
-				vmName   = args[1]
-				ifaceArg = args[2]
-				out      = args[3]
-			)
-
-			v, err := vm.Get(context.Background(), expName, vmName)
-			if err != nil {
-				err := util.HumanizeError(
-					err,
-					"%s",
-					"Unable to get details for the "+vmName+" VM",
-				)
-
-				return err.Humanized()
-			}
-
-			iface, err := vm.ResolveInterface(v, ifaceArg)
-			if err != nil {
-				err := util.HumanizeError(
-					err,
-					"%s",
-					"Unable to resolve interface "+ifaceArg+" on the "+vmName+" VM",
-				)
-
-				return err.Humanized()
-			}
-
-			if err := vm.StartCaptureForVM(context.Background(), v, expName, vmName, iface, out); err != nil {
-				err := util.HumanizeError(
-					err,
-					"%s",
-					"Unable to start a capture on the interface on the "+vmName+" VM",
-				)
-
-				return err.Humanized()
-			}
-
-			plog.Info(
-				plog.TypeSystem,
-				"vm packet capture started",
-				"iface",
-				iface,
-				"vm",
-				vmName,
-				"exp",
-				expName,
-			)
-
-			return nil
-		},
-	}
+	startVMCapture := newVMCaptureStartCmd()
+	startVMCapture.ValidArgsFunction = vmIfaceCompletion
 
 	startSubnetCaptures := &cobra.Command{
 		Use:               "start-subnet <experiment name> <subnet>",
@@ -1454,7 +1392,12 @@ func newVMCaptureCmd() *cobra.Command {
 				return err
 			}
 
-			vms, err := vm.CaptureSubnet(context.Background(), expName, subnet, vmList)
+			opts, err := vmCaptureOptions(cmd)
+			if err != nil {
+				return err
+			}
+
+			vms, err := vm.CaptureSubnet(context.Background(), expName, subnet, vmList, opts)
 			if err != nil {
 				err := util.HumanizeError(
 					err,
@@ -1497,7 +1440,12 @@ func newVMCaptureCmd() *cobra.Command {
 				return err
 			}
 
-			captures, err := vm.CaptureVLAN(context.Background(), expName, vlan, vmList)
+			opts, err := vmCaptureOptions(cmd)
+			if err != nil {
+				return err
+			}
+
+			captures, err := vm.CaptureVLAN(context.Background(), expName, vlan, vmList, opts)
 			if err != nil {
 				err := util.HumanizeError(
 					err,
@@ -1668,6 +1616,9 @@ func newVMCaptureCmd() *cobra.Command {
 	cmd.AddCommand(newVMCaptureStopVLANCmd(vlanCompletion))
 	cmd.AddCommand(newVMCaptureStopAllCmd(expCompletion))
 	cmd.AddCommand(newVMCaptureStreamCmd())
+
+	addCaptureFormatFlag(startSubnetCaptures)
+	addCaptureFormatFlag(startVLANCaptures)
 
 	startSubnetCaptures.Flags().StringP("filter", "f", "", "Filter to restrict the list of VMs")
 	stopSubnetCaptures.Flags().StringP("filter", "f", "", "Filter to restrict the list of VMs")
@@ -1846,6 +1797,100 @@ func skipCaptures(dry dryRun, expName string, captures []mm.Capture) {
 	for _, c := range captures {
 		dry.skip("stop", fmt.Sprintf("the packet capture on interface %d of VM %s in experiment %s", c.Interface, c.VM, expName))
 	}
+}
+
+// newVMCaptureStartCmd is vm capture start.
+func newVMCaptureStartCmd() *cobra.Command {
+	start := &cobra.Command{
+		Use:               "start <experiment name> <vm name> <iface name/index> <output file>",
+		Short:             "Start a packet capture for a VM specifying the interface (by name or index) and using given output file as name of capture file",
+		ValidArgsFunction: vmArgsCompletion,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != startCaptureArgs {
+				return errors.New(
+					"must provide an experiment name, VM name, iface name/index, and output file",
+				)
+			}
+
+			var (
+				expName  = args[0]
+				vmName   = args[1]
+				ifaceArg = args[2]
+				out      = args[3]
+			)
+
+			v, err := vm.Get(context.Background(), expName, vmName)
+			if err != nil {
+				err := util.HumanizeError(
+					err,
+					"%s",
+					"Unable to get details for the "+vmName+" VM",
+				)
+
+				return err.Humanized()
+			}
+
+			iface, err := vm.ResolveInterface(v, ifaceArg)
+			if err != nil {
+				err := util.HumanizeError(
+					err,
+					"%s",
+					"Unable to resolve interface "+ifaceArg+" on the "+vmName+" VM",
+				)
+
+				return err.Humanized()
+			}
+
+			opts, err := vmCaptureOptions(cmd)
+			if err != nil {
+				return err
+			}
+
+			err = vm.StartCaptureForVM(context.Background(), v, expName, vmName, iface, out, opts)
+			if err != nil {
+				err := util.HumanizeError(
+					err,
+					"%s",
+					"Unable to start a capture on the interface on the "+vmName+" VM",
+				)
+
+				return err.Humanized()
+			}
+
+			plog.Info(
+				plog.TypeSystem,
+				"vm packet capture started",
+				"iface",
+				iface,
+				"vm",
+				vmName,
+				"exp",
+				expName,
+			)
+
+			return nil
+		},
+	}
+
+	addCaptureFormatFlag(start)
+
+	return start
+}
+
+// vmCaptureOptions are the options of a VM interface capture start: the format that cmd's --format flag gives, and the
+// size limit of ui.captures.max-size.
+func vmCaptureOptions(cmd *cobra.Command) (vm.CaptureOptions, error) {
+	format, err := captureFormatFlag(cmd)
+	if err != nil {
+		return vm.CaptureOptions{}, err
+	}
+
+	maxSize, err := captureSettings()
+	if err != nil {
+		return vm.CaptureOptions{}, err
+	}
+
+	return vm.CaptureOptions{Format: format, MaxSizeMiB: maxSize}, nil
 }
 
 // subnetFilterVMs returns the names of the VMs of experiment expName that the

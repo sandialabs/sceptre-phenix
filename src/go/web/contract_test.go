@@ -63,7 +63,8 @@ func serveContractAs(t *testing.T, role rbac.Role, set func(*serverOptions)) *ht
 }
 
 // contractFixture: running test-experiment with test-vm mounted (etc/hostname), files a.log, a.pcap and a netflow capture, test-disk.qc2,
-// demo at revision 5, bob's finished job (3-byte artifact), on-demand capture tokens and consoles; fake minimega says ok.
+// demo at revision 5, bob's finished job (3-byte artifact), on-demand capture tokens and consoles; fake minimega says ok,
+// supports experiment captures and runs capture 1 (capture 2 stopped, leaving a.pcap).
 type contractFixture struct {
 	jobs     *job.Registry
 	bobsJob  job.Job
@@ -78,7 +79,8 @@ func useContractFixture(t *testing.T) contractFixture {
 	writeDisks(t, filepath.Join(files.dir, contractDisk))
 
 	useTestExperiment(t)
-	useTestFiles(t, "a.log", "a.pcap")
+	listed := useTestFiles(t, "a.log", "a.pcap")
+	listed.files[1].CaptureFormat = mm.CaptureFormatPcap // as the cluster listing reads it from the first bytes
 
 	expFiles := filepath.Join(files.dir, contractExp, "files")
 	if err := os.MkdirAll(expFiles, 0o750); err != nil {
@@ -100,6 +102,7 @@ func useContractFixture(t *testing.T) contractFixture {
 
 	useCaptureGrants(t)
 	useContractMount(t)
+	useContractCaptures(t, expFiles)
 
 	// another user, for routes that act on a user other than the requester, and its role
 	useTestStore(t, store.Config{
@@ -299,21 +302,23 @@ func contractRoutes() []contractRoute {
 	)
 
 	var (
-		filesGet   = testRole("experiments/files", "get", contractExp)
-		netflowGet = testRole("experiments/netflow", "get", contractExp)
-		captures   = testRole("vms/captures", "list", contractExp+"/"+contractVM)
-		trigger    = testRole("experiments/trigger", "create", contractExp)
-		diskGet    = testRole("disks", "get", contractDisk)
-		mount      = testRole("vms/mount", "get", contractExp+"/"+contractVM)
-		one        = func(r rbac.Role) []rbac.Role { return []rbac.Role{r} }
-		jobs       = func(verb string) []rbac.Role { return one(testRole("jobs", verb, contractExp)) }
-		configs    = func(verb string) []rbac.Role { return one(testRole("configs", verb, "Topology/"+contractTopo)) }
-		current    = []string{"If-Match", freshness.ETag(contractRevision), "Content-Type", mimeJSON}
-		ok         = []int{http.StatusOK}
-		done       = []int{http.StatusNoContent}
-		running    = []int{http.StatusConflict}
-		vlansList  = testRole("vlans", "list")
-		expPatch   = testRole("experiments", verbPatch, contractExp)
+		filesGet    = testRole("experiments/files", "get", contractExp)
+		netflowGet  = testRole("experiments/netflow", "get", contractExp)
+		captures    = testRole("vms/captures", "list", contractExp+"/"+contractVM)
+		trigger     = testRole("experiments/trigger", "create", contractExp)
+		diskGet     = testRole("disks", "get", contractDisk)
+		mount       = testRole("vms/mount", "get", contractExp+"/"+contractVM)
+		one         = func(r rbac.Role) []rbac.Role { return []rbac.Role{r} }
+		expCaptures = func(verb string) rbac.Role { return testRole("experiments/captures", verb, contractExp) }
+		jobs        = func(verb string) []rbac.Role { return one(testRole("jobs", verb, contractExp)) }
+		configs     = func(verb string) []rbac.Role { return one(testRole("configs", verb, "Topology/"+contractTopo)) }
+		current     = []string{"If-Match", freshness.ETag(contractRevision), "Content-Type", mimeJSON}
+		ok          = []int{http.StatusOK}
+		created     = []int{http.StatusCreated}
+		done        = []int{http.StatusNoContent}
+		running     = []int{http.StatusConflict}
+		vlansList   = testRole("vlans", "list")
+		expPatch    = testRole("experiments", verbPatch, contractExp)
 	)
 
 	return []contractRoute{
@@ -333,6 +338,19 @@ func contractRoutes() []contractRoute {
 		{method: "DELETE", path: exp + "/captureTokens/{token}", want: done},
 		{method: "POST", path: exp + "/webshark", body: `{"path":"a.pcap"}`, need: one(filesGet)},
 		{method: "GET", path: vm + "/captures/0/stream", need: []rbac.Role{captures, filesGet}},
+		// experiment captures: the stream and WebShark also need the experiment's files
+		{method: "GET", path: exp + "/captures", need: one(expCaptures("list")), want: ok},
+		{method: "POST", path: exp + "/captures", body: `{"vlans":["EXP_1"]}`, need: one(expCaptures("create")), want: created},
+		{method: "GET", path: exp + "/captures/" + contractRunningCapture, need: one(expCaptures("get")), want: ok},
+		{method: "DELETE", path: exp + "/captures/" + contractRunningCapture, need: one(expCaptures("delete")), want: ok},
+		{
+			method: "GET", path: exp + "/captures/" + contractStoppedCapture + "/stream",
+			need: []rbac.Role{expCaptures("get"), filesGet}, want: []int{http.StatusNotFound},
+		},
+		{
+			method: "POST", path: exp + "/webshark", body: `{"capture":"` + contractStoppedCapture + `"}`,
+			need: []rbac.Role{expCaptures("get"), filesGet}, want: ok,
+		},
 		// VLAN captures refuse a role that may change the captures of none of the experiment's VMs
 		{
 			method: "POST", path: exp + "/captureVlan", body: `{"vlan":"EXP_1"}`, want: ok,
@@ -1344,8 +1362,8 @@ func TestContractErrors(t *testing.T) {
 	spec := loadOpenAPI(t)
 
 	for _, cases := range []map[string]contractErrorCase{
-		jobAndCaptureErrorCases(), fileAndVMErrorCases(), configAndRouteErrorCases(), vlanErrorCases(),
-		strictQueryErrorCases(),
+		jobAndCaptureErrorCases(), experimentCaptureErrorCases(), fileAndVMErrorCases(), configAndRouteErrorCases(),
+		vlanErrorCases(), strictQueryErrorCases(),
 	} {
 		for name, tc := range cases {
 			t.Run(name, func(t *testing.T) { checkContractError(t, spec, name, tc) })
@@ -1386,6 +1404,44 @@ func checkContractError(t *testing.T, spec openAPISpec, name string, tc contract
 
 	if !everyPath && !spec.documents(tc.method, path, tc.want) {
 		t.Errorf("openapi.yml documents %d for %s %s = false, want true", tc.want, tc.method, path)
+	}
+}
+
+// The experiment files list gives each file's capture format from the cluster listing, as openapi.yml documents it:
+// a.pcap is a pcap, and a.log is not a capture.
+func TestContractExperimentFilesCaptureFormat(t *testing.T) {
+	const path = "/api/v1/experiments/" + contractExp + "/files"
+
+	useContractFixture(t)
+	server := serveContractAs(t, adminRole(), nil).URL
+
+	resp := do(t, http.MethodGet, server+path, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s = %d, want %d: %s", path, resp.StatusCode, http.StatusOK, readBody(t, resp))
+	}
+
+	wantDocumentedBody(t, http.MethodGet, path, resp)
+
+	body := []byte(readBody(t, resp))
+
+	var list struct {
+		Files []struct {
+			Path          string `json:"path"`
+			CaptureFormat string `json:"captureFormat"`
+		} `json:"files"`
+	}
+
+	if err := json.Unmarshal(body, &list); err != nil {
+		t.Fatalf("GET %s = %s, not a files list: %v", path, body, err)
+	}
+
+	got := make(map[string]string, len(list.Files))
+	for _, f := range list.Files {
+		got[f.Path] = f.CaptureFormat
+	}
+
+	if diff := cmp.Diff(map[string]string{"a.log": "", "a.pcap": "pcap"}, got); diff != "" {
+		t.Errorf("GET %s capture formats mismatch (-want +got):\n%s", path, diff)
 	}
 }
 

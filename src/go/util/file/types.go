@@ -18,6 +18,9 @@ type File struct {
 	Categories []string `json:"categories"`
 	PlainText  bool     `json:"plainText"`
 	IsDir      bool     `json:"isDir"`
+	// CaptureFormat is "pcap" or "pcapng" when the file's first bytes show it, else "" (see
+	// experiment.FilesObserved). The cached listing leaves it "".
+	CaptureFormat string `json:"captureFormat"`
 
 	// Internal use to aid in sorting
 	dateTime time.Time

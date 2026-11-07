@@ -113,11 +113,13 @@ func TestStopVMCapture(t *testing.T) { //nolint:paralleltest // shares the fake 
 
 // StartVMCapture makes the capture's directory on the VM's node, then starts
 // the capture, unless the interface is captured already or the file is unsafe.
+// With minimega 3.4.0 it sends the format and size options and no mkdir.
 func TestStartVMCapture(t *testing.T) { //nolint:paralleltest // shares the fake minimega
 	const (
-		listing = `.record false namespace "exp" .columns "interface","path" capture`
-		lookup  = `.record false namespace "exp" .columns "name" .filter name=a vm info`
-		start   = `.record false namespace "exp" capture pcap vm a 1 exp/files/a.pcap`
+		listing   = `.record false namespace "exp" .columns "interface","path" capture`
+		refreshed = `.record false namespace "exp" capture`
+		lookup    = `.record false namespace "exp" .columns "name" .filter name=a vm info`
+		start     = `.record false namespace "exp" capture pcap vm a 1 exp/files/a.pcap`
 	)
 
 	mkdir := "shell mkdir -p " + common.PhenixBase + "/images/exp/files"
@@ -125,6 +127,8 @@ func TestStartVMCapture(t *testing.T) { //nolint:paralleltest // shares the fake
 	for name, tc := range map[string]struct {
 		host     string // the node running VM a, "" for none
 		file     string
+		answer   string // minimega's version answer, "" for 3.3.0
+		opts     []Option
 		captured bool   // interface 1 is captured already
 		failing  string // the base of the command minimega fails, "" for none
 		want     []string
@@ -163,6 +167,24 @@ func TestStartVMCapture(t *testing.T) { //nolint:paralleltest // shares the fake
 			host: "head", file: "exp/files/a.pcap", failing: "capture pcap vm a 1 exp/files/a.pcap", wantMsg: "boom",
 			want: []string{listing, lookup, ".record false  " + mkdir, start},
 		},
+		"ignores the format and size with an older minimega": {
+			host: "compute1", file: "exp/files/a.pcap", opts: []Option{CaptureFormat("pcapng"), CaptureMaxSize(100)},
+			want: []string{listing, lookup, ".record false mesh send compute1 " + mkdir, start},
+		},
+		"with minimega 3.4.0, no mkdir": {
+			host: "compute1", file: "exp/files/a.pcap", answer: supportedAnswer,
+			want: []string{refreshed, lookup, start},
+		},
+		"with minimega 3.4.0, the format and size": {
+			host: "compute1", file: "exp/files/a.pcap", answer: supportedAnswer,
+			opts: []Option{CaptureFormat("pcap"), CaptureMaxSize(100)},
+			want: []string{refreshed, lookup, start + " format=pcap maxsize=100M"},
+		},
+		"with minimega 3.4.0, a format minimega lacks": {
+			host: "head", file: "exp/files/a.pcap", answer: supportedAnswer, opts: []Option{CaptureFormat("erf")},
+			wantIs: ErrInvalidCaptureOption,
+			want:   []string{refreshed, lookup},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
@@ -180,7 +202,15 @@ func TestStartVMCapture(t *testing.T) { //nolint:paralleltest // shares the fake
 				return answering(nil)(cmd)
 			})
 
-			err := StartVMCapture(NS("exp"), VMName("a"), CaptureInterface(1), CaptureFile(tc.file))
+			answer := tc.answer
+			if answer == "" {
+				answer = unsupportedAnswer
+			}
+
+			useMinimegaVersion(t, answered(answer), false, true)
+
+			err := StartVMCapture(append([]Option{NS("exp"), VMName("a"), CaptureInterface(1), CaptureFile(tc.file)},
+				tc.opts...)...)
 
 			switch {
 			case tc.wantIs == nil && tc.wantMsg == "" && err != nil:
@@ -195,5 +225,39 @@ func TestStartVMCapture(t *testing.T) { //nolint:paralleltest // shares the fake
 				t.Errorf("StartVMCapture(a, 1, %s) sent commands mismatch (-want +got):\n%s", tc.file, diff)
 			}
 		})
+	}
+}
+
+// A process with no startup check asks minimega for its version at its first VM capture start, and with 3.4.0
+// sends the refreshed command.
+func TestStartVMCaptureAsksVersion(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+		switch cmd.Base {
+		case "version":
+			return []*minicli.Response{mmtest.Text("head", supportedAnswer)}
+		case vmInfoCmd:
+			return []*minicli.Response{mmtest.Tabular("head", []string{"name"}, []string{"a"})}
+		}
+
+		return answering(nil)(cmd)
+	})
+	useMinimegaVersion(t, nil, false, false)
+
+	queryVersion = askMinimegaVersion
+
+	err := StartVMCapture(NS("exp"), VMName("a"), CaptureInterface(1), CaptureFile("exp/files/a.pcapng"),
+		CaptureFormat("pcapng"))
+	if err != nil {
+		t.Fatalf("StartVMCapture() error = %v", err)
+	}
+
+	want := []string{
+		`.record false namespace "exp" .columns "interface","path" capture`,
+		`.record false namespace "exp" .columns "name" .filter name=a vm info`,
+		".record false version",
+		`.record false namespace "exp" capture pcap vm a 1 exp/files/a.pcapng format=pcapng`,
+	}
+	if diff := cmp.Diff(want, sentRaw(received())); diff != "" {
+		t.Errorf("StartVMCapture() sent commands mismatch (-want +got):\n%s", diff)
 	}
 }

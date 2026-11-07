@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 )
 
 var ErrHostNotFound = errors.New("host not found")
@@ -295,10 +296,59 @@ type Captures struct {
 	Captures []Capture `json:"captures"`
 }
 
+// Capture is a packet capture on one VM interface. The fields after Filepath are zero with a minimega older than
+// MinCaptureVersion.
 type Capture struct {
 	VM        string `json:"vm"`
 	Interface int    `json:"interface"`
 	Filepath  string `json:"filepath"`
+
+	ID      string `json:"id,omitempty"`
+	State   string `json:"state,omitempty"`
+	Format  string `json:"format,omitempty"`
+	Packets uint64 `json:"packets,omitempty"`
+	KDrops  uint64 `json:"kdrops,omitempty"`
+	Size    int64  `json:"size,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// CaptureCounters are the packet counters of an experiment capture, or of one of its streams.
+type CaptureCounters struct {
+	Ports, Packets, Bytes, KDrops, PDrops, QDrops, Lost, Late uint64
+	Lag, Skew                                                 time.Duration
+}
+
+// CaptureStream is the part of an experiment capture that one host records from one bridge.
+type CaptureStream struct {
+	CaptureCounters
+
+	Host, Bridge, State string
+}
+
+// NamespaceCapture is an experiment capture: one capture of all the VLANs, or of the given VLANs, of a namespace.
+// Its counters are those of its summary row. Its streams are sorted by host, then bridge.
+type NamespaceCapture struct {
+	CaptureCounters
+
+	ID, State, Path, Format, Filter, Start, Error string
+	VLANs                                         []string
+	Size                                          int64
+	Streams                                       []CaptureStream
+}
+
+// Running reports whether minimega still records the capture.
+func (c NamespaceCapture) Running() bool {
+	switch c.State {
+	case "starting", "running", "stalled", "stopping":
+		return true
+	}
+
+	return false
+}
+
+// BridgeMirror is one Open vSwitch mirror on a bridge of a host, as `bridge mirrors` lists it.
+type BridgeMirror struct {
+	Host, Bridge, Mirror, Output, Namespace, Kind string
 }
 
 type BlockDumpResponse struct {

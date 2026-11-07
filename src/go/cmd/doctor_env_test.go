@@ -310,6 +310,15 @@ func TestEnvChecks(t *testing.T) {
 			vars: map[string]string{"PHENIX_UI_FEATURES": " vm-mount   webshark "},
 			want: []doctorCheck{row("PHENIX_UI_FEATURES", doctorPass, "vm-mount webshark")},
 		},
+		"features set by hand": {
+			vars: map[string]string{"PHENIX_UI_FEATURES": "minimega-captures vm-mount"},
+			want: []doctorCheck{row("PHENIX_UI_FEATURES", doctorPass, "minimega-captures vm-mount")},
+		},
+		"capture size": {
+			vars: map[string]string{"PHENIX_UI_CAPTURES_MAX_SIZE": "1.5"},
+			want: []doctorCheck{row("PHENIX_UI_CAPTURES_MAX_SIZE", doctorFail,
+				`invalid ui.captures.max-size "1.5": it must be a whole number of megabytes, such as 10240`)},
+		},
 		"unknown feature": {
 			vars: map[string]string{"PHENIX_UI_FEATURES": "vm-mount webshrak"},
 			want: []doctorCheck{

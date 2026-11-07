@@ -29,7 +29,7 @@ func DeleteSnapshot(ctx context.Context, expName, vmName, snap string) ([]string
 
 	files := []string{snap + ".state", snap + ".hdd"}
 
-	deleted, refused, err := experiment.DeleteFiles(expName, files)
+	deleted, refused, err := experiment.DeleteFiles(ctx, expName, files)
 	if err != nil {
 		return deleted, fmt.Errorf("deleting snapshot %s: %w", snap, err)
 	}

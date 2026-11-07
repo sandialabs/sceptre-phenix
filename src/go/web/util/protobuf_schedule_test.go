@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 	"testing"
+	"time"
 
 	gocmp "github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -105,16 +106,57 @@ func TestCapturesToProtobuf(t *testing.T) {
 
 	got := CapturesToProtobuf([]mm.Capture{
 		{VM: "vm-a", Interface: 0, Filepath: "/captures/a.pcap"},
-		{VM: "vm-b", Interface: 2, Filepath: "/captures/b.pcap"},
+		{
+			VM: "vm-b", Interface: 2, Filepath: "/captures/b.pcapng", ID: "7", State: "full", Format: "pcapng",
+			Packets: 12, KDrops: 3, Size: 4096, Error: "the file is full",
+		},
 	})
 
 	want := []*proto.Capture{
 		{Vm: "vm-a", Interface: 0, Filepath: "/captures/a.pcap"},
-		{Vm: "vm-b", Interface: 2, Filepath: "/captures/b.pcap"},
+		{
+			Vm: "vm-b", Interface: 2, Filepath: "/captures/b.pcapng", Id: "7", State: "full", Format: "pcapng",
+			Packets: 12, Kdrops: 3, Size: 4096, Error: "the file is full",
+		},
 	}
 
 	if diff := gocmp.Diff(want, got, protocmp.Transform()); diff != "" {
 		t.Errorf("CapturesToProtobuf mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// An experiment capture keeps its counters, with durations in milliseconds, and a stream warns of a skew of more than
+// 500 ms either way.
+func TestExperimentCaptureToProtobuf(t *testing.T) {
+	t.Parallel()
+
+	stream := func(host string, skew time.Duration) mm.CaptureStream {
+		return mm.CaptureStream{Host: host, Bridge: "phenix", State: "running", CaptureCounters: mm.CaptureCounters{Skew: skew}}
+	}
+
+	got := ExperimentCaptureToProtobuf(mm.NamespaceCapture{
+		ID: "3", State: "stalled", Path: "/f/exp/files/a.pcapng", Format: "pcapng",
+		CaptureCounters: mm.CaptureCounters{Ports: 2, Packets: 9, Lag: 1500 * time.Microsecond, Skew: -2 * time.Millisecond},
+		Streams: []mm.CaptureStream{
+			stream("a", 500*time.Millisecond), stream("b", 501*time.Millisecond), stream("c", -600*time.Millisecond),
+		},
+	}, "a.pcapng")
+
+	streamPB := func(host string, skewMs float64, warn bool) *proto.CaptureStream {
+		return &proto.CaptureStream{
+			Host: host, Bridge: "phenix", State: "running", Counters: &proto.CaptureCounters{SkewMs: skewMs}, SkewWarning: warn,
+		}
+	}
+
+	want := &proto.ExperimentCapture{
+		Id: "3", State: "stalled", Running: true, Path: "/f/exp/files/a.pcapng", File: "a.pcapng", Format: "pcapng",
+		Vlans:    []string{},
+		Counters: &proto.CaptureCounters{Ports: 2, Packets: 9, LagMs: 1.5, SkewMs: -2},
+		Streams:  []*proto.CaptureStream{streamPB("a", 500, false), streamPB("b", 501, true), streamPB("c", -600, true)},
+	}
+
+	if diff := gocmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		t.Errorf("ExperimentCaptureToProtobuf mismatch (-want +got):\n%s", diff)
 	}
 }
 

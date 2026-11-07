@@ -245,13 +245,16 @@
             "
             :capture-pending="isCapturePending(props.row.name, index)"
             :vlan-capture-pending="!!vlanCapturePending[vlanAlias(n)]"
+            :capture-support="captureSupport"
             @change-vlan="$emit('change-vlan', props.row, index)"
             @disconnect="$emit('disconnect', props.row, index)"
             @link-quality="$emit('link-quality', props.row, index)"
             @capture="$emit('capture', props.row, index)"
+            @start-capture="$emit('start-capture', props.row, index)"
             @capture-vlan="
               (alias, start) => $emit('capture-vlan', alias, start)
             "
+            @capture-experiment="(alias) => $emit('capture-experiment', alias)"
             @show-vlan="(term) => $emit('search', term)" />
         </div>
       </div>
@@ -415,6 +418,11 @@
       captureAllPending: { type: Object, default: () => ({}) },
       // aliases of the VLANs starting or stopping captures
       vlanCapturePending: { type: Object, default: () => ({}) },
+      // { available, reason }: whether minimega supports experiment captures
+      captureSupport: {
+        type: Object,
+        default: () => ({ available: false, reason: '' }),
+      },
       // the actions running in the background for each VM, by its name
       actionPending: { type: Object, default: () => ({}) },
       // the names of the VMs selected, and whether all of them are
@@ -423,8 +431,10 @@
     },
     emits: [
       // (vm, interface): the IP or tap of an interface was clicked, or its
-      // network's menu starts or stops its capture
+      // network's menu stops its capture
       'capture',
+      // (vm, interface): a network's menu starts its capture
+      'start-capture',
       // (vm, interface): Change VLAN, Disconnect or Set link quality was
       // picked from a network's menu
       'change-vlan',
@@ -432,6 +442,8 @@
       'link-quality',
       // (alias, start): a network's menu starts or stops its VLAN's captures
       'capture-vlan',
+      // (alias): a network's menu opens the experiment capture dialog
+      'capture-experiment',
       // (vm): the name of a VM the role may not get was clicked
       'details',
       // (term): a network's menu lists the VMs on its VLAN by this search
