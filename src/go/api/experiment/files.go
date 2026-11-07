@@ -628,3 +628,76 @@ func DeleteFile(ctx context.Context, name, filePath string) error {
 
 	return refused[filePath]
 }
+
+// maxNewFileSuffix bounds the suffixes WriteNewFile tries for a path that is taken.
+const maxNewFileSuffix = 100
+
+// ErrFileExists is returned by WriteNewFile when the path and each suffixed path are taken.
+var ErrFileExists = errors.New("file exists")
+
+// WriteNewFile writes data to a new file at filePath (a clean path relative to the experiment's files directory) on
+// the headnode, and makes the folders it needs. It never replaces a file: when the path is taken, it adds -1, -2 and
+// so on before the extension. It returns the path that it wrote, relative to the files directory.
+func WriteNewFile(name, filePath string, data []byte) (string, error) {
+	clean, err := cleanFilePath(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	if err := os.MkdirAll(path.Dir(localFilePath(name, clean)), newFileDirMode); err != nil {
+		return "", fmt.Errorf("making the folder of %s: %w", clean, err)
+	}
+
+	ext := path.Ext(clean)
+	stem := strings.TrimSuffix(clean, ext)
+
+	for n := range maxNewFileSuffix {
+		candidate := clean
+		if n > 0 {
+			candidate = fmt.Sprintf("%s-%d%s", stem, n, ext)
+		}
+
+		err := writeExclusive(localFilePath(name, candidate), data)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+
+		if err != nil {
+			return "", fmt.Errorf("writing %s: %w", candidate, err)
+		}
+
+		file.InvalidateExperimentFiles(name)
+
+		return candidate, nil
+	}
+
+	return "", fmt.Errorf("%w: %s and %d other names", ErrFileExists, clean, maxNewFileSuffix-1)
+}
+
+// The modes of the folders and files that WriteNewFile makes.
+const (
+	newFileDirMode  = 0o750
+	newFileFileMode = 0o600
+)
+
+// writeExclusive writes data to a file at local that it creates, and fails with [fs.ErrExist] when one is there. It
+// removes a file that it could not write in full.
+func writeExclusive(local string, data []byte) error {
+	f, err := os.OpenFile(local, os.O_CREATE|os.O_EXCL|os.O_WRONLY, newFileFileMode)
+	if err != nil {
+		return err //nolint:wrapcheck // the caller wraps it
+	}
+
+	_, err = f.Write(data)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+
+	if err != nil {
+		_ = os.Remove(local)
+
+		return err //nolint:wrapcheck // the caller wraps it
+	}
+
+	return nil
+}

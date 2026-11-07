@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -867,6 +868,69 @@ func GetScreenshot(w http.ResponseWriter, r *http.Request) error {
 
 	w.Header().Set("Content-Type", "image/png")
 	_, _ = w.Write(screenshot) //nolint:gosec // G705 a PNG image, not HTML
+
+	return nil
+}
+
+// SavedScreenshot is the answer of POST /experiments/{exp}/vms/{name}/screenshots.
+type SavedScreenshot struct {
+	// Path is the PNG file, relative to the experiment's files directory.
+	Path string `json:"path"`
+}
+
+// SaveScreenshot - POST /experiments/{exp}/vms/{name}/screenshots.
+//
+// Saves a full-size screenshot of the running VM in the experiment's files.
+func SaveScreenshot(w http.ResponseWriter, r *http.Request) error {
+	var (
+		ctx   = r.Context()
+		role  = middleware.RoleFromContext(ctx)
+		vars  = mux.Vars(r)
+		exp   = vars["exp"]
+		name  = vars["name"]
+		saved = audit.Fields{Experiment: exp, VM: name}
+	)
+
+	if !role.Allowed("vms/screenshot", "create", exp+"/"+name) {
+		audit.Denied(r, audit.VMScreenshot, "saving vm screenshot not allowed", saved)
+
+		return weberror.New(http.StatusForbidden, "forbidden")
+	}
+
+	if _, err := vmTarget(exp, name, true); err != nil {
+		audit.Failure(r, audit.VMScreenshot, "saving vm screenshot failed", saved, err)
+
+		return err
+	}
+
+	path, err := vm.SaveScreenshot(ctx, exp, name, time.Now())
+	if requestCanceled(r, err) {
+		return nil
+	}
+
+	if err != nil {
+		audit.Failure(r, audit.VMScreenshot, "saving vm screenshot failed", saved, err)
+
+		if werr := vmStateError(exp, name, err); werr != nil {
+			return werr
+		}
+
+		plog.Error(plog.TypeSystem, "saving vm screenshot", "exp", exp, "vm", name, "err", err)
+
+		return weberror.New(http.StatusInternalServerError, err.Error())
+	}
+
+	saved.Target = path
+	audit.Success(r, audit.VMScreenshot, "vm screenshot saved", saved)
+
+	body, err := json.Marshal(SavedScreenshot{Path: path})
+	if err != nil {
+		return weberror.New(http.StatusInternalServerError, err.Error())
+	}
+
+	w.Header().Set("Content-Type", mimeJSON)
+	w.WriteHeader(http.StatusCreated)
+	_, _ = w.Write(body)
 
 	return nil
 }

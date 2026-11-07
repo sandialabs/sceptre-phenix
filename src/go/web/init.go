@@ -46,6 +46,10 @@ func Init() error {
 		return fmt.Errorf("adding the permission to stop subnet captures: %w", err)
 	}
 
+	if err := rbac.EnsureVMScreenshotPermission(); err != nil {
+		return fmt.Errorf("adding the permission to save VM screenshots: %w", err)
+	}
+
 	if err := rbac.DropNullResourceNames(); err != nil {
 		return fmt.Errorf("dropping null resource names: %w", err)
 	}

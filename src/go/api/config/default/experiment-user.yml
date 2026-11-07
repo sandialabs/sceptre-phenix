@@ -34,6 +34,10 @@ spec:
     - create
     - update
   - resources:
+    - "vms/screenshot"
+    verbs:
+    - create
+  - resources:
     - "experiments/files"
     verbs:
     - create

@@ -6238,6 +6238,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  "/experiments/{exp}/vms/{name}/screenshots":
+    post:
+      tags:
+        - Virtual Machines
+      summary: Save a screenshot of a running VM in the experiment files
+      description: >-
+        Takes a full-size screenshot of the running VM (minimega makes only a
+        screen larger than 4096 pixels smaller) and saves it as a PNG file in
+        the experiment's files directory, at
+        `screenshots/<vm>-<YYYYMMDD-HHMMSS>.png` with the UTC time. The
+        server never replaces a file: when the name is taken, it adds `-1`,
+        `-2` and so on before `.png`. Needs the `vms/screenshot` `create`
+        permission.
+      operationId: postExperimentsNameVmsNameScreenshots
+      parameters:
+        - $ref: "#/components/parameters/ExpName"
+        - $ref: "#/components/parameters/VMName"
+      responses:
+        "201":
+          description: the screenshot was saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedScreenshot"
+        "403":
+          description: forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: >-
+            the experiment does not exist, its topology does not have the VM,
+            or minimega does not have the VM
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: the experiment or the VM is not running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: minimega could not take the screenshot, or the file could not be written
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/experiments/{exp}/vms/{name}/vnc":
     get:
       tags:
@@ -21900,6 +21950,18 @@ components:
             overlaps of a range
           items:
             $ref: "#/components/schemas/VLANIssue"
+    SavedScreenshot:
+      title: "SavedScreenshot"
+      description: "The answer of POST /experiments/{exp}/vms/{name}/screenshots."
+      type: object
+      required:
+        - path
+      properties:
+        path:
+          title: "Path"
+          type: string
+          description: the saved PNG file, relative to the experiment's files directory
+          example: screenshots/web-20261107-153012.png
     Error:
       title: "Error"
       description: "The JSON body of every error response."

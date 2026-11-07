@@ -311,6 +311,52 @@ func TestEnsureCaptureSubnetStopPermission(t *testing.T) {
 	}
 }
 
+// The screenshot migration lets the roles and users that may create VM
+// snapshots save VM screenshots on the same names.
+//
+//nolint:paralleltest // replaces the store
+func TestEnsureVMScreenshotPermission(t *testing.T) {
+	var (
+		experiments = policy("experiments", nil, "list", "get")
+		snapshots   = policy(snapshotsResource, nil, "list", "create", "update")
+		scoped      = policy(snapshotsResource, []string{"exp-a/*"}, "create")
+		listOnly    = policy(snapshotsResource, nil, "list")
+		allVMs      = policy("vms/*", nil, "*")
+		vmsCreate   = policy("vms/*", []string{"exp-b/*"}, "create")
+		screenshot  = func(names []string) *v1.PolicySpec { return policy(screenshotResource, names, "create") }
+	)
+
+	useStore(t,
+		[]*v1.RoleSpec{
+			role(experimentUserRole, experiments, snapshots),
+			role("VM Admin", experiments, allVMs),
+			role("Lister", listOnly),
+			role("Saver", snapshots, screenshot(nil)),
+		},
+		[]*v1.UserSpec{
+			{Username: "scoped-user", Role: role(experimentUserRole, scoped)},
+			{Username: "creator", Role: role("Creator", vmsCreate)},
+			{Username: "viewer", Role: role("Viewer", experiments)},
+		},
+	)
+
+	want := map[string][]*v1.PolicySpec{
+		"role Experiment User": {experiments, snapshots, screenshot(nil)},
+		"role VM Admin":        {experiments, allVMs},
+		"role Lister":          {listOnly},
+		"role Saver":           {snapshots, screenshot(nil)},
+		"user scoped-user":     {scoped, screenshot([]string{"exp-a/*"})},
+		"user creator":         {vmsCreate},
+		"user viewer":          {experiments},
+	}
+
+	for _, pass := range []string{"first", "repeated"} {
+		if diff := cmp.Diff(want, migrate(t, EnsureVMScreenshotPermission)); diff != "" {
+			t.Errorf("EnsureVMScreenshotPermission() %s pass: stored policies mismatch (-want +got):\n%s", pass, diff)
+		}
+	}
+}
+
 // The Experiment Viewer migration scopes a user's unnamed vms/mount policy to
 // the names of their VM policy.
 //
@@ -485,7 +531,10 @@ func migrationsAllowed(role *v1.RoleSpec) map[[3]string]bool {
 	r := newRole(role, nil)
 	allowed := make(map[[3]string]bool)
 
-	for _, resource := range []string{experimentFilesResource, jobsResource, captureSubnetResource, mountResource, "experiments"} {
+	for _, resource := range []string{
+		experimentFilesResource, jobsResource, captureSubnetResource, mountResource, snapshotsResource, screenshotResource,
+		"experiments",
+	} {
 		for _, verb := range []string{"get", "list", "create", "delete", "update"} {
 			allowed[[3]string{resource, verb, ""}] = r.Allowed(resource, verb)
 
@@ -498,35 +547,45 @@ func migrationsAllowed(role *v1.RoleSpec) map[[3]string]bool {
 	return allowed
 }
 
-// migrationsAddedStops checks that addCaptureSubnetStop kept the policies of
-// original, and added a delete only for names some policy could start but not stop on.
-func migrationsAddedStops(t *rapid.T, original, role *v1.RoleSpec) {
+// companion is a permission that a migration adds for each policy that
+// grants another.
+type companion struct {
+	name                               string
+	resource, verb, toResource, toVerb string
+	add                                func(*v1.RoleSpec) bool
+}
+
+// migrationsAddedCompanions checks that c.add kept the policies of original,
+// and added toVerb only for names some policy granted verb but not toVerb on.
+func migrationsAddedCompanions(t *rapid.T, c companion, original, role *v1.RoleSpec) {
 	n := len(original.Policies)
 	if len(role.Policies) < n || !cmp.Equal(original.Policies, role.Policies[:n]) {
-		t.Fatalf("addCaptureSubnetStop(%v) changed the policies it had to %v", rolePolicies(original), rolePolicies(role))
+		t.Fatalf("%s(%v) changed the policies it had to %v", c.name, rolePolicies(original), rolePolicies(role))
 	}
 
-	allows := func(p *v1.PolicySpec, verb string) bool {
-		return coversCaptureSubnet(p) && (slices.Contains(p.Verbs, verb) || slices.Contains(p.Verbs, "*"))
+	allows := func(p *v1.PolicySpec, resource, verb string) bool {
+		return coversResource(p, resource) && (slices.Contains(p.Verbs, verb) || slices.Contains(p.Verbs, "*"))
 	}
 
 	added := role.Policies[n:]
 
 	for i, p := range added {
 		want := &v1.PolicySpec{
-			Resources: []string{captureSubnetResource}, ResourceNames: p.ResourceNames, Verbs: []string{"delete"},
+			Resources: []string{c.toResource}, ResourceNames: p.ResourceNames, Verbs: []string{c.toVerb},
 		}
 
 		var (
-			names     = func(q *v1.PolicySpec) bool { return slices.Equal(q.ResourceNames, p.ResourceNames) }
-			startOnly = func(q *v1.PolicySpec) bool { return names(q) && allows(q, "create") && !allows(q, "delete") }
-			stopped   = func(q *v1.PolicySpec) bool { return names(q) && allows(q, "delete") }
+			names = func(q *v1.PolicySpec) bool { return slices.Equal(q.ResourceNames, p.ResourceNames) }
+			only  = func(q *v1.PolicySpec) bool {
+				return names(q) && allows(q, c.resource, c.verb) && !allows(q, c.toResource, c.toVerb)
+			}
+			has = func(q *v1.PolicySpec) bool { return names(q) && allows(q, c.toResource, c.toVerb) }
 		)
 
 		if !cmp.Equal(p, want) || slices.ContainsFunc(added[:i], names) ||
-			!slices.ContainsFunc(original.Policies, startOnly) || slices.ContainsFunc(original.Policies, stopped) {
-			t.Fatalf("addCaptureSubnetStop(%v) added %v, want a delete only where a role could start but not stop on its names",
-				rolePolicies(original), rolePolicies(role))
+			!slices.ContainsFunc(original.Policies, only) || slices.ContainsFunc(original.Policies, has) {
+			t.Fatalf("%s(%v) added %v, want a %s only where a role could %s but not %s on its names",
+				c.name, rolePolicies(original), rolePolicies(role), c.toVerb, c.verb, c.toVerb)
 		}
 	}
 }
@@ -583,24 +642,35 @@ func TestMigrationHelpersProperties(t *testing.T) {
 		})
 	})
 
-	t.Run("addCaptureSubnetStop", func(t *testing.T) {
-		t.Parallel()
+	for _, c := range []companion{
+		{
+			name: "addCaptureSubnetStop", resource: captureSubnetResource, verb: "create",
+			toResource: captureSubnetResource, toVerb: "delete", add: addCaptureSubnetStop,
+		},
+		{
+			name: "addScreenshotCreate", resource: snapshotsResource, verb: "create",
+			toResource: screenshotResource, toVerb: "create", add: addScreenshotCreate,
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 
-		rapid.Check(t, func(t *rapid.T) {
-			role := genMigrationsRole(captureSubnetResource, "exp/*", "*", "experiments").Draw(t, "role")
-			original := migrationsClone(role)
-			after := migrate(t, role, "addCaptureSubnetStop", addCaptureSubnetStop)
+			rapid.Check(t, func(t *rapid.T) {
+				role := genMigrationsRole(c.resource, c.toResource, "exp/*", "vms/*", "*", "experiments").Draw(t, "role")
+				original := migrationsClone(role)
+				after := migrate(t, role, c.name, c.add)
 
-			for _, name := range []string{"", "a", "b", "a/x"} {
-				create, del := [3]string{captureSubnetResource, "create", name}, [3]string{captureSubnetResource, "delete", name}
-				if after[create] && !after[del] {
-					t.Fatalf("addCaptureSubnetStop left a role allowing %q without %q", create, del)
+				for _, name := range []string{"", "a", "b", "a/x"} {
+					from, to := [3]string{c.resource, c.verb, name}, [3]string{c.toResource, c.toVerb, name}
+					if after[from] && !after[to] {
+						t.Fatalf("%s left a role allowing %q without %q", c.name, from, to)
+					}
 				}
-			}
 
-			migrationsAddedStops(t, original, role)
+				migrationsAddedCompanions(t, c, original, role)
+			})
 		})
-	})
+	}
 
 	t.Run("scopeUnnamed", func(t *testing.T) {
 		t.Parallel()
@@ -625,9 +695,10 @@ func TestMigrationHelpersProperties(t *testing.T) {
 //nolint:paralleltest // replaces the store
 func TestMigrationsStoreErrors(t *testing.T) {
 	var (
-		capturer = role("Capturer", policy(captureSubnetResource, nil, "create"))
-		admin    = role(experimentAdminRole, policy("experiments", nil, "get"))
-		viewer   = role(experimentViewerRole,
+		capturer    = role("Capturer", policy(captureSubnetResource, nil, "create"))
+		snapshotter = role("Snapshotter", policy(snapshotsResource, nil, "create"))
+		admin       = role(experimentAdminRole, policy("experiments", nil, "get"))
+		viewer      = role(experimentViewerRole,
 			policy("vms/*", []string{"exp-a/*"}, "list"), policy(mountResource, nil, "post"))
 		failRoles  = userFailingStore{list: map[string]bool{"Role": true}}
 		failUsers  = userFailingStore{list: map[string]bool{"User": true}}
@@ -660,6 +731,21 @@ func TestMigrationsStoreErrors(t *testing.T) {
 		"capture stop: saving a user": {
 			users: []*v1.UserSpec{{Username: "cap", Role: capturer}}, fail: failUpdate,
 			migrate: EnsureCaptureSubnetStopPermission, want: "saving user cap: ",
+		},
+		"screenshot: listing roles": {
+			fail: failRoles, migrate: EnsureVMScreenshotPermission, want: "getting roles: ",
+		},
+		"screenshot: saving a role": {
+			roles: []*v1.RoleSpec{snapshotter}, fail: failUpdate, migrate: EnsureVMScreenshotPermission,
+			want: "saving role Snapshotter: ",
+		},
+		"screenshot: listing users": {
+			roles: []*v1.RoleSpec{admin}, fail: failUsers, migrate: EnsureVMScreenshotPermission,
+			want: "getting users: ",
+		},
+		"screenshot: saving a user": {
+			users: []*v1.UserSpec{{Username: "snap", Role: snapshotter}}, fail: failUpdate,
+			migrate: EnsureVMScreenshotPermission, want: "saving user snap: ",
 		},
 		"viewer mount scope: listing users": {
 			fail: failUsers, migrate: EnsureExperimentViewerMountScope, want: "getting users: ",

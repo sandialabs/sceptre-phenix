@@ -254,6 +254,12 @@ lack it). Points that are easy to miss:
   as `running and web`, and a filter that matches no VM is `400`.
   `stopCaptureSubnet` with an empty or absent `subnet` stops every capture of
   the VMs.
+- `POST .../vms/{name}/screenshots` saves a full-size PNG of the running VM in
+  the experiment files, at `screenshots/<vm>-<YYYYMMDD-HHMMSS>.png` (UTC), and
+  answers `201` with `{"path"}` relative to the files directory. It never
+  replaces a file: a name that is taken gets `-1`, `-2` and so on. It needs
+  `vms/screenshot` `create`, answers `409` when the experiment or the VM is not
+  running, and is audited as `vm-screenshot`. The CLI has no equivalent.
 - `DELETE .../vms/{name}/snapshots/{snapshot}` deletes a snapshot from every
   node (`vms/snapshots` `delete`). The experiment does not have to run, and a
   snapshot whose disk a running VM uses is `409`.

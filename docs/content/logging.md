@@ -241,6 +241,7 @@ security-relevant action.
 | `disk-upload` | `file` | `creation` | `POST /disks` |
 | `disk-download` | `file` | `access` | `GET /disks/download`; refusals of `GET /disks/checksum` |
 | `vm-snapshot`, `vm-commit`, `vm-memory-snapshot` | `file` | `creation` | `POST .../vms/{name}/snapshots`, `/commit`, `/memorySnapshot` |
+| `vm-screenshot` | `file` | `creation` | `POST .../vms/{name}/screenshots`, naming the saved PNG file in `phenix.file.target_path` |
 | `vm-restore` | `file` | `change` | `POST .../vms/{name}/snapshots/{snapshot}` |
 | `vm-mount`, `vm-unmount` | `session` | `start`, `end` | `POST .../vms/{name}/mount`, `DELETE .../vms/{name}/unmount` |
 | `vm-file-upload`, `vm-file-copy` | `file` | `creation` | `PUT .../vms/{name}/files/upload`, `POST .../vms/{name}/files/copy` |

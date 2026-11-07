@@ -538,6 +538,8 @@ func newRouter(assets http.FileSystem, builderOpts ...builderOption) (*mux.Route
 		Methods("DELETE", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms/{name}/screenshot.png", weberror.ErrorHandler(GetScreenshot)).
 		Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{exp}/vms/{name}/screenshots", weberror.ErrorHandler(SaveScreenshot)).
+		Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms/{name}/vnc", weberror.ErrorHandler(GetVNC)).Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{exp}/vms/{name}/vnc/ws", weberror.ErrorHandler(GetVNCWebSocket)).
 		Methods("GET", "OPTIONS")

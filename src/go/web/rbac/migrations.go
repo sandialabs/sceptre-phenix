@@ -62,13 +62,45 @@ const captureSubnetResource = "exp/captureSubnet"
 // EnsureCaptureSubnetStopPermission grants the delete verb to the stored roles,
 // and users' roles, that may start subnet captures, so they may stop them too.
 func EnsureCaptureSubnetStopPermission() error {
+	return updateRoles(addCaptureSubnetStop)
+}
+
+// addCaptureSubnetStop lets the role stop subnet captures on each name that it
+// may start them on, and reports whether it changed the role.
+func addCaptureSubnetStop(role *v1.RoleSpec) bool {
+	return addCompanion(role, captureSubnetResource, "create", captureSubnetResource, "delete")
+}
+
+// The resources of saving a VM screenshot (create) and of creating a VM
+// snapshot (create).
+const (
+	screenshotResource = "vms/screenshot"
+	snapshotsResource  = "vms/snapshots"
+)
+
+// EnsureVMScreenshotPermission grants vms/screenshot create to the stored
+// roles, and users' roles, that may create VM snapshots, on the same names, as
+// the default roles have it.
+func EnsureVMScreenshotPermission() error {
+	return updateRoles(addScreenshotCreate)
+}
+
+// addScreenshotCreate lets the role save VM screenshots on each name that it
+// may create VM snapshots on, and reports whether it changed the role.
+func addScreenshotCreate(role *v1.RoleSpec) bool {
+	return addCompanion(role, snapshotsResource, "create", screenshotResource, "create")
+}
+
+// updateRoles applies change to each stored role and each user's role, and
+// saves those that it reports as changed.
+func updateRoles(change func(*v1.RoleSpec) bool) error {
 	roles, err := GetRoles()
 	if err != nil {
 		return fmt.Errorf("getting roles: %w", err)
 	}
 
 	for _, role := range roles {
-		if addCaptureSubnetStop(role.Spec) {
+		if change(role.Spec) {
 			if err := role.Save(); err != nil {
 				return fmt.Errorf("saving role %s: %w", role.Spec.Name, err)
 			}
@@ -81,7 +113,7 @@ func EnsureCaptureSubnetStopPermission() error {
 	}
 
 	for _, user := range users {
-		if user.Spec.Role == nil || !addCaptureSubnetStop(user.Spec.Role) {
+		if user.Spec.Role == nil || !change(user.Spec.Role) {
 			continue
 		}
 
@@ -95,34 +127,37 @@ func EnsureCaptureSubnetStopPermission() error {
 	return nil
 }
 
-// addCaptureSubnetStop gives the role, for each policy that lets it start
-// subnet captures but not stop them, a policy that lets it stop them on the
-// same names. A policy covers subnet captures when one of its resource
-// patterns matches captureSubnetResource, as Role.Allowed matches them, so
-// "exp/*" counts. It reports whether it changed the role.
-func addCaptureSubnetStop(role *v1.RoleSpec) bool {
+// addCompanion gives the role, for each policy that grants verb on resource but
+// not toVerb on toResource, a policy that grants toVerb on toResource for the
+// same names. A policy covers a resource when one of its resource patterns
+// matches it, as Role.Allowed matches them, so "vms/*" counts. It reports
+// whether it changed the role.
+func addCompanion(role *v1.RoleSpec, resource, verb, toResource, toVerb string) bool {
 	var added []*v1.PolicySpec
 
+	grants := func(p *v1.PolicySpec, resource, verb string) bool {
+		return coversResource(p, resource) && (slices.Contains(p.Verbs, verb) || slices.Contains(p.Verbs, "*"))
+	}
+
+	grantsTo := func(p *v1.PolicySpec) bool { return grants(p, toResource, toVerb) }
+
 	for _, policy := range role.Policies {
-		if !coversCaptureSubnet(policy) || !slices.Contains(policy.Verbs, "create") ||
-			slices.Contains(policy.Verbs, "delete") || slices.Contains(policy.Verbs, "*") {
+		if !grants(policy, resource, verb) || grantsTo(policy) {
 			continue
 		}
 
-		stops := func(p *v1.PolicySpec) bool {
-			return coversCaptureSubnet(p) &&
-				(slices.Contains(p.Verbs, "delete") || slices.Contains(p.Verbs, "*")) &&
-				slices.Equal(p.ResourceNames, policy.ResourceNames)
+		same := func(p *v1.PolicySpec) bool {
+			return grantsTo(p) && slices.Equal(p.ResourceNames, policy.ResourceNames)
 		}
 
-		if slices.ContainsFunc(role.Policies, stops) || slices.ContainsFunc(added, stops) {
+		if slices.ContainsFunc(role.Policies, same) || slices.ContainsFunc(added, same) {
 			continue
 		}
 
 		added = append(added, &v1.PolicySpec{
-			Resources:     []string{captureSubnetResource},
+			Resources:     []string{toResource},
 			ResourceNames: slices.Clone(policy.ResourceNames),
-			Verbs:         []string{"delete"},
+			Verbs:         []string{toVerb},
 		})
 	}
 
@@ -131,11 +166,11 @@ func addCaptureSubnetStop(role *v1.RoleSpec) bool {
 	return len(added) > 0
 }
 
-// coversCaptureSubnet reports whether one of the policy's resource patterns
-// matches captureSubnetResource.
-func coversCaptureSubnet(policy *v1.PolicySpec) bool {
+// coversResource reports whether one of the policy's resource patterns matches
+// resource.
+func coversResource(policy *v1.PolicySpec, resource string) bool {
 	return slices.ContainsFunc(policy.Resources, func(pattern string) bool {
-		matched, _ := filepath.Match(pattern, captureSubnetResource)
+		matched, _ := filepath.Match(pattern, resource)
 
 		return matched
 	})

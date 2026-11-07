@@ -151,6 +151,7 @@ const (
 	VMRestore        Action = "vm-restore"
 	VMCommit         Action = "vm-commit"
 	VMMemorySnapshot Action = "vm-memory-snapshot"
+	VMScreenshot     Action = "vm-screenshot"
 	VMMount          Action = "vm-mount"
 	VMUnmount        Action = "vm-unmount"
 	VMFileUpload     Action = "vm-file-upload"
@@ -287,6 +288,7 @@ var kinds = map[Action]kind{
 	VMRestore:        {categoryFile, typeChange},
 	VMCommit:         {categoryFile, typeCreation},
 	VMMemorySnapshot: {categoryFile, typeCreation},
+	VMScreenshot:     {categoryFile, typeCreation},
 	VMMount:          {categorySession, typeStart},
 	VMUnmount:        {categorySession, typeEnd},
 	VMFileUpload:     {categoryFile, typeCreation},

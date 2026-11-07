@@ -404,6 +404,10 @@ func contractRoutes() []contractRoute {
 			want: []int{http.StatusConflict},
 		},
 		{method: "GET", path: vm + "/vnc/ws", need: one(testRole("vms/vnc", "get", contractExp+"/"+contractVM))},
+		{
+			method: "POST", path: vm + "/screenshots", need: one(testRole("vms/screenshot", "create", contractExp+"/"+contractVM)),
+			want: running,
+		},
 		// saved settings and link quality need vms patch on the VM
 		{
 			method: "POST", path: exp + "/vms/resetSettings", body: `{"vms":["test-vm"]}`,
@@ -1050,6 +1054,12 @@ func fileAndVMErrorCases() map[string]contractErrorCase {
 		},
 		"screenshot with a base64 that is not a boolean": {
 			method: "GET", path: exp + "/vms/" + contractVM + "/screenshot.png?base64=maybe", want: http.StatusBadRequest,
+		},
+		"screenshot saved of a VM the topology does not have": {
+			method: "POST", path: exp + "/vms/missing-vm/screenshots", want: http.StatusNotFound,
+		},
+		"screenshot saved of a VM that is not running": {
+			method: "POST", path: exp + "/vms/" + contractVM + "/screenshots", want: http.StatusConflict,
 		},
 		"VNC session with a probe that is not a boolean": {
 			method: "GET", path: exp + "/vms/" + contractVM + "/vnc?probe=maybe", want: http.StatusBadRequest,

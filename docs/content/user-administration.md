@@ -350,6 +350,13 @@ Global Viewer does not have `builder` `use`. See the policies in
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | save a full-size screenshot of a specific experiment VM in the experiment files |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
+
 #### Resource: `vms/vnc`
 
 |      |      |
@@ -777,6 +784,10 @@ spec:
     - list
     - create
     - update
+  - resources:
+    - "vms/screenshot"
+    verbs:
+    - create
   - resources:
     - "experiments/files"
     verbs:

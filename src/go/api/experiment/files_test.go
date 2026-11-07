@@ -1391,3 +1391,55 @@ func TestLocalFileExists(t *testing.T) { //nolint:paralleltest // replaces packa
 		}
 	}
 }
+
+// WriteNewFile writes a new file in the experiment's files, makes its folders, adds a suffix for a path that is taken
+// and never replaces a file; it refuses a path that is not clean.
+func TestWriteNewFile(t *testing.T) { //nolint:paralleltest // replaces package state
+	useFilesDir(t, "exp", map[string]string{"shots/a.png": "old", "shots/a-1.png": "older", "b": "plain"})
+
+	tests := []struct {
+		path, want, contents string
+	}{
+		{"shots/new/c.png", "shots/new/c.png", "c"},
+		{"shots/a.png", "shots/a-2.png", "a2"},
+		{"shots/a.png", "shots/a-3.png", "a3"},
+		{"b", "b-1", "b1"},
+	}
+
+	for _, tc := range tests {
+		got, err := experiment.WriteNewFile("exp", tc.path, []byte(tc.contents))
+		if err != nil {
+			t.Fatalf("WriteNewFile(%q) error = %v", tc.path, err)
+		}
+
+		if got != tc.want {
+			t.Errorf("WriteNewFile(%q) = %q, want %q", tc.path, got, tc.want)
+		}
+	}
+
+	want := map[string]string{
+		"shots/a.png": "old", "shots/a-1.png": "older", "shots/a-2.png": "a2", "shots/a-3.png": "a3",
+		"shots/new/c.png": "c", "b": "plain", "b-1": "b1",
+	}
+
+	got := make(map[string]string, len(want))
+
+	for p := range want {
+		data, err := os.ReadFile(filepath.Join(common.PhenixBase, "images", "exp", "files", p))
+		if err != nil {
+			t.Fatalf("reading %s: %v", p, err)
+		}
+
+		got[p] = string(data)
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("files after WriteNewFile mismatch (-want +got):\n%s", diff)
+	}
+
+	for _, bad := range []string{"", "../x.png", "/x.png", "a//b.png", "a/"} {
+		if _, err := experiment.WriteNewFile("exp", bad, []byte("x")); !errors.Is(err, experiment.ErrInvalidFilePath) {
+			t.Errorf("WriteNewFile(%q) error = %v, want %v", bad, err, experiment.ErrInvalidFilePath)
+		}
+	}
+}
