@@ -94,9 +94,14 @@
         <button
           v-else
           type="button"
-          :class="['button', 'is-small', action.type ?? 'is-light']"
+          :class="[
+            'button',
+            'is-small',
+            action.type ?? 'is-light',
+            { 'is-loading': action.loading },
+          ]"
           :data-action="action.name"
-          @click="$emit('act', action.event)">
+          @click="!action.loading && $emit('act', action.event)">
           {{ action.label }}
         </button>
       </template>
@@ -177,6 +182,8 @@
       vlan: { type: Number, required: true },
       // whether minimega can remove IDs from its blacklist
       removable: { type: Boolean, default: false },
+      // the blacklist changes in progress, such as 'add:42' and 'remove:7'
+      busy: { type: Array, default: () => [] },
     },
     // act({ name, card, ... }) as VlanCard emits; show-card(key)
     emits: ['close', 'act', 'show-card'],
@@ -282,6 +289,7 @@
               key: 'blacklist-remove',
               name: 'blacklist-remove',
               label: 'Remove from the blacklist…',
+              loading: this.busy.includes(`remove:${this.vlan}`),
               event: { name: 'blacklist-remove', id: this.vlan },
               ...(!this.removable && {
                 disabledTip: 'minimega cannot remove IDs from its blacklist',
@@ -293,6 +301,7 @@
             key: 'blacklist-add',
             name: 'blacklist-add',
             label: 'Add to the blacklist…',
+            loading: this.busy.includes(`add:${this.vlan}`),
             event: { name: 'blacklist-add', id: this.vlan },
           });
         }

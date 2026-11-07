@@ -23,7 +23,7 @@ import {
     faExpand, faImage, faFileCode, faShareNodes, faListCheck, faRoute,
     faClipboard, faCube, faFolder, faLayerGroup, faFlag, faChartPie, faTableList,
     faFlask, faDiagramProject, faCubes, faScrewdriverWrench, faUsers, faGear, faUserShield, faRightFromBracket,
-    faTableCells, faWandMagicSparkles, faArchway
+    faTableCells, faWandMagicSparkles, faArchway, faArrowsLeftRight, faThumbtack, faSpinner
 } from '@fortawesome/free-solid-svg-icons'
 
 // prettier-ignore
@@ -39,7 +39,7 @@ library.add(
     faExpand, faImage, faFileCode, faShareNodes, faListCheck, faRoute,
     faClipboard, faCube, faFolder, faLayerGroup, faFlag, faChartPie, faTableList,
     faFlask, faDiagramProject, faCubes, faScrewdriverWrench, faUsers, faGear, faUserShield, faRightFromBracket,
-    faTableCells, faWandMagicSparkles, faArchway
+    faTableCells, faWandMagicSparkles, faArchway, faArrowsLeftRight, faThumbtack, faSpinner
 )
 
 // icons of our own (see utils/icons.js)
