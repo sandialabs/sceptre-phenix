@@ -72,25 +72,68 @@ const panelButton = (wrapper, text) =>
 beforeEach(() => resetMocks());
 
 describe('the VM it acts on', () => {
-  it('names the VM and its state, with no pane prefix in single view', async () => {
+  it('names the VM, with no state and no pane prefix in single view', async () => {
     const wrapper = await mountToolbar();
-    expect(textOf(wrapper.find('.vnc-target'))).toBe('demo / web Running');
+    expect(textOf(wrapper.find('.vnc-target'))).toBe('demo / web');
     expect(wrapper.text()).not.toContain('acting on');
+    expect(wrapper.find('.tag').exists()).toBe(false);
   });
 
   it('says which pane it acts on in split view', async () => {
     const wrapper = await mountToolbar({ split: true, paneCount: 2 });
-    expect(textOf(wrapper.find('.vnc-target'))).toBe(
-      'acting on demo / web Running',
-    );
+    expect(textOf(wrapper.find('.vnc-target'))).toBe('acting on demo / web');
   });
 
-  it('shows Paused for a paused VM', async () => {
+  it('shows no state tag for a paused VM', async () => {
     const wrapper = await mountToolbar({
       vmRow: vm({ state: 'PAUSED', running: false }),
     });
-    expect(textOf(wrapper.find('.vnc-target .tag'))).toBe('Paused');
+    expect(wrapper.find('.vnc-target .tag').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('Paused');
   });
+
+  it('links to the experiment page and to the VM details on it', async () => {
+    const wrapper = await mountToolbar();
+    const experiment = wrapper.find('.vnc-experiment-link');
+    expect(experiment.attributes('href')).toBe('/experiment/demo');
+    expect(experiment.attributes('target')).toBe('_blank');
+    expect(experiment.attributes('aria-label')).toBe('Experiment demo');
+    expect(experiment.find('[data-icon]').attributes('data-icon')).toBe(
+      'flask',
+    );
+    expect(
+      textOf(tooltipOf(wrapper, '.vnc-experiment-link').vm.$refs.content),
+    ).toBe('Open the page of experiment demo in a new tab');
+    const details = wrapper.find('.vnc-details-link');
+    expect(details.attributes('href')).toBe('/experiment/demo?vm=web');
+    expect(details.attributes('target')).toBe('_blank');
+    expect(details.attributes('aria-label')).toBe('Details of VM web');
+    expect(details.find('[data-icon]').attributes('data-icon')).toBe(
+      'circle-info',
+    );
+    expect(
+      textOf(tooltipOf(wrapper, '.vnc-details-link').vm.$refs.content),
+    ).toBe('Open the details of VM web on the experiment page in a new tab');
+  });
+
+  it('leaves the VM details link to the pane headers in split view', async () => {
+    const wrapper = await mountToolbar({ split: true, paneCount: 2 });
+    expect(wrapper.find('.vnc-experiment-link').exists()).toBe(true);
+    expect(wrapper.find('.vnc-details-link').exists()).toBe(false);
+  });
+
+  it.each([
+    [allowOnly(['experiments', 'get', 'demo']), true],
+    [denyOnly(['experiments', 'get', 'demo']), false],
+  ])(
+    'links to the experiment only for a role that may get it',
+    async (allowed, shown) => {
+      rbac.allowed = allowed;
+      const wrapper = await mountToolbar();
+      expect(wrapper.find('.vnc-experiment-link').exists()).toBe(shown);
+      expect(wrapper.find('.vnc-details-link').exists()).toBe(shown);
+    },
+  );
 
   it('has the KEYBOARD tag with the chord hint only while the console has input', async () => {
     const wrapper = await mountToolbar();
@@ -115,14 +158,29 @@ describe('the VM it acts on', () => {
 });
 
 describe('the VM actions', () => {
-  it('offers Pause, Restart, Shut down and Snapshot for a running VM', async () => {
+  it('offers the power actions and the VM tools for a running VM', async () => {
     const wrapper = await mountToolbar();
     expect(actionNames(wrapper)).toEqual([
       'Pause',
       'Restart',
       'Shut down',
       'Snapshot',
+      'Memory snapshot',
+      'Screenshot',
+      'Insert CD-ROM',
+      'Port forward',
     ]);
+  });
+
+  it('gives the disk snapshot the clone icon and the screenshot the camera icon', async () => {
+    const wrapper = await mountToolbar();
+    const icon = (label) =>
+      actionButton(wrapper, label).find('[data-icon]').attributes('data-icon');
+    expect(icon('Snapshot')).toBe('clone');
+    expect(icon('Screenshot')).toBe('camera');
+    expect(icon('Insert CD-ROM')).toBe('compact-disc');
+    expect(icon('Port forward')).toBe('arrow-right');
+    expect(icon('Memory snapshot')).toBe('database');
   });
 
   it.each([
@@ -142,6 +200,24 @@ describe('the VM actions', () => {
     ['Restart', 'restart', ['vms/restart', 'update', 'demo/web'], vm()],
     ['Shut down', 'shutdown', ['vms/shutdown', 'update', 'demo/web'], vm()],
     ['Snapshot', 'snapshot', ['vms/snapshots', 'create', 'demo/web'], vm()],
+    [
+      'Memory snapshot',
+      'memorySnapshot',
+      ['vms/memorySnapshot', 'create', 'demo/web'],
+      vm(),
+    ],
+    [
+      'Screenshot',
+      'screenshot',
+      ['vms/screenshot', 'create', 'demo/web'],
+      vm(),
+    ],
+    [
+      'Port forward',
+      'portForward',
+      ['vms/forwards', 'create', 'demo/web'],
+      vm(),
+    ],
   ])('offers %s only to a role with %s', async (label, name, perm, row) => {
     rbac.allowed = allowOnly(perm);
     let wrapper = await mountToolbar({ vmRow: row });
@@ -190,9 +266,10 @@ describe('the VM actions', () => {
   it('greys out every action of a busy VM', async () => {
     const wrapper = await mountToolbar({ vmRow: vm({ busy: true }) });
     const states = tooltipButtons(wrapper).filter((t) =>
-      ['Pause', 'Restart', 'Shut down', 'Snapshot'].includes(t.label),
+      actionNames(wrapper).includes(t.label),
     );
-    expect(states.map((t) => t.disabled)).toEqual([true, true, true, true]);
+    expect(states).toHaveLength(8);
+    expect(states.every((t) => t.disabled)).toBe(true);
   });
 
   it('spins the button of the action that runs', async () => {
@@ -365,7 +442,34 @@ describe('the dropdown panels', () => {
 
   it('asks for the whole page full screen', async () => {
     const wrapper = await mountToolbar();
-    await wrapper.find('[aria-label="Full screen"]').trigger('click');
+    const button = wrapper.find('.vnc-fullscreen-button');
+    expect(button.attributes('aria-label')).toBe('Full screen');
+    expect(button.find('[data-icon]').attributes('data-icon')).toBe('expand');
+    await button.trigger('click');
     expect(wrapper.emitted('fullscreen')).toHaveLength(1);
+    expect(wrapper.emitted('exit-fullscreen')).toBeUndefined();
+  });
+
+  it('asks to exit full screen while the page is full screen', async () => {
+    const wrapper = await mountToolbar({ fullscreen: true });
+    const button = wrapper.find('.vnc-fullscreen-button');
+    expect(button.attributes('aria-label')).toBe('Exit full screen');
+    expect(button.find('[data-icon]').attributes('data-icon')).toBe('compress');
+    expect(
+      textOf(tooltipOf(wrapper, '.vnc-fullscreen-button').vm.$refs.content),
+    ).toBe('Exit full screen');
+    await button.trigger('click');
+    expect(wrapper.emitted('exit-fullscreen')).toHaveLength(1);
+    expect(wrapper.emitted('fullscreen')).toBeUndefined();
+  });
+
+  it.each([
+    ['Keys', true],
+    ['Clipboard', true],
+    ['View', false],
+  ])('makes the %s panel as wide as its rows: %s', async (text, wide) => {
+    const wrapper = await mountToolbar();
+    const id = panelButton(wrapper, text).attributes('aria-controls');
+    expect(wrapper.find(`#${id}`).classes('vnc-panel--wide')).toBe(wide);
   });
 });

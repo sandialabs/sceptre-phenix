@@ -73,7 +73,7 @@
       tooltip: 'create VM snapshot',
       label: 'Create snapshots of selected VMs',
       type: 'is-light',
-      icon: 'camera',
+      icon: 'clone',
     },
     {
       action: 'modify',

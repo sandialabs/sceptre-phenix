@@ -81,7 +81,7 @@
       kind="Disk image"
       prompt="Create disk image of the"
       :vms="diskImageModal.vm"
-      :valid="validate(diskImageModal)"
+      :valid="validFilenames(diskImageModal)"
       @close="resetDiskImageModal"
       @update:filename="
         (index, name) => (diskImageModal.vm[index].filename = name)
@@ -93,7 +93,7 @@
       kind="Memory snapshot"
       prompt="Create a memory snapshot for the"
       :vms="memorySnapshotModal.vm"
-      :valid="validate(memorySnapshotModal)"
+      :valid="validFilenames(memorySnapshotModal)"
       @close="resetMemorySnapshotModal"
       @update:filename="
         (index, name) => (memorySnapshotModal.vm[index].filename = name)
@@ -487,6 +487,15 @@
     minuteStamp,
     timestampParts,
   } from '@/components/experiment/timestamp.js';
+  import {
+    emptyOpticalDiscModal,
+    emptyPortForwardModal,
+    loadIsoChoices,
+    memorySnapshotEntry,
+    openOpticalDiscModal,
+    saveScreenshot,
+    validFilenames,
+  } from '@/components/experiment/vmTools.js';
   import { addSearch } from '@/utils/searchHistory.js';
   import {
     addWsHandler,
@@ -524,7 +533,6 @@
     diskList,
     filesDir,
     findDisk,
-    isoDisks,
   } from '@/utils/diskChain.js';
   import { namedList, pluralWord } from '@/utils/plural.js';
   import { useJobStore } from '@/utils/jobs.js';
@@ -547,22 +555,6 @@
   // how long after this page asked to stop an experiment capture its stop
   // event shows no toast, as the page's own toast tells of it
   const STOP_QUIET_MS = 60000;
-
-  // the CD-ROM picker with nothing open
-  function emptyOpticalDiscModal() {
-    return {
-      active: false,
-      vmName: null,
-      // the ISO inserted when it opened, '' for none
-      current: '',
-      // the ISO picked
-      disc: null,
-      // the ISO images to pick from, while loading and after
-      isos: [],
-      loading: false,
-      error: null,
-    };
-  }
 
   // what each power action did, for its outcome summary
   const VM_ACTION_DONE = {
@@ -1685,31 +1677,21 @@
         name = this.actionableVMs('memorySnapshot', name);
         if (name.length === 0) return;
 
-        const t = timestampParts();
-        const date = `${t.year}${t.month}${t.day}`;
-        const time = `${t.hours}${t.minutes}${t.seconds}`;
-        let vms = this.experiment.vms;
-        name.forEach((arg) => {
-          for (let i = 0; i < vms.length; i++) {
-            if (vms[i].name == arg) {
-              var filename = date + '_' + time;
-
-              filename =
-                vms[i].name +
-                '_' +
-                filename.substring(filename.lastIndexOf('/') + 1);
-
-              this.memorySnapshotModal.vm.push({
-                dateTime: date + time + '',
-                name: vms[i].name,
-                filename: filename,
-                nameErrType: '',
-                nameErrMsg: '',
-              });
-            }
-          }
-        });
+        const known = new Set(this.experiment.vms.map((vm) => vm.name));
+        this.memorySnapshotModal.vm.push(
+          ...name.filter((vm) => known.has(vm)).map(memorySnapshotEntry),
+        );
         this.memorySnapshotModal.active = true;
+      },
+
+      // saves a full-size screenshot of the VM in the experiment files
+      async takeScreenshot(name) {
+        this.setVmActionPending('screenshot', [name], true);
+        try {
+          await saveScreenshot(this.$buefy, this.$route.params.id, name);
+        } finally {
+          this.setVmActionPending('screenshot', [name], false);
+        }
       },
 
       async createMemorySnapshot(vm) {
@@ -1816,6 +1798,9 @@
             break;
           case 'snapshot':
             this.captureSnapshot(vm.name);
+            break;
+          case 'screenshot':
+            this.takeScreenshot(vm.name);
             break;
           case 'commit':
             this.diskImage(vm.name);
@@ -2122,56 +2107,13 @@
       // Opens the CD-ROM picker for a VM and lists the ISO images it can
       // insert, saying so when there are none or they cannot be listed.
       async showChangeDisc(vm) {
-        this.opticalDiscModal = {
-          ...emptyOpticalDiscModal(),
-          active: true,
-          vmName: vm.name,
-          current: vm.cdRom || '',
-          disc: vm.cdRom || null,
-        };
+        this.opticalDiscModal = openOpticalDiscModal(vm);
         // the reactive copy, to tell if the modal was closed or reopened
         const modal = this.opticalDiscModal;
-
-        if (!roleAllowed('disks', 'list')) {
-          modal.error =
-            'Your role cannot list disk images, so it cannot pick an ISO ' +
-            'image to insert.';
-          return;
-        }
-
-        modal.loading = true;
-        let isos = [];
-        let error = null;
-        try {
-          const resp = await disksApi.listDisks({ diskType: 'ISO' });
-          isos = isoDisks(resp.data?.disks);
-        } catch (err) {
-          error = 'Could not list the ISO images.';
-          useErrorNotification(err);
-        }
-
-        if (this.opticalDiscModal !== modal) return;
-        modal.isos = isos;
-        modal.error = error;
-        modal.loading = false;
+        await loadIsoChoices(modal, () => this.opticalDiscModal === modal);
       },
 
-      validate(modalVMQueue) {
-        var regexp = /^[a-zA-Z0-9-_]+$/;
-        for (let i = 0; i < modalVMQueue.vm.length; i++) {
-          if (!regexp.test(modalVMQueue.vm[i].filename)) {
-            modalVMQueue.vm[i].nameErrType = 'is-danger';
-            modalVMQueue.vm[i].nameErrMsg =
-              'image names can only contain alphanumeric, dash, and underscore; we will add the file extension';
-            return false;
-          }
-
-          modalVMQueue.vm[i].nameErrType = '';
-          modalVMQueue.vm[i].nameErrMsg = '';
-        }
-
-        return true;
-      },
+      validFilenames,
 
       // runs a toolbar action on the selected VMs, then clears the selection
       actOnSelection(action) {
@@ -2367,13 +2309,7 @@
       },
 
       resetPortForwardModal() {
-        this.portForwardModal = {
-          active: false,
-          vmName: null,
-          srcPort: null,
-          dstHost: '127.0.0.1',
-          dstPort: null,
-        };
+        this.portForwardModal = emptyPortForwardModal();
       },
 
       async createPortForward() {
@@ -2569,13 +2505,7 @@
           cdRomDisk: null,
           filesDir: '',
         },
-        portForwardModal: {
-          active: false,
-          vmName: null,
-          srcPort: null,
-          dstHost: '127.0.0.1',
-          dstPort: null,
-        },
+        portForwardModal: emptyPortForwardModal(),
         vlanModal: {
           active: false,
           vmName: null,

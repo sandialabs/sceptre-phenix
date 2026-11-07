@@ -625,6 +625,73 @@ describe('VmDetailsCard permissions', () => {
   );
 });
 
+describe('VmDetailsCard Screenshot', () => {
+  // the action button with this class, its icon, tooltip and disabled state
+  const action = (wrapper, name) => {
+    const control = wrapper.find(`.vm-action-${name}`);
+    const tooltip = wrapper
+      .findAllComponents({ name: 'BTooltip' })
+      .find((t) => t.find(`.vm-action-${name}`).exists());
+    return {
+      control,
+      icon: control.find('[data-icon]').attributes('data-icon'),
+      tooltip: textOf(tooltip.vm.$refs.content),
+      disabled: control.attributes('aria-disabled') === 'true',
+    };
+  };
+
+  it('saves a screenshot with the camera icon, next to the other actions', async () => {
+    const wrapper = await card();
+    const button = action(wrapper, 'screenshot');
+    expect(textOf(button.control)).toBe('Screenshot');
+    expect(button).toMatchObject({
+      icon: 'camera',
+      disabled: false,
+      tooltip:
+        "Save a full-size PNG of the VM's screen in the experiment files, in the screenshots folder",
+    });
+    expect(button.control.element.closest('.vm-tool-buttons')).not.toBeNull();
+    await button.control.trigger('click');
+    expect(wrapper.emitted('action')).toEqual([['screenshot']]);
+  });
+
+  it('gives the disk snapshot button and the snapshot list the clone icon', async () => {
+    const wrapper = await card({ snapshots: ['before'] });
+    expect(action(wrapper, 'snapshot').icon).toBe('clone');
+    const row = section(wrapper, 'Snapshots').find('.vm-list-row');
+    expect(row.find('[data-icon]').attributes('data-icon')).toBe('clone');
+  });
+
+  it('is greyed out, saying why, for a VM that is not running', async () => {
+    const wrapper = await card({
+      vm: makeVm({ state: 'QUIT', running: false }),
+    });
+    const button = action(wrapper, 'screenshot');
+    expect(button).toMatchObject({
+      disabled: true,
+      tooltip: 'Cannot save a screenshot: the VM is not running',
+    });
+    await button.control.trigger('click');
+    expect(wrapper.emitted('action')).toBeUndefined();
+  });
+
+  it.each([
+    [allowAll, true],
+    [denyOnly(['vms/screenshot', 'create']), false],
+  ])('needs vms/screenshot create', async (allowed, shown) => {
+    rbac.allowed = allowed;
+    const wrapper = await card();
+    expect(has(wrapper, '.vm-action-screenshot')).toBe(shown);
+  });
+
+  it('spins while the page saves the screenshot', async () => {
+    const wrapper = await card({ pendingActions: ['screenshot'] });
+    expect(action(wrapper, 'screenshot').control.classes()).toContain(
+      'is-loading',
+    );
+  });
+});
+
 describe('VmDetailsCard Restart', () => {
   // the Restart button's tooltip and disabled state in `wrapper`
   const restart = (wrapper, selector) =>

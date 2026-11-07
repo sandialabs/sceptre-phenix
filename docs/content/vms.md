@@ -84,6 +84,26 @@ the VM is not running or does not have snapshots enabled.
 
 While ELF memory dumps can be created via `phenix vm memory-snapshot`, there is currently no CLI subcommand to take standard VM disk snapshots. VM disk snapshots are managed through the Web-UI and the REST API (`POST /api/vms/snapshots`).
 
+## Save a VM Screenshot
+
+### From the Web-UI
+
+Click on a running VM in a started experiment to open its details card, then
+click `Screenshot` (the camera icon) in `More actions`. The console page has
+the same button in its top bar. phēnix saves a full-size PNG image of the VM
+screen in the experiment files, in the `screenshots` folder. The file name is
+`<vm>-<YYYYMMDD-HHMMSS>.png`, with the UTC time. phēnix does not replace a
+file: when the name is in use, it adds `-1`, `-2` and so on. A message shows
+the name of the file. The button is disabled when the VM is not running.
+
+The role must have the `create` verb on the `vms/screenshot` resource (see
+[User Administration](user-administration.md)).
+
+### From the Command Line Binary
+
+There is currently no CLI subcommand to save a VM screenshot. Use the Web-UI
+or the REST API (`POST /api/v1/experiments/<exp>/vms/<vm>/screenshots`).
+
 ## VM VNC Access
 
 ### From the Web-UI
@@ -117,20 +137,34 @@ tells you. Click `Open another anyway` to open one more tab.
 
 #### The Console Page
 
-The top bar acts on the pane that has keyboard input. It shows the VM name,
-the VM state and these controls:
+The top bar acts on the pane that has keyboard input. It shows the VM name
+and these controls:
 
-* The VM actions: `Pause` or `Resume`, `Restart`, `Shut down` and `Snapshot`.
-  The bar shows only the actions that the role can do.
-* `Keys`: send Ctrl+Alt+Del, Esc, Tab, PrintScreen and Ctrl+Alt+F1 to F7. Hold
+* The flask button, at the left of the VM name, opens the page of the
+  experiment of the pane.
+* In single view, the information button at the right of the VM name opens
+  the details card of the VM on the experiment page.
+* The VM actions: `Pause` or `Resume`, `Restart`, `Shut down`, `Snapshot`,
+  `Memory snapshot`, `Screenshot`, `Insert CD-ROM` (or `Change CD-ROM`) and
+  `Port forward`. The bar shows only the actions that the role can do.
+  `Memory snapshot`, `Insert CD-ROM` and `Port forward` open the same dialogs
+  as on the experiment page. `Screenshot` saves a PNG image of the VM screen
+  in the experiment files (see [Save a VM Screenshot](#save-a-vm-screenshot)).
+* `Keys`: send Ctrl+Alt+Del, Esc, Tab, PrintScreen and Ctrl+Alt+F1 to F12. Hold
   Ctrl, Alt or Win, and release all held keys.
 * `Clipboard`: send text to the VM (see [Copy and Paste](#copy-and-paste)).
+  `Clear` empties the text box.
 * `View`: the scaling (`Fit`, `Actual` or `Resize VM`), the quality, the
   compression, `View only` and full screen for the pane. The browser keeps
-  these settings for each user. `Resize VM` needs a VM with `vga` `virtio`.
+  these settings for each user. With `View only`, the console shows the VM
+  screen, but sends no keyboard or mouse input to the VM.
+  `Resize VM` needs a VM with `vga` `virtio`.
   To set it, add `vga: virtio` to the `advanced` settings of the VM in the
   topology. Linux VMs use `qxl` by default.
-* The layout buttons, `Add VM` and `Full screen` for the page.
+* The layout buttons, `Add VM` and `Full screen` for the page. In full
+  screen, the same button is `Exit full screen`. `Add VM` shows the list of
+  running VMs that it read the last time, and reads the list again. The
+  browser keeps the list for each user.
 * The connection state, for example `Connected`. Click it to see the screen
   size, the scaling, the encoding and the copy/paste mode.
 
@@ -146,7 +180,8 @@ example `/vnc?vm=demo/web&vm=demo/db&layout=cols`. The layouts are `single`,
 `cols`, `rows`, `main-2` and `grid`.
 
 Each pane shows the banners of its VM and a header with the VM name, the VM
-state, the pane number and a menu. The menu has `Swap with pane N`, `Open
+state, an information button, the pane number and a menu. The information
+button opens the details card of the VM on the experiment page. The menu has `Swap with pane N`, `Open
 alone`, `Full screen` and `Close`. Click a pane to give it keyboard input.
 That pane shows a blue ring and the `Keyboard` tag.
 
@@ -176,7 +211,7 @@ In full screen over HTTPS, Chrome and Edge send Esc, Alt+Tab and Ctrl+W to the
 VM (Keyboard Lock). To exit full screen, press Ctrl+] then F, or hold Esc.
 Over HTTP, full screen works without Keyboard Lock, and a message says
 `Keyboard capture needs HTTPS`. Firefox and Safari do not have Keyboard Lock.
-`Paste from my clipboard` in the `Clipboard` panel also needs HTTPS.
+`Paste from clipboard` in the `Clipboard` panel also needs HTTPS.
 
 #### Copy and Paste
 

@@ -932,7 +932,7 @@
             name: 'snapshot',
             label: 'Snapshot',
             description: 'Creates a new image backed by this image',
-            icon: 'camera',
+            icon: 'clone',
             row: true,
             run: this.snapshotDisk,
           },

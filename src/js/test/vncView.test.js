@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises } from '@vue/test-utils';
 import { nextTick } from 'vue';
 
-const { axios, modules, rbac, resetMocks, ws } = await vi.hoisted(
+const { axios, modules, notify, rbac, resetMocks, ws } = await vi.hoisted(
   () => import('./helpers/mocks.js'),
 );
 const { FakeRfb, rfbs, resetRfbs } = await vi.hoisted(
@@ -31,7 +31,7 @@ import VncView from '@/views/VncView.vue';
 import { CHORD_HINT } from '@/vnc/chord.js';
 import { sharedLiveTilePool } from '@/vnc/liveTilePool.js';
 import { CONSOLE_CHANNEL } from '@/vnc/openConsole.js';
-import { httpError, vm, wsMsg } from './helpers/fixtures.js';
+import { disk, httpError, vm, wsMsg } from './helpers/fixtures.js';
 import {
   buttons,
   dialogs,
@@ -221,7 +221,11 @@ describe('single view and split view', () => {
   it('has no pane header in single view; the top bar names the VM', async () => {
     const wrapper = await openPage('/vnc?vm=demo/web');
     expect(wrapper.find('.vnc-pane-header').exists()).toBe(false);
-    expect(textOf(wrapper.find('.vnc-target'))).toBe('demo / web Running');
+    expect(textOf(wrapper.find('.vnc-target'))).toBe('demo / web');
+    expect(wrapper.find('.vnc-toolbar .tag').exists()).toBe(false);
+    expect(wrapper.find('.vnc-details-link').attributes('href')).toBe(
+      '/experiment/demo?vm=web',
+    );
   });
 
   it('gives each pane of split view a header with its name, state and number', async () => {
@@ -230,23 +234,54 @@ describe('single view and split view', () => {
       state: 'PAUSED',
     });
     const wrapper = await openPage('/vnc?vm=demo/web&vm=demo/plc-1');
-    expect(wrapper.findAll('.vnc-pane-header').map(textOf)).toEqual([
-      'web Running 1',
-      'plc-1 Paused 2',
+    const headers = wrapper
+      .findAll('.vnc-pane-header')
+      .map((header) =>
+        ['strong', '.tag', '.vnc-pane-number']
+          .map((part) => textOf(header.find(part)))
+          .join(' '),
+      );
+    expect(headers).toEqual(['web Running 1', 'plc-1 Paused 2']);
+    expect(wrapper.find('.vnc-toolbar .tag').exists()).toBe(false);
+  });
+
+  it('links each pane header to the VM details on the experiment page', async () => {
+    const wrapper = await openPage('/vnc?vm=demo/web&vm=train/plc-1');
+    const links = wrapper.findAll('.vnc-pane-header .vnc-pane-details');
+    expect(
+      links.map((link) => [
+        link.attributes('href'),
+        link.attributes('target'),
+        link.attributes('aria-label'),
+        link.find('[data-icon]').attributes('data-icon'),
+      ]),
+    ).toEqual([
+      ['/experiment/demo?vm=web', '_blank', 'Details of VM web', 'circle-info'],
+      [
+        '/experiment/train?vm=plc-1',
+        '_blank',
+        'Details of VM plc-1',
+        'circle-info',
+      ],
     ]);
+    expect(wrapper.find('.vnc-toolbar .vnc-details-link').exists()).toBe(false);
+  });
+
+  it('links to the experiment of the active pane', async () => {
+    const wrapper = await openPage('/vnc?vm=demo/web&vm=train/plc-1');
+    const link = () => wrapper.find('.vnc-experiment-link');
+    expect(link().attributes('href')).toBe('/experiment/demo');
+    await wrapper.findAll('.vnc-pane')[1].trigger('pointerdown');
+    expect(link().attributes('href')).toBe('/experiment/train');
   });
 
   it('acts on the pane that a click gives input to', async () => {
     const wrapper = await openPage('/vnc?vm=demo/kali&vm=demo/web');
-    expect(textOf(wrapper.find('.vnc-target'))).toBe(
-      'acting on demo / kali Running',
-    );
+    expect(textOf(wrapper.find('.vnc-target'))).toBe('acting on demo / kali');
     const panes = wrapper.findAll('.vnc-pane');
     expect(panes[0].classes()).toContain('is-active');
     await panes[1].trigger('pointerdown');
-    expect(textOf(wrapper.find('.vnc-target'))).toBe(
-      'acting on demo / web Running',
-    );
+    expect(textOf(wrapper.find('.vnc-target'))).toBe('acting on demo / web');
     expect(panes[1].classes()).toContain('is-active');
     expect(panes[0].classes()).not.toContain('is-active');
   });
@@ -266,9 +301,7 @@ describe('single view and split view', () => {
     await nextTick();
     expect(pane.contains(document.activeElement)).toBe(false);
     expect(document.activeElement).toBe(rfbs[1].canvas);
-    expect(textOf(wrapper.find('.vnc-target'))).toBe(
-      'acting on demo / web Running',
-    );
+    expect(textOf(wrapper.find('.vnc-target'))).toBe('acting on demo / web');
   });
 
   it('leaves the console for the top bar with the chord Ctrl+] then Tab', async () => {
@@ -358,7 +391,7 @@ describe('the connection indicator', () => {
       h(wsMsg('experiment/vm', 'demo/web', 'stop', paused)),
     );
     await nextTick();
-    expect(textOf(wrapper.find('.vnc-target'))).toBe('demo / web Paused');
+    expect(textOf(wrapper.find('.vnc-target'))).toBe('demo / web');
     expect(indicator(wrapper)).toBe('Connected');
     expect(textOf(wrapper.find('.vnc-paused'))).toContain('Paused');
   });
@@ -475,9 +508,7 @@ describe('what the top bar does', () => {
       action: 'pause',
       vms: ['web'],
     });
-    expect(textOf(wrapper.find('.vnc-target'))).toBe(
-      'acting on demo / web Paused',
-    );
+    expect(textOf(wrapper.find('.vnc-target'))).toBe('acting on demo / web');
     expect(wrapper.find('[aria-label="Resume"]').exists()).toBe(true);
   });
 
@@ -503,6 +534,134 @@ describe('what the top bar does', () => {
       delete document.fullscreenElement;
       delete document.exitFullscreen;
     }
+  });
+
+  it('saves a screenshot of the active pane and names its file in a toast', async () => {
+    axios.post.mockResolvedValue({
+      data: { path: 'screenshots/web-20261107-153012.png' },
+    });
+    const wrapper = await connected('/vnc?vm=demo/kali&vm=demo/web');
+    await wrapper.findAll('.vnc-pane')[1].trigger('pointerdown');
+    await wrapper.find('[aria-label="Screenshot"]').trigger('click');
+    await flushPromises();
+    expect(axios.post).toHaveBeenCalledWith(
+      'experiments/demo/vms/web/screenshots',
+    );
+    expect(toasts()).toContainEqual({
+      text: 'Saved a screenshot of the web VM as screenshots/web-20261107-153012.png',
+      type: 'is-success',
+    });
+  });
+
+  it('shows the error of a screenshot that fails, and spins until then', async () => {
+    let fail;
+    axios.post.mockReturnValue(
+      new Promise((_, reject) => {
+        fail = reject;
+      }),
+    );
+    const wrapper = await connected('/vnc?vm=demo/web');
+    const shot = () => wrapper.find('[aria-label="Screenshot"]');
+    await shot().trigger('click');
+    await nextTick();
+    expect(shot().attributes('aria-busy')).toBe('true');
+    fail(httpError(409, { message: 'VM web is not running' }));
+    await flushPromises();
+    expect(notify.error).toHaveBeenCalledOnce();
+    expect(shot().attributes('aria-busy')).toBeUndefined();
+    expect(toasts()).toEqual([]);
+  });
+
+  it('creates a port forward from its dialog', async () => {
+    axios.post.mockResolvedValue({ data: {} });
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await wrapper.find('[aria-label="Port forward"]').trigger('click');
+    await flushPromises();
+    await wrapper.find('#port-forward-src-port').setValue('8080');
+    await wrapper.find('#port-forward-dst-port').setValue('80');
+    await button(wrapper, 'Create').trigger('click');
+    await flushPromises();
+    expect(axios.post).toHaveBeenCalledWith(
+      'experiments/demo/vms/web/forwards',
+      null,
+      { params: { src: '8080', host: '127.0.0.1', dst: '80' } },
+    );
+    expect(toasts().map((t) => t.text)).toContain(
+      'Port forward 8080 → 127.0.0.1:80 created for the web VM.',
+    );
+  });
+
+  it('creates a memory snapshot with the name from its dialog', async () => {
+    axios.post.mockResolvedValue({ data: {} });
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await wrapper.find('[aria-label="Memory snapshot"]').trigger('click');
+    await flushPromises();
+    const name = wrapper.find(
+      '[aria-label="Memory snapshot filename for VM web"]',
+    );
+    expect(name.element.value).toMatch(/^web_\d{8}_\d{6}$/);
+    await name.setValue('web-dump');
+    await button(wrapper, 'Create').trigger('click');
+    await flushPromises();
+    expect(axios.post).toHaveBeenCalledWith(
+      'experiments/demo/vms/web/memorySnapshot',
+      { filename: 'web-dump.elf' },
+      { timeout: 0 },
+    );
+    expect(toasts().map((t) => t.text)).toContain(
+      'Created a memory snapshot of the web VM',
+    );
+  });
+
+  it('inserts an ISO image picked in the CD-ROM dialog', async () => {
+    answers.disks = {
+      disks: [disk('/images/tools.iso', 'tools.iso', { kind: 'ISO' })],
+    };
+    axios.post.mockResolvedValue({ data: {} });
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await wrapper.find('[aria-label="Insert CD-ROM"]').trigger('click');
+    await flushPromises();
+    expect(axios.get).toHaveBeenCalledWith('disks', {
+      params: { diskType: 'ISO' },
+    });
+    await wrapper.find('#optical-disc-iso').setValue('/images/tools.iso');
+    await wrapper.find('.optical-disc-insert').trigger('click');
+    await flushPromises();
+    expect(axios.post).toHaveBeenCalledWith(
+      'experiments/demo/vms/web/cdrom',
+      null,
+      { params: { isoPath: '/images/tools.iso' } },
+    );
+  });
+
+  it('exits full screen from the full screen button while the page is full screen', async () => {
+    const wrapper = await connected('/vnc?vm=demo/web');
+    const exit = vi.fn(async () => {});
+    Object.defineProperty(document, 'fullscreenElement', {
+      value: wrapper.element,
+      configurable: true,
+    });
+    Object.defineProperty(document, 'exitFullscreen', {
+      value: exit,
+      configurable: true,
+    });
+    try {
+      document.dispatchEvent(new Event('fullscreenchange'));
+      await nextTick();
+      const toggle = wrapper.find('.vnc-fullscreen-button');
+      expect(toggle.attributes('aria-label')).toBe('Exit full screen');
+      await toggle.trigger('click');
+      await flushPromises();
+      expect(exit).toHaveBeenCalledOnce();
+    } finally {
+      delete document.fullscreenElement;
+      delete document.exitFullscreen;
+    }
+    document.dispatchEvent(new Event('fullscreenchange'));
+    await nextTick();
+    expect(
+      wrapper.find('.vnc-fullscreen-button').attributes('aria-label'),
+    ).toBe('Full screen');
   });
 
   it('offers no VM action that the role may not take on the VM', async () => {
@@ -651,6 +810,54 @@ describe('what the top bar does', () => {
     expect(rfbs[0].pasted).toEqual(['café']);
   });
 
+  it('has Send, Paste from clipboard and Clear on one line', async () => {
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await button(wrapper, 'Clipboard').trigger('click');
+    const clip = panel(wrapper, 'clipboard');
+    const row = clip.find('.vnc-panel-row--single');
+    expect(row.findAll('button').map(textOf)).toEqual([
+      'Send',
+      'Paste from clipboard',
+      'Clear',
+    ]);
+    expect(clip.classes()).toContain('vnc-panel--wide');
+  });
+
+  it('empties the paste box with Clear, and drops a paste that waits', async () => {
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await button(wrapper, 'Clipboard').trigger('click');
+    const clip = panel(wrapper, 'clipboard');
+    await clip.find('textarea').setValue('echo “café”');
+    await button(clip, 'Send').trigger('click');
+    expect(clip.findAll('.vnc-panel-warning')).toHaveLength(2);
+    await button(clip, 'Clear').trigger('click');
+    expect(clip.find('textarea').element.value).toBe('');
+    expect(clip.findAll('.vnc-panel-warning')).toHaveLength(0);
+    expect(button(clip, 'Send').attributes('aria-disabled')).toBe('true');
+    expect(rfbs[0].pasted).toEqual([]);
+  });
+
+  it('keeps the keys of each Keys row on one line', async () => {
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await button(wrapper, 'Keys').trigger('click');
+    const keys = panel(wrapper, 'keys');
+    expect(keys.classes()).toContain('vnc-panel--wide');
+    const rows = keys.findAll('.vnc-panel-row--single');
+    expect(rows.map((row) => row.findAll('button').length)).toEqual([4, 12]);
+  });
+
+  it('explains View only in a tooltip', async () => {
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await button(wrapper, 'View').trigger('click');
+    const view = panel(wrapper, 'view');
+    const tip = view
+      .findAllComponents({ name: 'BTooltip' })
+      .find((t) => t.find('input[type="checkbox"]').exists());
+    expect(textOf(tip.vm.$refs.content)).toBe(
+      'Show the VM screen, but send no keyboard or mouse input to the VM',
+    );
+  });
+
   it('keeps the View settings for the user, and gives them to every pane', async () => {
     const wrapper = await connected('/vnc?vm=demo/kali&vm=demo/web');
     await button(wrapper, 'View').trigger('click');
@@ -695,9 +902,7 @@ describe('what the top bar does', () => {
     await flushPromises();
     expect(query(wrapper)).toEqual({ vm: ['demo/web', 'demo/db'] });
     expect(consoleLabels(wrapper)).toHaveLength(2);
-    expect(textOf(wrapper.find('.vnc-target'))).toBe(
-      'acting on demo / db Running',
-    );
+    expect(textOf(wrapper.find('.vnc-target'))).toBe('acting on demo / db');
   });
 
   it('swaps and closes panes from the pane menu, and keeps the connections', async () => {

@@ -25,7 +25,7 @@
   <div class="vnc-keys">
     <p v-if="disabledReason" class="vnc-panel-note">{{ disabledReason }}</p>
     <h2 class="vnc-panel-title">Send keys</h2>
-    <div class="vnc-panel-row">
+    <div class="vnc-panel-row vnc-panel-row--single">
       <b-button
         v-for="key in SEND_KEYS"
         :key="key.name"
@@ -35,7 +35,10 @@
         {{ key.label }}
       </b-button>
     </div>
-    <div class="vnc-panel-row" role="group" aria-label="Ctrl+Alt+F1 to F7">
+    <div
+      class="vnc-panel-row vnc-panel-row--single"
+      role="group"
+      aria-label="Ctrl+Alt+F1 to F12">
       <span class="vnc-panel-label" aria-hidden="true">Ctrl+Alt+</span>
       <b-button
         v-for="key in CTRL_ALT_F"

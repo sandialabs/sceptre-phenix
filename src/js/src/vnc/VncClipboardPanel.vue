@@ -69,6 +69,13 @@
     }
   }
 
+  // empties the paste box, and drops a paste that waits for an answer
+  function clear() {
+    if (pending.value) precheck.cancel();
+    text.value = '';
+    readError.value = '';
+  }
+
   const listText = (chars) => chars.map(charLabel).join(' ');
 </script>
 
@@ -97,32 +104,42 @@
         <b-button size="is-small" @click="precheck.cancel">Cancel</b-button>
       </div>
     </template>
-    <div v-else class="vnc-panel-row">
+    <div class="vnc-panel-row vnc-panel-row--single">
       <b-button
+        v-if="!pending"
         size="is-small"
         type="is-link"
         :aria-disabled="disabledReason || !text ? 'true' : undefined"
         @click="send()">
         Send
       </b-button>
-    </div>
-    <b-tooltip
-      :label="
-        canReadClipboard
-          ? 'Send the text of your clipboard to the VM'
-          : 'Reading your clipboard needs HTTPS'
-      "
-      type="is-dark"
-      position="is-bottom">
-      <b-button
-        size="is-small"
-        :aria-disabled="
-          !canReadClipboard || disabledReason ? 'true' : undefined
+      <b-tooltip
+        :label="
+          canReadClipboard
+            ? 'Send the text of your clipboard to the VM'
+            : 'Reading your clipboard needs HTTPS'
         "
-        @click="pasteFromClipboard">
-        Paste from my clipboard
-      </b-button>
-    </b-tooltip>
+        type="is-dark"
+        position="is-bottom">
+        <b-button
+          size="is-small"
+          :aria-disabled="
+            !canReadClipboard || disabledReason ? 'true' : undefined
+          "
+          @click="pasteFromClipboard">
+          Paste from clipboard
+        </b-button>
+      </b-tooltip>
+      <b-tooltip label="Empty the text box" type="is-dark" position="is-bottom">
+        <b-button
+          size="is-small"
+          icon-left="eraser"
+          :aria-disabled="!text && !pending ? 'true' : undefined"
+          @click="clear">
+          Clear
+        </b-button>
+      </b-tooltip>
+    </div>
     <p v-if="readError" class="vnc-panel-warning">{{ readError }}</p>
     <p v-if="long" class="vnc-panel-hint">
       For long text, the bidirectional copy/paste mode is faster.

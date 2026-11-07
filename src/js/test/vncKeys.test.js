@@ -45,17 +45,20 @@ describe('the keysyms', () => {
     ]);
   });
 
-  it.each([1, 2, 3, 4, 5, 6, 7])('sends Ctrl+Alt+F%i', (n) => {
-    const f = 0xffbe + n - 1;
-    expect(keyEvents(`ctrlAltF${n}`)).toEqual([
-      [0xffe3, 'ControlLeft', true],
-      [0xffe9, 'AltLeft', true],
-      [f, `F${n}`, true],
-      [f, `F${n}`, false],
-      [0xffe9, 'AltLeft', false],
-      [0xffe3, 'ControlLeft', false],
-    ]);
-  });
+  it.each([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])(
+    'sends Ctrl+Alt+F%i',
+    (n) => {
+      const f = 0xffbe + n - 1;
+      expect(keyEvents(`ctrlAltF${n}`)).toEqual([
+        [0xffe3, 'ControlLeft', true],
+        [0xffe9, 'AltLeft', true],
+        [f, `F${n}`, true],
+        [f, `F${n}`, false],
+        [0xffe9, 'AltLeft', false],
+        [0xffe3, 'ControlLeft', false],
+      ]);
+    },
+  );
 
   it.each([
     ['escape', 0xff1b, 'Escape'],
@@ -70,6 +73,7 @@ describe('the keysyms', () => {
 
   it('has no sequence for an unknown name', () => {
     expect(keyEvents('bogus')).toEqual([]);
+    expect(keyEvents('ctrlAltF13')).toEqual([]);
   });
 
   it('offers each key the Keys menu sends', () => {

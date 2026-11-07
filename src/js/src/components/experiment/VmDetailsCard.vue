@@ -569,7 +569,7 @@
               <h3 class="vm-section-title">Snapshots</h3>
               <p v-if="!snapshotList.length" class="vm-empty">None yet</p>
               <div v-for="snap in snapshotList" :key="snap" class="vm-list-row">
-                <b-icon icon="camera" size="is-small" />
+                <b-icon icon="clone" size="is-small" />
                 <span class="vm-mono vm-list-text" :title="snap">{{
                   snap
                 }}</span>

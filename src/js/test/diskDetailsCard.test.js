@@ -46,7 +46,7 @@ const snap = disk('/phenix/images/snap.qc2', 'snap.qc2', {
 
 // the actions as Disks.vue offers them
 const ACTIONS = [
-  ['snapshot', 'Snapshot', 'camera'],
+  ['snapshot', 'Snapshot', 'clone'],
   ['commit', 'Commit', 'save'],
   ['rebase', 'Rebase', 'route'],
   ['clone', 'Clone', 'copy'],

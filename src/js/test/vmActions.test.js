@@ -94,6 +94,11 @@ const RULES = {
     persistent: NO_SNAPSHOTS,
     'not booted': NOT_RUNNING,
   },
+  screenshot: {
+    paused: NOT_RUNNING,
+    'shut down': NOT_RUNNING,
+    'not booted': NOT_RUNNING,
+  },
   commit: {
     paused: NOT_RUNNING,
     'shut down': NOT_RUNNING,
@@ -140,6 +145,7 @@ const RULED_OUT = {
   redeploy: 'Cannot redeploy',
   resetDisk: 'Cannot reset disk',
   snapshot: 'Cannot snapshot',
+  screenshot: 'Cannot save a screenshot',
   commit: 'Cannot create a backing image',
   memorySnapshot: 'Cannot create a memory snapshot',
   portForward: 'Cannot forward a port',
@@ -390,6 +396,25 @@ describe('vmActionState', () => {
       ['commit', false],
       ['captureAll', false],
     ]);
+  });
+
+  it('gives the screenshot the camera icon and the disk snapshot the clone icon', () => {
+    const states = vmActionStates(['screenshot', 'snapshot'], running, {
+      can: allowAll,
+    });
+    expect(states.map((a) => [a.name, a.label, a.icon])).toEqual([
+      ['screenshot', 'Screenshot', 'camera'],
+      ['snapshot', 'Snapshot', 'clone'],
+    ]);
+  });
+
+  it.each([
+    [allowOnly(['vms/screenshot', 'create']), true],
+    [allowOnly(['vms/screenshot', 'get']), false],
+  ])('needs vms/screenshot create to save a screenshot', (can, permitted) => {
+    expect(vmActionState('screenshot', running, { can }).permitted).toBe(
+      permitted,
+    );
   });
 
   it('needs every permission an action lists', () => {

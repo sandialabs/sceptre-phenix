@@ -109,6 +109,12 @@ export function getVmScreenshot(exp, vm, size, signal) {
   });
 }
 
+// POST /experiments/{exp}/vms/{vm}/screenshots: saves a full-size PNG of the
+// VM's screen in the experiment files, answering { path } of the new file
+export function saveVmScreenshot(exp, vm) {
+  return axiosInstance.post(vmURL(exp, vm) + '/screenshots');
+}
+
 const forwardsURL = (exp, vm) => vmURL(exp, vm) + '/forwards';
 
 // GET /experiments/{exp}/vms/{vm}/forwards

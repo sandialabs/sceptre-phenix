@@ -20,6 +20,7 @@
 
   import { createVmSnapshot, startVmActionsJob } from '@/api/vms.js';
   import { minuteStamp } from '@/components/experiment/timestamp.js';
+  import { saveScreenshot } from '@/components/experiment/vmTools.js';
   import { usePhenixStore } from '@/store.js';
   import { useErrorNotification } from '@/utils/errorNotif';
   import { escapeHTML } from '@/utils/escapeHTML.js';
@@ -62,6 +63,10 @@
   import VncPane from '@/vnc/VncPane.vue';
   import VncSettingsPanel from '@/vnc/VncSettingsPanel.vue';
   import VncToolbar from '@/vnc/VncToolbar.vue';
+  import VncVmModals from '@/vnc/VncVmModals.vue';
+
+  // the VM actions that open a dialog of VncVmModals
+  const DIALOG_ACTIONS = ['cdrom', 'portForward', 'memorySnapshot'];
 
   // the session storage key: the chord toast shows once each browser session
   const CHORD_TOAST_KEY = 'phenix.vnc.chordHintShown';
@@ -80,6 +85,9 @@
 
   const page = ref(null);
   const toolbar = ref(null);
+  const vmModals = ref(null);
+  // an element of the page is full screen
+  const inFullscreen = ref(false);
   const paneRefs = new Map();
 
   const parsed = computed(() => parseConsoleQuery(route.query));
@@ -335,9 +343,26 @@
     }
   }
 
+  async function screenshot(controller) {
+    controller.pending = 'screenshot';
+    try {
+      await saveScreenshot(buefy, controller.experiment, controller.vm);
+    } finally {
+      controller.pending = null;
+    }
+  }
+
+  async function openDialog(name, controller) {
+    // a dialog takes the keyboard from the fullscreen console
+    await exitFullscreen().catch(() => {});
+    vmModals.value?.open(name, controller);
+  }
+
   async function runAction(name, controller = active.value) {
     if (!controller || controller.pending) return;
     if (name === 'snapshot') return snapshot(controller);
+    if (name === 'screenshot') return screenshot(controller);
+    if (DIALOG_ACTIONS.includes(name)) return openDialog(name, controller);
     controller.pending = name;
     try {
       const job = await startVmActionsJob(controller.experiment, name, [
@@ -420,17 +445,24 @@
     openConsole(router.resolve(consoleLocation([key])).href, [key]);
   }
 
+  function followFullscreen() {
+    inFullscreen.value = Boolean(document.fullscreenElement);
+  }
+
   let stopAnswering = () => {};
   let stopNotices = () => {};
   onMounted(() => {
     detachOpener();
     stopAnswering = answerConsoleQueries(() => vms.value);
     stopNotices = keepNoticesInFullscreen();
+    document.addEventListener('fullscreenchange', followFullscreen);
+    followFullscreen();
   });
 
   onBeforeUnmount(() => {
     stopAnswering();
     stopNotices();
+    document.removeEventListener('fullscreenchange', followFullscreen);
     for (const controller of controllers.values()) controller.stop();
     controllers.clear();
   });
@@ -450,9 +482,11 @@
       :layout="layout"
       :pane-count="vms.length"
       :pending="active?.pending ?? null"
+      :fullscreen="inFullscreen"
       @action="runAction"
       @layout="(name) => show(vms, name)"
       @fullscreen="fullscreen(page)"
+      @exit-fullscreen="exitFullscreen().catch(() => {})"
       @reconnect="active?.session.retryNow()"
       @panel-close="focusActive"
       @details="refreshScreen">
@@ -540,6 +574,7 @@
       </div>
     </div>
     <div class="is-sr-only" aria-live="polite">{{ live }}</div>
+    <VncVmModals ref="vmModals" />
   </div>
 </template>
 
@@ -581,7 +616,6 @@
       color: #e5e7eb;
     }
 
-    .vnc-state,
     .vnc-keyboard-tag {
       text-transform: uppercase;
     }
@@ -620,6 +654,15 @@
     .vnc-panel--end {
       right: 0;
       left: auto;
+    }
+
+    // as wide as its longest row of buttons, which stays on one line
+    .vnc-panel--wide {
+      max-width: none;
+    }
+
+    .vnc-panel-row--single {
+      flex-wrap: nowrap;
     }
 
     .vnc-panel-title {
@@ -665,7 +708,7 @@
     .vnc-clipboard-text {
       display: block;
       width: 100%;
-      min-width: 18rem;
+      min-width: 28rem;
       margin-bottom: 0.5rem;
     }
 
@@ -833,6 +876,17 @@
       cursor: pointer;
       background: transparent;
       border: 0;
+
+      &:focus-visible {
+        outline: 2px solid $vnc-ring;
+      }
+    }
+
+    .vnc-pane-details {
+      display: inline-flex;
+      align-items: center;
+      padding: 0 4px;
+      color: #fff;
 
       &:focus-visible {
         outline: 2px solid $vnc-ring;

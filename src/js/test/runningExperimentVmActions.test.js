@@ -157,6 +157,7 @@ const handlers = [
   ['redeploy', 'redeploy'],
   ['resetDisk', 'resetVmState'],
   ['snapshot', 'captureSnapshot'],
+  ['screenshot', 'takeScreenshot'],
   ['commit', 'diskImage'],
   ['memorySnapshot', 'queueMemorySnapshotVMs'],
   ['portForward', 'showPortForwardDialog'],
@@ -195,6 +196,55 @@ it.each(handlers)(
     expect(run).toHaveBeenCalledWith(whole ? listed(vm) : 'vm1');
   },
 );
+
+describe('a screenshot from the details modal', () => {
+  // the page with the details of the running web VM open
+  const openCard = () =>
+    open({
+      experiment: { name: 'demo', vms: [{ name: 'web', running: true }] },
+      expModal: {
+        active: true,
+        fullName: 'demo/web',
+        vm: { name: 'web', running: true, state: 'RUNNING' },
+      },
+    });
+
+  it('saves it in the experiment files, spinning, and names its file', async () => {
+    let save;
+    axios.post.mockReturnValue(
+      new Promise((resolve) => {
+        save = resolve;
+      }),
+    );
+    const page = await openCard();
+    await page.find('.vm-action-screenshot').trigger('click');
+    await flushPromises();
+    expect(axios.post).toHaveBeenCalledWith(
+      'experiments/demo/vms/web/screenshots',
+    );
+    expect(page.vm.vmActionPending.web).toEqual(['screenshot']);
+
+    save({ data: { path: 'screenshots/web-20261107-153012.png' } });
+    await flushPromises();
+    expect(page.vm.vmActionPending.web ?? []).toEqual([]);
+    expect(toasts()).toEqual([
+      {
+        text: 'Saved a screenshot of the web VM as screenshots/web-20261107-153012.png',
+        type: 'is-success',
+      },
+    ]);
+  });
+
+  it('shows the error when it cannot be saved', async () => {
+    axios.post.mockRejectedValue(new Error('409'));
+    const page = await openCard();
+    await page.find('.vm-action-screenshot').trigger('click');
+    await flushPromises();
+    expect(notify.error).toHaveBeenCalledOnce();
+    expect(toasts()).toEqual([]);
+    expect(page.vm.vmActionPending.web ?? []).toEqual([]);
+  });
+});
 
 it("shows the open VM's details with its row's live state", async () => {
   const details = {

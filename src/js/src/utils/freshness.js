@@ -92,6 +92,10 @@ export const RESOURCES = {
     ],
   },
   settings: { live: false, staleAfterMs: 10 * MINUTE },
+  // the running VMs that the console's Add VM panel offers (see
+  // vnc/vmListCache.js): shown at once from the copy kept for the user, and
+  // read again each time the panel opens; logout clears them
+  vncvms: { live: false },
   vmtiles: { pollMs: MINUTE, staleAfterMs: 3 * MINUTE },
   // a running experiment's captures, which its Captures tab lists while it
   // shows; capture start and stop events reload them at once

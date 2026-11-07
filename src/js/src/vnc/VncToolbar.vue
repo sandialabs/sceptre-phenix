@@ -1,16 +1,14 @@
 <!-- The narrow top bar of the console page (M2a). It acts on the pane that
-     has keyboard input: its VM and state, the VM actions that the role may
-     take, the Keys, Clipboard and View panels (M6a), the layout picker, Add
-     VM, full screen, and the connection indicator at the right end. The
-     page fills the panels through the keys, clipboard, view and add
-     slots. -->
+     has keyboard input: links to its experiment and to the details of its
+     VM, the VM actions that the role may take, the Keys, Clipboard and View
+     panels (M6a), the layout picker, Add VM, full screen, and the
+     connection indicator at the right end. The page fills the panels
+     through the keys, clipboard, view and add slots. -->
 <script setup>
   import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
-  import {
-    vmButtonStates,
-    vmStateInfo,
-  } from '@/components/experiment/vmActions.js';
+  import { vmDetailsRoute } from '@/components/experiment/experimentTabs.js';
+  import { vmButtonStates } from '@/components/experiment/vmActions.js';
   import { usePhenixStore } from '@/store.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import { CHORD_HINT } from './chord.js';
@@ -51,12 +49,15 @@
     paneCount: { type: Number, default: 0 },
     // the VM action that runs, or null
     pending: { type: String, default: null },
+    // the page is full screen: the full screen button exits it
+    fullscreen: { type: Boolean, default: false },
   });
 
   const emit = defineEmits([
     'action',
     'layout',
     'fullscreen',
+    'exit-fullscreen',
     'reconnect',
     'panel-close',
     'details',
@@ -65,25 +66,45 @@
   const root = ref(null);
   const open = ref(null);
 
+  // wide: the panel is as wide as its rows of buttons
   const PANELS = [
-    { name: 'keys', label: 'Keys', icon: 'keyboard', caret: true },
-    { name: 'clipboard', label: 'Clipboard', icon: 'clipboard' },
+    { name: 'keys', label: 'Keys', icon: 'keyboard', caret: true, wide: true },
+    { name: 'clipboard', label: 'Clipboard', icon: 'clipboard', wide: true },
     { name: 'view', label: 'View', icon: 'gear', caret: true },
   ];
 
   const hasVm = computed(() => Boolean(props.experiment && props.vm));
-  const state = computed(() => (props.vmRow ? vmStateInfo(props.vmRow) : null));
+
+  // the experiment page and the VM details on it, for a role that may open it
+  const experimentLink = computed(() =>
+    props.experiment && roleAllowed('experiments', 'get', props.experiment)
+      ? { name: 'experiment', params: { id: props.experiment } }
+      : null,
+  );
+  const detailsLink = computed(() =>
+    hasVm.value && experimentLink.value
+      ? vmDetailsRoute(props.experiment, props.vm)
+      : null,
+  );
 
   const can = (resource, verb) =>
     roleAllowed(resource, verb, `${props.experiment}/${props.vm}`);
 
-  // the power actions of the mockup: pause or start, restart, shut down,
-  // snapshot; those the role may not take are left out
+  // the power actions, the snapshots, the screenshot, the CD-ROM and the
+  // port forward; those the role may not take are left out
   const actions = computed(() => {
     const row = props.vmRow;
     if (!row || !hasVm.value) return [];
-    const names = [row.running ? 'pause' : 'start', 'restart', 'shutdown'];
-    names.push('snapshot');
+    const names = [
+      row.running ? 'pause' : 'start',
+      'restart',
+      'shutdown',
+      'snapshot',
+      'memorySnapshot',
+      'screenshot',
+      'cdrom',
+      'portForward',
+    ];
     return vmButtonStates(names, row, {
       can,
       features: usePhenixStore().features ?? [],
@@ -111,6 +132,11 @@
   const tone = computed(() => connectionTone(props.status.state));
   const reconnect = computed(() => showsReconnect(props.status.state));
   const fullscreenNote = keyboardCaptureNote();
+  const fullscreenTip = computed(() =>
+    props.fullscreen
+      ? 'Exit full screen'
+      : (fullscreenNote ?? 'Show the console page full screen'),
+  );
 
   const capitalized = (text) => text.charAt(0).toUpperCase() + text.slice(1);
   const SCALING_NAMES = {
@@ -203,20 +229,43 @@
     role="group"
     aria-label="Console controls">
     <span class="vnc-brand">phēnix</span>
+    <b-tooltip
+      v-if="experimentLink"
+      :label="`Open the page of experiment ${experiment} in a new tab`"
+      type="is-dark"
+      position="is-bottom">
+      <b-button
+        tag="router-link"
+        :to="experimentLink"
+        target="_blank"
+        rel="noopener"
+        size="is-small"
+        class="vnc-experiment-link"
+        icon-left="flask"
+        :aria-label="`Experiment ${experiment}`" />
+    </b-tooltip>
     <span class="vnc-target">
       <template v-if="hasVm">
         <span v-if="split" class="vnc-acting">acting on </span
-        ><strong>{{ experiment }} / {{ vm }}</strong
-        >{{ ' '
-        }}<b-tag
-          v-if="state"
-          :type="state.type ?? 'is-dark'"
-          class="vnc-state"
-          >{{ state.label }}</b-tag
-        >
+        ><strong>{{ experiment }} / {{ vm }}</strong>
       </template>
       <template v-else>No VM</template>
     </span>
+    <b-tooltip
+      v-if="detailsLink && !split"
+      :label="`Open the details of VM ${vm} on the experiment page in a new tab`"
+      type="is-dark"
+      position="is-bottom">
+      <b-button
+        tag="router-link"
+        :to="detailsLink"
+        target="_blank"
+        rel="noopener"
+        size="is-small"
+        class="vnc-details-link"
+        icon-left="circle-info"
+        :aria-label="`Details of VM ${vm}`" />
+    </b-tooltip>
     <b-tooltip
       v-if="keyboard"
       :label="CHORD_HINT"
@@ -267,7 +316,7 @@
       <div
         v-show="open === panel.name"
         :id="`vnc-panel-${panel.name}`"
-        class="vnc-panel"
+        :class="['vnc-panel', { 'vnc-panel--wide': panel.wide }]"
         role="dialog"
         :aria-label="panel.label">
         <slot :name="panel.name" :open="open === panel.name"></slot>
@@ -324,15 +373,13 @@
       </div>
     </div>
 
-    <b-tooltip
-      :label="fullscreenNote ?? 'Show the console page full screen'"
-      type="is-dark"
-      position="is-bottom">
+    <b-tooltip :label="fullscreenTip" type="is-dark" position="is-bottom">
       <b-button
         size="is-small"
-        icon-left="expand"
-        aria-label="Full screen"
-        @click="emit('fullscreen')" />
+        class="vnc-fullscreen-button"
+        :icon-left="fullscreen ? 'compress' : 'expand'"
+        :aria-label="fullscreen ? 'Exit full screen' : 'Full screen'"
+        @click="fullscreen ? emit('exit-fullscreen') : emit('fullscreen')" />
     </b-tooltip>
 
     <div class="vnc-panel-wrap" @keydown.esc="escape">

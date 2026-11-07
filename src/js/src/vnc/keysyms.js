@@ -59,9 +59,9 @@ export const SEND_KEYS = Object.freeze([
   { name: 'printScreen', label: 'PrintScreen' },
 ]);
 
-/** The Ctrl+Alt+F1 to F7 keys of the Keys menu. */
+/** The Ctrl+Alt+F1 to F12 keys of the Keys menu. */
 export const CTRL_ALT_F = Object.freeze(
-  [1, 2, 3, 4, 5, 6, 7].map((n) => ({
+  Array.from({ length: 12 }, (_, i) => i + 1).map((n) => ({
     name: `ctrlAltF${n}`,
     label: `F${n}`,
   })),
@@ -88,7 +88,7 @@ const chord = (modifiers, target) => [
 export function keyEvents(name) {
   const ctrlAlt = [KEYS.controlLeft, KEYS.altLeft];
   if (name === 'ctrlAltDel') return chord(ctrlAlt, KEYS.delete);
-  const f = /^ctrlAltF([1-7])$/.exec(name);
+  const f = /^ctrlAltF([1-9]|1[0-2])$/.exec(name);
   if (f) return chord(ctrlAlt, KEYS[`f${f[1]}`]);
   if (['escape', 'tab', 'printScreen'].includes(name)) {
     return chord([], KEYS[name]);

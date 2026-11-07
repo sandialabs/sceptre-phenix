@@ -740,6 +740,12 @@ const requests = [
     ],
   ],
   [
+    'saveVmScreenshot',
+    () => vmsApi.saveVmScreenshot('exp', 'a'),
+    'post',
+    ['experiments/exp/vms/a/screenshots'],
+  ],
+  [
     'getVmScreenshot',
     () => vmsApi.getVmScreenshot('e x', 'a/b', 300, signal),
     'get',

@@ -1,11 +1,13 @@
 <!-- One pane of the console page: in split view a thin header with the VM
-     name, state, pane number and menu; the top and bottom banners of the VM;
+     name, state, a link to its details, pane number and menu; the top and bottom banners of the VM;
      the console; and the connection state over the screen when it is not
      connected. The page owns the VNC session and gives its values here. -->
 <script setup>
   import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
+  import { vmDetailsRoute } from '@/components/experiment/experimentTabs.js';
   import { vmStateInfo } from '@/components/experiment/vmActions.js';
+  import { roleAllowed } from '@/utils/rbac.js';
   import { attachChord } from './chord.js';
   import { connectionLabel, showsReconnect } from './connectionStatus.js';
   import VncBanner from './VncBanner.vue';
@@ -69,6 +71,12 @@
     () => `Console of VM ${props.vm} in experiment ${props.experiment}`,
   );
   const state = computed(() => (props.vmRow ? vmStateInfo(props.vmRow) : null));
+  // the VM details on the experiment page, for a role that may open it
+  const detailsLink = computed(() =>
+    roleAllowed('experiments', 'get', props.experiment)
+      ? vmDetailsRoute(props.experiment, props.vm)
+      : null,
+  );
   const paused = computed(
     () => (props.vmRow?.state ?? '').toUpperCase() === 'PAUSED',
   );
@@ -169,9 +177,22 @@
       >{{ ' '
       }}<b-tag v-if="state" :type="state.type ?? 'is-dark'" size="is-small">{{
         state.label
-      }}</b-tag
-      >{{ ' '
-      }}<span v-if="keyboard" class="tag is-info is-small vnc-keyboard-tag"
+      }}</b-tag>
+      <b-tooltip
+        v-if="detailsLink"
+        :label="`Open the details of VM ${vm} on the experiment page in a new tab`"
+        type="is-dark"
+        position="is-bottom">
+        <router-link
+          :to="detailsLink"
+          target="_blank"
+          rel="noopener"
+          class="vnc-pane-details"
+          :aria-label="`Details of VM ${vm}`">
+          <b-icon icon="circle-info" size="is-small" />
+        </router-link>
+      </b-tooltip>
+      <span v-if="keyboard" class="tag is-info is-small vnc-keyboard-tag"
         >Keyboard</span
       >
       <span class="vnc-fill"></span>

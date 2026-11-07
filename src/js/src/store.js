@@ -3,6 +3,7 @@ import router from '@/router';
 import { endBuilderSession, startBuilderSession } from '@/builder/session.js';
 import { clearPageCache } from '@/utils/pageCache.js';
 import { clearConfigCache } from '@/utils/configCache.js';
+import { clearRunningVmsCache } from '@/vnc/vmListCache.js';
 
 export const usePhenixStore = defineStore('phenix', {
   state: () => ({
@@ -66,6 +67,7 @@ export const usePhenixStore = defineStore('phenix', {
     logout() {
       clearPageCache();
       clearConfigCache();
+      clearRunningVmsCache();
       this.username = null;
       this.token = null;
       this.role = null;

@@ -23,6 +23,8 @@
   ]);
 
   const RESIZE_REASON = 'Resize VM needs vga virtio.';
+  const VIEW_ONLY_TIP =
+    'Show the VM screen, but send no keyboard or mouse input to the VM';
   const SCALINGS = [
     { name: 'fit', label: 'Fit' },
     { name: 'actual', label: 'Actual' },
@@ -86,11 +88,17 @@
         @input="emit('update:compression', level($event))" />
     </label>
     <div class="vnc-panel-row">
-      <b-checkbox
-        :model-value="viewOnly"
-        @update:model-value="emit('update:viewOnly', $event)">
-        View only
-      </b-checkbox>
+      <b-tooltip
+        :label="VIEW_ONLY_TIP"
+        type="is-dark"
+        position="is-bottom"
+        multilined>
+        <b-checkbox
+          :model-value="viewOnly"
+          @update:model-value="emit('update:viewOnly', $event)">
+          View only
+        </b-checkbox>
+      </b-tooltip>
       <b-tooltip
         :label="fullscreenNote ?? 'Show this pane full screen'"
         type="is-dark"

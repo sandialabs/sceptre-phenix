@@ -139,13 +139,22 @@ export const VM_ACTIONS = {
     label: 'Snapshot',
     description:
       "Save the VM's current disk and memory as a snapshot that can be restored later",
-    icon: 'camera',
+    icon: 'clone',
     rbac: [['vms/snapshots', 'create']],
     blocked: (vm) => {
       if (!vm.snapshot) return 'the VM does not have snapshots enabled';
       if (!vm.running) return NOT_RUNNING;
       return null;
     },
+  },
+  screenshot: {
+    label: 'Screenshot',
+    verb: 'save a screenshot',
+    description:
+      "Save a full-size PNG of the VM's screen in the experiment files, in the screenshots folder",
+    icon: 'camera',
+    rbac: [['vms/screenshot', 'create']],
+    blocked: (vm) => (vm.running ? null : NOT_RUNNING),
   },
   commit: {
     label: 'Backing image',
@@ -249,6 +258,7 @@ export const TOOL_ACTIONS = [
   'redeploy',
   'resetDisk',
   'snapshot',
+  'screenshot',
   'commit',
   'memorySnapshot',
   'portForward',
