@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -119,8 +118,7 @@ func TestMeshSourceRead(t *testing.T) { //nolint:paralleltest // uses the fake m
 		t.Errorf("holding minimega command error = %v", err)
 	}
 
-	// the command minimega runs: the script is one argument and the path,
-	// offset and count are arguments after it, never part of the script
+	// the command minimega runs: the script is one argument with no "$" for minimega to expand
 	var sent string
 
 	for _, cmd := range received() {
@@ -150,7 +148,11 @@ func TestMeshSourceRead(t *testing.T) { //nolint:paralleltest // uses the fake m
 		t.Errorf("minicli.Compile(%q) host = %q, want %q", sent, host, "compute1")
 	}
 
-	want := []string{"sh", "-c", meshReadScript, "phenix", "/phenix/images/exp/files/vm-0.pcap", "24", "1024"}
+	want := []string{
+		"sh", "-c",
+		"dd if=/phenix/images/exp/files/vm-0.pcap iflag=skip_bytes,count_bytes skip=24 count=1024 bs=1048576 status=none" +
+			" | base64 -w 0",
+	}
 	if diff := cmp.Diff(want, cmd.ListArgs["args"]); diff != "" {
 		t.Errorf("minicli.Compile(%q) args mismatch (-want +got):\n%s", sent, diff)
 	}
@@ -209,7 +211,7 @@ func TestMeshReadScript(t *testing.T) {
 
 	for _, tt := range []struct{ off, n int }{{0, 24}, {24, 1000}, {2500, 1000}, {3000, 10}} {
 		out, err := exec.CommandContext(
-			t.Context(), "sh", "-c", meshReadScript, "phenix", path, strconv.Itoa(tt.off), strconv.Itoa(tt.n),
+			t.Context(), "sh", "-c", meshReadScript(path, int64(tt.off), tt.n),
 		).Output()
 		if err != nil {
 			t.Errorf("meshReadScript(offset %d, count %d) error = %v", tt.off, tt.n, err)
@@ -276,7 +278,12 @@ func TestMeshSourceArgsProperties(t *testing.T) { //nolint:paralleltest // uses 
 			t.Fatalf("minicli.Compile(%q) error = %v", sent, err)
 		}
 
-		want := []string{"sh", "-c", meshReadScript, "phenix", capturePath, strconv.FormatInt(off, 10), strconv.Itoa(n)}
+		script := meshReadScript(capturePath, off, n)
+		if os.ExpandEnv(script) != script {
+			t.Fatalf("meshReadScript(%q, %d, %d) = %q, which minimega's $ expansion changes", capturePath, off, n, script)
+		}
+
+		want := []string{"sh", "-c", script}
 		if got := cmd.StringArgs["host"]; got != host {
 			t.Fatalf("minicli.Compile(%q) host = %q, want %q", sent, got, host)
 		}

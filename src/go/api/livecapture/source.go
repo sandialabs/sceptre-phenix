@@ -20,11 +20,17 @@ import (
 // minimega commands.
 const meshReadTimeout = 30 * time.Second
 
-// meshReadScript prints a byte range of a file as base64: minimega returns a
-// command's output as a string, which would not survive raw bytes. The file,
-// offset and count are passed as arguments rather than written into the
-// script, so none of them is ever parsed by the shell.
-const meshReadScript = `dd if="$1" iflag=skip_bytes,count_bytes skip="$2" count="$3" bs=1048576 status=none | base64 -w 0`
+// meshReadScript returns the sh script that prints a byte range of a file as
+// base64: minimega returns a command's output as a string, which would not
+// survive raw bytes. The values are written into the script, because minimega
+// expands "$" in every argument, so the script cannot use "$1". newMeshSource
+// allows only paths that sh reads as one literal word.
+func meshReadScript(file string, off int64, maxLen int) string {
+	return fmt.Sprintf(
+		"dd if=%s iflag=skip_bytes,count_bytes skip=%d count=%d bs=1048576 status=none | base64 -w 0",
+		file, off, maxLen,
+	)
+}
 
 var (
 	// ErrUnsafePath is returned for a capture path phenix will not pass to a
@@ -33,7 +39,7 @@ var (
 
 	// remote capture paths are ones phenix built (an experiment name and a
 	// file name, under the minimega files directory), so anything that would
-	// need quoting in a minimega command is refused rather than escaped.
+	// need quoting in a minimega or sh command is refused rather than escaped.
 	safePath = regexp.MustCompile(`^/[A-Za-z0-9._+=@,:/-]+$`)
 
 	// safeHost is the safePath character set without '/': a node name has none.
@@ -122,8 +128,8 @@ func newMeshSource(host, capturePath string) (*meshSource, error) {
 func (s *meshSource) Read(off int64, maxLen int) ([]byte, error) {
 	cmd := mmcli.NewCommand()
 	cmd.Command = fmt.Sprintf(
-		"mesh send %s shell sh -c %s phenix %s %d %d",
-		s.host, strconv.Quote(meshReadScript), s.path, off, maxLen,
+		"mesh send %s shell sh -c %s",
+		s.host, strconv.Quote(meshReadScript(s.path, off, maxLen)),
 	)
 	cmd.Timeout = meshReadTimeout
 
@@ -140,7 +146,7 @@ func (s *meshSource) Read(off int64, maxLen int) ([]byte, error) {
 	return data, nil
 }
 
-// decodeRange decodes what meshReadScript printed.
+// decodeRange decodes what a meshReadScript script printed.
 func decodeRange(out string) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(strings.TrimSpace(out)) //nolint:wrapcheck // wrapped by the caller
 }

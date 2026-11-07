@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -80,11 +81,14 @@ func (c *fakeCluster) capturePath(iface int) string {
 	return fmt.Sprintf("/phenix/images/exp/files/vm-%d.pcap", iface)
 }
 
-// meshRead answers a mesh read of compute1's file, as meshReadScript would.
-func (c *fakeCluster) meshRead(cmd mmtest.Command) []*minicli.Response {
-	fields := strings.Fields(cmd.Base)
+// meshReadArgs matches the file, offset and count in a meshReadScript script.
+var meshReadArgs = regexp.MustCompile(`dd if=(\S+) iflag=skip_bytes,count_bytes skip=(\d+) count=(\d+) `)
 
-	if !strings.HasPrefix(cmd.Base, "mesh send compute1 shell sh -c ") || len(fields) < 3 {
+// meshRead answers a mesh read of compute1's file, as a meshReadScript script would.
+func (c *fakeCluster) meshRead(cmd mmtest.Command) []*minicli.Response {
+	fields := meshReadArgs.FindStringSubmatch(cmd.Base)
+
+	if !strings.HasPrefix(cmd.Base, "mesh send compute1 shell sh -c ") || fields == nil {
 		return []*minicli.Response{{Host: "head", Error: "unexpected command " + cmd.Base}}
 	}
 
@@ -101,9 +105,9 @@ func (c *fakeCluster) meshRead(cmd mmtest.Command) []*minicli.Response {
 		<-release
 	}
 
-	path := filepath.Join(c.dir, filepath.Base(fields[len(fields)-3]))
-	off, _ := strconv.Atoi(fields[len(fields)-2])
-	n, _ := strconv.Atoi(fields[len(fields)-1])
+	path := filepath.Join(c.dir, filepath.Base(fields[1]))
+	off, _ := strconv.Atoi(fields[2])
+	n, _ := strconv.Atoi(fields[3])
 
 	data, err := os.ReadFile(path)
 	if err != nil {
