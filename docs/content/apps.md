@@ -659,6 +659,9 @@ the taps to already exist when the experiment starts. Valid values are
 `pre-start` and `post-start`; when unset, it defaults to `post-start` to
 preserve backwards compatibility.
 
+The taps are created on the experiment host running the fewest VMs, the first
+by name among hosts with equally few, so every run places them the same way.
+
 The following is an example of how the `tap` app can be configured via a
 `Scenario` configuration, showing all the possible options.
 
@@ -771,7 +774,10 @@ JSON over `STDOUT` and exit with a `0` status. If the user app encounters an
 error, it should print error messages to `STDERR` and exit with a non-zero
 status. Logs written to `STDERR` must be single-line JSON objects
 containing `level`, `msg`, and `time` fields to be fully integrated into the
-phēnix centralized logging system.
+phēnix centralized logging system. A `type` field with a phēnix log type, such
+as `SCORCH`, sets the log type of the record. phēnix does not accept the
+`AUDIT` or `SECURITY` type from an app. A field with the same name as a phēnix
+field, such as `time` or `app`, gets the `proc_` prefix.
 
 !!! note
     `phenix` will only process updates to the `spec` value for the `configure`
@@ -798,9 +804,9 @@ including the following:
 | ------------ | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | caldera      | [caldera source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/caldera)      | Deployment and orchestration of [MITRE Caldera](https://caldera.mitre.org/) in an experiment                                                                            |
 | helics       | [helics source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/helics)       | Aids in the generation of [HELICS](https://helics.org/) broker start scripts and injects them into the appropriate nodes in an experiment                               |
-| mirror       | [mirror source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main?tab=readme-ov-file#mirror)                | The mirror app configures cluster-wide packet mirroring for specific VLANs to a specific interface on a predefined node using GRE tunnels. It is written in Golang.     |
+| mirror       | [mirror source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/go/cmd/phenix-app-mirror)                | The mirror app configures cluster-wide packet mirroring for specific VLANs to a specific interface on a predefined node using GRE tunnels. It is written in Golang.     |
 | otsim        | [otsim source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/otsim)        | Aids in the generation of config files for [OT-sim](https://ot-sim.patsec.dev/)                                                                                         |
-| protonuke    | [protonuke source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main?tab=readme-ov-file#protonuke)             | Configures the protonuke traffic generator                                                                                                                              |
+| protonuke    | [protonuke source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/protonuke)             | Configures the protonuke traffic generator                                                                                                                              |
 | scale        | [scale source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/scale)        | Specialized phenix application designed for high-volume simulations                                                                                                     |
 | sceptre      | [sceptre source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/sceptre)      | Core functionality for [SCEPTRE](https://sandialabs.github.io/sceptre-docs/), including generating configs for field devices (bennu), SCADA systems, and other systems. |
 | wind_turbine | [wind_turbine source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/wind_turbine) | Aids in the generation of wind-turbine-specific [OT-sim](https://ot-sim.patsec.dev/) config files                                                                       |

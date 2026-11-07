@@ -2,10 +2,17 @@ package workflow_test
 
 import (
 	"errors"
+	"maps"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 
 	"phenix/api/experiment"
 	"phenix/api/workflow"
@@ -251,6 +258,210 @@ func TestValidateName(t *testing.T) {
 	if err := workflow.ValidateName("café"); err == nil || err.Error() != want {
 		t.Errorf("ValidateName(%q) error = %v, want %s", "café", err, want)
 	}
+}
+
+// specNameValid is the model of a workflow name: an ASCII letter or digit, then ASCII letters, digits, '.', '_'
+// or '-'.
+func specNameValid(name string) bool {
+	for i, c := range []byte(name) {
+		alnum := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+		if !alnum && (i == 0 || !strings.ContainsRune("._-", rune(c))) {
+			return false
+		}
+	}
+
+	return name != ""
+}
+
+func TestValidateNameProperties(t *testing.T) {
+	t.Parallel()
+
+	const base = "/srv/injects"
+
+	rapid.Check(t, func(t *rapid.T) {
+		name := rapid.StringOfN(rapid.SampledFrom([]rune("aZ09._-/\\ \né")), 0, 6, -1).Draw(t, "name")
+		err := workflow.ValidateName(name)
+
+		if valid := specNameValid(name); valid != (err == nil) {
+			t.Fatalf("ValidateName(%q) error = %v, want valid = %t", name, err, valid)
+		}
+
+		if err != nil {
+			if !errors.Is(err, workflow.ErrInvalidName) {
+				t.Fatalf("ValidateName(%q) error = %v, want ErrInvalidName", name, err)
+			}
+
+			return
+		}
+
+		// a valid name is one directory below base
+		if dir := filepath.Join(base, name); filepath.Dir(dir) != base || filepath.Base(dir) != name {
+			t.Fatalf("ValidateName(%q) = nil, but filepath.Join(%q, %q) = %q", name, base, name, dir)
+		}
+	})
+}
+
+// genSpecRecase returns s with each ASCII letter's case flipped or not, as drawn.
+func genSpecRecase(t *rapid.T, s, label string) string {
+	flips := rapid.SliceOfN(rapid.Bool(), len(s), len(s)).Draw(t, label)
+
+	b := []byte(s)
+	for i, flip := range flips {
+		switch c := b[i]; {
+		case flip && c >= 'a' && c <= 'z':
+			b[i] = c - 'a' + 'A'
+		case flip && c >= 'A' && c <= 'Z':
+			b[i] = c - 'A' + 'a'
+		}
+	}
+
+	return string(b)
+}
+
+// genSpecBoolPtr draws nil, true or false.
+func genSpecBoolPtr() *rapid.Generator[*bool] {
+	return rapid.SampledFrom([]*bool{nil, boolPtr(true), boolPtr(false)})
+}
+
+// genSpecSpec draws a workflow spec that the Workflow schema accepts.
+func genSpecSpec() *rapid.Generator[workflow.Spec] {
+	name := rapid.StringMatching(`[a-z0-9-]{0,6}`)
+	id := rapid.IntRange(0, 4094)
+	bridge := rapid.StringMatching(`[a-zA-Z0-9_@.-]{0,` + strconv.Itoa(experiment.MaxBridgeNameLength) + `}`)
+
+	return rapid.Custom(func(t *rapid.T) workflow.Spec {
+		spec := workflow.Spec{
+			Topology:      name.Draw(t, "topology"),
+			Scenario:      name.Draw(t, "scenario"),
+			DeployMode:    rapid.SampledFrom([]string{"", "all", "No-Headnode", "only-headnode"}).Draw(t, "deployMode"),
+			UseGREMesh:    rapid.Bool().Draw(t, "useGREMesh"),
+			DefaultBridge: bridge.Draw(t, "defaultBridge"),
+		}
+
+		if rapid.Bool().Draw(t, "auto") {
+			spec.Auto = &workflow.Auto{
+				Create:  name.Draw(t, "create"),
+				Update:  genSpecBoolPtr().Draw(t, "update"),
+				Restart: genSpecBoolPtr().Draw(t, "restart"),
+			}
+		}
+
+		if rapid.Bool().Draw(t, "vlanRange") {
+			spec.VLANRange = &workflow.VLANRange{Min: id.Draw(t, "min"), Max: id.Draw(t, "max")}
+		}
+
+		aliases := rapid.SliceOfDistinct(rapid.SampledFrom([]string{"EXP", "MGMT", "exp"}), rapid.ID).Draw(t, "vlans")
+		if len(aliases) > 0 {
+			spec.VLANs = make(map[string]int)
+			for _, alias := range aliases {
+				spec.VLANs[alias] = id.Draw(t, "vlan")
+			}
+		}
+
+		hosts := rapid.SliceOfDistinct(rapid.SampledFrom([]string{"host-a", "Host-A", "b"}), rapid.ID).Draw(t, "schedules")
+		if len(hosts) > 0 {
+			spec.Schedules = make(map[string]string)
+			for _, host := range hosts {
+				spec.Schedules[host] = name.Draw(t, "schedule")
+			}
+		}
+
+		return spec
+	})
+}
+
+// specEncode returns spec as a parsed config holds it: a zero value is left out or null, an int may be a JSON
+// number, and with recase every key is in a drawn letter case.
+func specEncode(t *rapid.T, spec workflow.Spec, recase bool) map[string]any {
+	key := func(k string) string {
+		if recase {
+			return genSpecRecase(t, k, "key")
+		}
+
+		return k
+	}
+
+	num := func(n int) any {
+		if rapid.Bool().Draw(t, "jsonNumber") {
+			return float64(n)
+		}
+
+		return n
+	}
+
+	out := map[string]any{}
+	put := func(m map[string]any, k string, v any, zero bool) {
+		switch {
+		case !zero:
+			m[key(k)] = v
+		case rapid.Bool().Draw(t, "null"):
+			m[key(k)] = nil
+		}
+	}
+
+	if spec.Auto != nil {
+		auto := map[string]any{}
+		put(auto, "create", spec.Auto.Create, spec.Auto.Create == "")
+
+		putFlag := func(k string, v *bool) {
+			if v != nil {
+				put(auto, k, *v, false)
+			} else {
+				put(auto, k, nil, true)
+			}
+		}
+
+		putFlag("update", spec.Auto.Update)
+		putFlag("restart", spec.Auto.Restart)
+
+		out[key("auto")] = auto
+	}
+
+	put(out, "topology", spec.Topology, spec.Topology == "")
+	put(out, "scenario", spec.Scenario, spec.Scenario == "")
+	put(out, "deployMode", spec.DeployMode, spec.DeployMode == "")
+	put(out, "useGREMesh", spec.UseGREMesh, !spec.UseGREMesh)
+	put(out, "defaultBridge", spec.DefaultBridge, spec.DefaultBridge == "")
+
+	if spec.VLANRange != nil {
+		out[key("vlanRange")] = map[string]any{key("min"): num(spec.VLANRange.Min), key("max"): num(spec.VLANRange.Max)}
+	}
+
+	vlans := map[string]any{}
+	for _, alias := range slices.Sorted(maps.Keys(spec.VLANs)) {
+		vlans[alias] = num(spec.VLANs[alias])
+	}
+
+	put(out, "vlans", vlans, spec.VLANs == nil)
+
+	schedules := map[string]any{}
+	for host, node := range spec.Schedules {
+		schedules[host] = node
+	}
+
+	put(out, "schedules", schedules, spec.Schedules == nil)
+
+	return out
+}
+
+// Decode gives back any spec from its keys in any letter case, with null or missing zero values and ints as
+// JSON numbers or not.
+func TestDecodeProperties(t *testing.T) {
+	t.Parallel()
+
+	rapid.Check(t, func(t *rapid.T) {
+		want := genSpecSpec().Draw(t, "spec")
+		in := specEncode(t, want, true)
+
+		got, err := workflow.Decode(in)
+		if err != nil {
+			t.Fatalf("Decode(%v) error = %v", in, err)
+		}
+
+		if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("Decode(%v) mismatch (-want +got):\n%s", in, diff)
+		}
+	})
 }
 
 func TestSpecAuto(t *testing.T) {

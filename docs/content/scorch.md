@@ -49,7 +49,7 @@ The following Scorch component types are considered `core` components, in that t
 
 ### `break` Component
 
-The `break` component is comparable to a source code break point when debugging an application in that it pauses execution of the current Scorch run until a user exits the break. While the `break` component is running, users have access to a shell on the server running phēnix as the user running phēnix. The first user to access the shell via the terminal modal in the UI will have read-write access. If other users access the shell, they will have read-only access but will get live updates as the user with read-write access uses the terminal.
+The `break` component is comparable to a source code break point when debugging an application in that it pauses execution of the current Scorch run until a user exits the break. While the `break` component is running, users have access to a shell on the server running phēnix as the user running phēnix. The first user to access the shell via the terminal modal in the UI whose role may create `experiments/trigger` (the permission that starts a run) will have read-write access and can exit the break. Every other user whose role may get the experiment has read-only access but will get live updates as the user with read-write access uses the terminal.
 
 It's possible to configure the `break` component in the Scorch app configuration to create a minimega tap when the component is executed. When the component is executed, the tap will be deleted. In addition to the tap, external network access can also be configured (e.g., Internet access).
 
@@ -300,13 +300,15 @@ The Scorch table, accessible as one of the tab selections within the phēnix UI,
 - Terminal: if the Scorch app has reached a break point, a terminal will be available &mdash; if clicked, a terminal dialog will be opened and is running on the phēnix host system
 - Find an Experiment: similar to the search fields in other tables within the phēnix UI, it is possible to filter experiment names based on terms entered here
 
-![Scorch Table](images/table.png)
+Each button is only shown if your role permits the action it takes.
+
+![SCORCH page with its Experiments, Runs and Running totals and a table of three experiments with their experiment and SCORCH status buttons.](images/scorch_table.png)
 
 ## Scorch Pipeline
 
-Scorch pipelines are available on the [Scorch table](#scorch-table) in the phēnix UI. The table is sorted by Experiment name by default. Only those experiments with the Scorch app configured in the [scenario](configuration.md#scenario) configuration will be listed in the table. It is possible to _start_ or _stop_ an experiment, as well as _start_ or _stop_ a Scorch component. Finally, if a terminal is available when a break point is reached in a running Scorch app, it can be accessed from the table.
+Scorch pipelines are available on the [Scorch table](#scorch-table) in the phēnix UI. The table is sorted by Experiment name by default. Only those experiments with the Scorch app configured in the [scenario](configuration.md#scenario) configuration will be listed in the table. It is possible to _start_ or _stop_ an experiment, as well as _start_ or _stop_ a Scorch run. Finally, if a terminal is available when a break point is reached in a running Scorch app, it can be accessed from the table.
 
-The Scorch pipeline provides a graphical representation of the Scorch app, including the `configure`, `start`, `stop`, and `cleanup` stages. If the Scorch app provides output for a given step, or component, users can click into the component and receive the output.
+The Scorch pipeline provides a graphical representation of the Scorch app, including the `configure`, `start`, `stop`, and `cleanup` stages. If the Scorch app provides output for a given step, or component, users can click into the component and receive the output. The output window opens as soon as the component is clicked and shows a loading indicator until the output arrives.
 
 A user can access the terminal if a break point is reached by clicking on the component. As with the terminal access described above, a dialog will be presented with a terminal running on the phēnix host system.
 
@@ -314,12 +316,8 @@ A user can access the terminal if a break point is reached by clicking on the co
 
 The following functions are also available in the Scorch pipeline UI:
 
-- Return to the table: a button that will return to the Scorch table
-- Scorch app status: a button that will allow a running Scorch app to be stopped or started depending on the current status
-
-![Return to Scorch table](images/return.png){: width=200 .center}
-
-![Stopped or Started button](images/status.png){: width=300 .center}
+- Return to the table: the `Back to SCORCH` button will return to the Scorch table
+- Scorch run status: a button on each run that will allow the Scorch run to be stopped or started depending on the current status
 
 ### Stages
 
@@ -333,7 +331,7 @@ For a given Scorch pipeline, there are four stages of execution:
 A Scorch component may implement any or all of the various stages, and Scorch will execute each stage inside the components in order. Each component can be configured in the Scorch app scenario [configuration file](configuration.md).
 
 !!! note
-    There is additional `done` stage in the UI obtained when `cleanup` has been completed. It is meant to report the completion of all stages in the Pipeline UI.
+    There is additional `done` stage in the UI obtained when `cleanup` has been completed. It is meant to report the completion of all stages in the Pipeline UI, and shows as failed when a component failed or the run's data could not be archived.
 
 It's completely up to the component developer if and how an execution stage is implemented and handled by the component. If a component is configured in the Scorch app to be executed as part of a stage, but the component does not implement said stage, then the Scorch app will happily continue on to the next component in the stage (unless the component errors out if the current stage is not implemented, in which case the Scorch run will fail).
 
@@ -356,7 +354,7 @@ Loops are also available within a Scorch app and are included in the configurati
 
 In addition to loops, multi-run is supported within a Scorch app. Unlike loops, multi-run allows for individual Scorch runs containing four separate stages. They are not nested in each other but are independent runs. A use case for multi-run could be executing multiple independent portions of an experiment against a topology, in any order or executing a run multiple times. There are two runs depicted in the [configuration](#example-configuration) below.
 
-As described above, each component will provide a modal for output reporting. The output could either be a fairly straight forward report, nothing at all, or it include logging output for a given component in the stage. The result will be streamed as it is received if the component is currently in a running component. If the component has finished running, the output will be static.
+As described above, each component will provide a modal for output reporting. The output could either be a fairly straight forward report, nothing at all, or it include logging output for a given component in the stage. The result will be streamed as it is received if the component is currently in a running component. If the component has finished running, the output will be static. If a component has no output at all, the window closes again and says so.
 
 ![Output of Snort component](images/output.png)
 

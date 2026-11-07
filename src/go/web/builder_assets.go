@@ -25,7 +25,7 @@ const (
 // builderCodings returns the content codings the build compresses the
 // Builder's files with, in the order the server prefers them.
 func builderCodings() []string {
-	return []string{"br", "gzip"}
+	return []string{"br", gzipCoding}
 }
 
 // encodingSuffix returns the suffix of the file the build writes a file's
@@ -34,17 +34,15 @@ func encodingSuffix(coding string) string {
 	switch coding {
 	case "br":
 		return ".br"
-	case "gzip":
+	case gzipCoding:
 		return ".gz"
 	default:
 		return ""
 	}
 }
 
-// builderAssetHandler serves /assets/ from assets.
-func builderAssetHandler(assets http.FileSystem) http.Handler {
-	next := http.FileServer(assets)
-
+// builderAssetHandler serves the Builder files of /assets/ from assets, and passes every other request to next.
+func builderAssetHandler(assets http.FileSystem, next http.Handler) http.Handler {
 	files, err := builderFiles(assets)
 	if err != nil {
 		plog.Warn(plog.TypeSystem, "serving Builder assets uncompressed", "err", err)
@@ -152,8 +150,9 @@ func (w encodedLengthWriter) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(status)
 }
 
-// builderFiles returns the files, relative to the UI's root, that only
-// Builder loads, from the list the UI build wrote in assets.
+// builderFiles returns the files, relative to the UI's root, that the Builder
+// loads (some, such as ELK, other pages share), from the list the UI build wrote
+// in assets.
 func builderFiles(assets http.FileSystem) ([]string, error) {
 	f, err := assets.Open("/" + builderAssetList)
 	if err != nil {

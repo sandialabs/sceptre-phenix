@@ -1,5 +1,7 @@
 package vm
 
+import "context"
+
 type UpdateOption func(*updateOptions)
 
 type iface struct {
@@ -13,23 +15,35 @@ type updateOptions struct {
 	cpu        int
 	mem        int
 	disk       string
-	partition  int
+	partition  *int
 	dnb        *bool
 	iface      *iface
 	host       *string
 	snapshot   *bool
 	appendTags bool
 	tags       *map[string]string
+	// replaces all of the node's annotations when not nil
+	annotations map[string]any
+	// gives up minimega commands not yet sent before a running VM's first change
+	ctx context.Context //nolint:containedctx // an option, as mm.Context is
 }
 
 func newUpdateOptions(opts ...UpdateOption) updateOptions {
-	var o updateOptions
+	o := updateOptions{ctx: context.Background()} //nolint:exhaustruct // the rest are unset options
 
 	for _, opt := range opts {
 		opt(&o)
 	}
 
 	return o
+}
+
+// UpdateWithContext gives up the update of a running VM once ctx is done,
+// until its first change is sent (see mm.Context).
+func UpdateWithContext(ctx context.Context) UpdateOption {
+	return func(o *updateOptions) {
+		o.ctx = ctx
+	}
 }
 
 func UpdateExperiment(e string) UpdateOption {
@@ -62,9 +76,11 @@ func UpdateWithDisk(d string) UpdateOption {
 	}
 }
 
+// UpdateWithPartition sets the inject partition of the first drive. Partition 0
+// turns off disk injection, so the startup app sends its scripts through miniccc.
 func UpdateWithPartition(p int) UpdateOption {
 	return func(o *updateOptions) {
-		o.partition = p
+		o.partition = &p
 	}
 }
 
@@ -96,6 +112,19 @@ func UpdateWithTags(t map[string]string, appendTags bool) UpdateOption {
 	return func(o *updateOptions) {
 		o.appendTags = appendTags
 		o.tags = &t
+	}
+}
+
+// UpdateWithAnnotations replaces all of the VM's annotations with a, so a nil
+// or empty map removes them all. Without this option, Update leaves them as
+// they are.
+func UpdateWithAnnotations(a map[string]any) UpdateOption {
+	return func(o *updateOptions) {
+		if a == nil {
+			a = map[string]any{}
+		}
+
+		o.annotations = a
 	}
 }
 

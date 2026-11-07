@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createSSRApp, effectScope, h, markRaw, nextTick, ref } from 'vue';
 import { renderToString } from 'vue/server-renderer';
@@ -313,7 +314,7 @@ describe('inspector field accessibility', () => {
         .replace(/\s+/g, ' ')
         .trim(),
     ).toBe(
-      'More settings: miniccc commands, Delay, Injections, Advanced settings, Labels (1), Annotations (2)',
+      'More settings: miniccc commands, Delay, Injections, Deletions, Advanced settings, Overrides, Labels (1), Annotations (2)',
     );
     // A chevron, decoration only, turns as the section opens.
     expect(summary).toMatch(

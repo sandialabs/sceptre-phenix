@@ -3,8 +3,8 @@
 // Rename, Add to server, the rows' keys and selection, the batches, and an
 // upload.
 
-import { afterEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { describe, expect, test, vi } from 'vitest';
+import { flushPromises, mount } from '@vue/test-utils';
 import { reactive } from 'vue';
 
 import IconUpload from '@/components/builder/IconUpload.vue';
@@ -46,8 +46,6 @@ const ICONS = [
     canDelete: false,
   },
 ];
-
-enableAutoUnmount(afterEach);
 
 // The server's library, whose state the calls change as the server would.
 // `fails` names the icons whose change the server refuses.

@@ -1,0 +1,20 @@
+{
+  "requestedUrl": "http://127.0.0.1:3000/experiments",
+  "finalUrl": "http://127.0.0.1:3000/experiments",
+  "categories": { "performance": { "score": 0.97 } },
+  "audits": {
+    "first-contentful-paint": { "numericValue": 512.4 },
+    "largest-contentful-paint": { "numericValue": 801.6 },
+    "total-blocking-time": { "numericValue": 12 },
+    "cumulative-layout-shift": { "numericValue": 0.0123 },
+    "total-byte-weight": { "numericValue": 612345 },
+    "resource-summary": {
+      "details": {
+        "items": [
+          { "resourceType": "total", "transferSize": 612345 },
+          { "resourceType": "script", "transferSize": 401234 }
+        ]
+      }
+    }
+  }
+}

@@ -3,8 +3,8 @@
 // filter, Download, View, Upload, the cards' keys, selection, Download
 // selected and Delete.
 
-import { afterEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { describe, expect, test, vi } from 'vitest';
+import { flushPromises, mount } from '@vue/test-utils';
 import { reactive } from 'vue';
 
 const save = vi.hoisted(() => vi.fn());
@@ -51,8 +51,6 @@ const MORE = ['pump', 'tank'].map((name) => ({
   owner: 'bob',
   aliases: [],
 }));
-
-enableAutoUnmount(afterEach);
 
 // The library the tab is given, whose state the calls change as the server
 // would. `fails` names the icons remove cannot delete. `gone` names the

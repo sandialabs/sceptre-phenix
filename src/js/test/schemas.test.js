@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The JSON schemas in the repository's schemas/ directory, which
 // src/go/tools/schema-export generates for editors and SchemaStore: each is a
 // valid JSON Schema 2020-12 document, and each per-kind schema describes a

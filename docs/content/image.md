@@ -1,6 +1,16 @@
 # Virtual Disk Images Management
 
-This is only available from the command line binary at this time.
+Disk images are built only with the command line binary. The
+Disks page of the web UI lists the images the phēnix server has,
+and can snapshot, clone, rename, download, upload and delete the ones in the
+minimega files directory.
+
+Click the `In use` count above the table to show only the images in use.
+Click it again, or click the `X` beside the search box, to show all images.
+
+Before it deletes an image, phēnix checks for images that it backs and for
+experiments that use it. If it finds any, the Disks page lists them, and you can
+cancel or select **Delete anyway**.
 
 ## Listing disk images
 

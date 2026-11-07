@@ -2,9 +2,9 @@
 // Import templates: a template file read into the library as a new
 // collection, mounted and driven as a user would.
 
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import YAML from 'js-yaml';
 
 import TemplateImportDialog from '@/components/builder/dialogs/TemplateImportDialog.vue';
@@ -29,8 +29,6 @@ const FILE = {
   name: 'Plant',
   templates: [TEMPLATE],
 };
-
-enableAutoUnmount(afterEach);
 
 beforeEach(() => {
   vi.restoreAllMocks();

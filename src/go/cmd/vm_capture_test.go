@@ -32,7 +32,7 @@ func findCaptureSubcommand(t *testing.T, name string) *cobra.Command {
 }
 
 // captureCmdTestMM is a test double for mm.MM used by the vm capture CLI
-// tests below. Embedding the (nil) mm.MM interface means any method call
+// tests. Embedding the (nil) mm.MM interface means any method call
 // this test doesn't stub will panic, which is fine since these tests only
 // ever exercise the capture-related methods.
 type captureCmdTestMM struct {
@@ -80,7 +80,7 @@ func installCaptureCmdTestMM(t *testing.T, fake *captureCmdTestMM) {
 // experiment named "test-experiment" with a single VM named "test-vm" that
 // has two network interfaces, named "IF0" and "IF1", on VLANs "EXP_1" and
 // "EXP_2" respectively. It installs the mock as store.DefaultStore for the
-// duration of the test.
+// duration of the test, restoring the original afterward.
 func installCaptureCmdTestExperiment(t *testing.T) {
 	t.Helper()
 
@@ -137,6 +137,9 @@ func installCaptureCmdTestExperiment(t *testing.T) {
 
 		return nil
 	}).AnyTimes()
+
+	original := store.DefaultStore
+	t.Cleanup(func() { store.DefaultStore = original }) //nolint:reassign // restore test double
 
 	store.DefaultStore = m //nolint:reassign // monkey patching for test
 }

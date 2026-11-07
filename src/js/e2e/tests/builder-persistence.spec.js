@@ -1616,7 +1616,7 @@ test.describe('Builder persistence', () => {
       );
       expect(await kept()).toEqual({ theme: 'dark', drafts: 1 });
 
-      // A server without authentication refuses GET /logout, which the
+      // A server without authentication refuses POST /logout, which the
       // header's Logout asks first.
       await page.route('**/api/v1/logout', (route) =>
         route.fulfill({ status: 204 }),

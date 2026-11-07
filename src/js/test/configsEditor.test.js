@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import Buefy from 'buefy';
 import YAML from 'js-yaml';
 import ConfigsEditor from '@/components/configs/ConfigsEditor.vue';
@@ -23,8 +23,6 @@ vi.mock('@/utils/axios.js', () => ({
   },
 }));
 vi.mock('@/utils/errorNotif', () => ({ useErrorNotification: vi.fn() }));
-
-enableAutoUnmount(afterEach);
 
 // Mounts the editor with the real Buefy and without the Ace editor.
 function mountEditor(props) {
@@ -136,11 +134,8 @@ function newConfigsEditor() {
   return vm;
 }
 
-// updateConfigTemplate does not return its request promise, so wait for it to
-// settle.
 async function updateTemplate(vm, config) {
-  vm.updateConfigTemplate(config);
-  await new Promise((resolve) => setTimeout(resolve));
+  await vm.updateConfigTemplate(config);
 }
 
 describe('ConfigsEditor config templates', () => {
@@ -210,7 +205,8 @@ describe('ConfigsEditor config templates', () => {
 
     await updateTemplate(vm, config);
 
-    expect(axiosInstance.get).toHaveBeenCalledTimes(1);
+    // the full schema and the kind's schema are asked for together
+    expect(axiosInstance.get).toHaveBeenCalledTimes(2);
     expect(useErrorNotification).toHaveBeenCalledTimes(1);
     expect(vm.editor.isLoading).toBe(false);
   });

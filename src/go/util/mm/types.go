@@ -2,9 +2,8 @@ package mm
 
 import (
 	"errors"
-	"fmt"
 	"maps"
-	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -253,8 +252,15 @@ type VM struct {
 	UUID string `json:"-"`
 }
 
-// Copy returns a deep copy of the VM. It only makes deep copies of fields that
-// are exported as JSON.
+// OnAnyHost reports whether the VM runs on one of hosts, named exactly as
+// minimega reports them; a VM with no host matches none.
+func (v VM) OnAnyHost(hosts []string) bool {
+	return v.Host != "" && slices.Contains(hosts, v.Host)
+}
+
+// Copy returns a deep copy of the VM. No slice or map field of the copy
+// shares memory with v. Copy makes shallow copies of the values in Metadata
+// and Annotations.
 func (v VM) Copy() VM {
 	vm := v
 
@@ -277,6 +283,11 @@ func (v VM) Copy() VM {
 	vm.Tags = make(map[string]string, len(v.Tags))
 	maps.Copy(vm.Tags, v.Tags)
 
+	vm.Labels = maps.Clone(v.Labels)
+	vm.Interfaces = maps.Clone(v.Interfaces)
+	vm.Metadata = maps.Clone(v.Metadata)
+	vm.Annotations = maps.Clone(v.Annotations)
+
 	return vm
 }
 
@@ -296,37 +307,4 @@ type BlockDumpResponse struct {
 		Status    string `json:"status"`
 		Total     int    `json:"total"`
 	} `json:"return"`
-}
-
-type diskConfig struct {
-	path  string
-	base  string
-	cache string
-}
-
-func newDiskConfig(c string) diskConfig {
-	tokens := strings.Split(c, ",")
-
-	cfg := diskConfig{ //nolint:exhaustruct // partial initialization
-		path: tokens[0],
-		base: filepath.Base(tokens[0]),
-	}
-
-	if len(tokens) > 1 {
-		cfg.cache = tokens[1]
-	}
-
-	return cfg
-}
-
-func (d diskConfig) string(cache string) string {
-	if cache != "" {
-		return fmt.Sprintf("%s,%s", d.path, cache)
-	}
-
-	if d.cache != "" {
-		return fmt.Sprintf("%s,%s", d.path, d.cache)
-	}
-
-	return d.path
 }

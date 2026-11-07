@@ -1,18 +1,18 @@
 package cmd
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
 	"phenix/api/config"
+	"phenix/store"
 	"phenix/types"
 	bdoc "phenix/types/builder"
 	"phenix/util"
@@ -38,7 +38,7 @@ func configListKinds() []string {
 	return []string{allExperiments, "topology", "scenario", configKindExperiment, commandImage, "user"}
 }
 
-func configKindArgsValidator(multi, allowAll bool) cobra.PositionalArgs {
+func configKindArgsValidator(multi bool) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		if multi {
 			if len(args) == 0 {
@@ -57,11 +57,7 @@ func configKindArgsValidator(multi, allowAll bool) cobra.PositionalArgs {
 				return errors.New("expected an argument in the form of <config kind>/<config name>")
 			}
 
-			kinds := append([]string(nil), configKinds()...)
-
-			if allowAll {
-				kinds = append(kinds, allExperiments)
-			}
+			kinds := configKinds()
 
 			kind := strings.ToLower(tokens[0])
 
@@ -129,11 +125,18 @@ func newConfigListCmd() *cobra.Command {
   phenix config list scenario
   phenix config list experiment
   phenix config list image
-  phenix config list user`
+  phenix config list user
+  phenix config list topology -o json`
+
+	var out *outputFlag
 
 	cmd := &cobra.Command{
-		Use:       "list <kind>",
-		Short:     "Show table of stored configuration files",
+		Use:   "list <kind>",
+		Short: "Show table of stored configuration files",
+		Long: `Show table of stored configuration files
+
+  The JSON and YAML output give the apiVersion, kind and metadata of each
+  configuration, as GET /api/v1/configs does, without the spec.`,
 		Example:   example,
 		ValidArgs: configListKinds(),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -150,67 +153,34 @@ func newConfigListCmd() *cobra.Command {
 				return err.Humanized()
 			}
 
-			fmt.Fprintln(os.Stdout)
+			listed := make([]store.Config, 0, len(configs))
 
-			if len(configs) == 0 {
-				fmt.Fprintln(os.Stdout, "There are no configurations available")
-			} else {
-				printer.PrintTableOfConfigs(os.Stdout, configs)
+			for _, c := range configs {
+				c.Spec, c.Status = nil, nil
+				listed = append(listed, c)
 			}
 
-			fmt.Fprintln(os.Stdout)
+			return out.print(cmd, listed, outputViews{
+				formatTable: func(w io.Writer) error {
+					fmt.Fprintln(w)
 
-			return nil
+					if len(configs) == 0 {
+						fmt.Fprintln(w, "There are no configurations available")
+					} else {
+						printer.PrintTableOfConfigs(w, configs)
+					}
+
+					fmt.Fprintln(w)
+
+					return nil
+				},
+			})
 		},
 	}
 
+	out = addOutputFlag(cmd, formatTable, []string{formatTable, FormatJSON, FormatYAML})
+
 	return cmd
-}
-
-func configGetArgsCompletion(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	if len(args) > 0 {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-
-	var comps []string
-	parts := strings.Split(toComplete, "/")
-
-	if len(parts) == 1 {
-		kinds := configKinds()
-		for _, k := range kinds {
-			if strings.HasPrefix(k, toComplete) {
-				comps = append(comps, k+"/")
-			}
-		}
-		return comps, cobra.ShellCompDirectiveNoSpace
-	} else if len(parts) == configArgParts {
-		kind := parts[0]
-		var listKind string
-
-		for _, k := range config.AllKinds {
-			if strings.EqualFold(k, kind) {
-				listKind = k
-				break
-			}
-		}
-
-		if listKind == "" {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		}
-
-		configs, err := config.List(listKind)
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveError
-		}
-
-		for _, c := range configs {
-			if strings.HasPrefix(c.Metadata.Name, parts[1]) {
-				comps = append(comps, fmt.Sprintf("%s/%s", kind, c.Metadata.Name))
-			}
-		}
-	}
-
-	return comps, cobra.ShellCompDirectiveNoFileComp
 }
 
 func newConfigGetCmd() *cobra.Command {
@@ -223,14 +193,17 @@ func newConfigGetCmd() *cobra.Command {
 	example := `
   phenix config get topology/foo
   phenix config get scenario/bar
-  phenix config get experiment/foobar`
+  phenix config get experiment/foobar
+  phenix config get topology/foo -o json`
+
+	var out *outputFlag
 
 	cmd := &cobra.Command{
 		Use:               "get <kind/name>",
 		Short:             "Get a configuration",
 		Long:              desc,
 		Example:           example,
-		Args:              configKindArgsValidator(false, false),
+		Args:              configKindArgsValidator(false),
 		ValidArgsFunction: configGetArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := config.Get(args[0])
@@ -245,47 +218,13 @@ func newConfigGetCmd() *cobra.Command {
 				delete(c.Spec, "experimentName")
 			}
 
-			output := MustGetString(cmd.Flags(), "output")
-
-			switch output {
-			case FormatYAML:
-				m, err := yaml.Marshal(c)
-				if err != nil {
-					err := util.HumanizeError(err, "Unable to convert configuration to YAML")
-
-					return err.Humanized()
-				}
-
-				fmt.Fprintln(cmd.OutOrStdout(), string(m))
-			case FormatJSON:
-				var (
-					m   []byte
-					err error
-				)
-
-				if MustGetBool(cmd.Flags(), "pretty") {
-					m, err = json.MarshalIndent(c, "", "  ")
-				} else {
-					m, err = json.Marshal(c)
-				}
-
-				if err != nil {
-					err := util.HumanizeError(err, "Unable to convert configuration to JSON")
-
-					return err.Humanized()
-				}
-
-				fmt.Fprintln(cmd.OutOrStdout(), string(m))
-			default:
-				return fmt.Errorf("unrecognized output format '%s'", output)
-			}
-
-			return nil
+			return out.print(cmd, c, nil)
 		},
 	}
 
-	cmd.Flags().StringP("output", "o", FormatYAML, "Configuration output format ('yaml' or 'json')")
-	cmd.Flags().BoolP("pretty", "p", false, "Pretty print the JSON output")
+	out = addOutputFlag(cmd, FormatYAML, []string{FormatYAML, FormatJSON})
+	// JSON output is always indented now; -p stays so that existing scripts work.
+	cmd.Flags().BoolP("pretty", "p", false, "Pretty print the JSON output (JSON output is always indented)")
 
 	return cmd
 }
@@ -315,7 +254,7 @@ func newConfigCreateCmd() *cobra.Command {
 				return errors.New("must provide at least one configuration file")
 			}
 
-			skip := MustGetBool(cmd.Flags(), "skip-validation")
+			skip := mustGet(cmd.Flags().GetBool, "skip-validation")
 
 			for _, f := range args {
 				configs, err := configFilesAt(f)
@@ -419,7 +358,7 @@ const (
 // other file. It also returns "" for a file that cannot be read, and leaves it
 // to the normal read to report why.
 func builderFileKind(path string) string {
-	text, err := os.ReadFile(path) //nolint:gosec // a config file the caller named
+	text, err := os.ReadFile(path)
 	if err != nil {
 		return ""
 	}
@@ -505,12 +444,13 @@ func newConfigEditCmd() *cobra.Command {
 	`
 
 	cmd := &cobra.Command{
-		Use:   "edit <kind/name>",
-		Short: "Edit a configuration",
-		Long:  desc,
-		Args:  configKindArgsValidator(false, false),
+		Use:               "edit <kind/name>",
+		Short:             "Edit a configuration",
+		Long:              desc,
+		Args:              configKindArgsValidator(false),
+		ValidArgsFunction: configGetArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			force := MustGetBool(cmd.Flags(), "force")
+			force := mustGet(cmd.Flags().GetBool, "force")
 
 			_, err := config.Edit(args[0], force)
 			if err != nil {
@@ -518,6 +458,16 @@ func newConfigEditCmd() *cobra.Command {
 					plog.Warn(plog.TypeSystem, "configuration not updated", "config", args[0])
 
 					return nil
+				}
+
+				if errors.Is(err, store.ErrConflict) {
+					err := util.HumanizeError(
+						err,
+						"%s",
+						args[0]+" changed while you edited it, so run `phenix config edit` again",
+					)
+
+					return err.Humanized()
 				}
 
 				err := util.HumanizeError(
@@ -544,17 +494,34 @@ func newConfigEditCmd() *cobra.Command {
 func newConfigDeleteCmd() *cobra.Command {
 	desc := `Delete a configuration(s)
 
-  This subcommand is used to delete one or more configurations.
+  This subcommand is used to delete one or more configurations. With
+  --dry-run, it shows the configurations that it would delete, and deletes
+  nothing.
 	`
 
+	var dry dryRun
+
 	cmd := &cobra.Command{
-		Use:     "delete <kind/name> ...",
-		Aliases: []string{deleteAlias},
-		Short:   "Delete a configuration(s)",
-		Long:    desc,
-		Args:    configKindArgsValidator(true, false),
+		Use:               "delete <kind/name> ...",
+		Aliases:           []string{deleteAlias},
+		Short:             "Delete a configuration(s)",
+		Long:              desc,
+		Args:              configKindArgsValidator(true),
+		ValidArgsFunction: completePositional(completeConfigNames),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			for _, c := range args {
+				if dry.enabled() {
+					if _, err := config.Get(c); err != nil {
+						err := util.HumanizeError(err, "%s", "Unable to delete the "+c+" configuration")
+
+						return err.Humanized()
+					}
+				}
+
+				if dry.skip("delete", "configuration "+c) {
+					continue
+				}
+
 				err := config.Delete(c)
 				if err != nil {
 					err := util.HumanizeError(err, "%s", "Unable to delete the "+c+" configuration")
@@ -569,6 +536,8 @@ func newConfigDeleteCmd() *cobra.Command {
 		},
 	}
 
+	dry = addDryRunFlag(cmd)
+
 	return cmd
 }
 
@@ -576,12 +545,17 @@ func newConfigDeleteAllCmd() *cobra.Command {
 	desc := `Delete all configurations
 
   This subcommand is used to delete all configurations, or all configurations
-  of a specific kind.`
+  of a specific kind. It does not delete the configuration of a running
+  experiment. With --dry-run, it shows the configurations that it would
+  delete, and deletes nothing.`
 
 	example := `
   phenix config delete all
   phenix config delete all topology
-  phenix config delete all scenario`
+  phenix config delete all scenario
+  phenix config delete all topology --dry-run`
+
+	var dry dryRun
 
 	cmd := &cobra.Command{
 		Use:       "all [kind]",
@@ -596,25 +570,33 @@ func newConfigDeleteAllCmd() *cobra.Command {
 				which = strings.ToLower(args[0])
 			}
 
-			configs, err := config.List(which)
+			var opts []config.DeleteKindOption
+			if dry.enabled() {
+				opts = append(opts, config.DeleteKindWith(func(name string) error {
+					kind, rest, _ := strings.Cut(name, "/")
+					dry.skip("delete", "configuration "+strings.ToLower(kind)+"/"+rest)
+
+					return nil
+				}))
+			}
+
+			deleted, failed, err := config.DeleteKind(which, opts...)
 			if err != nil {
 				err := util.HumanizeError(err, "Unable to list known configurations")
 
 				return err.Humanized()
 			}
 
+			if !dry.enabled() {
+				for _, name := range deleted {
+					plog.Info(plog.TypeSystem, "configuration deleted", "config", name)
+				}
+			}
+
 			var errs error
 
-			for _, c := range configs {
-				name := strings.ToLower(c.Kind) + "/" + c.Metadata.Name
-
-				err = config.Delete(name)
-				if err != nil {
-					errs = multierror.Append(errs, fmt.Errorf("deleting config %s: %w", name, err))
-					continue
-				}
-
-				plog.Info(plog.TypeSystem, "configuration deleted", "config", name)
+			for _, f := range failed {
+				errs = multierror.Append(errs, fmt.Errorf("deleting config %s: %w", f.Config, f.Err))
 			}
 
 			if errs != nil {
@@ -625,6 +607,8 @@ func newConfigDeleteAllCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	dry = addDryRunFlag(cmd)
 
 	return cmd
 }

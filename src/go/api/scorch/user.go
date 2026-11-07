@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"phenix/api/scorch/scorchmd"
 	"phenix/util"
 	"phenix/util/common"
 	"phenix/util/plog"
@@ -96,41 +97,7 @@ func (u UserComponent) shellOut(ctx context.Context, stage Action) error {
 		return fmt.Errorf("unmarshaling experiment to generic map: %w", err)
 	}
 
-	if spec, ok := generic["spec"].(map[string]any); ok {
-		if scenario, ok2 := spec["scenario"].(map[string]any); ok2 {
-			if apps, ok3 := scenario["apps"].([]any); ok3 {
-				for _, a := range apps {
-					appMap, ok4 := a.(map[string]any)
-					if !ok4 {
-						continue
-					}
-
-					meta, ok5 := appMap["metadata"].(map[string]any)
-					if !ok5 {
-						continue
-					}
-
-					cmps, ok6 := meta["components"].([]any)
-					if !ok6 {
-						continue
-					}
-
-					for _, comp := range cmps {
-						cmpMap, ok7 := comp.(map[string]any)
-						if !ok7 {
-							continue
-						}
-
-						if name, ok8 := cmpMap["name"].(string); ok8 && name == u.options.Name {
-							cmpMap["metadata"] = u.options.Meta
-
-							break
-						}
-					}
-				}
-			}
-		}
-	}
+	setComponentMetadata(generic, u.options.Name, u.options.Meta)
 
 	data, err := json.Marshal(generic)
 	if err != nil {
@@ -147,6 +114,29 @@ func (u UserComponent) shellOut(ctx context.Context, stage Action) error {
 	}
 
 	return u.run(ctx, stage, cmd, data)
+}
+
+// setComponentMetadata sets the metadata of each SCORCH component called name
+// in the scenario apps of exp, an experiment decoded from JSON, to md. It
+// changes only the first such component of each app.
+func setComponentMetadata(exp map[string]any, name string, md scorchmd.ComponentMetadata) {
+	spec, _ := exp["spec"].(map[string]any)
+	scenario, _ := spec["scenario"].(map[string]any)
+	apps, _ := scenario["apps"].([]any)
+
+	for _, a := range apps {
+		appMap, _ := a.(map[string]any)
+		meta, _ := appMap["metadata"].(map[string]any)
+		cmps, _ := meta["components"].([]any)
+
+		for _, c := range cmps {
+			if cmpMap, ok := c.(map[string]any); ok && cmpMap["name"] == name {
+				cmpMap["metadata"] = md
+
+				break
+			}
+		}
+	}
 }
 
 func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data []byte) error {
@@ -240,44 +230,49 @@ func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data [
 
 // processLogChannel reads from ch and calls logFn for each detected log entry.
 // It buffers non-JSON lines for up to 10ms to reconstruct multi-line messages (like stack traces).
+// It joins the parts of a multi-part JSON message into one entry.
 func processLogChannel(ch <-chan []byte, logFn func(level, msg string)) {
 	var (
-		buf   bytes.Buffer
-		timer = time.NewTimer(time.Hour)
+		buf    bytes.Buffer
+		timer  = time.NewTimer(time.Hour)
+		joiner = plog.NewPartJoiner(func(level string, _ struct{}, msg string) { logFn(level, msg) })
 	)
 	timer.Stop()
 
-	flush := func() {
+	resetTimer := func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(logFlushInterval)
+	}
+
+	flushText := func() {
 		if buf.Len() == 0 {
 			return
 		}
 		msg := buf.String()
 		buf.Reset()
 
-		level := levelInfo
-		switch {
-		case strings.Contains(msg, "| ERROR |") || strings.Contains(msg, "| ERR |"):
-			level = levelError
-		case strings.Contains(msg, "| WARN |") || strings.Contains(msg, "| WARNING |"):
-			level = levelWarn
-		case strings.Contains(msg, "| DEBUG |") || strings.Contains(msg, "| DBG |"):
-			level = levelDebug
-		}
-
-		logFn(level, msg)
+		logFn(textLevel(msg), msg)
 	}
 
 	type jsonLog struct {
 		Level     string `json:"level"`
 		Message   string `json:"msg"`
 		Traceback string `json:"traceback"`
+		Part      any    `json:"part"`
+		Parts     any    `json:"parts"`
 	}
 
 	for {
 		select {
 		case line, ok := <-ch:
 			if !ok {
-				flush()
+				joiner.Flush()
+				flushText()
 				return
 			}
 
@@ -296,29 +291,52 @@ func processLogChannel(ch <-chan []byte, logFn func(level, msg string)) {
 			}
 
 			if isJSON {
-				flush()
-
 				if entry.Traceback != "" {
 					entry.Message += "\n" + entry.Traceback
 				}
 
+				if part, ok := plog.ParsePart(entry.Part, entry.Parts); ok {
+					flushText()
+					joiner.Add(entry.Level, part, entry.Message, struct{}{})
+
+					if joiner.Pending() {
+						resetTimer()
+					}
+
+					continue
+				}
+
+				joiner.Flush()
+				flushText()
 				logFn(entry.Level, entry.Message)
 			} else {
+				joiner.Flush()
+
 				if buf.Len() > 0 {
 					buf.WriteByte('\n')
 				}
 				buf.Write(bytes.TrimRight(line, "\r\n"))
 
-				if !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
-				}
-				timer.Reset(logFlushInterval)
+				resetTimer()
 			}
 		case <-timer.C:
-			flush()
+			joiner.Flush()
+			flushText()
 		}
+	}
+}
+
+// textLevel returns the level that the "| LEVEL |" marker in a text entry
+// names, or INFO if the entry has no marker.
+func textLevel(msg string) string {
+	switch {
+	case strings.Contains(msg, "| ERROR |") || strings.Contains(msg, "| ERR |"):
+		return levelError
+	case strings.Contains(msg, "| WARN |") || strings.Contains(msg, "| WARNING |"):
+		return levelWarn
+	case strings.Contains(msg, "| DEBUG |") || strings.Contains(msg, "| DBG |"):
+		return levelDebug
+	default:
+		return levelInfo
 	}
 }

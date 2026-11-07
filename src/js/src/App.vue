@@ -1,9 +1,12 @@
 <script setup>
   import { RouterView } from 'vue-router';
   import {
+    addWsHandler,
     connectWebsocket,
     disconnectWebsocket,
     isWsConnected,
+    onWsReconnect,
+    removeWsHandler,
   } from './utils/websocket';
   import AppHeader from '@/components/AppHeader.vue';
   import AppFooter from '@/components/AppFooter.vue';
@@ -12,18 +15,55 @@
   import router from '@/router';
   import { usePhenixStore } from '@/store';
   import { storeToRefs } from 'pinia';
-  import { watch } from 'vue';
 
   import { TimeoutTool } from '@/utils/timeout.js';
+  import { schedulePagePreload } from '@/utils/pageData.js';
+  import { useJobStore } from '@/utils/jobs.js';
+  import { invalidatePages } from '@/utils/pageCache.js';
+  import { followSignIn } from '@/utils/signIn.js';
+  import { viewKey } from '@/utils/viewKey.js';
   import { focusMode } from '@/builder/focusMode.js';
 
   const store = usePhenixStore();
+
+  // cached pages a live update changes are loaded again on their next visit
+  addWsHandler(invalidatePages);
   const timeout = new TimeoutTool();
+  const jobs = useJobStore();
+
+  // Background jobs: loaded once signed in, kept current by the websocket,
+  // and loaded again after it reconnects (a reload or a lost connection),
+  // since messages sent meanwhile are lost.
+  const applyJob = (msg) => jobs.apply(msg);
+  const loadJobs = () =>
+    jobs.load().catch((err) => console.warn('failed to load jobs', err));
+  let stopJobReload = null;
+
+  function followJobs() {
+    if (stopJobReload) return;
+    addWsHandler(applyJob);
+    stopJobReload = onWsReconnect(loadJobs, { spread: true });
+    loadJobs();
+  }
+
+  function forgetJobs() {
+    removeWsHandler(applyJob);
+    stopJobReload?.();
+    stopJobReload = null;
+    jobs.clear();
+  }
   const route = useRoute();
 
   // Routes such as the Builder editor fill the viewport under the header
   // instead of sitting in the centered, scrolling page container.
   const fullBleed = computed(() => Boolean(route.meta.fullBleed));
+  // Routes such as the State of Health graph use the window's width, with the
+  // side gutter, header and footer kept.
+  const mainClass = computed(() => {
+    if (fullBleed.value) return 'main--full-bleed';
+    if (route.meta.wide) return 'row px-4 main--wide';
+    return 'row container is-fullhd px-4';
+  });
 
   fetch(router.resolve({ name: 'features' }).href)
     .then((resp) => resp.json())
@@ -31,31 +71,38 @@
       store.features = data.features;
     })
     .catch((err) => {
-      console.log(err);
+      console.warn('failed to get enabled features', err);
+    })
+    .finally(() => {
+      store.featuresLoaded = true;
     });
 
-  onMounted(() => {
-    // connect websockets once user has authenticated (or auth disabled)
-    if (import.meta.env.VITE_AUTH === 'disabled' || store.auth) {
-      connectWebsocket();
-      timeout.fetchAndStart();
-    } else {
-      const { auth } = storeToRefs(store);
-      watch(auth, async (newAuth) => {
-        if (newAuth && !isWsConnected()) {
-          connectWebsocket();
-        } else if (!newAuth && isWsConnected()) {
-          disconnectWebsocket();
-        }
+  let stopFollowingSignIn = () => {};
 
-        if (newAuth) {
-          timeout.fetchAndStart();
-        }
-      });
-    }
+  onMounted(() => {
+    // connect websockets once user has authenticated (or auth disabled), and
+    // drop the user's websocket and jobs on every sign-out, also when the
+    // page was loaded already signed in
+    const { auth } = storeToRefs(store);
+    stopFollowingSignIn = followSignIn(auth, {
+      authDisabled: import.meta.env.VITE_AUTH === 'disabled',
+      onSignIn: () => {
+        if (!isWsConnected()) connectWebsocket();
+        followJobs();
+        timeout.fetchAndStart();
+        schedulePagePreload();
+      },
+      onSignOut: () => {
+        if (isWsConnected()) disconnectWebsocket();
+        forgetJobs();
+      },
+    });
   });
 
   onUnmounted(() => {
+    stopFollowingSignIn();
+    forgetJobs();
+    removeWsHandler(invalidatePages);
     disconnectWebsocket();
   });
 </script>
@@ -71,11 +118,10 @@
          fills the window (builder/focusMode.js). v-show keeps the header's
          state. -->
     <app-header v-show="!focusMode.on"></app-header>
-    <main
-      id="main"
-      tabindex="-1"
-      :class="fullBleed ? 'main--full-bleed' : 'row container is-fullhd px-4'">
-      <router-view></router-view>
+    <main id="main" tabindex="-1" :class="mainClass">
+      <router-view v-slot="{ Component, route }">
+        <component :is="Component" :key="viewKey(route)"></component>
+      </router-view>
     </main>
     <app-footer v-if="!fullBleed"></app-footer>
   </div>
@@ -121,6 +167,12 @@
   #app :deep(.navbar-start) {
     flex-wrap: wrap;
     min-width: 0;
+  }
+
+  #main.main--wide {
+    flex-grow: 1;
+    max-width: none;
+    margin: 0 auto;
   }
 
   #main.main--full-bleed {

@@ -143,7 +143,7 @@ func builderPreflightChecks(names []string) ([]bapi.PreflightCheck, error) {
 // builderPreflightInvalid is the 400 of a malformed preflight request.
 func builderPreflightInvalid(message string) error {
 	return weberror.NewWebError(nil, "%s", message).
-		SetStatus(http.StatusBadRequest).WithCode(string(bdoc.CodeRequestInvalid))
+		SetStatus(http.StatusBadRequest).WithCode(weberror.Code(bdoc.CodeRequestInvalid))
 }
 
 // builderPreflightEnvironment is what the preflight checks of one request

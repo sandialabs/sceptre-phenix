@@ -274,13 +274,11 @@ test.describe('Configs page', () => {
       // Its diagram is converted by an import, which the first button
       // starts.
       await expect
-        .soft(viewer.locator('footer button').first())
-        .toHaveText('Import into Builder');
-      await expect
-        .soft(viewer.locator('footer button').nth(1))
-        .toHaveText('Edit Config');
+        .soft(viewer.locator('footer button'))
+        .toHaveText(['Import into Builder']);
+      await expect.soft(viewer.getByTestId('viewer-edit')).toHaveText('Edit');
 
-      await viewer.getByRole('button', { name: 'Exit' }).click();
+      await viewer.getByRole('button', { name: 'Close' }).click();
       await expect(viewer).toBeHidden();
       await expect.soft(view).toBeFocused();
     });
@@ -303,20 +301,20 @@ test.describe('Configs page', () => {
         );
       await expect.soft(text).toHaveValue(/hostname: host-a/);
       await expect.soft(text).not.toBeEditable();
-      // The Builder button comes first, left of Edit Config.
+      // The Builder button is the footer's only button.
       await expect
         .soft(viewer.locator('footer button'))
-        .toHaveText(['Open in Builder', 'Edit Config', '', 'Exit']);
+        .toHaveText(['Open in Builder']);
       await expect
         .soft(viewer.getByTestId('viewer-builder'))
         .toHaveText('Open in Builder');
 
-      await viewer.getByRole('button', { name: 'Exit' }).click();
+      await viewer.getByRole('button', { name: 'Close' }).click();
       await expect(viewer).toBeHidden();
       await expect.soft(view).toBeFocused();
     });
 
-    await test.step('a viewer opened as the one before it closes is shown, and Exit closes it', async () => {
+    await test.step('a viewer opened as the one before it closes is shown, and Close closes it', async () => {
       const first = page.getByRole('dialog', { name: `Topology/${legacy}` });
       await page
         .getByRole('button', { name: `View Topology ${legacy}` })
@@ -324,15 +322,13 @@ test.describe('Configs page', () => {
       await expect(first).toBeVisible();
       await expect.poll(() => opacityOf(first)).toBe('1');
 
-      // Exit, then the next name on the first frame the viewer is hidden,
+      // Close, then the next name on the first frame the viewer is hidden,
       // while the page may still be removing it.
       const fetched = waitForApi(page, 'GET', `/configs/Topology/${plain}`);
       await first.evaluate(
         (modal, next) =>
           new Promise((resolve) => {
-            const exit = [...modal.querySelectorAll('footer button')].find(
-              (button) => button.textContent.trim() === 'Exit',
-            );
+            const exit = modal.querySelector('button.modal-close');
             const openNext = () => {
               if (getComputedStyle(modal).display !== 'none') {
                 requestAnimationFrame(openNext);
@@ -354,7 +350,7 @@ test.describe('Configs page', () => {
       const next = page.getByRole('dialog', { name: `Topology/${plain}` });
       await expect(next).toBeVisible();
       await expect.poll(() => opacityOf(next)).toBe('1');
-      await next.getByRole('button', { name: 'Exit' }).click();
+      await next.getByRole('button', { name: 'Close' }).click();
       // No dialog is left over the page.
       await expect(page.getByRole('dialog')).toHaveCount(0);
     });
@@ -476,12 +472,9 @@ test.describe('Configs page', () => {
       await expect.soft(page).toHaveURL(/\/configs\/$/);
       await expect.soft(page.locator('.dialog.modal.is-active')).toHaveCount(0);
 
-      // Leave the unchanged editor to get back to the list.
+      // Exit leaves the unchanged editor without a question.
       await page.getByRole('button', { name: 'Exit', exact: true }).click();
-      await page
-        .locator('.dialog.modal.is-active')
-        .getByRole('button', { name: 'Continue' })
-        .click();
+      await expect.soft(page.locator('.dialog.modal.is-active')).toHaveCount(0);
       await expect(configRow(page, built)).toBeVisible();
     });
 
@@ -863,7 +856,7 @@ test.describe('Configs page', () => {
       const dialog = page.getByRole('dialog', { name: `Topology/${viewed}` });
       await expect(dialog).toBeVisible();
       await expect.soft(dialog.getByTestId('viewer-builder')).toHaveCount(0);
-      await dialog.getByRole('button', { name: 'Exit' }).click();
+      await dialog.getByRole('button', { name: 'Close' }).click();
       await expect(dialog).toBeHidden();
     });
 

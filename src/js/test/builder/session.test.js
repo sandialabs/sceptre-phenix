@@ -1,3 +1,4 @@
+// @vitest-environment node
 // What session.js clears on logout and sign-in.
 
 import { readFileSync, statSync } from 'node:fs';

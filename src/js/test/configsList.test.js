@@ -1,15 +1,12 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import {
-  RouterLinkStub,
-  enableAutoUnmount,
-  flushPromises,
-  mount,
-} from '@vue/test-utils';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { RouterLinkStub, flushPromises, mount } from '@vue/test-utils';
 import Buefy from 'buefy';
 import axiosInstance from '@/utils/axios.js';
 import { useErrorNotification } from '@/utils/errorNotif';
 import ConfigsList from '@/components/configs/ConfigsList.vue';
+import { clearConfigCache } from '@/utils/configCache.js';
+import { clearPageCache } from '@/utils/pageCache.js';
 
 const site = {
   kind: 'Topology',
@@ -18,6 +15,7 @@ const site = {
 
 // The list holds one topology made in the Builder, and viewing it reads it
 // again. roleAllowed reads the role from the mocked Pinia store.
+const getURLs = () => axiosInstance.get.mock.calls.map(([url]) => url);
 vi.mock('@/utils/axios.js', () => ({
   default: {
     get: vi.fn((url) =>
@@ -46,6 +44,12 @@ const duplicate = {
   },
 };
 
+// the list and each viewed config are fetched again, not shown from a cache
+beforeEach(() => {
+  clearPageCache();
+  clearConfigCache();
+});
+
 // roleAllowed caches its answers by role name, so every role gets its own.
 let roles = 0;
 function setRole(resources) {
@@ -55,8 +59,6 @@ function setRole(resources) {
     policies: [{ resources, verbs: ['*'], resourceNames: ['*/*'] }],
   };
 }
-
-enableAutoUnmount(afterEach);
 
 // Mounts the list with the real Buefy. A row's Builder tag is a router-link,
 // and the test has no router.
@@ -68,6 +70,8 @@ function mountList(warnings = [], props = {}) {
       plugins: [Buefy],
       stubs: { 'router-link': RouterLinkStub },
       config: { warnHandler: (msg) => warnings.push(msg) },
+      // no ?view= link to open
+      mocks: { $route: { query: {} }, $router: { replace: vi.fn() } },
     },
   });
 }
@@ -167,7 +171,7 @@ describe('ConfigsList upload errors', () => {
     await flushPromises();
 
     // Mounting only fetches the config list.
-    expect(axiosInstance.get.mock.calls).toEqual([['configs']]);
+    expect(getURLs()).toEqual(['configs']);
     expect(axiosInstance.post).not.toHaveBeenCalled();
     expect(wrapper.find('textarea').exists()).toBe(false);
 
@@ -232,23 +236,20 @@ describe('ConfigsList viewer', () => {
     expect(useErrorNotification).not.toHaveBeenCalled();
   });
 
-  test('Exit returns focus to the name the viewer was opened from', async () => {
+  test('Close returns focus to the name the viewer was opened from', async () => {
     setRole(['*']);
     const wrapper = mountList();
     await flushPromises();
     await view(wrapper);
 
-    const exit = wrapper
-      .findAll('footer button')
-      .find((button) => button.text() === 'Exit');
-    await exit.trigger('click');
+    await wrapper.get('[role="dialog"] button.modal-close').trigger('click');
     await flushPromises();
 
     expect(document.activeElement).toBe(nameButton(wrapper).element);
     expect(wrapper.vm.viewer.config).toBeNull();
   });
 
-  test('a role that may only read configs gets no Edit Config', async () => {
+  test('a role that may only read configs gets no Edit', async () => {
     setRole(['configs']);
     phenix.role.policies[0].verbs = ['list', 'get'];
     const wrapper = mountList();
@@ -256,7 +257,8 @@ describe('ConfigsList viewer', () => {
     await view(wrapper);
 
     const labels = wrapper.findAll('button').map((b) => b.text());
-    expect(labels).not.toContain('Edit Config');
+    expect(labels).not.toContain('Edit');
+    expect(wrapper.find('[data-testid="viewer-edit"]').exists()).toBe(false);
     expect(wrapper.find('[data-config-edit="Topology/site"]').exists()).toBe(
       false,
     );
@@ -321,6 +323,16 @@ describe('ConfigsList focus after the editor closes', () => {
     expect(document.activeElement).toBe(editButton());
   });
 
+  test('a list shown from the cache focuses the edit button too', async () => {
+    mountList().unmount();
+    await flushPromises();
+
+    mountList([], { focusConfig: 'Topology/site' });
+    await flushPromises();
+
+    expect(document.activeElement).toBe(editButton());
+  });
+
   test('a refresh after an upload leaves focus where it is', async () => {
     axiosInstance.post.mockResolvedValueOnce({});
     const wrapper = mountList([], { focusConfig: 'Topology/site' });
@@ -330,7 +342,7 @@ describe('ConfigsList focus after the editor closes', () => {
     await flushPromises();
 
     // The upload fetched the list again.
-    expect(axiosInstance.get.mock.calls).toEqual([['configs'], ['configs']]);
+    expect(getURLs()).toEqual(['configs', 'configs']);
     expect(document.activeElement).not.toBe(editButton());
   });
 });
