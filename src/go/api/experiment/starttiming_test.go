@@ -38,7 +38,7 @@ func startSteps(t *testing.T, logs *plogtest.Logs) []map[string]any {
 	return steps
 }
 
-// The timer logs each step as it begins, then the time of each step and the total.
+// The timer logs each step and the time since the start as the step begins, then the time of each step and the total.
 func TestStartTimerLogsEachStep(t *testing.T) {
 	logs := plogtest.Capture(t)
 
@@ -56,12 +56,12 @@ func TestStartTimerLogsEachStep(t *testing.T) {
 
 	records := logs.Records(t, plogtest.Message("experiment start step"))
 
-	begun := make([]any, 0, len(records))
+	begun := make([][2]any, 0, len(records))
 	for _, r := range records {
-		begun = append(begun, r["step"])
+		begun = append(begun, [2]any{r["step"], r["elapsed"]})
 	}
 
-	if diff := cmp.Diff([]any{"claim", "disk-check"}, begun); diff != "" {
+	if diff := cmp.Diff([][2]any{{"claim", "250ms"}, {"disk-check", "1.75s"}}, begun); diff != "" {
 		t.Errorf("debug step records mismatch (-want +got):\n%s", diff)
 	}
 
@@ -82,7 +82,7 @@ func TestStartLogsItsStepTimes(t *testing.T) { //nolint:paralleltest // replaces
 			name: "started",
 			want: []string{
 				"claim", "pre-start-apps", "disk-check", "scripts", "snapshot-cleanup", "minimega-script", "launch",
-				"vm-hosts-and-vlans", "post-start", "record",
+				"vm-hosts-and-vlans", "c2-script", "delayed-vms", "post-start-apps", "record",
 			},
 		},
 		{

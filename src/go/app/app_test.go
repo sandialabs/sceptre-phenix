@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/golang/mock/gomock"
 
 	"phenix/app"
 	"phenix/store"
 	"phenix/types"
+	"phenix/util/plog/plogtest"
 )
 
 // stubApp is a minimal user app that records lifecycle calls and whose running
@@ -358,5 +360,39 @@ func TestStageApplicableExcludesRunningForDefaultApps(t *testing.T) {
 func TestStageApplicableAllowsRunningForUserApps(t *testing.T) {
 	if !app.StageApplicable(app.ActionRunning, "some-user-app") {
 		t.Fatal("expected running stage to be applicable for a non-default app")
+	}
+}
+
+// Each app result line gives the time the app took for the stage, for a success and for a failure.
+func TestApplyAppsLogsAppDuration(t *testing.T) { //nolint:paralleltest // replaces the default store
+	name := "test-app-duration"
+
+	if err := registerUserApp(t, name, func() app.App {
+		return &stubApp{name: name, configureErr: errors.New("boom")}
+	}); err != nil {
+		t.Fatalf("registering user app: %v", err)
+	}
+
+	exp := runningStageExperiment(t, name)
+	logs := plogtest.Capture(t)
+
+	for _, tc := range []struct {
+		stage app.Action
+		msg   string
+	}{
+		{app.ActionPostStart, "[✓] '" + name + "' user app (post-start)"},
+		{app.ActionConfigure, "[✗] '" + name + "' user app (configure)"},
+	} {
+		_ = app.ApplyApps(context.Background(), exp, app.Stage(tc.stage), app.FilterApp(name))
+
+		records := logs.Records(t, plogtest.Message(tc.msg))
+		if len(records) != 1 {
+			t.Fatalf("ApplyApps(%s) logged %d %q records, want 1", tc.stage, len(records), tc.msg)
+		}
+
+		got, _ := records[0]["duration"].(string)
+		if _, err := time.ParseDuration(got); err != nil {
+			t.Errorf("ApplyApps(%s) %q duration = %q, want a duration", tc.stage, tc.msg, records[0]["duration"])
+		}
 	}
 }

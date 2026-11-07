@@ -441,6 +441,8 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 		queueCleanup(a.Name())
 		publish(a.Name(), "start", nil)
 
+		begun := time.Now()
+
 		switch options.Stage {
 		case ActionConfigure:
 			err = a.Configure(ctx, exp)
@@ -460,6 +462,7 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 			plog.Error(
 				plog.TypePhenixApp,
 				fmt.Sprintf("[✗] '%s' default app (%s)", a.Name(), options.Stage),
+				"duration", stageDuration(begun),
 			)
 
 			return fmt.Errorf(
@@ -479,6 +482,7 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 		plog.Info(
 			plog.TypePhenixApp,
 			fmt.Sprintf("[✓] '%s' default app (%s)", a.Name(), options.Stage),
+			"duration", stageDuration(begun),
 		)
 	}
 
@@ -522,6 +526,8 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 
 			queueCleanup(a.Name())
 			publish(a.Name(), "start", nil)
+
+			begun := time.Now()
 
 			switch options.Stage {
 			case ActionConfigure:
@@ -611,6 +617,7 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 					plog.Warn(
 						plog.TypePhenixApp,
 						fmt.Sprintf("[?] '%s' user app (%s)", a.Name(), options.Stage),
+						"duration", stageDuration(begun),
 					)
 
 					continue
@@ -619,6 +626,7 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 				plog.Error(
 					plog.TypePhenixApp,
 					fmt.Sprintf("[✗] '%s' user app (%s)", a.Name(), options.Stage),
+					"duration", stageDuration(begun),
 				)
 
 				return fmt.Errorf(
@@ -638,6 +646,7 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 			plog.Info(
 				plog.TypePhenixApp,
 				fmt.Sprintf("[✓] '%s' user app (%s)", a.Name(), options.Stage),
+				"duration", stageDuration(begun),
 			)
 		}
 	}
@@ -800,4 +809,9 @@ func PeriodicallyRunApps(ctx context.Context, wg *sync.WaitGroup, exp *types.Exp
 			}
 		}
 	}
+}
+
+// stageDuration returns the time since begun to the millisecond, as text such as 1.25s.
+func stageDuration(begun time.Time) string {
+	return time.Since(begun).Round(time.Millisecond).String()
 }

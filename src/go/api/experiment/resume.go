@@ -133,7 +133,7 @@ func setPending(exp *types.Experiment, timers map[string]string, c2 map[string]m
 func finishStart(ctx context.Context, exp *types.Experiment, dryrun bool, steps pendingSteps, errChan chan error) {
 	defer close(errChan)
 
-	step, err := afterLaunch(ctx, exp, dryrun, steps)
+	step, err := afterLaunch(ctx, exp, dryrun, steps, nil)
 	if err == nil {
 		return
 	}

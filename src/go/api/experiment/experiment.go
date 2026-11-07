@@ -904,9 +904,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	exp.Status.SetDelayedStarts(nil, nil, false)
 
 	if o.errChan == nil || (o.dryrun && o.keepStopped) {
-		timer.begin("post-start")
-
-		if step, err := afterLaunch(ctx, exp, o.dryrun, steps); err != nil {
+		if step, err := afterLaunch(ctx, exp, o.dryrun, steps, timer); err != nil {
 			return abortStart(exp, o.dryrun, step, err)
 		}
 
@@ -981,9 +979,14 @@ const (
 )
 
 // afterLaunch runs Start's steps after the VMs launch and returns the step that failed and its error; with
-// steps.persist it updates the status's pending starts as delayed VMs start and post-start apps finish.
-func afterLaunch(ctx context.Context, exp *types.Experiment, dryrun bool, steps pendingSteps) (startStep, error) {
+// steps.persist it updates the status's pending starts as delayed VMs start and post-start apps finish. timer, which
+// can be nil, records the time of each step.
+func afterLaunch(
+	ctx context.Context, exp *types.Experiment, dryrun bool, steps pendingSteps, timer *startTimer,
+) (startStep, error) {
 	if !dryrun {
+		timer.begin("c2-script")
+
 		if steps.ccScript != "" && exp.Spec.Topology().HasCommands() {
 			if err := mm.ReadC2ScriptFromFile(exp.Spec.ExperimentName(), steps.ccScript); err != nil {
 				return stepC2Script, fmt.Errorf("reading minimega cc script: %w", err)
@@ -997,6 +1000,8 @@ func afterLaunch(ctx context.Context, exp *types.Experiment, dryrun bool, steps 
 			started = func(host string) { delayedVMStarted(name, host) }
 		}
 
+		timer.begin("delayed-vms")
+
 		if err := handleDelayedVMs(ctx, exp.Spec.ExperimentName(), steps.delays, steps.c2s, c2CheckInterval, started); err != nil {
 			return stepDelayedVMs, fmt.Errorf("handling delayed VMs: %w", err)
 		}
@@ -1007,6 +1012,8 @@ func afterLaunch(ctx context.Context, exp *types.Experiment, dryrun bool, steps 
 	}
 
 	if steps.postStart {
+		timer.begin("post-start-apps")
+
 		if err := app.ApplyApps(ctx, exp, app.Stage(app.ActionPostStart), app.DryRun(dryrun)); err != nil {
 			return stepPostStartApps, fmt.Errorf("applying apps to experiment: %w", err)
 		}

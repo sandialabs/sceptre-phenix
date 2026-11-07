@@ -418,7 +418,7 @@ func TestAfterLaunchRecordsTheStartsAsTheyHappen(t *testing.T) { //nolint:parall
 
 	steps := pendingSteps{delays: map[string]time.Duration{"second": time.Millisecond}, postStart: true, persist: true}
 
-	if _, err := afterLaunch(context.Background(), exp, false, steps); err != nil {
+	if _, err := afterLaunch(context.Background(), exp, false, steps, nil); err != nil {
 		t.Fatalf("afterLaunch() error = %v", err)
 	}
 

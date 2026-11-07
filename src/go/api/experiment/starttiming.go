@@ -9,8 +9,9 @@ import (
 // startStepsMessage is the message of the log record that gives the time of each step of a start.
 const startStepsMessage = "experiment start steps"
 
-// startTimer records how long each step of a start of experiment exp takes. It logs the name of each step at
-// debug level as the step begins, and done logs the time of each step and the total at info level.
+// startTimer records how long each step of a start of experiment exp takes. It logs the name of each step and the
+// time since the start began at debug level as the step begins, and done logs the time of each step and the total at
+// info level. A nil startTimer records nothing.
 type startTimer struct {
 	exp   string
 	now   func() time.Time
@@ -28,11 +29,17 @@ func newStartTimer(exp string, now func() time.Time) *startTimer {
 
 // begin ends the current step and begins the step name.
 func (t *startTimer) begin(name string) {
+	if t == nil {
+		return
+	}
+
 	t.end()
 
 	t.step = name
 
-	plog.Debug(plog.TypeSystem, "experiment start step", "exp", t.exp, "step", name)
+	plog.Debug(
+		plog.TypeSystem, "experiment start step", "exp", t.exp, "step", name, "elapsed", roundDuration(t.begun.Sub(t.first)),
+	)
 }
 
 // end records the time of the current step, if there is one.

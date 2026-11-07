@@ -169,7 +169,7 @@ func TestAfterLaunchStopsAtTheCCScript(t *testing.T) { //nolint:paralleltest // 
 		NodesF: []*v1.Node{{GeneralF: &v1.General{HostnameF: "vm1"}, CommandsF: []string{"cc exec ls"}}},
 	})
 
-	step, err := afterLaunch(context.Background(), exp, false, pendingSteps{ccScript: "exp-cc.mm", postStart: true})
+	step, err := afterLaunch(context.Background(), exp, false, pendingSteps{ccScript: "exp-cc.mm", postStart: true}, nil)
 
 	if step != stepC2Script {
 		t.Errorf("afterLaunch step = %d, want %d (the cc script)", step, stepC2Script)
