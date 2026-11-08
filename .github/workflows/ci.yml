@@ -1,8 +1,11 @@
 name: CI
 
 on:
+  # Branches other than main run through pull_request only, so a push to an
+  # open pull request starts one run, not two. workflow_dispatch runs a
+  # branch that has no pull request.
   push:
-    branches: ['**']
+    branches: [main]
     paths: &paths
       - 'src/go/**'
       - 'schemas/**'
@@ -15,6 +18,7 @@ on:
     # closed: only to cancel this PR's runs (see concurrency); jobs skip it
     types: [opened, synchronize, reopened, closed]
     paths: *paths
+  workflow_dispatch:
 
 permissions:
   contents: read

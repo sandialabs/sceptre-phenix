@@ -189,7 +189,10 @@ cache), JIT UI image, and Debian package; `podman.yml` builds the same
 `docker/Dockerfile` with Podman on each push to `main` and on pull requests that
 change the container files; `docs.yml` builds the documentation site for pull
 requests and publishes it to GitHub Pages from `main` (only its deploy job can
-write). `lint.yml` runs every prek hook on all changes. Dependabot keeps the
+write). `lint.yml` runs every prek hook on all changes. `ci.yml`,
+`frontend.yml`, `lint.yml`, and `examples.yml` run on pushes to `main` and on
+pull requests only, so a push to an open pull request starts each run once; use
+`workflow_dispatch` for a branch with no pull request. Dependabot keeps the
 pinned actions current. Update affected path filters, inputs, generated
 artifacts, tool versions, and local-equivalent commands together. Preserve
 least-privilege permissions, supported action versions, lockfile caches, and
