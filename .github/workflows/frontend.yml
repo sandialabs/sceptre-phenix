@@ -2,8 +2,11 @@ name: Frontend
 
 # Vitest unit tests. e2e.yml runs the browser tests.
 on:
+  # Branches other than main run through pull_request only, so a push to an
+  # open pull request starts one run, not two. workflow_dispatch runs a
+  # branch that has no pull request.
   push:
-    branches: ['**']
+    branches: [main]
     paths: &paths
       - 'src/js/**'
       # Files the unit tests read
