@@ -1,0 +1,2860 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A place for phenix users to call home.">
+      
+      
+        <meta name="author" content="activeshadow and dnkcom">
+      
+      
+      
+        <link rel="prev" href="../drafts/">
+      
+      
+        <link rel="next" href="../diagrams/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../images/favicon.ico">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>The Editor - phenix documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/style.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="brown">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#the-editor" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="phenix documentation" class="md-header__button md-logo" aria-label="phenix documentation" data-md-component="logo">
+      
+  <img src="../../images/phenix.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            phenix documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              The Editor
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="brown"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-orange" data-md-color-accent="brown"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9 2c-1.05 0-2.05.16-3 .46 4.06 1.27 7 5.04 7 9.54s-2.94 8.27-7 9.54c.95.3 1.95.46 3 .46a10 10 0 0 0 10-10A10 10 0 0 0 9 2"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/sandialabs/sceptre-phenix" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sandialabs/sceptre-phenix
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="phenix documentation" class="md-nav__button md-logo" aria-label="phenix documentation" data-md-component="logo">
+      
+  <img src="../../images/phenix.png" alt="logo">
+
+    </a>
+    phenix documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/sandialabs/sceptre-phenix" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sandialabs/sceptre-phenix
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiments
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Experiments
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VMs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vm-multi-action/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VM Actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../image/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Builder
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Builder
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../drafts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drafts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Editor
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Editor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-five-areas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The five areas
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#header" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Header
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#toolbar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Toolbar
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#canvas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Canvas
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#side-columns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Side columns
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inspector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inspector
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inspector">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#editing-a-node" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Editing a node
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#node-editor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Node Editor
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#checks-and-warnings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checks and warnings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preflight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preflight
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#command-palette" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Command palette
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keyboard-shortcuts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keyboard shortcuts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#advanced" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#more-detail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        More detail
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates and Icons
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../import-upload-download/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Import, Upload and Download
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../publishing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Publishing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_11" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_11" id="__nav_4_11_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../administration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../legacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Legacy Builder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_11_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_11_3" id="__nav_4_11_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Details
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_4_11_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_11_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Details
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/drafts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drafts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/editor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Editor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/checks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Checks and Preflight
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/palette-and-shortcuts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command Palette and Shortcuts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/diagrams/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/icons/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Icons
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/scenarios/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scenarios and Included Topologies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates and Icons
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/import-upload-download/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Import, Upload and Download
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/publishing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Publishing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/administration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Apps
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Apps
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../scorch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scorch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../state-of-health/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    State of Health
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Networking
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Networking
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../bridge-mode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bridge Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gre-mesh/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GRE Mesh
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../netflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Netflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tunneler/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tunneler
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integrations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Integrations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Administration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-administration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Users
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../minimega/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    minimega
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-five-areas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The five areas
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#header" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Header
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#toolbar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Toolbar
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#canvas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Canvas
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#side-columns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Side columns
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inspector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inspector
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inspector">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#editing-a-node" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Editing a node
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#node-editor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Node Editor
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#checks-and-warnings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checks and warnings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preflight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preflight
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#command-palette" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Command palette
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keyboard-shortcuts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keyboard shortcuts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#advanced" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#more-detail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        More detail
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="the-editor">The Editor<a class="headerlink" href="#the-editor" title="Permanent link">&para;</a></h1>
+<p>In the editor, you draw and change a diagram, and Builder saves each change
+and checks the diagram while you work. This page explains the parts of the
+editor, the checks, the command palette and the settings.</p>
+<h2 id="the-five-areas">The five areas<a class="headerlink" href="#the-five-areas" title="Permanent link">&para;</a></h2>
+<p>The editor has five areas: the header, the toolbar, <strong>Nodes &amp; Objects</strong>
+at the left, the canvas, and the Inspector at the right.</p>
+<p><img alt="The editor with the Riverside Water diagram, with a labeled box around each area: Header, Toolbar, Nodes &amp; Objects, Canvas and Inspector." src="../../images/builder/overview-editor-areas.png" /></p>
+<h2 id="header">Header<a class="headerlink" href="#header" title="Permanent link">&para;</a></h2>
+<p><img alt="The editor header: Drafts, the name Riverside Water with its pencil, the resource totals, the counts, No issues, and the view buttons." src="../../images/builder/editor-header.png" /></p>
+<p>From left to right, the header holds:</p>
+<ul>
+<li><strong>Drafts</strong>, which opens the drafts page.</li>
+<li>The diagram name, with <strong>Edit diagram name</strong> (the pencil), except in a
+  published diagram.</li>
+<li>The resource totals of the devices that phēnix starts (see
+  <a href="../details/editor/#resource-totals">Resource totals</a>).</li>
+<li>The counts of devices, switches, networks, connections, groups and notes.
+  Click a count to select all items of that kind (see
+  <a href="../details/editor/#selecting-by-kind">Selecting by kind</a>).</li>
+<li>The checks button: <strong>No issues</strong>, or a count such as <strong>3 warnings</strong>.</li>
+<li>The view buttons: <strong>Reset view</strong>, <strong>Commands</strong>, the theme button,
+  <strong>Shortcuts</strong>, <strong>Settings</strong>, <strong>Help</strong> and <strong>Focus mode</strong>.</li>
+</ul>
+<p>To rename the diagram:</p>
+<ol>
+<li>Click <strong>Edit diagram name</strong>. A field replaces the name.</li>
+<li>Enter the new name.</li>
+<li>Press <kbd>Enter</kbd>.</li>
+</ol>
+<p>The topology name is different: you enter it when you publish (see
+<a href="../publishing/">Publishing</a>).</p>
+<h2 id="toolbar">Toolbar<a class="headerlink" href="#toolbar" title="Permanent link">&para;</a></h2>
+<p><img alt="The editor toolbar from Undo to Draft History, with the layout menu set to ELK layered and the save state All changes saved." src="../../images/builder/editor-toolbar.png" /></p>
+<ul>
+<li><strong>Undo</strong>, <strong>Redo</strong>: undo or redo the last change.</li>
+<li><strong>Copy</strong>, <strong>Paste</strong>, <strong>Delete</strong>: copy, paste or delete the selection.</li>
+<li><strong>Group</strong>, <strong>Ungroup</strong>, <strong>Auto-group</strong>: put the selected nodes in a new
+  group, delete a selected group and keep its nodes, or group by network or
+  by name.</li>
+<li>The layout menu: arrange the diagram.</li>
+<li><strong>Scenarios</strong>: select, view, edit or create the scenarios.</li>
+<li><strong>Download</strong>, <strong>Upload</strong>: save the diagram as a file, or open a diagram
+  file as a new draft.</li>
+<li><strong>Publish</strong>, <strong>Exp</strong>: write the configs, or open the experiment that you
+  published. <strong>Exp</strong> shows only while that experiment exists and your role
+  can read it.</li>
+<li><strong>Minimap</strong>, <strong>Draft History</strong>: show or hide the minimap, or restore a
+  snapshot of the draft.</li>
+</ul>
+<p>The save state follows, for example <strong>All changes saved</strong>. When a save
+fails, <strong>Retry saving</strong> follows it (see <a href="../drafts/">Drafts</a>). A button
+whose action can take time shows a turning ring (see
+<a href="../details/editor/#actions-that-take-time">Actions that take time</a>).</p>
+<h2 id="canvas">Canvas<a class="headerlink" href="#canvas" title="Permanent link">&para;</a></h2>
+<ul>
+<li>To select: click a node or a connection. <kbd>Shift</kbd>+click adds a
+  node to the selection, or deselects it. Click an empty spot to clear the
+  selection.</li>
+<li>To move: drag a node.</li>
+<li>To pan: drag an empty spot.</li>
+<li>To zoom: use the mouse wheel, or the zoom buttons at the bottom left.</li>
+<li>To connect: drag from the connection point of a device to a switch (see
+  <a href="../diagrams/">Diagrams</a>).</li>
+</ul>
+<p>The minimap at the bottom right shows the full diagram. <strong>Reset view</strong> in
+the header resets the zoom, the minimap and the side columns, and does not
+change the diagram (see <a href="../details/editor/#canvas">Canvas</a>).</p>
+<p>Rest the pointer on a device or a switch to see its info tooltip (see
+<a href="../details/editor/#info-tooltips">Info tooltips</a>).</p>
+<h2 id="side-columns">Side columns<a class="headerlink" href="#side-columns" title="Permanent link">&para;</a></h2>
+<p>You can widen, hide or resize the left column and the <strong>Inspector</strong> at the
+right (see <a href="../details/editor/#side-columns">Side columns</a>). The buttons for
+the left column use the name <strong>Nodes &amp; Templates</strong>.</p>
+<p><strong>Nodes &amp; Objects</strong> lists <strong>Device</strong>, <strong>Switch</strong>, <strong>Note</strong>, <strong>Group</strong> and
+the drawings. Click an item to add it, or drag it onto the canvas.
+<strong>Templates</strong> lists the device templates (see
+<a href="../templates/">Templates and Icons</a>).</p>
+<h2 id="inspector">Inspector<a class="headerlink" href="#inspector" title="Permanent link">&para;</a></h2>
+<p>The <strong>Inspector</strong> shows and changes the fields of one selected node or
+connection. With nothing selected, or with several items selected, it shows
+the diagram:</p>
+<ul>
+<li><strong>Name</strong> and <strong>Description</strong>. Click <strong>Apply</strong> to keep a change.</li>
+<li><strong>Layers</strong>: <strong>Edit layers…</strong> opens the
+  <a href="../details/editor/#layers-editor">layers editor</a>.</li>
+<li><strong>Notes</strong>: text about the full diagram.</li>
+<li><strong>Scenarios</strong>: <strong>Edit scenarios</strong> opens the <strong>Scenarios</strong> dialog (see
+  <a href="../diagrams/">Diagrams</a>).</li>
+</ul>
+<p>For the other fields, see
+<a href="../details/editor/#with-nothing-selected">With nothing selected</a>.</p>
+<h3 id="editing-a-node">Editing a node<a class="headerlink" href="#editing-a-node" title="Permanent link">&para;</a></h3>
+<p><img alt="The Inspector for the device edge-rtr: the header buttons, Hostname, Icon and colors, then the General and Hardware sections with Default buttons." src="../../images/builder/inspector-device.png" width="352" /></p>
+<p>Select a node to see its fields. A device has <strong>Hostname</strong>, <strong>Icon</strong> and the
+colors at the top, then the sections <strong>Node</strong>, <strong>Hardware</strong>, <strong>Network</strong>,
+<strong>More settings</strong>, <strong>Layer</strong>, <strong>Connection points</strong> and <strong>Position</strong>.</p>
+<p>A field marked * must have a value. A field with a value other than its
+default shows a <strong>Default</strong> button.</p>
+<p>To change fields:</p>
+<ol>
+<li>Change one or more fields. A bar at the bottom says "Unapplied changes",
+   with <strong>Apply</strong> and <strong>Cancel</strong>.</li>
+<li>Click <strong>Apply</strong>, or press <kbd>Enter</kbd> in a field. Builder changes
+   the diagram and saves it.</li>
+</ol>
+<p><strong>Cancel</strong> discards the changes. While a changed field has an error,
+<strong>Apply</strong> is unavailable. When you select another node, the Inspector
+applies valid changes and discards changes that are not valid. <strong>Icon</strong>,
+the colors and <strong>Layer</strong> take effect at once, without <strong>Apply</strong> (see
+<a href="../details/editor/#fields-that-take-effect-at-once">Fields that take effect at once</a>).</p>
+<p><strong>Icon</strong> opens the list of built-in icons. <strong>Default</strong> is the icon of the
+node when it has no icon of its own. <strong>Custom icon…</strong> opens the
+<strong>Custom icons</strong> dialog (see <a href="../templates/">Templates and Icons</a>).</p>
+<p>You cannot change a device from an included topology, but you can move it.
+You cannot rename a network that an included device is on. In a published
+diagram, you cannot change any field (see
+<a href="../details/editor/#fields-you-cannot-change">Fields you cannot change</a>).</p>
+<p>With one node selected, the Inspector header has <strong>Add connection</strong>,
+<strong>Move to group</strong> and <strong>Open Node Editor</strong> (see
+<a href="../details/editor/#the-inspector-header">The Inspector header</a>). Click the
+name of a section to collapse or expand it (see
+<a href="../details/editor/#collapsing-sections">Collapsing sections</a>). The eye
+button beside <strong>Description</strong> hides it on the canvas (see
+<a href="../details/editor/#hiding-descriptions-on-the-canvas">Hiding descriptions on the canvas</a>).</p>
+<p>A switch, a note, a group, a connection and a drawing have their own fields
+(see <a href="../details/editor/#other-kinds-of-nodes">Other kinds of nodes</a>). A
+switch also has <strong>Subnet</strong>, <strong>Gateway</strong> and <strong>Assign addresses</strong> (see
+<a href="../details/editor/#addresses-of-a-network">Addresses of a network</a>).</p>
+<h2 id="node-editor">Node Editor<a class="headerlink" href="#node-editor" title="Permanent link">&para;</a></h2>
+<p>The <strong>Node Editor</strong> shows the fields of one node in a large dialog, with
+the checks of the node. To open it, double-click the node, or click
+<strong>Open Node Editor</strong> in the Inspector header.</p>
+<p><strong>Search fields</strong> finds a field by its label, such as <code>memory</code>, or by its
+YAML path in the Topology config, such as <code>network.interfaces[0].vlan</code>. Only
+the matching fields show. To show all fields again, empty the box.</p>
+<p><img alt="The Node Editor of edge-rtr with vlan in Search fields: 3 fields match, and the Network section shows the VLAN field of each interface." src="../../images/builder/node-editor-search.png" /></p>
+<p>Click <strong>Apply</strong> to apply all changes as one step of <strong>Undo</strong> and close the
+Node Editor. <strong>Cancel</strong> closes it. Builder asks before it discards
+unapplied changes. See also
+<a href="../details/editor/#sections-and-the-table-of-contents">Sections and the table of contents</a>
+and <a href="../details/editor/#searching-the-fields">Searching the fields</a>.</p>
+<h2 id="checks-and-warnings">Checks and warnings<a class="headerlink" href="#checks-and-warnings" title="Permanent link">&para;</a></h2>
+<p>Builder checks the diagram while you edit it. The canvas marks each node
+and connection with an issue: a cross for an error, or a triangle for only
+warnings.</p>
+<p><img alt="The Diagram checks dialog with 1 warning about eth0 of historian-01-2, with its code and Go to, above the Preflight section." src="../../images/builder/checks-dialog.png" /></p>
+<p>To fix an issue:</p>
+<ol>
+<li>Click the checks button. The <strong>Diagram checks</strong> dialog lists the
+   errors, then the warnings.</li>
+<li>Click <strong>Go to</strong> beside the issue. The canvas selects its node, and the
+   Inspector shows it.</li>
+<li>Fix the field.</li>
+</ol>
+<p>An error stops publishing until you fix it. Some warnings also block
+<strong>Publish</strong>, and the dialog says so (see <a href="../publishing/">Publishing</a>).
+Other warnings do not block publishing.</p>
+<p>Some issues have a <strong>Fix</strong> button. <strong>Undo</strong> reverts each fix as one step
+(see
+<a href="../details/checks/#fixing-an-issue-in-one-step">Fixing an issue in one step</a>).</p>
+<p>Builder also warns about settings that phēnix accepts but does not apply as
+the diagram shows them (see
+<a href="../details/checks/#rulesets-and-addresses">Rulesets and addresses</a> and
+<a href="../details/checks/#device-settings">Device settings</a>).</p>
+<h2 id="preflight">Preflight<a class="headerlink" href="#preflight" title="Permanent link">&para;</a></h2>
+<p><strong>Preflight</strong>, at the bottom of <strong>Diagram checks</strong>, asks the phēnix server
+to check the saved draft against the server and its cluster. The checks
+write nothing and start no VM or experiment. There are four: <strong>Host
+capacity</strong>, <strong>Networks</strong>, <strong>Disk images</strong> and <strong>Scenario apps</strong>.</p>
+<p>To run Preflight:</p>
+<ol>
+<li>Click the checks button in the header.</li>
+<li>Under <strong>Preflight</strong>, tick the checks.</li>
+<li>Optional: in <strong>Experiment (optional)</strong>, enter the name of the experiment.</li>
+<li>Click <strong>Run</strong>. Builder first saves your latest changes.</li>
+</ol>
+<p>Each check shows <strong>Passed</strong>, <strong>Failed</strong> or <strong>Unavailable</strong>. <strong>Unavailable</strong>
+means that Builder could not do all of the check, for example without a
+permission or a connection to minimega (see
+<a href="../details/checks/#preflight">Preflight</a>).</p>
+<h2 id="command-palette">Command palette<a class="headerlink" href="#command-palette" title="Permanent link">&para;</a></h2>
+<p>The command palette runs commands and finds nodes, networks, templates and
+icons. To open it, click <strong>Commands</strong> in the header,
+or press <kbd>Ctrl</kbd>+<kbd>K</kbd> (<kbd>⌘</kbd>+<kbd>K</kbd> on macOS).</p>
+<p><img alt="The command palette with the filter layout: and its 5 layout results, with ELK layered marked as the current layout." src="../../images/builder/command-palette.png" /></p>
+<ul>
+<li>Type words to find commands, for example <code>layout</code>.</li>
+<li>Type <code>@</code> to find a node by its hostname, address, VLAN, label or
+  description (see <a href="../details/palette-and-shortcuts/#finding-nodes">Finding nodes</a>).</li>
+<li>Type <code>#</code> to find a network by its name or VLAN alias.</li>
+<li>Type <code>t:</code> for node templates, <code>c:</code> for template collections and <code>i:</code> for
+  custom icons (see
+  <a href="../details/palette-and-shortcuts/#finding-templates-collections-and-icons">Finding templates, collections and icons</a>).</li>
+<li>Type <code>?</code> to see all prefixes.</li>
+</ul>
+<h2 id="keyboard-shortcuts">Keyboard shortcuts<a class="headerlink" href="#keyboard-shortcuts" title="Permanent link">&para;</a></h2>
+<p><img alt="The Keyboard shortcuts sheet with Single-key shortcuts on, Change shortcuts, Filter shortcuts, and the shortcut groups in three columns with the keys of the platform." src="../../images/builder/shortcuts-sheet.png" /></p>
+<p>To see all shortcuts, click <strong>Shortcuts</strong> in the header, or press
+<kbd>?</kbd> outside a text field. The keys that you use most are
+<kbd>Ctrl</kbd>+<kbd>Z</kbd> (<kbd>⌘</kbd>+<kbd>Z</kbd> on macOS) for
+<strong>Undo</strong> and <kbd>Ctrl</kbd>+<kbd>D</kbd> (<kbd>⌘</kbd>+<kbd>D</kbd> on
+macOS) for <strong>Duplicate</strong>. <kbd>Delete</kbd> deletes the selection, and
+<kbd>N</kbd> adds a device.</p>
+<p>Most keys do nothing while focus is in a text field. The full table, with
+the macOS keys, is in the <a href="../reference/#keyboard-shortcuts">Reference</a>. For
+the canvas keys, see <a href="../details/palette-and-shortcuts/#keys-on-the-canvas">Keys on the canvas</a>.</p>
+<h2 id="settings">Settings<a class="headerlink" href="#settings" title="Permanent link">&para;</a></h2>
+<p><img alt="The Builder settings dialog with its Appearance, Canvas, Editing, Keyboard, Layers and Storage groups, and Reset to defaults and Done." src="../../images/builder/settings-dialog.png" /></p>
+<p>To open <strong>Builder settings</strong>, click <strong>Settings</strong> in the header, or press
+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>
+(<kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>S</kbd> on macOS). Changes apply at once.
+The settings belong to this browser: it keeps them after you log out, and
+they do not change the diagram. For each setting and its default, see
+<a href="../details/editor/#settings">Settings</a>.</p>
+<h2 id="advanced">Advanced<a class="headerlink" href="#advanced" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Single-key shortcuts</strong>: <kbd>?</kbd>, <kbd>N</kbd> and the zoom keys
+  work without <kbd>Ctrl</kbd>. If speech input or your screen reader can
+  press them by mistake, disable the setting. See
+  <a href="../details/palette-and-shortcuts/#single-key-shortcuts">Single-key shortcuts</a>.</li>
+<li><strong>Change shortcuts</strong>, in the shortcuts sheet, gives any command other
+  keys, or no keys. See
+  <a href="../details/palette-and-shortcuts/#customizing-shortcuts">Customizing shortcuts</a>.</li>
+<li><strong>Clean up…</strong>, under <strong>Storage</strong> in <strong>Builder settings</strong>, deletes the
+  published, unchanged drafts of all users and the stored data that nothing
+  uses. It asks before it deletes. See <a href="../administration/">Administration</a>.</li>
+<li>The layers editor changes the layers of the open diagram.
+  <strong>Edit layers…</strong> opens it from the Inspector, the Node Editor,
+  <strong>Builder settings</strong> or the command palette. See <a href="../diagrams/">Diagrams</a>
+  and <a href="../details/editor/#layers-editor">Layers editor</a>.</li>
+<li>Focus mode hides the phēnix navigation bar, so Builder fills the window.
+  Click <strong>Focus mode</strong> in the header, or press
+  <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>
+  (<kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>F</kbd> on macOS). See
+  <a href="../details/editor/#focus-mode">Focus mode</a>.</li>
+<li>The theme button in the header shows <strong>System</strong>, <strong>Light</strong> or <strong>Dark</strong>,
+  and each click selects the next theme. The theme changes only Builder,
+  not the rest of phēnix. See <a href="../details/editor/#themes">Themes</a>.</li>
+<li>Accessibility: you can use Builder with only a keyboard, and with a
+  screen reader. Builder aims to meet WCAG 2.2 level AA. See
+  <a href="../details/editor/#accessibility">Accessibility</a>.</li>
+</ul>
+<h2 id="more-detail">More detail<a class="headerlink" href="#more-detail" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../details/editor/">The Editor: details</a>: every rule, limit and message.</li>
+<li><a href="../details/checks/">Checks and Preflight: details</a>: every check, fix and
+  preflight result.</li>
+<li><a href="../details/palette-and-shortcuts/">Command Palette and Shortcuts: details</a>:
+  every command, search prefix and key.</li>
+<li><a href="../reference/#codes">Codes</a>: the code of each issue.</li>
+<li><a href="../details/publishing/#what-blocks-publishing">What blocks publishing</a>:
+  the warnings that <strong>Publish</strong> lists as errors.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        
+
+<footer class="md-footer">
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-footer-copyright">
+        
+        powered by
+        <a href="https://www.mkdocs.org">MkDocs</a>
+        and
+        <a href="https://squidfunk.github.io/mkdocs-material/">
+          Material for MkDocs</a>
+      </div>
+
+      <!-- Social links -->
+      
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/sandialabs/sceptre-phenix" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="/swagger.html" target="_blank" rel="noopener" title="" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M195.1 9.5c3-14.8 16.1-25.5 31.3-25.5h59.8c15.2 0 28.3 10.7 31.3 25.5l14.5 70c14.1 6 27.3 13.7 39.3 22.8l67.8-22.5c14.4-4.8 30.2 1.2 37.8 14.4l29.9 51.8c7.6 13.2 4.9 29.8-6.5 39.9L447 233.3c.9 7.4 1.3 15 1.3 22.7s-.5 15.3-1.3 22.7l53.4 47.5c11.4 10.1 14 26.8 6.5 39.9L477 417.9c-7.6 13.1-23.4 19.2-37.8 14.4l-67.8-22.5c-12.1 9.1-25.3 16.7-39.3 22.8l-14.4 69.9c-3.1 14.9-16.2 25.5-31.3 25.5h-59.8c-15.2 0-28.3-10.7-31.3-25.5l-14.4-69.9c-14.1-6-27.2-13.7-39.3-22.8l-68.1 22.5c-14.4 4.8-30.2-1.2-37.8-14.4L5.8 366.1c-7.6-13.2-4.9-29.8 6.5-39.9l53.4-47.5c-.9-7.4-1.3-15-1.3-22.7s.5-15.3 1.3-22.7l-53.4-47.5C.9 175.7-1.7 159 5.8 145.9l29.9-51.8c7.6-13.2 23.4-19.2 37.8-14.4l67.8 22.5c12.1-9.1 25.3-16.7 39.3-22.8zM256.3 336a80 80 0 1 0-.6-160 80 80 0 1 0 .6 160"/></svg>
+    </a>
+  
+</div>
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

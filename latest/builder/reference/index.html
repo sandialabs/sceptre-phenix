@@ -1,0 +1,5293 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A place for phenix users to call home.">
+      
+      
+        <meta name="author" content="activeshadow and dnkcom">
+      
+      
+      
+        <link rel="prev" href="../troubleshooting/">
+      
+      
+        <link rel="next" href="../administration/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../images/favicon.ico">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Reference - phenix documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/style.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="brown">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="phenix documentation" class="md-header__button md-logo" aria-label="phenix documentation" data-md-component="logo">
+      
+  <img src="../../images/phenix.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            phenix documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Reference
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="brown"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-orange" data-md-color-accent="brown"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9 2c-1.05 0-2.05.16-3 .46 4.06 1.27 7 5.04 7 9.54s-2.94 8.27-7 9.54c.95.3 1.95.46 3 .46a10 10 0 0 0 10-10A10 10 0 0 0 9 2"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/sandialabs/sceptre-phenix" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sandialabs/sceptre-phenix
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="phenix documentation" class="md-nav__button md-logo" aria-label="phenix documentation" data-md-component="logo">
+      
+  <img src="../../images/phenix.png" alt="logo">
+
+    </a>
+    phenix documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/sandialabs/sceptre-phenix" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sandialabs/sceptre-phenix
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiments
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Experiments
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VMs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../vm-multi-action/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VM Actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../image/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Builder
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Builder
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../drafts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drafts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../editor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Editor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates and Icons
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../import-upload-download/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Import, Upload and Download
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../publishing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Publishing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#save-states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Save states
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keyboard-shortcuts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keyboard shortcuts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#publish-hints-and-buttons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Publish hints and buttons
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#publish-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Publish results
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#built-in-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Built-in templates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#built-in-icons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Built-in icons
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#purdue-model-layer-set" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Purdue Model layer set
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#download-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Download formats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File formats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error codes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Error codes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issues
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#errors-of-the-rest-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Errors of the REST API
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_11" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_11" id="__nav_4_11_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../administration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../legacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Legacy Builder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_11_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_11_3" id="__nav_4_11_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Details
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_4_11_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_11_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Details
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/drafts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drafts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/editor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Editor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/checks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Checks and Preflight
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/palette-and-shortcuts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command Palette and Shortcuts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/diagrams/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/icons/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Icons
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/scenarios/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scenarios and Included Topologies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates and Icons
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/import-upload-download/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Import, Upload and Download
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/publishing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Publishing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../details/administration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Apps
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Apps
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../scorch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scorch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../state-of-health/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    State of Health
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Networking
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Networking
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../bridge-mode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bridge Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../gre-mesh/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GRE Mesh
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../netflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Netflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tunneler/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tunneler
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integrations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Integrations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Administration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-administration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Users
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../minimega/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    minimega
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#save-states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Save states
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keyboard-shortcuts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keyboard shortcuts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#publish-hints-and-buttons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Publish hints and buttons
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#publish-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Publish results
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#built-in-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Built-in templates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#built-in-icons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Built-in icons
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#purdue-model-layer-set" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Purdue Model layer set
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#download-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Download formats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File formats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error codes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Error codes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issues
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#errors-of-the-rest-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Errors of the REST API
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="reference">Reference<a class="headerlink" href="#reference" title="Permanent link">&para;</a></h1>
+<p>This page holds the tables that the other pages point to, from the save
+states to the error codes. For the rules behind them, see the details
+page of each feature.</p>
+<h2 id="save-states">Save states<a class="headerlink" href="#save-states" title="Permanent link">&para;</a></h2>
+<p>The save state follows <strong>Draft History</strong> in the editor toolbar (see
+<a href="../details/drafts/#how-drafts-save">How drafts save</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Save state</th>
+<th>What it means</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>All changes saved</td>
+<td>The server has all changes.</td>
+<td>Nothing.</td>
+</tr>
+<tr>
+<td>Saving changes, Saving 2 changes</td>
+<td>Builder sends changes.</td>
+<td>Wait.</td>
+</tr>
+<tr>
+<td>2 unsaved changes</td>
+<td>Changes wait.</td>
+<td>Wait, or press <kbd>Ctrl</kbd>+<kbd>S</kbd> (<kbd>⌘</kbd>+<kbd>S</kbd> on macOS) to run <strong>Save now</strong>.</td>
+</tr>
+<tr>
+<td>Offline: 1 change kept on this device. Saving retries automatically.</td>
+<td>The server cannot be reached, or did not answer in time. This browser keeps the changes.</td>
+<td>Continue to work. See <a href="../details/drafts/#working-offline">Working offline</a>.</td>
+</tr>
+<tr>
+<td>Offline: 2 changes not stored anywhere yet. Keep this tab open. Saving retries automatically.</td>
+<td>The server cannot be reached, and the browser cannot store the changes.</td>
+<td>Keep the tab open until the save state says All changes saved.</td>
+</tr>
+<tr>
+<td>Offline: no unsaved changes</td>
+<td>The server cannot be reached, and no changes wait.</td>
+<td>Nothing.</td>
+</tr>
+<tr>
+<td>1 change not saved yet. Choose which changes to save.</td>
+<td>Another tab of this browser has changes to this draft.</td>
+<td>See <a href="../details/drafts/#same-draft-in-multiple-tabs">Same draft in multiple tabs</a>.</td>
+</tr>
+<tr>
+<td>Merging your changes with the server version…</td>
+<td>Someone saved a newer version first. Builder merges it with your changes.</td>
+<td>Wait. See <a href="../details/drafts/#draft-merging">Draft merging</a>.</td>
+</tr>
+<tr>
+<td>This draft changed on the server</td>
+<td>Someone saved a newer version first. Some changes clash, or merging is not available.</td>
+<td>See <a href="../details/drafts/#draft-merging">Draft merging</a>.</td>
+</tr>
+<tr>
+<td>Not saved: you chose another tab's changes</td>
+<td>In another tab of this browser, you chose to save the changes of that tab. This tab does not save its changes.</td>
+<td>Nothing. Builder keeps the changes of this tab as a new draft.</td>
+</tr>
+<tr>
+<td>Could not save: someone deleted this draft from the server. Select Download to keep a copy of the diagram.</td>
+<td>Another user deleted the draft.</td>
+<td>Click <strong>Download</strong> (see <a href="../details/import-upload-download/#downloading">Downloading</a>). Upload the file to make a new draft.</td>
+</tr>
+<tr>
+<td>You cannot save changes to this draft</td>
+<td>Your role no longer includes Builder.</td>
+<td>Ask an administrator for the Builder permission (see <a href="../details/administration/#permissions">Permissions</a>). Click <strong>Download</strong> to keep a copy.</td>
+</tr>
+<tr>
+<td>Could not save your last change. … When you fix the diagram, the Builder saves it again.</td>
+<td>The server refused the diagram, for example for two devices with one hostname. The message names the error.</td>
+<td>Fix it (see <a href="../details/checks/#checks-and-warnings">Checks and warnings</a>). The next change saves the diagram.</td>
+</tr>
+<tr>
+<td>Could not save your last undo or redo: the server no longer keeps that step. …</td>
+<td>You went with <strong>Undo</strong> or <strong>Redo</strong> to a snapshot that the server deleted, such as an old snapshot past the limit of 50.</td>
+<td>Nothing. Your next edit saves the diagram as it shows.</td>
+</tr>
+<tr>
+<td>Could not save. … Remove part of the diagram, or select Download to keep a copy.</td>
+<td>The diagram is too large for the server to save. The message names the reason.</td>
+<td>Remove part of the diagram. Or click <strong>Download</strong> to keep a copy.</td>
+</tr>
+<tr>
+<td>Could not save your changes. … Saving retries automatically.</td>
+<td>The server refused the save for a different reason, which the message names.</td>
+<td>Wait, or click <strong>Retry saving</strong>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Retry saving</strong> shows when the browser is offline, or when a new try can
+fix a failed save. It sends the waiting changes immediately.</p>
+<p><img alt="The toolbar with the save state Offline: 1 change kept on this device. Saving retries automatically., and the Retry saving button." src="../../images/builder/save-state-offline.png" /></p>
+<h2 id="keyboard-shortcuts">Keyboard shortcuts<a class="headerlink" href="#keyboard-shortcuts" title="Permanent link">&para;</a></h2>
+<p>To see the shortcuts of your platform, click <strong>Shortcuts</strong> in the header,
+or press <kbd>?</kbd> outside a text field. "Not in text fields" means
+that the keys do nothing while focus is in a text field, or in a field of
+the Inspector. You can give any command other keys (see
+<a href="../details/palette-and-shortcuts/#customizing-shortcuts">Customizing shortcuts</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Where it works</th>
+<th>Windows and Linux</th>
+<th>macOS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Command palette</td>
+<td>Editor and Drafts page, text fields too</td>
+<td><kbd>Ctrl</kbd>+<kbd>K</kbd></td>
+<td><kbd>⌘</kbd>+<kbd>K</kbd></td>
+</tr>
+<tr>
+<td>Keyboard shortcuts</td>
+<td>Editor and Drafts page, not in text fields</td>
+<td><kbd>?</kbd></td>
+<td><kbd>?</kbd></td>
+</tr>
+<tr>
+<td>Settings…</td>
+<td>Editor and Drafts page, not in text fields</td>
+<td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td>
+<td><kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>S</kbd></td>
+</tr>
+<tr>
+<td>Undo</td>
+<td>Editor, not in text fields</td>
+<td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td>
+<td><kbd>⌘</kbd>+<kbd>Z</kbd></td>
+</tr>
+<tr>
+<td>Redo</td>
+<td>Editor, not in text fields</td>
+<td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Ctrl</kbd>+<kbd>Y</kbd></td>
+<td><kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>Z</kbd></td>
+</tr>
+<tr>
+<td>Copy</td>
+<td>Editor, not in text fields</td>
+<td><kbd>Ctrl</kbd>+<kbd>C</kbd></td>
+<td><kbd>⌘</kbd>+<kbd>C</kbd></td>
+</tr>
+<tr>
+<td>Paste</td>
+<td>Editor, not in text fields</td>
+<td><kbd>Ctrl</kbd>+<kbd>V</kbd></td>
+<td><kbd>⌘</kbd>+<kbd>V</kbd></td>
+</tr>
+<tr>
+<td>Duplicate</td>
+<td>Editor, not in text fields</td>
+<td><kbd>Ctrl</kbd>+<kbd>D</kbd></td>
+<td><kbd>⌘</kbd>+<kbd>D</kbd></td>
+</tr>
+<tr>
+<td>Delete selection</td>
+<td>Canvas</td>
+<td><kbd>Delete</kbd> or <kbd>Backspace</kbd></td>
+<td><kbd>⌫</kbd> or <kbd>⌦</kbd></td>
+</tr>
+<tr>
+<td>Rename</td>
+<td>Canvas</td>
+<td><kbd>F2</kbd></td>
+<td><kbd>F2</kbd></td>
+</tr>
+<tr>
+<td>Open Node Editor</td>
+<td>Editor, not in text fields</td>
+<td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd></td>
+<td><kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>E</kbd></td>
+</tr>
+<tr>
+<td>Select all</td>
+<td>Editor, not in text fields</td>
+<td><kbd>Ctrl</kbd>+<kbd>A</kbd></td>
+<td><kbd>⌘</kbd>+<kbd>A</kbd></td>
+</tr>
+<tr>
+<td>Clear selection</td>
+<td>Canvas</td>
+<td><kbd>Esc</kbd></td>
+<td><kbd>esc</kbd></td>
+</tr>
+<tr>
+<td>Select or deselect the focused item</td>
+<td>Canvas</td>
+<td><kbd>Enter</kbd> or <kbd>Space</kbd></td>
+<td><kbd>↩</kbd> or <kbd>Space</kbd></td>
+</tr>
+<tr>
+<td>Add the focused item to the selection, or remove it from the selection</td>
+<td>Canvas</td>
+<td><kbd>Shift</kbd>+<kbd>Enter</kbd></td>
+<td><kbd>⇧</kbd>+<kbd>↩</kbd></td>
+</tr>
+<tr>
+<td>Move to the nearest node in the direction of the arrow key</td>
+<td>Canvas</td>
+<td><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></td>
+<td><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></td>
+</tr>
+<tr>
+<td>Move through the connections of the focused node</td>
+<td>Canvas</td>
+<td><kbd>PgDn</kbd> or <kbd>PgUp</kbd></td>
+<td><kbd>⇟</kbd> or <kbd>⇞</kbd></td>
+</tr>
+<tr>
+<td>Move the selected nodes 10 pixels</td>
+<td>Canvas</td>
+<td><kbd>Shift</kbd> with an arrow key</td>
+<td><kbd>⇧</kbd> with an arrow key</td>
+</tr>
+<tr>
+<td>Resize the selected group, note, shape or icon 10 pixels</td>
+<td>Canvas</td>
+<td><kbd>Alt</kbd>+<kbd>Shift</kbd> with an arrow key</td>
+<td><kbd>⌥</kbd>+<kbd>⇧</kbd> with an arrow key</td>
+</tr>
+<tr>
+<td>Group selection</td>
+<td>Editor, not in text fields</td>
+<td><kbd>Ctrl</kbd>+<kbd>G</kbd></td>
+<td><kbd>⌘</kbd>+<kbd>G</kbd></td>
+</tr>
+<tr>
+<td>Ungroup</td>
+<td>Editor, not in text fields</td>
+<td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd></td>
+<td><kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>G</kbd></td>
+</tr>
+<tr>
+<td>Auto-group by network</td>
+<td>Editor, not in text fields</td>
+<td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd></td>
+<td><kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>G</kbd></td>
+</tr>
+<tr>
+<td>Auto layout</td>
+<td>Editor, not in text fields</td>
+<td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd></td>
+<td><kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>L</kbd></td>
+</tr>
+<tr>
+<td>Add device</td>
+<td>Canvas</td>
+<td><kbd>N</kbd></td>
+<td><kbd>N</kbd></td>
+</tr>
+<tr>
+<td>Go to node</td>
+<td>Editor, not in text fields</td>
+<td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd></td>
+<td><kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>O</kbd></td>
+</tr>
+<tr>
+<td>Zoom in</td>
+<td>Canvas</td>
+<td><kbd>=</kbd> or <kbd>+</kbd></td>
+<td><kbd>=</kbd> or <kbd>+</kbd></td>
+</tr>
+<tr>
+<td>Zoom out</td>
+<td>Canvas</td>
+<td><kbd>−</kbd></td>
+<td><kbd>−</kbd></td>
+</tr>
+<tr>
+<td>Fit diagram to view</td>
+<td>Canvas</td>
+<td><kbd>Shift</kbd>+<kbd>1</kbd></td>
+<td><kbd>⇧</kbd>+<kbd>1</kbd></td>
+</tr>
+<tr>
+<td>Show or hide connections</td>
+<td>Editor, not in text fields</td>
+<td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></td>
+<td><kbd>⌥</kbd>+<kbd>⇧</kbd>+<kbd>C</kbd></td>
+</tr>
+<tr>
+<td>Focus mode</td>
+<td>Editor and Drafts page, text fields too</td>
+<td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></td>
+<td><kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>F</kbd></td>
+</tr>
+<tr>
+<td>Save now</td>
+<td>Editor, text fields too</td>
+<td><kbd>Ctrl</kbd>+<kbd>S</kbd></td>
+<td><kbd>⌘</kbd>+<kbd>S</kbd></td>
+</tr>
+</tbody>
+</table>
+<p>The canvas keys of the table work on the canvas, its nodes and its
+connections, but not on the zoom buttons. These details are not in the
+table:</p>
+<ul>
+<li>From the canvas itself, the arrow keys go to the node nearest the middle of
+  the view.</li>
+<li>When the focused node shows its <a href="../details/editor/#info-tooltips">info tooltip</a>, the first
+  <kbd>Esc</kbd> closes the tooltip, and the second clears the selection.</li>
+<li><kbd>Delete</kbd> deletes the focused item, or the full selection when the
+  focused item is in it.</li>
+<li>With <kbd>Alt</kbd>+<kbd>Shift</kbd> (<kbd>⌥</kbd>+<kbd>⇧</kbd> on macOS),
+  <kbd>→</kbd> and <kbd>↓</kbd> make the item larger, and <kbd>←</kbd> and
+  <kbd>↑</kbd> make it smaller.</li>
+<li>A second <kbd>Shift</kbd>+<kbd>1</kbd> (<kbd>⇧</kbd>+<kbd>1</kbd> on macOS)
+  restores the view from before the fit.</li>
+<li>While the connections are hidden, the arrow keys go only to nodes.
+  <kbd>PgDn</kbd> and <kbd>PgUp</kbd> say "Connections are hidden." with the
+  keys that show them.</li>
+</ul>
+<p><kbd>?</kbd>, <kbd>N</kbd>, <kbd>=</kbd>, <kbd>+</kbd>, <kbd>−</kbd> and
+<kbd>Shift</kbd>+<kbd>1</kbd> work without <kbd>Ctrl</kbd> (<kbd>⌘</kbd> on
+macOS). If speech input or your screen reader can press them by mistake,
+disable <strong>Single-key shortcuts</strong> in the sheet or in <strong>Builder settings</strong>.</p>
+<p>On a Mac keyboard without these keys, <kbd>⇟</kbd> and <kbd>⇞</kbd> are
+<kbd>Fn</kbd> with <kbd>↓</kbd> and <kbd>↑</kbd>. <kbd>↖</kbd> and
+<kbd>↘</kbd> (Home and End) are <kbd>Fn</kbd> with <kbd>←</kbd> and
+<kbd>→</kbd>. <kbd>⌫</kbd> is Delete and <kbd>⌦</kbd> is Forward Delete.</p>
+<p>For the keys that select cards on the drafts page, see
+<a href="../details/drafts/#selecting-with-the-keyboard">Selecting with the keyboard</a>.</p>
+<h2 id="publish-hints-and-buttons">Publish hints and buttons<a class="headerlink" href="#publish-hints-and-buttons" title="Permanent link">&para;</a></h2>
+<p>The hint under <strong>Topology name</strong> in the <strong>Publish diagram</strong> dialog says
+what publishing does with that name, and the button names the action. The
+hint under <strong>Experiment name</strong> works the same way (see
+<a href="../details/publishing/#create-or-update">Create or update</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Hint</th>
+<th>Button</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"Publishing creates a new topology."</td>
+<td><strong>Create topology</strong></td>
+</tr>
+<tr>
+<td>"A topology with this name exists. Publishing updates it."</td>
+<td><strong>Update topology</strong></td>
+</tr>
+<tr>
+<td>"A topology with this name already exists. This diagram cannot update it. …"</td>
+<td>Builder refuses to publish. Enter another name.</td>
+</tr>
+<tr>
+<td>"A topology with this name changed after this diagram published it. Publishing would overwrite that change. …"</td>
+<td>Builder refuses to publish. See <a href="../details/publishing/#publishing-again">Publishing again</a>.</td>
+</tr>
+<tr>
+<td>"… This diagram replaces its legacy Builder diagram." or "… Builder could not read its legacy Builder diagram. Publishing removes it."</td>
+<td><strong>Update topology</strong>. See <a href="../details/publishing/#replacing-a-legacy-builder-diagram">Replacing a legacy Builder diagram</a>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="publish-results">Publish results<a class="headerlink" href="#publish-results" title="Permanent link">&para;</a></h2>
+<p>After a publish, the dialog lists each stage and its result (see
+<a href="../details/publishing/#the-result">The result</a>).</p>
+<p><img alt="The Publish diagram dialog after publishing: Published. Every stage succeeded., with the document, topology, scenario and draft stages, and Close." src="../../images/builder/publish-result.png" /></p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>What it is</th>
+<th>Results</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>document</code></td>
+<td>The published copy of the diagram, on the <strong>Published Diagrams</strong> tab</td>
+<td><code>created</code>, or <code>skipped</code> when you publish again and the publication was already complete</td>
+</tr>
+<tr>
+<td><code>topology</code></td>
+<td>The Topology config</td>
+<td><code>created</code>, <code>updated</code>, or <code>skipped</code> when the config already holds this snapshot</td>
+</tr>
+<tr>
+<td><code>scenario</code></td>
+<td>The <code>topology</code> annotation of each listed scenario</td>
+<td><code>updated</code>, with the changed scenarios, or <code>skipped</code></td>
+</tr>
+<tr>
+<td><code>experiment</code></td>
+<td>The Experiment config, with <strong>Topology and an experiment</strong></td>
+<td><code>created</code>, <code>updated</code> or <code>skipped</code></td>
+</tr>
+<tr>
+<td><code>draft</code></td>
+<td>The draft records what it published</td>
+<td><code>ok</code>, or <code>skipped</code> when you publish again and the publication was already complete</td>
+</tr>
+</tbody>
+</table>
+<p>The headline is one of these:</p>
+<table>
+<thead>
+<tr>
+<th>Headline</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"Published. Every stage succeeded."</td>
+<td>Every stage succeeded.</td>
+</tr>
+<tr>
+<td>"Published with failures. …"</td>
+<td>A stage failed after the server wrote earlier stages. Fix the cause. Click <strong>Back</strong>. Publish again with the same names. The stages that succeeded show <code>skipped</code>.</td>
+</tr>
+<tr>
+<td>"Publish failed. It wrote no configs."</td>
+<td>A stage failed before the server wrote any config. The list shows the failed stage. Fix the cause. Click <strong>Back</strong>. Publish again.</td>
+</tr>
+</tbody>
+</table>
+<p>When the server refuses the publish before it writes anything, the form
+stays open, and <strong>Checks</strong> gives the reason after "Could not publish the
+diagram."</p>
+<h2 id="built-in-templates">Built-in templates<a class="headerlink" href="#built-in-templates" title="Permanent link">&para;</a></h2>
+<p><strong>Device</strong> under <strong>Nodes &amp; Objects</strong> adds a device with default settings.
+The table lists it with the five built-in templates, which are read only
+(see <a href="../details/diagrams/#adding-devices">Adding devices</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Hostname</th>
+<th>Type</th>
+<th>OS type</th>
+<th>Image</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Device</strong></td>
+<td>node</td>
+<td>VirtualMachine</td>
+<td>linux</td>
+<td><code>ubuntu.qc2</code></td>
+</tr>
+<tr>
+<td><strong>Server</strong></td>
+<td>server</td>
+<td>VirtualMachine</td>
+<td>linux</td>
+<td><code>ubuntu.qc2</code></td>
+</tr>
+<tr>
+<td><strong>Workstation</strong></td>
+<td>workstation</td>
+<td>VirtualMachine</td>
+<td>windows</td>
+<td><code>windows10.qc2</code></td>
+</tr>
+<tr>
+<td><strong>Router</strong></td>
+<td>router</td>
+<td>Router</td>
+<td>minirouter</td>
+<td><code>minirouter.qc2</code></td>
+</tr>
+<tr>
+<td><strong>Firewall</strong></td>
+<td>firewall</td>
+<td>Firewall</td>
+<td>vyos</td>
+<td><code>vyos.qc2</code></td>
+</tr>
+<tr>
+<td><strong>External device</strong></td>
+<td>external</td>
+<td>HIL (external)</td>
+<td>None</td>
+<td>None</td>
+</tr>
+</tbody>
+</table>
+<h2 id="built-in-icons">Built-in icons<a class="headerlink" href="#built-in-icons" title="Permanent link">&para;</a></h2>
+<p>Devices, groups and icon drawings show a built-in icon, which you select
+under <strong>Icon</strong> in the Inspector. The icon is only a picture: it does not
+change the phēnix settings of a device (see
+<a href="../details/icons/#built-in-icons">Built-in icons</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>Icons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Computers</td>
+<td><strong>Server</strong> (any virtual machine, and the default for a device), <strong>Desktop</strong>, <strong>Laptop</strong>, <strong>Smartphone</strong>, <strong>Printer</strong>, <strong>NTP Server</strong></td>
+</tr>
+<tr>
+<td>Networks</td>
+<td><strong>Router</strong>, <strong>Switch</strong>, <strong>Firewall</strong>, <strong>VLAN</strong>, <strong>Container</strong> (the default for a group), <strong>External device</strong> (hardware in the loop)</td>
+</tr>
+<tr>
+<td>Industrial control</td>
+<td><strong>PLC</strong>, <strong>RTU</strong>, <strong>RTAC</strong> (an automation controller or a data gateway), <strong>Relay</strong>, <strong>Transmission</strong>, <strong>Distribution</strong>, <strong>Cell Tower</strong></td>
+</tr>
+<tr>
+<td>Operating systems</td>
+<td><strong>Linux</strong>, <strong>CentOS</strong>, <strong>Red Hat</strong>, <strong>Ubuntu</strong>, <strong>Fedora</strong>, <strong>openSUSE</strong>, <strong>Alpine</strong>, <strong>Kali Linux</strong>, <strong>BSD</strong>, <strong>Windows</strong>, <strong>Apple</strong>, <strong>Android</strong></td>
+</tr>
+<tr>
+<td>Tools</td>
+<td><strong>Terminal</strong>, <strong>pfSense</strong>, <strong>Wireshark</strong>, <strong>Zeek</strong> (a network sensor)</td>
+</tr>
+<tr>
+<td>People and roles</td>
+<td><strong>Hacker</strong> (an attacker), <strong>Black Hat</strong> (a threat actor), <strong>Human</strong>, <strong>Robot</strong> (a bot or a script)</td>
+</tr>
+<tr>
+<td>Other roles</td>
+<td><strong>Lizard</strong> and <strong>Fox</strong>, for a role with no other icon, such as a team mascot</td>
+</tr>
+<tr>
+<td>Servers</td>
+<td><strong>phēnix</strong>, <strong>minimega</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Names and logos of products are trademarks of their owners. phēnix is not
+affiliated with or endorsed by them. The
+<a href="https://github.com/sandialabs/sceptre-phenix/blob/main/src/js/src/components/builder/ICON_NOTICES.md">icon notices</a>
+give the source and the license of each icon that comes from another work.</p>
+<h2 id="purdue-model-layer-set">Purdue Model layer set<a class="headerlink" href="#purdue-model-layer-set" title="Permanent link">&para;</a></h2>
+<p>The built-in layer set <strong>Purdue Model</strong> gives each level of the Purdue
+model a layer (see
+<a href="../details/layers/#example-map-layers-to-the-purdue-model">Example: map layers to the Purdue model</a>).
+Level 3.5 gets ID 4, because a layer ID is an integer. The set has no
+node matchers.</p>
+<table>
+<thead>
+<tr>
+<th>Layer ID</th>
+<th>Label</th>
+<th>Icon</th>
+<th>Color</th>
+<th>Typical devices</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>6</td>
+<td>L5 Enterprise</td>
+<td>Server</td>
+<td><code>#2f6fbf</code></td>
+<td>Enterprise IT, email and the internet connection</td>
+</tr>
+<tr>
+<td>5</td>
+<td>L4 Business</td>
+<td>Laptop</td>
+<td><code>#8b5cf6</code></td>
+<td>Site business systems, such as ERP</td>
+</tr>
+<tr>
+<td>4</td>
+<td>L3.5 Industrial DMZ</td>
+<td>Firewall</td>
+<td><code>#b45309</code></td>
+<td>Jump hosts, patch servers and historian copies</td>
+</tr>
+<tr>
+<td>3</td>
+<td>L3 Operations</td>
+<td>Terminal</td>
+<td><code>#0f766e</code></td>
+<td>SCADA servers, historians and site operations systems</td>
+</tr>
+<tr>
+<td>2</td>
+<td>L2 Supervisory control</td>
+<td>Desktop</td>
+<td><code>#15803d</code></td>
+<td>HMIs and engineering workstations</td>
+</tr>
+<tr>
+<td>1</td>
+<td>L1 Basic control</td>
+<td>PLC</td>
+<td><code>#db2777</code></td>
+<td>PLCs, RTUs and IEDs</td>
+</tr>
+<tr>
+<td>0</td>
+<td>L0 Process</td>
+<td>Transmission</td>
+<td><code>#dc2626</code></td>
+<td>Pumps, valves and sensors</td>
+</tr>
+</tbody>
+</table>
+<h2 id="download-formats">Download formats<a class="headerlink" href="#download-formats" title="Permanent link">&para;</a></h2>
+<p><strong>Download</strong> in the editor toolbar saves the open diagram as one file
+(see <a href="../details/import-upload-download/#downloading">Downloading</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Button</th>
+<th>File for Riverside Water</th>
+<th>What it holds</th>
+<th>Open it with</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Builder JSON</strong></td>
+<td><code>riverside-water.json</code></td>
+<td>The whole Builder document</td>
+<td><strong>Upload</strong></td>
+</tr>
+<tr>
+<td><strong>Builder YAML</strong></td>
+<td><code>riverside-water.yaml</code></td>
+<td>The same, as YAML</td>
+<td><strong>Upload</strong></td>
+</tr>
+<tr>
+<td><strong>Topology YAML</strong></td>
+<td><code>riverside-water.topology.yaml</code></td>
+<td>The Topology config that <strong>Publish</strong> would write</td>
+<td><code>phenix config create</code>, or <strong>Import</strong> as a config file</td>
+</tr>
+<tr>
+<td><strong>PNG</strong></td>
+<td><code>riverside-water.png</code></td>
+<td>A picture of the whole diagram</td>
+<td>An image viewer</td>
+</tr>
+<tr>
+<td><strong>SVG</strong></td>
+<td><code>riverside-water.svg</code></td>
+<td>The same picture, as SVG</td>
+<td>A web browser</td>
+</tr>
+<tr>
+<td><strong>draw.io</strong></td>
+<td><code>riverside-water.drawio</code></td>
+<td>The diagram, as a draw.io file</td>
+<td>draw.io (diagrams.net)</td>
+</tr>
+<tr>
+<td><strong>Gephi (GEXF)</strong></td>
+<td><code>riverside-water.gexf</code></td>
+<td>The devices, networks and connections, as a GEXF file</td>
+<td>Gephi</td>
+</tr>
+<tr>
+<td><strong>Builder package</strong></td>
+<td><code>riverside-water.package.json</code> or <code>.package.yaml</code></td>
+<td>The Builder document, the configs and icons that you tick, and the list of what the diagram needs</td>
+<td><strong>Upload</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The file name is the diagram name in lower case. Each run of characters
+other than letters, digits, <code>.</code>, <code>_</code> and <code>-</code> becomes one hyphen.</p>
+<h2 id="file-formats">File formats<a class="headerlink" href="#file-formats" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Starts with</th>
+<th>Size limit</th>
+<th>Where to use it</th>
+<th>JSON Schema</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Builder document (JSON or YAML)</td>
+<td><code>$schema: https://phenix.sandia.gov/schemas/builder/v1</code> and <code>revision: 1</code></td>
+<td>5 MiB</td>
+<td><strong>Upload</strong> on the drafts page or in the editor, or the REST API (see <a href="../details/administration/#rest-api">REST API</a>)</td>
+<td><code>/api/v1/schemas/builder/v1</code></td>
+</tr>
+<tr>
+<td>Builder package (<code>.package.json</code> or <code>.package.yaml</code>)</td>
+<td>The package <code>$schema</code></td>
+<td>5 MiB</td>
+<td><strong>Upload</strong></td>
+<td><code>/api/v1/schemas/builder/package/v1</code></td>
+</tr>
+<tr>
+<td>Template file (<code>.templates.yaml</code>)</td>
+<td><code>$schema: https://phenix.sandia.gov/schemas/builder/templates/v1</code></td>
+<td>8 MiB, 1 to 200 templates, 50 custom icons</td>
+<td><strong>Import templates</strong> on the <strong>Node Templates</strong> tab, or the template directory of the server</td>
+<td><code>/api/v1/schemas/builder/templates/v1</code></td>
+</tr>
+<tr>
+<td>Layer set file (<code>.layers.yaml</code>)</td>
+<td><code>$schema: https://phenix.sandia.gov/schemas/builder/layersets/v1</code></td>
+<td>4 MiB</td>
+<td><strong>Upload layer set…</strong> on the <strong>Layers</strong> tab</td>
+<td><code>/api/v1/schemas/builder/layersets/v1</code></td>
+</tr>
+<tr>
+<td>Legacy Builder diagram (XML)</td>
+<td>The root element <code>mxGraphModel</code> (or a bare <code>root</code>), or a Topology config with the <code>builder-xml</code> annotation</td>
+<td>5 MiB</td>
+<td><strong>Upload</strong> with the source <strong>Legacy Builder diagram or Topology</strong></td>
+<td>None</td>
+</tr>
+<tr>
+<td>Topology or Experiment config (JSON or YAML)</td>
+<td><code>apiVersion</code> and <code>kind</code></td>
+<td>5 MiB</td>
+<td><strong>Import</strong> with the source <strong>Config file</strong></td>
+<td>See <a href="../../schema/">Schema</a></td>
+</tr>
+</tbody>
+</table>
+<p><code>phenix config create</code> refuses the first four files and skips them in a
+directory (see
+<a href="../details/import-upload-download/#builder-documents-and-phenix-config-create">Builder documents and phenix config create</a>).
+For the fields of each file, see
+<a href="../details/import-upload-download/#builder-json-and-yaml">Builder JSON and YAML</a>,
+<a href="../details/templates/#downloading-and-importing-templates">Downloading and importing templates</a>
+and <a href="../details/import-upload-download/#layer-set-files">Layer set files</a>.</p>
+<h2 id="limits">Limits<a class="headerlink" href="#limits" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>Limit</th>
+<th>More</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Drafts on the server, damaged drafts included</td>
+<td>2,000</td>
+<td><a href="../details/drafts/#limits">Limits</a></td>
+</tr>
+<tr>
+<td>Snapshots of a draft</td>
+<td>50, and 50 MiB of them. Past either limit, phēnix deletes the oldest.</td>
+<td><a href="../details/drafts/#limits">Limits</a></td>
+</tr>
+<tr>
+<td>A diagram (a Builder document)</td>
+<td>5 MiB</td>
+<td><a href="../details/administration/#storage">Storage</a></td>
+</tr>
+<tr>
+<td>Custom icons that a diagram holds</td>
+<td>50</td>
+<td><a href="../details/icons/#the-diagram-and-its-icons">The diagram and its icons</a></td>
+</tr>
+<tr>
+<td>Templates in a diagram</td>
+<td>50</td>
+<td><a href="../details/templates/#limits">Limits</a></td>
+</tr>
+<tr>
+<td>Notes of a diagram</td>
+<td>100, each at most 4096 bytes</td>
+<td><a href="../details/editor/#with-nothing-selected">With nothing selected</a></td>
+</tr>
+<tr>
+<td>Annotations that a draft keeps from an imported config</td>
+<td>100, at most 256 KiB in total</td>
+<td><a href="../details/import-upload-download/#what-an-import-keeps">What an import keeps</a></td>
+</tr>
+<tr>
+<td>Scenarios that a diagram lists</td>
+<td>20</td>
+<td><a href="../details/scenarios/#scenarios">Scenarios</a></td>
+</tr>
+<tr>
+<td>VLAN alias of a network</td>
+<td>1 to 4094</td>
+<td><a href="../details/diagrams/#adding-switches-and-networks">Adding switches and networks</a></td>
+</tr>
+<tr>
+<td>Layers of a diagram</td>
+<td>32, IDs from 0 to 99</td>
+<td><a href="../details/layers/#layers">Layers</a></td>
+</tr>
+<tr>
+<td>Layer label</td>
+<td>1 to 64 bytes, no control characters</td>
+<td><a href="../details/layers/#layers">Layers</a></td>
+</tr>
+<tr>
+<td>Node matchers of a layer</td>
+<td>16. A field has at most 128 bytes, and a pattern at most 256 bytes</td>
+<td><a href="../details/layers/#layers">Layers</a></td>
+</tr>
+<tr>
+<td>Points of a line drawing</td>
+<td>2 to 64</td>
+<td><a href="../details/diagrams/#shapes-icons-and-lines">Shapes, icons and lines</a></td>
+</tr>
+<tr>
+<td>Grid size</td>
+<td>4 to 200 pixels</td>
+<td><a href="../details/diagrams/#the-grid">The grid</a></td>
+</tr>
+<tr>
+<td>Auto-group name pattern</td>
+<td>200 characters. Builder matches the first 255 characters of a name, cuts a group name to 80, and stops a pattern after 2 seconds</td>
+<td><a href="../details/diagrams/#grouping-by-a-name-pattern">Grouping by a name pattern</a></td>
+</tr>
+<tr>
+<td>Icons on the server</td>
+<td>2,000. An icon is a PNG of at most 96 × 96 pixels and 40,960 bytes, from a file of at most 5 MiB. An icon keeps at most 16 old names</td>
+<td><a href="../details/icons/#custom-icons">Custom icons</a></td>
+</tr>
+<tr>
+<td>Custom icon name</td>
+<td>1 to 64 letters, digits, <code>_</code>, <code>@</code>, <code>.</code> or <code>-</code></td>
+<td><a href="../details/icons/#uploading-an-icon">Uploading an icon</a></td>
+</tr>
+<tr>
+<td>Icons from template files</td>
+<td>1,000 of the 2,000</td>
+<td><a href="../details/administration/#template-files-on-the-server">Template files on the server</a></td>
+</tr>
+<tr>
+<td>Templates in the library</td>
+<td>200</td>
+<td><a href="../details/templates/#limits">Limits</a></td>
+</tr>
+<tr>
+<td>Collections in the library</td>
+<td>50</td>
+<td><a href="../details/templates/#limits">Limits</a></td>
+</tr>
+<tr>
+<td>Templates in a collection</td>
+<td>200</td>
+<td><a href="../details/templates/#limits">Limits</a></td>
+</tr>
+<tr>
+<td>Whole template library</td>
+<td>512 KiB</td>
+<td><a href="../details/templates/#limits">Limits</a></td>
+</tr>
+<tr>
+<td>Template name, collection name</td>
+<td>1 to 128 bytes, one line</td>
+<td><a href="../details/templates/#limits">Limits</a></td>
+</tr>
+<tr>
+<td>Template description, collection description</td>
+<td>1024 bytes, one line</td>
+<td><a href="../details/templates/#limits">Limits</a></td>
+</tr>
+<tr>
+<td>A template's device, as JSON</td>
+<td>16 KiB</td>
+<td><a href="../details/templates/#limits">Limits</a></td>
+</tr>
+<tr>
+<td>Template file</td>
+<td>8 MiB, 1 to 200 templates, 50 custom icons</td>
+<td><a href="../details/templates/#limits">Limits</a></td>
+</tr>
+<tr>
+<td>Template files the server reads</td>
+<td>50, each at most 8 MiB</td>
+<td><a href="../details/administration/#template-files-on-the-server">Template files on the server</a></td>
+</tr>
+<tr>
+<td>Layer sets in the library</td>
+<td>200, plus the built-in set. A set has 1 to 32 layers</td>
+<td><a href="../details/drafts/#the-layers-tab">The Layers tab</a></td>
+</tr>
+<tr>
+<td>A layer set file</td>
+<td>4 MiB. A request that adds or replaces a set, 1 MiB</td>
+<td><a href="../details/administration/#storage">Storage</a></td>
+</tr>
+<tr>
+<td>Package requirements</td>
+<td>1000 entries of each kind, each at most 4096 bytes</td>
+<td><a href="../details/import-upload-download/#downloading-a-package">Downloading a package</a></td>
+</tr>
+<tr>
+<td>A Builder file, a config file, an uploaded document or package</td>
+<td>5 MiB</td>
+<td><a href="../details/administration/#which-files-phenix-reads">Which files phenix reads</a></td>
+</tr>
+<tr>
+<td>PNG and SVG downloads</td>
+<td>The longer side at most 4096 pixels</td>
+<td><a href="../details/import-upload-download/#png-and-svg">PNG and SVG</a></td>
+</tr>
+<tr>
+<td>Diagram name</td>
+<td>512 bytes</td>
+<td><a href="../details/import-upload-download/#the-metadata-of-a-diagram">The metadata of a diagram</a></td>
+</tr>
+<tr>
+<td>Experiment name</td>
+<td>15 characters, when the server names the bridge of each experiment after the experiment</td>
+<td><a href="../details/publishing/#experiment-names">Experiment names</a></td>
+</tr>
+<tr>
+<td>Time Builder waits for the server</td>
+<td>60 seconds for a save, 30 for a read, 15 for the version that a merge starts from, and 20 for each preflight check. 10 minutes for publishing, preflight, imports, downloads, packages and cleanup</td>
+<td><a href="../details/drafts/#working-offline">Working offline</a></td>
+</tr>
+</tbody>
+</table>
+<h2 id="error-codes">Error codes<a class="headerlink" href="#error-codes" title="Permanent link">&para;</a></h2>
+<p>Each issue that Builder reports has a code: a stable, machine-readable
+name of the rule that it breaks, such as <code>node.hostname.duplicate</code>. The
+editor checks and the Builder REST API use the same code for the same rule.
+Thus a script can act on the code and ignore the message.</p>
+<p>A code is lowercase words joined by dots. A word can contain hyphens, such
+as <code>not-found</code>. The first word names the subject
+of the rule, such as <code>node</code>, <code>edge</code> (a connection) or <code>layerset</code> (a layer
+set). A released code keeps its meaning. A new rule gets a new code.</p>
+<h3 id="issues">Issues<a class="headerlink" href="#issues" title="Permanent link">&para;</a></h3>
+<p>Builder reports each warning and error as an issue:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>code</code></td>
+<td>The code of the rule</td>
+</tr>
+<tr>
+<td><code>severity</code></td>
+<td><code>error</code> if the issue refuses the request, <code>warning</code> if not</td>
+</tr>
+<tr>
+<td><code>message</code></td>
+<td>The text that a person sees</td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td>The location in the document, such as <code>nodes[3].device.hostname</code>, when the issue is about a part of it</td>
+</tr>
+<tr>
+<td><code>nodeId</code>, <code>edgeId</code>, <code>networkId</code></td>
+<td>The ID of the node, connection or network, when the issue is about one</td>
+</tr>
+<tr>
+<td><code>field</code></td>
+<td>The device field, such as <code>spec.network.interfaces.0.vlan</code>, when the issue is about one</td>
+</tr>
+</tbody>
+</table>
+<p>The table in <a href="#codes">Codes</a> gives the default severity of each code. Some
+issues block only publishing, such as an interface without a VLAN. The
+editor shows them as warnings on the canvas, because a draft may keep them.
+The <strong>Publish diagram</strong> dialog shows them as errors.</p>
+<p>An unknown key in an object of the document (<code>document.field.unknown</code>) is
+an issue at its path. A value of the wrong type is an issue only where the
+editor also checks the type, such as a number in <code>createdBy</code>
+(<code>metadata.user.not-text</code>). The server refuses other values of the wrong
+type, such as a node position that is text, with a message of its own.</p>
+<h3 id="errors-of-the-rest-api">Errors of the REST API<a class="headerlink" href="#errors-of-the-rest-api" title="Permanent link">&para;</a></h3>
+<p>When a Builder route refuses a request, the JSON body gives the code in
+<code>code</code>, with <code>message</code> and <code>cause</code>. For a document that does not pass the
+checks (<code>document.invalid</code>), or a draft that only publishing refuses
+(<code>publish.blocked</code>), <code>issues</code> lists each warning and error:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">{</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">"code"</span><span class="p">:</span><span class="w"> </span><span class="s2">"publish.blocked"</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">"topology lab cannot be published: interface \"eth1\" of device \"web\" has no VLAN: connect it to a network, or type a VLAN for it"</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">"cause"</span><span class="p">:</span><span class="w"> </span><span class="s2">"validating topology projection: interface \"eth1\" of device \"web\" has no VLAN: connect it to a network, or type a VLAN for it"</span><span class="p">,</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">"issues"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">      </span><span class="nt">"code"</span><span class="p">:</span><span class="w"> </span><span class="s2">"interface.vlan.missing"</span><span class="p">,</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">      </span><span class="nt">"severity"</span><span class="p">:</span><span class="w"> </span><span class="s2">"error"</span><span class="p">,</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">      </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">"interface \"eth1\" of device \"web\" has no VLAN: connect it to a network, or type a VLAN for it"</span><span class="p">,</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">      </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"nodes[2].device.spec.network.interfaces[1]"</span><span class="p">,</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">      </span><span class="nt">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"4113dfc0-f4be-57f9-8115-6cecd1f1aea3"</span><span class="p">,</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">      </span><span class="nt">"field"</span><span class="p">:</span><span class="w"> </span><span class="s2">"spec.network.interfaces.1.vlan"</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">  </span><span class="p">]</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="p">}</span>
+</span></code></pre></div>
+<p>A refusal about a scenario that a draft lists (<code>publish.scenario.*</code>) names
+that scenario in <code>metadata.scenario</code>.</p>
+<p>These codes have these HTTP statuses. A refusal without a code of its own
+gets the <code>request.*</code> or <code>server.*</code> code of its status.</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Codes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>400</td>
+<td><code>request.invalid</code>, <code>publish.target.invalid</code></td>
+</tr>
+<tr>
+<td>403</td>
+<td><code>request.forbidden</code>, <code>layerset.read-only</code></td>
+</tr>
+<tr>
+<td>404</td>
+<td><code>request.not-found</code></td>
+</tr>
+<tr>
+<td>405</td>
+<td><code>request.method-not-allowed</code></td>
+</tr>
+<tr>
+<td>409</td>
+<td><code>request.conflict</code>, <code>draft.conflict</code>, <code>draft.snapshot.current</code>, <code>template.item.read-only</code>, <code>publish.topology.exists</code>, <code>publish.topology.missing</code>, <code>publish.topology.not-source</code>, <code>publish.topology.changed</code>, <code>publish.topology.file-mismatch</code>, <code>publish.experiment.exists</code>, <code>publish.experiment.missing</code>, <code>publish.experiment.not-source</code>, <code>publish.experiment.changed</code></td>
+</tr>
+<tr>
+<td>412</td>
+<td><code>request.stale</code>, <code>draft.stale</code>, <code>template.item.stale</code>, <code>layerset.stale</code></td>
+</tr>
+<tr>
+<td>413</td>
+<td><code>request.too-large</code>, <code>draft.limit</code>, <code>layerset.library.full</code>, <code>package.too-large</code></td>
+</tr>
+<tr>
+<td>422</td>
+<td><code>request.unprocessable</code>, <code>document.invalid</code>, <code>publish.blocked</code>, <code>publish.topology.invalid</code>, <code>import.name.invalid</code>, <code>layerset.default.unknown</code>, <code>layerset.invalid</code>, <code>package.invalid</code></td>
+</tr>
+<tr>
+<td>500</td>
+<td><code>server.error</code></td>
+</tr>
+<tr>
+<td>503</td>
+<td><code>server.busy</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>OPTIONS</code> on a Builder route gets 204 and the same <code>Allow</code> header as a 405
+answer for that path, and does nothing else.</p>
+<p>More about issues in answers:</p>
+<ul>
+<li>In <code>package.invalid</code>, each issue has a <code>package.*</code> code, or, for the
+  document of the package, a document code at a path below <code>document</code>.</li>
+<li>A publication that goes through lists its warnings in <code>warnings</code>. A
+  partial publication lists its failures in <code>errors</code>.</li>
+<li>The Topology YAML download (<code>POST /builder/export/topology</code>) lists issues
+  in <code>warnings</code> and <code>publishBlockers</code>. <code>publishBlockers</code> has one issue for
+  each check that only publishing makes, with the code of its first issue.</li>
+<li><code>POST /builder/package</code> lists its <code>package.*</code> warnings in <code>warnings</code>.</li>
+</ul>
+<p>The dependencies of <code>POST /builder/package/resolve</code> are data, not issues,
+and have no codes. The warnings of an import or a legacy diagram conversion
+(<code>POST /builder/generate</code>, <code>POST /builder/legacy</code>, and the
+<code>source.warnings</code> of a document) are plain text, without codes.</p>
+<h3 id="codes">Codes<a class="headerlink" href="#codes" title="Permanent link">&para;</a></h3>
+<!-- codes:start -->
+
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Severity</th>
+<th>Rule</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>document.invalid</code></td>
+<td>error</td>
+<td>The document does not validate. The issues field lists each reason.</td>
+</tr>
+<tr>
+<td><code>document.content.missing</code></td>
+<td>error</td>
+<td>There is no document at all.</td>
+</tr>
+<tr>
+<td><code>document.schema.mismatch</code></td>
+<td>error</td>
+<td>The document's $schema is not the Builder document schema.</td>
+</tr>
+<tr>
+<td><code>document.revision.mismatch</code></td>
+<td>error</td>
+<td>The document's revision is not the one this phenix reads.</td>
+</tr>
+<tr>
+<td><code>document.list.missing</code></td>
+<td>error</td>
+<td>nodes, networks or edges is missing, null or not a list.</td>
+</tr>
+<tr>
+<td><code>document.viewport.not-finite</code></td>
+<td>error</td>
+<td>A viewport value is not a finite number.</td>
+</tr>
+<tr>
+<td><code>document.zoom.not-positive</code></td>
+<td>error</td>
+<td>The viewport zoom is not a positive number.</td>
+</tr>
+<tr>
+<td><code>document.grid.invalid</code></td>
+<td>error</td>
+<td>The grid size is not a whole number from 4 to 200.</td>
+</tr>
+<tr>
+<td><code>document.icon-size.unknown</code></td>
+<td>error</td>
+<td>The document's icon size is not small, medium or large.</td>
+</tr>
+<tr>
+<td><code>document.layout.not-text</code></td>
+<td>error</td>
+<td>The document's layout is not text.</td>
+</tr>
+<tr>
+<td><code>document.field.unknown</code></td>
+<td>error</td>
+<td>An object of the document holds a key that is not one of its fields.</td>
+</tr>
+<tr>
+<td><code>metadata.not-object</code></td>
+<td>error</td>
+<td>The document's metadata is not an object.</td>
+</tr>
+<tr>
+<td><code>metadata.id.required</code></td>
+<td>error</td>
+<td>The document has no ID.</td>
+</tr>
+<tr>
+<td><code>metadata.id.invalid</code></td>
+<td>error</td>
+<td>The document ID is not a UUID.</td>
+</tr>
+<tr>
+<td><code>metadata.name.too-long</code></td>
+<td>error</td>
+<td>The document name is longer than 512 bytes.</td>
+</tr>
+<tr>
+<td><code>metadata.name.control</code></td>
+<td>error</td>
+<td>The document name holds a control character.</td>
+</tr>
+<tr>
+<td><code>metadata.user.not-text</code></td>
+<td>error</td>
+<td>createdBy or updatedBy is not text.</td>
+</tr>
+<tr>
+<td><code>metadata.user.too-long</code></td>
+<td>error</td>
+<td>createdBy or updatedBy is longer than 256 bytes.</td>
+</tr>
+<tr>
+<td><code>metadata.user.control</code></td>
+<td>error</td>
+<td>createdBy or updatedBy holds a control character.</td>
+</tr>
+<tr>
+<td><code>metadata.time.not-text</code></td>
+<td>error</td>
+<td>createdAt or updatedAt is not text.</td>
+</tr>
+<tr>
+<td><code>metadata.time.invalid</code></td>
+<td>error</td>
+<td>createdAt or updatedAt is not a UTC time of the form YYYY-MM-DDTHH:MM:SSZ.</td>
+</tr>
+<tr>
+<td><code>metadata.notes.not-list</code></td>
+<td>error</td>
+<td>The diagram's notes are not a list of text.</td>
+</tr>
+<tr>
+<td><code>metadata.notes.too-many</code></td>
+<td>error</td>
+<td>The diagram has more than 100 notes.</td>
+</tr>
+<tr>
+<td><code>metadata.note.not-text</code></td>
+<td>error</td>
+<td>A note of the diagram is not text.</td>
+</tr>
+<tr>
+<td><code>metadata.note.blank</code></td>
+<td>error</td>
+<td>A note of the diagram is blank.</td>
+</tr>
+<tr>
+<td><code>metadata.note.too-long</code></td>
+<td>error</td>
+<td>A note of the diagram is longer than 4096 bytes.</td>
+</tr>
+<tr>
+<td><code>metadata.note.control</code></td>
+<td>error</td>
+<td>A note of the diagram holds a control character other than newline and tab.</td>
+</tr>
+<tr>
+<td><code>network.id.required</code></td>
+<td>error</td>
+<td>A network has no ID.</td>
+</tr>
+<tr>
+<td><code>network.id.invalid</code></td>
+<td>error</td>
+<td>A network ID is not a UUID.</td>
+</tr>
+<tr>
+<td><code>network.id.duplicate</code></td>
+<td>error</td>
+<td>Two networks have the same ID, ignoring case.</td>
+</tr>
+<tr>
+<td><code>network.name.required</code></td>
+<td>error</td>
+<td>A network has no name.</td>
+</tr>
+<tr>
+<td><code>network.name.whitespace</code></td>
+<td>error</td>
+<td>A network name holds white space.</td>
+</tr>
+<tr>
+<td><code>network.name.duplicate</code></td>
+<td>error</td>
+<td>Two networks have exactly the same name.</td>
+</tr>
+<tr>
+<td><code>network.line-style.unknown</code></td>
+<td>error</td>
+<td>A network's line style is not one the Builder draws.</td>
+</tr>
+<tr>
+<td><code>network.alias.out-of-range</code></td>
+<td>error</td>
+<td>A network's VLAN alias is not from 1 to 4094.</td>
+</tr>
+<tr>
+<td><code>network.alias.duplicate</code></td>
+<td>error</td>
+<td>Two networks have the same VLAN alias.</td>
+</tr>
+<tr>
+<td><code>network.switch.missing</code></td>
+<td>warning</td>
+<td>A network has no switch on the canvas.</td>
+</tr>
+<tr>
+<td><code>network.subnet.invalid</code></td>
+<td>error</td>
+<td>A network's subnet is not an IPv4 network such as 10.1.0.0/24.</td>
+</tr>
+<tr>
+<td><code>network.gateway.invalid</code></td>
+<td>error</td>
+<td>A network's gateway is not an IPv4 address.</td>
+</tr>
+<tr>
+<td><code>network.gateway.outside-subnet</code></td>
+<td>error</td>
+<td>A network's gateway is not a host address of its subnet.</td>
+</tr>
+<tr>
+<td><code>network.gateway.unowned</code></td>
+<td>warning</td>
+<td>No interface on a network has the network's gateway address.</td>
+</tr>
+<tr>
+<td><code>network.subnet.overlap</code></td>
+<td>warning</td>
+<td>The subnets of two networks overlap. It is a problem only for networks that connect, not for isolated enclaves that reuse a subnet on purpose.</td>
+</tr>
+<tr>
+<td><code>node.id.required</code></td>
+<td>error</td>
+<td>A node has no ID.</td>
+</tr>
+<tr>
+<td><code>node.id.invalid</code></td>
+<td>error</td>
+<td>A node ID is not a UUID.</td>
+</tr>
+<tr>
+<td><code>node.id.duplicate</code></td>
+<td>error</td>
+<td>Two nodes have the same ID, ignoring case.</td>
+</tr>
+<tr>
+<td><code>node.position.not-finite</code></td>
+<td>error</td>
+<td>A node's position is not finite numbers.</td>
+</tr>
+<tr>
+<td><code>node.size.invalid</code></td>
+<td>error</td>
+<td>A node's size is not positive finite numbers.</td>
+</tr>
+<tr>
+<td><code>node.kind.unknown</code></td>
+<td>error</td>
+<td>A node's kind is not one the Builder knows.</td>
+</tr>
+<tr>
+<td><code>node.payload.missing</code></td>
+<td>error</td>
+<td>A node lacks the payload of its kind.</td>
+</tr>
+<tr>
+<td><code>node.payload.extra</code></td>
+<td>error</td>
+<td>A node carries the payload of another kind.</td>
+</tr>
+<tr>
+<td><code>node.hostname.required</code></td>
+<td>error</td>
+<td>A device has no hostname.</td>
+</tr>
+<tr>
+<td><code>node.hostname.whitespace</code></td>
+<td>error</td>
+<td>A device hostname holds white space.</td>
+</tr>
+<tr>
+<td><code>node.hostname.duplicate</code></td>
+<td>error</td>
+<td>Two devices have the same hostname, ignoring case.</td>
+</tr>
+<tr>
+<td><code>node.hostname.short</code></td>
+<td>error</td>
+<td>A device hostname is 1 character long, which phenix refuses.</td>
+</tr>
+<tr>
+<td><code>node.hostname.reserved</code></td>
+<td>error</td>
+<td>A device hostname is "all", which minimega takes for every VM.</td>
+</tr>
+<tr>
+<td><code>node.hostname.numeric</code></td>
+<td>error</td>
+<td>A device hostname is all digits, which phenix refuses in an experiment.</td>
+</tr>
+<tr>
+<td><code>node.hostname.windows-phenix</code></td>
+<td>error</td>
+<td>A Windows device has the hostname "phenix", which phenix refuses in an experiment.</td>
+</tr>
+<tr>
+<td><code>node.hostname.reserved-case</code></td>
+<td>warning</td>
+<td>A device hostname differs from "all" only by case.</td>
+</tr>
+<tr>
+<td><code>node.hostname.phenix</code></td>
+<td>warning</td>
+<td>A device that is not Windows has the hostname "phenix", the hostname of phenix's own images.</td>
+</tr>
+<tr>
+<td><code>node.parent.self</code></td>
+<td>error</td>
+<td>A node is its own parent.</td>
+</tr>
+<tr>
+<td><code>node.parent.unknown</code></td>
+<td>error</td>
+<td>A node's parent is no node of the document.</td>
+</tr>
+<tr>
+<td><code>node.parent.not-group</code></td>
+<td>error</td>
+<td>A node's parent is not a group.</td>
+</tr>
+<tr>
+<td><code>node.parent.cycle</code></td>
+<td>error</td>
+<td>Groups contain each other in a cycle.</td>
+</tr>
+<tr>
+<td><code>device.spec.required</code></td>
+<td>error</td>
+<td>A device has no spec.</td>
+</tr>
+<tr>
+<td><code>device.hostname.mismatch</code></td>
+<td>warning</td>
+<td>The spec of a device names a hostname other than the device hostname. The topology uses the device hostname.</td>
+</tr>
+<tr>
+<td><code>device.icon-key.unknown</code></td>
+<td>error</td>
+<td>A device's icon key is not a built-in icon.</td>
+</tr>
+<tr>
+<td><code>device.icon.invalid</code></td>
+<td>error</td>
+<td>A device's custom icon is not an icon name.</td>
+</tr>
+<tr>
+<td><code>device.icon-size.unknown</code></td>
+<td>error</td>
+<td>A device's icon size is not small, medium or large.</td>
+</tr>
+<tr>
+<td><code>device.color.invalid</code></td>
+<td>error</td>
+<td>A device's outline or fill color is not #rrggbb.</td>
+</tr>
+<tr>
+<td><code>device.layer.out-of-range</code></td>
+<td>error</td>
+<td>A device's layer is not an integer from 0 to 99.</td>
+</tr>
+<tr>
+<td><code>device.hide-description.not-boolean</code></td>
+<td>error</td>
+<td>A device's hideDescription is not true or false.</td>
+</tr>
+<tr>
+<td><code>device.included-from.invalid</code></td>
+<td>error</td>
+<td>A device names an included topology, but the name is blank or holds white space.</td>
+</tr>
+<tr>
+<td><code>device.included-from.no-includes</code></td>
+<td>error</td>
+<td>A device names an included topology, but the document includes no topology.</td>
+</tr>
+<tr>
+<td><code>device.interfaces.none</code></td>
+<td>warning</td>
+<td>A device has no interfaces.</td>
+</tr>
+<tr>
+<td><code>device.drives.none</code></td>
+<td>error</td>
+<td>A device phenix starts has no drive, which blocks publishing.</td>
+</tr>
+<tr>
+<td><code>device.image.unknown</code></td>
+<td>warning</td>
+<td>A device's drive image is not one of the server's disk images.</td>
+</tr>
+<tr>
+<td><code>device.rulesets.ignored</code></td>
+<td>warning</td>
+<td>A device that is not a Router or a Firewall has firewall rulesets, which phenix does not apply.</td>
+</tr>
+<tr>
+<td><code>device.router-os.unsupported</code></td>
+<td>warning</td>
+<td>A Router or Firewall has an os_type other than vyatta, vyos or minirouter, so phenix does not configure it as a router.</td>
+</tr>
+<tr>
+<td><code>device.interfaces.unconfigured</code></td>
+<td>warning</td>
+<td>A device has static interfaces, but its os_type is one for which phenix writes no interface configuration.</td>
+</tr>
+<tr>
+<td><code>device.serial.unconfigured</code></td>
+<td>warning</td>
+<td>A device has serial interfaces, but phenix sets them up only when its os_type is linux.</td>
+</tr>
+<tr>
+<td><code>device.injections.unapplied</code></td>
+<td>warning</td>
+<td>A device has file injections or deletions that phenix does not apply, because its snapshot is off or its first drive's inject partition is 0.</td>
+</tr>
+<tr>
+<td><code>device.ospf.missing</code></td>
+<td>error</td>
+<td>A Vyatta or VyOS router has an interface with proto ospf but no network.ospf, so the experiment fails to start, which blocks publishing.</td>
+</tr>
+<tr>
+<td><code>device.ospf.unused</code></td>
+<td>warning</td>
+<td>A minirouter has network.ospf, but none of its interfaces has proto ospf.</td>
+</tr>
+<tr>
+<td><code>device.ospf-network.unused</code></td>
+<td>warning</td>
+<td>An OSPF area network of a minirouter holds the address of none of its interfaces with proto ospf, so minirouter does not advertise it.</td>
+</tr>
+<tr>
+<td><code>device.ntp-server.invalid</code></td>
+<td>error</td>
+<td>The ntp-server label names no interface of its device, or one with no IP address, so the experiment fails to start, which blocks publishing.</td>
+</tr>
+<tr>
+<td><code>device.ntp-server.ignored</code></td>
+<td>warning</td>
+<td>More than one device has the ntp-server label, and phenix uses only the first.</td>
+</tr>
+<tr>
+<td><code>device.ntp-server.no-mgmt</code></td>
+<td>warning</td>
+<td>Routers get their NTP server from an interface of the ntp-server device on VLAN mgmt, and it has none.</td>
+</tr>
+<tr>
+<td><code>device.enable-ssh.invalid</code></td>
+<td>warning</td>
+<td>The vrouter/enable-ssh annotation of a Vyatta or VyOS router is neither an IP address nor the name of an interface with an address.</td>
+</tr>
+<tr>
+<td><code>device.autotunnel.invalid</code></td>
+<td>warning</td>
+<td>The phenix/startup-autotunnel annotation is not a list of "port", "port:dport" or "port:host:dport" texts.</td>
+</tr>
+<tr>
+<td><code>device.default-apps.invalid</code></td>
+<td>warning</td>
+<td>The phenix/default-apps annotation is not true or false.</td>
+</tr>
+<tr>
+<td><code>interface.id.required</code></td>
+<td>error</td>
+<td>A connection point has no ID.</td>
+</tr>
+<tr>
+<td><code>interface.id.invalid</code></td>
+<td>error</td>
+<td>A connection point ID is not a UUID.</td>
+</tr>
+<tr>
+<td><code>interface.id.duplicate</code></td>
+<td>error</td>
+<td>Two connection points have the same ID, ignoring case.</td>
+</tr>
+<tr>
+<td><code>interface.name.required</code></td>
+<td>error</td>
+<td>A connection point has no name.</td>
+</tr>
+<tr>
+<td><code>interface.name.duplicate</code></td>
+<td>error</td>
+<td>Two connection points of a device have the same name, ignoring case.</td>
+</tr>
+<tr>
+<td><code>interface.name.unmatched</code></td>
+<td>warning</td>
+<td>A connection point names no interface of the device's spec, so publishing drops it.</td>
+</tr>
+<tr>
+<td><code>interface.vlan.missing</code></td>
+<td>error</td>
+<td>An interface of a device phenix starts has no VLAN, which blocks publishing.</td>
+</tr>
+<tr>
+<td><code>interface.vlan.implicit</code></td>
+<td>warning</td>
+<td>A publish puts an unconnected interface on the network of the diagram that its VLAN names.</td>
+</tr>
+<tr>
+<td><code>interface.vlan.case-mismatch</code></td>
+<td>warning</td>
+<td>An interface's VLAN differs from a network's name only in case, and phenix does not match them.</td>
+</tr>
+<tr>
+<td><code>interface.vlan.unknown</code></td>
+<td>warning</td>
+<td>An interface's VLAN names no network of the diagram.</td>
+</tr>
+<tr>
+<td><code>interface.network.unconnected</code></td>
+<td>warning</td>
+<td>An interface is not connected to a network.</td>
+</tr>
+<tr>
+<td><code>interface.ip.shared</code></td>
+<td>error</td>
+<td>Interfaces on one network use the same IP address, which blocks publishing.</td>
+</tr>
+<tr>
+<td><code>interface.mac.shared</code></td>
+<td>error</td>
+<td>Interfaces on one network use the same MAC address, which blocks publishing.</td>
+</tr>
+<tr>
+<td><code>interface.ip.outside-subnet</code></td>
+<td>warning</td>
+<td>An interface's IP address is not a host address of the subnet of its network.</td>
+</tr>
+<tr>
+<td><code>interface.ruleset.unknown</code></td>
+<td>warning</td>
+<td>An interface names a firewall ruleset that its device does not have, so phenix applies no firewall to that interface.</td>
+</tr>
+<tr>
+<td><code>interface.ospf.outside-area</code></td>
+<td>warning</td>
+<td>An interface with proto ospf of a minirouter is in no OSPF area network of the device, or the device has no network.ospf. As a result, the interface is in no OSPF area.</td>
+</tr>
+<tr>
+<td><code>switch.network.required</code></td>
+<td>error</td>
+<td>A switch names no network.</td>
+</tr>
+<tr>
+<td><code>switch.network.unknown</code></td>
+<td>error</td>
+<td>A switch names a network the document does not have.</td>
+</tr>
+<tr>
+<td><code>switch.color.invalid</code></td>
+<td>error</td>
+<td>A switch's outline or fill color is not #rrggbb.</td>
+</tr>
+<tr>
+<td><code>switch.icon-size.unknown</code></td>
+<td>error</td>
+<td>A switch's icon size is not small, medium or large.</td>
+</tr>
+<tr>
+<td><code>switch.layer.out-of-range</code></td>
+<td>error</td>
+<td>A switch's layer is not an integer from 0 to 99.</td>
+</tr>
+<tr>
+<td><code>group.border-style.unknown</code></td>
+<td>error</td>
+<td>A group's border style is not one the Builder draws.</td>
+</tr>
+<tr>
+<td><code>group.icon-key.unknown</code></td>
+<td>error</td>
+<td>A group's icon key is not a built-in icon.</td>
+</tr>
+<tr>
+<td><code>group.icon.invalid</code></td>
+<td>error</td>
+<td>A group's custom icon is not an icon name.</td>
+</tr>
+<tr>
+<td><code>group.icon-size.unknown</code></td>
+<td>error</td>
+<td>A group's icon size is not small, medium or large.</td>
+</tr>
+<tr>
+<td><code>group.hide-description.not-boolean</code></td>
+<td>error</td>
+<td>A group's hideDescription is not true or false.</td>
+</tr>
+<tr>
+<td><code>drawing.shape.unknown</code></td>
+<td>error</td>
+<td>A shape's figure is not rectangle or circle.</td>
+</tr>
+<tr>
+<td><code>drawing.color.invalid</code></td>
+<td>error</td>
+<td>A shape's or a line's color is not #rrggbb.</td>
+</tr>
+<tr>
+<td><code>drawing.border-style.unknown</code></td>
+<td>error</td>
+<td>A shape's border style is not one the Builder draws.</td>
+</tr>
+<tr>
+<td><code>drawing.icon.ambiguous</code></td>
+<td>error</td>
+<td>An icon drawing names both or neither of a built-in icon and a custom icon.</td>
+</tr>
+<tr>
+<td><code>drawing.icon-key.unknown</code></td>
+<td>error</td>
+<td>An icon drawing's icon key is not a built-in icon.</td>
+</tr>
+<tr>
+<td><code>drawing.icon.invalid</code></td>
+<td>error</td>
+<td>An icon drawing's custom icon is not an icon name.</td>
+</tr>
+<tr>
+<td><code>drawing.points.too-few</code></td>
+<td>error</td>
+<td>A line has fewer than 2 points.</td>
+</tr>
+<tr>
+<td><code>drawing.points.too-many</code></td>
+<td>error</td>
+<td>A line has more than 64 points.</td>
+</tr>
+<tr>
+<td><code>drawing.points.not-finite</code></td>
+<td>error</td>
+<td>A point of a line is not finite numbers.</td>
+</tr>
+<tr>
+<td><code>drawing.line-style.unknown</code></td>
+<td>error</td>
+<td>A line's style is not one the Builder draws.</td>
+</tr>
+<tr>
+<td><code>drawing.arrow.not-boolean</code></td>
+<td>error</td>
+<td>A line's startArrow or endArrow is not true or false.</td>
+</tr>
+<tr>
+<td><code>edge.id.required</code></td>
+<td>error</td>
+<td>A connection has no ID.</td>
+</tr>
+<tr>
+<td><code>edge.id.invalid</code></td>
+<td>error</td>
+<td>A connection ID is not a UUID.</td>
+</tr>
+<tr>
+<td><code>edge.id.duplicate</code></td>
+<td>error</td>
+<td>Two connections have the same ID, ignoring case.</td>
+</tr>
+<tr>
+<td><code>edge.route.too-few</code></td>
+<td>error</td>
+<td>A connection's route has fewer than 2 points.</td>
+</tr>
+<tr>
+<td><code>edge.route.not-finite</code></td>
+<td>error</td>
+<td>A point of a connection's route is not finite numbers.</td>
+</tr>
+<tr>
+<td><code>edge.line-style.unknown</code></td>
+<td>error</td>
+<td>A connection's line style is not one the Builder draws.</td>
+</tr>
+<tr>
+<td><code>edge.source.unknown</code></td>
+<td>error</td>
+<td>A connection's source is no node of the document.</td>
+</tr>
+<tr>
+<td><code>edge.target.unknown</code></td>
+<td>error</td>
+<td>A connection's target is no node of the document.</td>
+</tr>
+<tr>
+<td><code>edge.endpoints.same</code></td>
+<td>error</td>
+<td>A connection joins a node to itself.</td>
+</tr>
+<tr>
+<td><code>edge.endpoints.invalid</code></td>
+<td>error</td>
+<td>A connection does not join one device interface to one switch.</td>
+</tr>
+<tr>
+<td><code>edge.handle.unknown</code></td>
+<td>error</td>
+<td>A connection names a connection point its device does not have.</td>
+</tr>
+<tr>
+<td><code>edge.interface.connected</code></td>
+<td>error</td>
+<td>More than one connection attaches to an interface.</td>
+</tr>
+<tr>
+<td><code>edge.network.required</code></td>
+<td>error</td>
+<td>A connection names no network.</td>
+</tr>
+<tr>
+<td><code>edge.network.unknown</code></td>
+<td>error</td>
+<td>A connection names a network the document does not have.</td>
+</tr>
+<tr>
+<td><code>edge.network.mismatch</code></td>
+<td>error</td>
+<td>A connection names a network other than the network of its switch.</td>
+</tr>
+<tr>
+<td><code>scenario.list.too-many</code></td>
+<td>error</td>
+<td>The document lists more than 20 scenarios.</td>
+</tr>
+<tr>
+<td><code>scenario.name.required</code></td>
+<td>error</td>
+<td>A listed scenario has no name.</td>
+</tr>
+<tr>
+<td><code>scenario.name.too-long</code></td>
+<td>error</td>
+<td>A scenario name is longer than 256 bytes.</td>
+</tr>
+<tr>
+<td><code>scenario.name.invalid</code></td>
+<td>error</td>
+<td>A scenario name is not a config name.</td>
+</tr>
+<tr>
+<td><code>scenario.name.duplicate</code></td>
+<td>error</td>
+<td>The document lists a scenario twice, ignoring case.</td>
+</tr>
+<tr>
+<td><code>layer.list.too-many</code></td>
+<td>error</td>
+<td>The document defines more than 32 layers.</td>
+</tr>
+<tr>
+<td><code>layer.id.out-of-range</code></td>
+<td>error</td>
+<td>A layer ID is not an integer from 0 to 99.</td>
+</tr>
+<tr>
+<td><code>layer.id.duplicate</code></td>
+<td>error</td>
+<td>Two layers have the same ID.</td>
+</tr>
+<tr>
+<td><code>layer.label.required</code></td>
+<td>error</td>
+<td>A layer has no label.</td>
+</tr>
+<tr>
+<td><code>layer.label.too-long</code></td>
+<td>error</td>
+<td>A layer label is longer than 64 bytes.</td>
+</tr>
+<tr>
+<td><code>layer.label.control</code></td>
+<td>error</td>
+<td>A layer label holds a control character.</td>
+</tr>
+<tr>
+<td><code>layer.icon-key.unknown</code></td>
+<td>error</td>
+<td>A layer's icon key is not a built-in icon.</td>
+</tr>
+<tr>
+<td><code>layer.icon.invalid</code></td>
+<td>error</td>
+<td>A layer's custom icon is not an icon name.</td>
+</tr>
+<tr>
+<td><code>layer.color.invalid</code></td>
+<td>error</td>
+<td>A layer's color is not #rrggbb.</td>
+</tr>
+<tr>
+<td><code>layer.matchers.not-object</code></td>
+<td>error</td>
+<td>A layer's node matchers are not an object of patterns by field.</td>
+</tr>
+<tr>
+<td><code>layer.matchers.too-many</code></td>
+<td>error</td>
+<td>A layer has more than 16 node matchers.</td>
+</tr>
+<tr>
+<td><code>layer.matcher-path.too-long</code></td>
+<td>error</td>
+<td>A node matcher field is longer than 128 bytes.</td>
+</tr>
+<tr>
+<td><code>layer.matcher-path.invalid</code></td>
+<td>error</td>
+<td>A node matcher field is not keys of letters, digits, _ or - joined by dots.</td>
+</tr>
+<tr>
+<td><code>layer.matcher-pattern.not-text</code></td>
+<td>error</td>
+<td>A node matcher pattern is not text.</td>
+</tr>
+<tr>
+<td><code>layer.matcher-pattern.required</code></td>
+<td>error</td>
+<td>A node matcher has no pattern.</td>
+</tr>
+<tr>
+<td><code>layer.matcher-pattern.too-long</code></td>
+<td>error</td>
+<td>A node matcher pattern is longer than 256 bytes.</td>
+</tr>
+<tr>
+<td><code>layer.matcher-pattern.invalid</code></td>
+<td>error</td>
+<td>A node matcher pattern is not a regular expression, or it has a repeat that Builder refuses. Builder refuses a repeated group that holds a repeat or an alternation, such as (a+)+. It also refuses more than 3 *, + or {n,} repeats.</td>
+</tr>
+<tr>
+<td><code>layerset.not-object</code></td>
+<td>error</td>
+<td>The document's layer set options are not an object.</td>
+</tr>
+<tr>
+<td><code>layerset.name.required</code></td>
+<td>error</td>
+<td>A layer set has no name.</td>
+</tr>
+<tr>
+<td><code>layerset.name.too-long</code></td>
+<td>error</td>
+<td>A layer set name is longer than 128 bytes.</td>
+</tr>
+<tr>
+<td><code>layerset.name.control</code></td>
+<td>error</td>
+<td>A layer set name holds a control character.</td>
+</tr>
+<tr>
+<td><code>layerset.description.too-long</code></td>
+<td>error</td>
+<td>A layer set description is longer than 1024 bytes.</td>
+</tr>
+<tr>
+<td><code>layerset.description.control</code></td>
+<td>error</td>
+<td>A layer set description holds a control character.</td>
+</tr>
+<tr>
+<td><code>layerset.icon-key.unknown</code></td>
+<td>error</td>
+<td>A layer set's icon key is not a built-in icon.</td>
+</tr>
+<tr>
+<td><code>layerset.icon.invalid</code></td>
+<td>error</td>
+<td>A layer set's custom icon is not an icon name.</td>
+</tr>
+<tr>
+<td><code>layerset.match-conflict.unknown</code></td>
+<td>error</td>
+<td>A layer set's match conflict rule is not lowest or highest.</td>
+</tr>
+<tr>
+<td><code>layerset.layer-outlines.not-boolean</code></td>
+<td>error</td>
+<td>The layer outlines option of a layer set is not true or false.</td>
+</tr>
+<tr>
+<td><code>layerset.layers.empty</code></td>
+<td>error</td>
+<td>A layer set holds no layer.</td>
+</tr>
+<tr>
+<td><code>layerset.source-id.invalid</code></td>
+<td>error</td>
+<td>The layer set ID that a document names is not a layer set ID.</td>
+</tr>
+<tr>
+<td><code>layerset.source-version.invalid</code></td>
+<td>error</td>
+<td>The layer set version that a document names is not an integer of 1 or more.</td>
+</tr>
+<tr>
+<td><code>layerset.file.schema-mismatch</code></td>
+<td>error</td>
+<td>A layer set file's $schema is not the layer set file schema.</td>
+</tr>
+<tr>
+<td><code>layerset.invalid</code></td>
+<td>error</td>
+<td>A layer set does not validate. The issues field lists each reason.</td>
+</tr>
+<tr>
+<td><code>layerset.read-only</code></td>
+<td>error</td>
+<td>A request cannot change or delete a built-in layer set. Duplicate it to change it.</td>
+</tr>
+<tr>
+<td><code>layerset.stale</code></td>
+<td>error</td>
+<td>The If-Match entity tag names a version of the layer set that is no longer current.</td>
+</tr>
+<tr>
+<td><code>layerset.library.full</code></td>
+<td>error</td>
+<td>The layer set library holds 200 sets, the most it may.</td>
+</tr>
+<tr>
+<td><code>layerset.default.unknown</code></td>
+<td>error</td>
+<td>The layer set chosen as the default does not exist.</td>
+</tr>
+<tr>
+<td><code>source.kind.unknown</code></td>
+<td>error</td>
+<td>The source's kind is not manual, topology or experiment.</td>
+</tr>
+<tr>
+<td><code>source.digest.malformed</code></td>
+<td>error</td>
+<td>The source digest is not sha256: and 64 hex digits.</td>
+</tr>
+<tr>
+<td><code>source.annotations.not-object</code></td>
+<td>error</td>
+<td>The source annotations are not an object of text values.</td>
+</tr>
+<tr>
+<td><code>source.annotations.too-many</code></td>
+<td>error</td>
+<td>The source carries more than 100 annotations.</td>
+</tr>
+<tr>
+<td><code>source.annotations.too-large</code></td>
+<td>error</td>
+<td>The source annotations take more than 256 KiB.</td>
+</tr>
+<tr>
+<td><code>source.annotation.not-text</code></td>
+<td>error</td>
+<td>A source annotation's value is not text.</td>
+</tr>
+<tr>
+<td><code>source.annotation-key.blank</code></td>
+<td>error</td>
+<td>A source annotation key is blank.</td>
+</tr>
+<tr>
+<td><code>source.annotation-key.too-long</code></td>
+<td>error</td>
+<td>A source annotation key is longer than 512 bytes.</td>
+</tr>
+<tr>
+<td><code>source.annotation-key.control</code></td>
+<td>error</td>
+<td>A source annotation key holds a control character.</td>
+</tr>
+<tr>
+<td><code>include.list.not-list</code></td>
+<td>error</td>
+<td>The included topologies are not a list of names.</td>
+</tr>
+<tr>
+<td><code>include.name.required</code></td>
+<td>error</td>
+<td>An included topology has no name.</td>
+</tr>
+<tr>
+<td><code>include.name.whitespace</code></td>
+<td>error</td>
+<td>The name of an included topology holds white space.</td>
+</tr>
+<tr>
+<td><code>template.list.not-list</code></td>
+<td>error</td>
+<td>The document's templates are not a list.</td>
+</tr>
+<tr>
+<td><code>template.list.too-many</code></td>
+<td>error</td>
+<td>The document carries more than 50 templates.</td>
+</tr>
+<tr>
+<td><code>template.id.required</code></td>
+<td>error</td>
+<td>A template has no ID.</td>
+</tr>
+<tr>
+<td><code>template.id.invalid</code></td>
+<td>error</td>
+<td>A template ID is not a UUID.</td>
+</tr>
+<tr>
+<td><code>template.id.duplicate</code></td>
+<td>error</td>
+<td>Two templates have the same ID, ignoring case.</td>
+</tr>
+<tr>
+<td><code>template.name.required</code></td>
+<td>error</td>
+<td>A template has no name.</td>
+</tr>
+<tr>
+<td><code>template.name.too-long</code></td>
+<td>error</td>
+<td>A template name is longer than 128 bytes.</td>
+</tr>
+<tr>
+<td><code>template.name.control</code></td>
+<td>error</td>
+<td>A template name holds a control character.</td>
+</tr>
+<tr>
+<td><code>template.name.duplicate</code></td>
+<td>error</td>
+<td>Two templates of a template file have the same name, ignoring case.</td>
+</tr>
+<tr>
+<td><code>template.description.too-long</code></td>
+<td>error</td>
+<td>A template description is longer than 1024 bytes.</td>
+</tr>
+<tr>
+<td><code>template.description.control</code></td>
+<td>error</td>
+<td>A template description holds a control character.</td>
+</tr>
+<tr>
+<td><code>template.spec.required</code></td>
+<td>error</td>
+<td>A template's device has no spec.</td>
+</tr>
+<tr>
+<td><code>template.hostname.required</code></td>
+<td>error</td>
+<td>A template's spec has no general.hostname.</td>
+</tr>
+<tr>
+<td><code>template.hostname.whitespace</code></td>
+<td>error</td>
+<td>A template's hostname holds white space.</td>
+</tr>
+<tr>
+<td><code>template.icon-key.unknown</code></td>
+<td>error</td>
+<td>A template's icon key is not a built-in icon.</td>
+</tr>
+<tr>
+<td><code>template.icon.invalid</code></td>
+<td>error</td>
+<td>A template's custom icon is not an icon name.</td>
+</tr>
+<tr>
+<td><code>template.icon-size.unknown</code></td>
+<td>error</td>
+<td>A template's icon size is not small, medium or large.</td>
+</tr>
+<tr>
+<td><code>template.color.invalid</code></td>
+<td>error</td>
+<td>A template's outline or fill color is not #rrggbb.</td>
+</tr>
+<tr>
+<td><code>template.layer.out-of-range</code></td>
+<td>error</td>
+<td>A template's layer is not an integer from 0 to 99.</td>
+</tr>
+<tr>
+<td><code>template.hide-description.not-boolean</code></td>
+<td>error</td>
+<td>A template's hideDescription is not true or false.</td>
+</tr>
+<tr>
+<td><code>template.device.unencodable</code></td>
+<td>error</td>
+<td>Builder cannot encode a template's device as JSON.</td>
+</tr>
+<tr>
+<td><code>template.device.too-large</code></td>
+<td>error</td>
+<td>A template's device takes more than 16 KiB as JSON.</td>
+</tr>
+<tr>
+<td><code>template.source.kind-unknown</code></td>
+<td>error</td>
+<td>A template's source kind is not library, builtin or preloaded.</td>
+</tr>
+<tr>
+<td><code>template.source.id-invalid</code></td>
+<td>error</td>
+<td>A template's source has no ID, or an ID that is not a template ID.</td>
+</tr>
+<tr>
+<td><code>template.source.version-invalid</code></td>
+<td>error</td>
+<td>A template's source version is less than 1.</td>
+</tr>
+<tr>
+<td><code>template.source.digest-invalid</code></td>
+<td>error</td>
+<td>A template's source digest is not sha256 and 64 lowercase hex digits.</td>
+</tr>
+<tr>
+<td><code>template.file.invalid</code></td>
+<td>error</td>
+<td>A template file does not validate. The issues field lists each reason.</td>
+</tr>
+<tr>
+<td><code>template.file.schema-mismatch</code></td>
+<td>error</td>
+<td>A template file's $schema is not the template file schema.</td>
+</tr>
+<tr>
+<td><code>template.file.empty</code></td>
+<td>error</td>
+<td>A template file holds no template.</td>
+</tr>
+<tr>
+<td><code>template.file.too-many</code></td>
+<td>error</td>
+<td>A template file holds more than 200 templates.</td>
+</tr>
+<tr>
+<td><code>template.collection-name.required</code></td>
+<td>error</td>
+<td>A template file's collection has no name.</td>
+</tr>
+<tr>
+<td><code>template.collection-name.too-long</code></td>
+<td>error</td>
+<td>A collection name is longer than 128 bytes.</td>
+</tr>
+<tr>
+<td><code>template.collection-name.control</code></td>
+<td>error</td>
+<td>A collection name holds a control character.</td>
+</tr>
+<tr>
+<td><code>template.collection-description.too-long</code></td>
+<td>error</td>
+<td>A collection description is longer than 1024 bytes.</td>
+</tr>
+<tr>
+<td><code>template.collection-description.control</code></td>
+<td>error</td>
+<td>A collection description holds a control character.</td>
+</tr>
+<tr>
+<td><code>template.item.read-only</code></td>
+<td>error</td>
+<td>A request changes a built-in template or an item of a template file. These are read only.</td>
+</tr>
+<tr>
+<td><code>template.item.stale</code></td>
+<td>error</td>
+<td>A template or collection changed after the request read it. Reload the template library.</td>
+</tr>
+<tr>
+<td><code>icon.list.not-object</code></td>
+<td>error</td>
+<td>The custom icons are not an object of icons by name.</td>
+</tr>
+<tr>
+<td><code>icon.list.too-many</code></td>
+<td>error</td>
+<td>The document carries more than 50 custom icons.</td>
+</tr>
+<tr>
+<td><code>icon.name.invalid</code></td>
+<td>error</td>
+<td>A custom icon's name is not an icon name.</td>
+</tr>
+<tr>
+<td><code>icon.data.invalid</code></td>
+<td>error</td>
+<td>A custom icon's data is not base64 of at most 40960 bytes.</td>
+</tr>
+<tr>
+<td><code>icon.png.invalid</code></td>
+<td>error</td>
+<td>A custom icon is not a PNG the Builder accepts.</td>
+</tr>
+<tr>
+<td><code>package.invalid</code></td>
+<td>error</td>
+<td>A Builder package does not decode or validate. The issues field lists each item that does not validate.</td>
+</tr>
+<tr>
+<td><code>package.too-large</code></td>
+<td>error</td>
+<td>A Builder package is larger than 5 MiB.</td>
+</tr>
+<tr>
+<td><code>package.schema.mismatch</code></td>
+<td>error</td>
+<td>A package's $schema is not the Builder package schema.</td>
+</tr>
+<tr>
+<td><code>package.document.missing</code></td>
+<td>error</td>
+<td>A package holds no Builder document.</td>
+</tr>
+<tr>
+<td><code>package.document.invalid</code></td>
+<td>error</td>
+<td>A package's document does not decode as a Builder document.</td>
+</tr>
+<tr>
+<td><code>package.configs.too-many</code></td>
+<td>error</td>
+<td>A package carries more than 20 Scenario configs or 100 Topology configs.</td>
+</tr>
+<tr>
+<td><code>package.config-key.invalid</code></td>
+<td>error</td>
+<td>The key a package keeps a config under is not a config name.</td>
+</tr>
+<tr>
+<td><code>package.config-kind.mismatch</code></td>
+<td>error</td>
+<td>A carried config's kind is not the kind of its list.</td>
+</tr>
+<tr>
+<td><code>package.config-name.mismatch</code></td>
+<td>error</td>
+<td>A carried config's metadata.name is not the key the package keeps it under.</td>
+</tr>
+<tr>
+<td><code>package.config-api-version.invalid</code></td>
+<td>error</td>
+<td>A carried config's apiVersion is not phenix.sandia.gov/v and a number.</td>
+</tr>
+<tr>
+<td><code>package.config-spec.missing</code></td>
+<td>error</td>
+<td>A carried config has no spec.</td>
+</tr>
+<tr>
+<td><code>package.config.unlisted</code></td>
+<td>error</td>
+<td>A package carries a config its requirements do not name.</td>
+</tr>
+<tr>
+<td><code>package.config-annotation.builder</code></td>
+<td>error</td>
+<td>A carried config has a Builder annotation, which a package never carries.</td>
+</tr>
+<tr>
+<td><code>package.requirements.missing</code></td>
+<td>error</td>
+<td>A list of a package's requirements is missing or null.</td>
+</tr>
+<tr>
+<td><code>package.requirements.too-many</code></td>
+<td>error</td>
+<td>A list of a package's requirements holds more than 1000 entries.</td>
+</tr>
+<tr>
+<td><code>package.requirement.blank</code></td>
+<td>error</td>
+<td>An entry of a package's requirements is blank.</td>
+</tr>
+<tr>
+<td><code>package.requirement.too-long</code></td>
+<td>error</td>
+<td>An entry of a package's requirements is longer than 4096 bytes.</td>
+</tr>
+<tr>
+<td><code>package.requirement.control</code></td>
+<td>error</td>
+<td>An entry of a package's requirements holds a control character.</td>
+</tr>
+<tr>
+<td><code>package.config.unreadable</code></td>
+<td>warning</td>
+<td>A Scenario config or included topology that the document names does not exist, or the caller may not read it. The package does not carry it.</td>
+</tr>
+<tr>
+<td><code>package.include.file-path</code></td>
+<td>warning</td>
+<td>An included topology is a file path, which a package never carries.</td>
+</tr>
+<tr>
+<td><code>package.icon.missing</code></td>
+<td>warning</td>
+<td>A custom icon the document names is not in the icon library, so the package does not carry it.</td>
+</tr>
+<tr>
+<td><code>package.icons.too-many</code></td>
+<td>warning</td>
+<td>The document names more custom icons than the 50 a package carries. The package does not carry the rest.</td>
+</tr>
+<tr>
+<td><code>package.requirement.left-out</code></td>
+<td>warning</td>
+<td>A name or path that the document or a config holds is blank, longer than 4096 bytes or holds a control character. The package does not list it.</td>
+</tr>
+<tr>
+<td><code>package.requirements.truncated</code></td>
+<td>warning</td>
+<td>A list of the requirements would hold more than 1000 entries, so the package lists the first 1000.</td>
+</tr>
+<tr>
+<td><code>publish.blocked</code></td>
+<td>error</td>
+<td>Only publishing refuses the topology. The issues field lists each interface, address or hostname to fix.</td>
+</tr>
+<tr>
+<td><code>publish.topology.invalid</code></td>
+<td>error</td>
+<td>phenix's topology schema refuses the topology the document publishes as.</td>
+</tr>
+<tr>
+<td><code>publish.topology.exists</code></td>
+<td>error</td>
+<td>The topology a publish creates already exists.</td>
+</tr>
+<tr>
+<td><code>publish.topology.missing</code></td>
+<td>error</td>
+<td>The topology a publish updates does not exist.</td>
+</tr>
+<tr>
+<td><code>publish.topology.not-source</code></td>
+<td>error</td>
+<td>The topology is not the source of this draft, so the draft cannot update it.</td>
+</tr>
+<tr>
+<td><code>publish.topology.changed</code></td>
+<td>error</td>
+<td>The topology changed after this draft published it.</td>
+</tr>
+<tr>
+<td><code>publish.topology.file-mismatch</code></td>
+<td>error</td>
+<td>The topology is not what its Builder file publishes, so a publish cannot update it.</td>
+</tr>
+<tr>
+<td><code>publish.topology.file-changed</code></td>
+<td>error</td>
+<td>The topology or its Builder file changed after Builder opened this draft from the file.</td>
+</tr>
+<tr>
+<td><code>publish.experiment.exists</code></td>
+<td>error</td>
+<td>The experiment a publish creates already exists.</td>
+</tr>
+<tr>
+<td><code>publish.experiment.missing</code></td>
+<td>error</td>
+<td>The experiment a publish updates does not exist.</td>
+</tr>
+<tr>
+<td><code>publish.experiment.not-source</code></td>
+<td>error</td>
+<td>The experiment is not the source of this draft, so the draft cannot update it.</td>
+</tr>
+<tr>
+<td><code>publish.experiment.changed</code></td>
+<td>error</td>
+<td>The experiment changed after this draft published it.</td>
+</tr>
+<tr>
+<td><code>publish.experiment.running</code></td>
+<td>error</td>
+<td>A publish cannot update a running experiment.</td>
+</tr>
+<tr>
+<td><code>publish.experiment.invalid</code></td>
+<td>error</td>
+<td>phenix refuses the experiment a publish would write.</td>
+</tr>
+<tr>
+<td><code>publish.experiment.reserved</code></td>
+<td>error</td>
+<td>The experiment is named "all", which phenix reserves.</td>
+</tr>
+<tr>
+<td><code>publish.experiment.name-too-long</code></td>
+<td>error</td>
+<td>This server names a bridge after the experiment, and the experiment name is too long for a bridge name.</td>
+</tr>
+<tr>
+<td><code>publish.experiment.unmergeable</code></td>
+<td>error</td>
+<td>An update cannot merge an included topology into the experiment that it writes.</td>
+</tr>
+<tr>
+<td><code>publish.source.changed</code></td>
+<td>error</td>
+<td>The topology or experiment that is the source of a diagram changed on the server after Builder made the diagram.</td>
+</tr>
+<tr>
+<td><code>publish.scenario.missing</code></td>
+<td>error</td>
+<td>A scenario the document lists does not exist, or the caller may not read it.</td>
+</tr>
+<tr>
+<td><code>publish.scenario.not-listed</code></td>
+<td>error</td>
+<td>The experiment's scenario is not one the document lists.</td>
+</tr>
+<tr>
+<td><code>publish.scenario.invalid</code></td>
+<td>error</td>
+<td>A listed scenario is not valid if the publish adds the topology.</td>
+</tr>
+<tr>
+<td><code>publish.include.clash</code></td>
+<td>error</td>
+<td>The topology and a topology that it includes have the same hostname.</td>
+</tr>
+<tr>
+<td><code>publish.include.hostname</code></td>
+<td>error</td>
+<td>An included topology has a hostname phenix refuses in an experiment.</td>
+</tr>
+<tr>
+<td><code>publish.target.invalid</code></td>
+<td>error</td>
+<td>A topology, experiment or scenario name is not a config name.</td>
+</tr>
+<tr>
+<td><code>publish.stage.failed</code></td>
+<td>error</td>
+<td>A publish stage failed after the server wrote earlier stages.</td>
+</tr>
+<tr>
+<td><code>publish.cleanup.failed</code></td>
+<td>warning</td>
+<td>The publication is complete, but the server could not remove the content that it replaces.</td>
+</tr>
+<tr>
+<td><code>publish.broadcast.failed</code></td>
+<td>warning</td>
+<td>The server stored a config, but it could not broadcast the live update of the config.</td>
+</tr>
+<tr>
+<td><code>publish.file.unchanged</code></td>
+<td>warning</td>
+<td>The topology names a Builder file that publishing does not change.</td>
+</tr>
+<tr>
+<td><code>publish.legacy.replaced</code></td>
+<td>warning</td>
+<td>This diagram replaced the topology's legacy Builder diagram.</td>
+</tr>
+<tr>
+<td><code>publish.legacy.removed</code></td>
+<td>warning</td>
+<td>The server could not read the topology's legacy Builder diagram. The server removed it.</td>
+</tr>
+<tr>
+<td><code>publish.experiment.unrecorded</code></td>
+<td>warning</td>
+<td>The server stored the experiment, but not which draft published it.</td>
+</tr>
+<tr>
+<td><code>publish.experiment.pins-removed</code></td>
+<td>warning</td>
+<td>The experiment update removed the host pins of VMs that are no longer in the topology.</td>
+</tr>
+<tr>
+<td><code>publish.scenario.partial</code></td>
+<td>warning</td>
+<td>The server updated some scenarios before the scenario stage failed.</td>
+</tr>
+<tr>
+<td><code>publish.retry.complete</code></td>
+<td>warning</td>
+<td>The same publication was already complete. The server wrote nothing.</td>
+</tr>
+<tr>
+<td><code>publish.retry.available</code></td>
+<td>warning</td>
+<td>A stage failed after the server wrote other stages. Publish again with the same choices to finish. The server skips the steps that are already done.</td>
+</tr>
+<tr>
+<td><code>preflight.capacity.cpu</code></td>
+<td>warning</td>
+<td>The schedulable hosts have fewer free CPUs than the devices take. VMs would share CPUs.</td>
+</tr>
+<tr>
+<td><code>preflight.capacity.memory</code></td>
+<td>error</td>
+<td>The schedulable hosts have less free memory than the diagram's devices take.</td>
+</tr>
+<tr>
+<td><code>preflight.capacity.vm-too-large</code></td>
+<td>error</td>
+<td>A device fits on no single schedulable host: none has both its CPUs and its memory.</td>
+</tr>
+<tr>
+<td><code>preflight.network.vlan-range</code></td>
+<td>error</td>
+<td>The experiment's VLAN range is too small for the diagram, or leaves out a VLAN alias.</td>
+</tr>
+<tr>
+<td><code>preflight.network.alias-in-use</code></td>
+<td>error</td>
+<td>A network's VLAN alias is a VLAN a running experiment already uses.</td>
+</tr>
+<tr>
+<td><code>preflight.network.bridge-missing</code></td>
+<td>warning</td>
+<td>A bridge the diagram's interfaces or the experiment use does not exist on a host yet.</td>
+</tr>
+<tr>
+<td><code>preflight.disk.missing</code></td>
+<td>error</td>
+<td>A drive image is not one of the server's disk images.</td>
+</tr>
+<tr>
+<td><code>preflight.disk.kind</code></td>
+<td>error</td>
+<td>A drive image is not of the kind its device needs: VM or ISO for kvm, container otherwise.</td>
+</tr>
+<tr>
+<td><code>preflight.app.missing</code></td>
+<td>error</td>
+<td>A scenario names an app that is not a default, built-in or user app of this server.</td>
+</tr>
+<tr>
+<td><code>preflight.app.scenario-missing</code></td>
+<td>error</td>
+<td>A scenario the diagram lists does not exist.</td>
+</tr>
+<tr>
+<td><code>preflight.app.scenario-unreadable</code></td>
+<td>warning</td>
+<td>The caller may not read a scenario the diagram lists, or the server cannot read it now.</td>
+</tr>
+<tr>
+<td><code>preflight.unavailable</code></td>
+<td>warning</td>
+<td>The server could not do a preflight check, or part of one. The message says why.</td>
+</tr>
+<tr>
+<td><code>draft.stale</code></td>
+<td>error</td>
+<td>The If-Match entity tag names a version of the draft that is no longer current.</td>
+</tr>
+<tr>
+<td><code>draft.conflict</code></td>
+<td>error</td>
+<td>The draft changed while the server handled the request. Read the draft again and retry.</td>
+</tr>
+<tr>
+<td><code>draft.snapshot.current</code></td>
+<td>error</td>
+<td>A request cannot delete the current version of a draft.</td>
+</tr>
+<tr>
+<td><code>draft.limit</code></td>
+<td>error</td>
+<td>The server holds 2000 drafts, the most it may. Delete some, or run Clean up in the settings.</td>
+</tr>
+<tr>
+<td><code>import.name.invalid</code></td>
+<td>error</td>
+<td>The new topology name of a copy or a combined import is not a config name.</td>
+</tr>
+<tr>
+<td><code>import.name.source</code></td>
+<td>error</td>
+<td>The new topology name of a copy or a combined import is the imported topology's own name.</td>
+</tr>
+<tr>
+<td><code>request.invalid</code></td>
+<td>error</td>
+<td>The body, a header or a parameter of the request is not valid.</td>
+</tr>
+<tr>
+<td><code>request.forbidden</code></td>
+<td>error</td>
+<td>The caller's role does not allow the operation.</td>
+</tr>
+<tr>
+<td><code>request.not-found</code></td>
+<td>error</td>
+<td>What the request names does not exist, or the caller may not see it.</td>
+</tr>
+<tr>
+<td><code>request.method-not-allowed</code></td>
+<td>error</td>
+<td>The route does not take the method of the request. The Allow header names the methods it takes.</td>
+</tr>
+<tr>
+<td><code>request.conflict</code></td>
+<td>error</td>
+<td>The request conflicts with what is stored.</td>
+</tr>
+<tr>
+<td><code>request.stale</code></td>
+<td>error</td>
+<td>The If-Match entity tag names a version that is no longer current.</td>
+</tr>
+<tr>
+<td><code>request.too-large</code></td>
+<td>error</td>
+<td>The request or what it stores is larger than a limit.</td>
+</tr>
+<tr>
+<td><code>request.unprocessable</code></td>
+<td>error</td>
+<td>The request is well formed, but the server cannot do what it asks for.</td>
+</tr>
+<tr>
+<td><code>server.error</code></td>
+<td>error</td>
+<td>The server failed. Its log says why.</td>
+</tr>
+<tr>
+<td><code>server.busy</code></td>
+<td>error</td>
+<td>The server stopped trying because what the request asked for kept changing. Try again.</td>
+</tr>
+</tbody>
+</table>
+<!-- codes:end -->
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        
+
+<footer class="md-footer">
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-footer-copyright">
+        
+        powered by
+        <a href="https://www.mkdocs.org">MkDocs</a>
+        and
+        <a href="https://squidfunk.github.io/mkdocs-material/">
+          Material for MkDocs</a>
+      </div>
+
+      <!-- Social links -->
+      
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/sandialabs/sceptre-phenix" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="/swagger.html" target="_blank" rel="noopener" title="" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M195.1 9.5c3-14.8 16.1-25.5 31.3-25.5h59.8c15.2 0 28.3 10.7 31.3 25.5l14.5 70c14.1 6 27.3 13.7 39.3 22.8l67.8-22.5c14.4-4.8 30.2 1.2 37.8 14.4l29.9 51.8c7.6 13.2 4.9 29.8-6.5 39.9L447 233.3c.9 7.4 1.3 15 1.3 22.7s-.5 15.3-1.3 22.7l53.4 47.5c11.4 10.1 14 26.8 6.5 39.9L477 417.9c-7.6 13.1-23.4 19.2-37.8 14.4l-67.8-22.5c-12.1 9.1-25.3 16.7-39.3 22.8l-14.4 69.9c-3.1 14.9-16.2 25.5-31.3 25.5h-59.8c-15.2 0-28.3-10.7-31.3-25.5l-14.4-69.9c-14.1-6-27.2-13.7-39.3-22.8l-68.1 22.5c-14.4 4.8-30.2-1.2-37.8-14.4L5.8 366.1c-7.6-13.2-4.9-29.8 6.5-39.9l53.4-47.5c-.9-7.4-1.3-15-1.3-22.7s.5-15.3 1.3-22.7l-53.4-47.5C.9 175.7-1.7 159 5.8 145.9l29.9-51.8c7.6-13.2 23.4-19.2 37.8-14.4l67.8 22.5c12.1-9.1 25.3-16.7 39.3-22.8zM256.3 336a80 80 0 1 0-.6-160 80 80 0 1 0 .6 160"/></svg>
+    </a>
+  
+</div>
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

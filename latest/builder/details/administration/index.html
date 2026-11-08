@@ -1,0 +1,4028 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A place for phenix users to call home.">
+      
+      
+        <meta name="author" content="activeshadow and dnkcom">
+      
+      
+      
+        <link rel="prev" href="../publishing/">
+      
+      
+        <link rel="next" href="../../../apps/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../images/favicon.ico">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Administration - phenix documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../stylesheets/style.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="brown">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#administration-details" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="phenix documentation" class="md-header__button md-logo" aria-label="phenix documentation" data-md-component="logo">
+      
+  <img src="../../../images/phenix.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            phenix documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Administration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="brown"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-orange" data-md-color-accent="brown"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9 2c-1.05 0-2.05.16-3 .46 4.06 1.27 7 5.04 7 9.54s-2.94 8.27-7 9.54c.95.3 1.95.46 3 .46a10 10 0 0 0 10-10A10 10 0 0 0 9 2"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/sandialabs/sceptre-phenix" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sandialabs/sceptre-phenix
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="phenix documentation" class="md-nav__button md-logo" aria-label="phenix documentation" data-md-component="logo">
+      
+  <img src="../../../images/phenix.png" alt="logo">
+
+    </a>
+    phenix documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/sandialabs/sceptre-phenix" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sandialabs/sceptre-phenix
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiments
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Experiments
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../vms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VMs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../vm-multi-action/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VM Actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../image/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Builder
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Builder
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../drafts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drafts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../editor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Editor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates and Icons
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../import-upload-download/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Import, Upload and Download
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../publishing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Publishing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_11" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4_11" id="__nav_4_11_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_11_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../administration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../legacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Legacy Builder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_11_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4_11_3" id="__nav_4_11_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Details
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_4_11_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_11_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Details
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../drafts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drafts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../editor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Editor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../checks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Checks and Preflight
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../palette-and-shortcuts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command Palette and Shortcuts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../icons/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Icons
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scenarios/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scenarios and Included Topologies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates and Icons
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../import-upload-download/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Import, Upload and Download
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../publishing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Publishing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#availability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Availability
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#permissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Permissions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Permissions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-builder-role" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Builder role
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-each-task-needs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What each task needs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-libraries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The libraries
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-role" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example role
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-users-without-a-permission-see" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What users without a permission see
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Storage
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Storage">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cleaning-up-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cleaning up storage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#template-files-on-the-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Template files on the server
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-builder-doc-annotation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The builder-doc annotation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The builder-doc annotation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#which-diagram-a-topology-shows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which diagram a topology shows
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-phenix-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What phenix checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#renaming-and-copying-a-topology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Renaming and copying a topology
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#builder-documents-in-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Builder documents in files
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Builder documents in files">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#which-files-phenix-reads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which files phenix reads
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#who-can-read-a-builder-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Who can read a Builder file
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pinning-the-file-with-a-digest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pinning the file with a digest
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-the-file-cannot-be-used" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When the file cannot be used
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#editing-and-publishing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Editing and publishing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rest-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REST API
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="REST API">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#response-headers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response headers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compressed-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compressed files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Apps
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Apps
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../scorch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scorch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../state-of-health/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    State of Health
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Networking
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Networking
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../bridge-mode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bridge Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../gre-mesh/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GRE Mesh
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../netflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Netflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tunneler/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tunneler
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integrations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Integrations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Administration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-administration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Users
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../minimega/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    minimega
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#availability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Availability
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#permissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Permissions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Permissions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-builder-role" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Builder role
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-each-task-needs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What each task needs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-libraries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The libraries
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-role" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example role
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-users-without-a-permission-see" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What users without a permission see
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Storage
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Storage">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cleaning-up-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cleaning up storage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#template-files-on-the-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Template files on the server
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-builder-doc-annotation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The builder-doc annotation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The builder-doc annotation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#which-diagram-a-topology-shows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which diagram a topology shows
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-phenix-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What phenix checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#renaming-and-copying-a-topology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Renaming and copying a topology
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#builder-documents-in-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Builder documents in files
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Builder documents in files">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#which-files-phenix-reads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which files phenix reads
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#who-can-read-a-builder-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Who can read a Builder file
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pinning-the-file-with-a-digest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pinning the file with a digest
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-the-file-cannot-be-used" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When the file cannot be used
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#editing-and-publishing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Editing and publishing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rest-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REST API
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="REST API">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#response-headers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response headers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compressed-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compressed files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="administration-details">Administration: details<a class="headerlink" href="#administration-details" title="Permanent link">&para;</a></h1>
+<div class="admonition info">
+<p class="admonition-title">Info</p>
+<p>This page holds every rule, limit and message of this feature. For the
+short guide, see <a href="../../administration/">Administration</a>.</p>
+</div>
+<p>This page is for phenix administrators.</p>
+<h2 id="availability">Availability<a class="headerlink" href="#availability" title="Permanent link">&para;</a></h2>
+<p>Each phenix server has the Builder, and no setting turns it on or off. Roles
+control who can use it (see <a href="#permissions">Permissions</a>). The editor is at
+<code>/builder</code>, and its API is under <code>/api/v1/builder</code> (see
+<a href="#rest-api">REST API</a>).</p>
+<p>phenix sets no <code>Content-Security-Policy</code> on the application page. If a proxy
+in front of phenix adds one, the policy must allow workers from the phenix
+origin and <code>data:</code> images. The layout engine and <strong>Auto-group</strong> by name
+pattern run in workers. Custom icons are <code>data:</code> images.</p>
+<h2 id="permissions">Permissions<a class="headerlink" href="#permissions" title="Permanent link">&para;</a></h2>
+<p>The permission <code>builder</code> <code>use</code> gives a user the Builder. With it, a user
+reads and changes all the Builder data of the server: every draft, the three
+libraries, and the Builder schemas that give the fields of the Inspector.</p>
+<p>Drafts have no owner. Any Builder user can open, change and delete any
+draft. A draft records who created it and who changed it last, for
+information only.</p>
+<p>To give a role the Builder, add this policy to it:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">resources</span><span class="p">:</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">builder</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">verbs</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">use</span>
+</span></code></pre></div>
+<p>The policy takes no resource names. The verb <code>"*"</code> also gives <code>use</code>.</p>
+<p><code>builder</code> <code>use</code> gives no access to phenix configs (see
+<a href="#what-each-task-needs">What each task needs</a> and
+<a href="../../../user-administration/#resource-configs">Resource: <code>configs</code></a>). A role
+that limits topology names does not limit which Builder files its users
+can read (see
+<a href="#who-can-read-a-builder-file">Who can read a Builder file</a>).</p>
+<p>With authentication disabled, all users work as <code>global-admin</code>, with the
+Global Admin role (see <a href="../../../user-administration/">User Authn/Authz in phenix</a>).
+Drafts then show <code>global-admin</code> as the user who created and changed them.</p>
+<p>Of the built-in roles, only <strong>Global Admin</strong> and <strong>Builder</strong> have <code>builder</code>
+<code>use</code>. <strong>Global Viewer</strong> does not. Give Builder users the Builder role, or a
+role such as the <a href="#example-role">example role</a>.</p>
+<h3 id="the-builder-role">The Builder role<a class="headerlink" href="#the-builder-role" title="Permanent link">&para;</a></h3>
+<p>The built-in role <strong>Builder</strong> (<code>builder</code>) is for users who draw and publish
+topologies. It holds:</p>
+<ul>
+<li><code>builder</code> <code>use</code>.</li>
+<li><code>configs</code> <code>list</code>, <code>get</code>, <code>create</code>, <code>update</code> and <code>delete</code>, on <code>Topology/*</code>,
+  <code>Scenario/*</code> and <code>Experiment/*</code> only. It gives no access to User, Role or
+  Image configs.</li>
+<li><code>schemas</code> <code>get</code>, <code>topologies</code> and <code>scenarios</code> <code>list</code> and <code>get</code>,
+  <code>experiments</code> <code>list</code>, <code>get</code>, <code>create</code> and <code>update</code>, and <code>disks</code> <code>list</code>.</li>
+</ul>
+<p><a href="../../../user-administration/#builder-builder">Builder (<code>builder</code>)</a> shows the
+role as YAML.</p>
+<p>Each time <code>phenix ui</code> starts, it makes sure that the role exists:</p>
+<ul>
+<li>When the store has no role named <code>builder</code> and no role with the role name
+  <code>Builder</code>, phenix creates the role. Thus a deleted role comes back.</li>
+<li>When the role exists, phenix keeps its policies. If the role has no
+  <code>builder</code> <code>use</code>, phenix adds the <code>builder</code> policy to the role and to its
+  users. Nothing else changes.</li>
+</ul>
+<p>phenix does not change other roles. Add the <code>builder</code> policy to each other
+role that must use the Builder. Assign a role on the <strong>Users</strong> page (see
+<a href="../../../user-administration/#updating-users">Updating Users</a>).</p>
+<h3 id="what-each-task-needs">What each task needs<a class="headerlink" href="#what-each-task-needs" title="Permanent link">&para;</a></h3>
+<p><code>builder</code> <code>use</code> alone allows these tasks: all work on drafts and snapshots,
+undo and redo, the libraries, the default layer set, the Inspector fields,
+and <strong>Upload</strong> of a Builder document from a file or pasted text. The other
+tasks also need the permissions in this table.</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Other permissions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>See the <strong>Published Diagrams</strong> tab</td>
+<td><code>configs</code> <code>list</code> on the topologies that it lists</td>
+</tr>
+<tr>
+<td>Open a published diagram, with <strong>Open</strong>, <strong>Edit as a draft</strong> or <strong>Upload</strong></td>
+<td><code>configs</code> <code>get</code> on that topology, such as <code>Topology/riverside-water</code>. This does not protect a Builder file (see <a href="#who-can-read-a-builder-file">Who can read a Builder file</a>)</td>
+</tr>
+<tr>
+<td>Import a stored config</td>
+<td><code>configs</code> <code>get</code> on the config, and <code>topologies</code> <code>list</code> (or <code>experiments</code> <code>list</code>) on its name</td>
+</tr>
+<tr>
+<td>Import a config file, or convert a legacy Builder diagram with <strong>Upload</strong></td>
+<td><code>configs</code> <code>get</code> and <code>create</code></td>
+</tr>
+<tr>
+<td>Upload a Builder package</td>
+<td><code>configs</code> <code>get</code>. To create the configs that you tick, also <code>create</code></td>
+</tr>
+<tr>
+<td>Open a topology in Builder from the <strong>Configs</strong> page</td>
+<td><code>configs</code> <code>list</code>, and <code>get</code> on the topology. To import it, also <code>create</code></td>
+</tr>
+<tr>
+<td>See <strong>Exp</strong>, which opens the experiment of a publication</td>
+<td><code>experiments</code> <code>get</code> on that experiment</td>
+</tr>
+<tr>
+<td>Add a stored scenario to a diagram</td>
+<td><code>configs</code> <code>list</code> and <code>scenarios</code> <code>list</code></td>
+</tr>
+<tr>
+<td>Store a scenario file from the <strong>Scenarios</strong> dialog</td>
+<td><code>configs</code> <code>create</code> on <code>Scenario/&lt;name&gt;</code>. To replace a scenario, <code>configs</code> <code>get</code> and <code>update</code> on it</td>
+</tr>
+<tr>
+<td>See the apps of the diagram's scenario in the Inspector</td>
+<td><code>configs</code> <code>get</code> on <code>Scenario/&lt;name&gt;</code></td>
+</tr>
+<tr>
+<td>Download <strong>Topology YAML</strong> or a package</td>
+<td><code>configs</code> <code>get</code></td>
+</tr>
+<tr>
+<td>Use <strong>Publish</strong>, in the editor or on a draft card</td>
+<td><code>configs</code> <code>update</code></td>
+</tr>
+<tr>
+<td>Publish a topology</td>
+<td><code>configs</code> <code>create</code> on <code>Topology/&lt;name&gt;</code> for a new topology, <code>update</code> for an existing one. For a draft imported from a stored config, also <code>configs</code> <code>get</code> and <code>topologies</code> <code>get</code> (or <code>experiments</code> <code>get</code>) on that config</td>
+</tr>
+<tr>
+<td>Publish an experiment</td>
+<td><code>experiments</code> <code>create</code> and <code>configs</code> <code>create</code> on <code>Experiment/&lt;name&gt;</code>. To update one, <code>update</code> of both</td>
+</tr>
+<tr>
+<td>Publish a diagram that lists scenarios</td>
+<td><code>configs</code> <code>get</code> and <code>scenarios</code> <code>list</code> on each listed <code>Scenario/&lt;name&gt;</code>. It also needs <code>configs</code> <code>update</code> on each scenario whose <code>topology</code> annotation does not name the topology yet</td>
+</tr>
+<tr>
+<td>Delete a published topology</td>
+<td><code>configs</code> <code>delete</code> on <code>Topology/&lt;name&gt;</code></td>
+</tr>
+<tr>
+<td>Get drive image suggestions and missing-image checks</td>
+<td><code>disks</code> <code>list</code></td>
+</tr>
+<tr>
+<td>Run <strong>Preflight</strong> checks</td>
+<td><code>configs</code> <code>get</code>, and for each check: <strong>Host capacity</strong>, <code>hosts</code> <code>list</code>. <strong>Networks</strong>, <code>hosts</code> <code>list</code> for the bridges, <code>experiments</code> <code>list</code> for the VLANs of running experiments (only those it can list by name), and <code>configs</code> <code>get</code> and <code>experiments</code> <code>get</code> on the named experiment. <strong>Disk images</strong>, <code>disks</code> <code>list</code>. <strong>Scenario apps</strong>, <code>applications</code> <code>list</code>, and <code>configs</code> <code>get</code> and <code>scenarios</code> <code>list</code> on each listed <code>Scenario/&lt;name&gt;</code>. Without its permission, a check or a part of it shows as unavailable</td>
+</tr>
+</tbody>
+</table>
+<p>Import and Publish read included topologies, such as <code>corp-services</code>, with
+the <code>configs</code> <code>get</code> and <code>topologies</code> <code>list</code> permissions of the user. They
+warn about an include that the user cannot read.</p>
+<p>An import of a config file keeps each <code>${NAME}</code> and <code>${NAME:default}</code> as
+written. Thus the Builder never shows the environment variables of the
+server (see <a href="../import-upload-download/#importing-a-config-file">Importing a config file</a>).</p>
+<h3 id="the-libraries">The libraries<a class="headerlink" href="#the-libraries" title="Permanent link">&para;</a></h3>
+<p>The server keeps one template library, one layer set library and one icon
+library. All Builder users share them (see
+<a href="../templates/#the-template-library">The template library</a>,
+<a href="../layers/#layer-sets">Layer sets</a> and
+<a href="../icons/#custom-icons">Custom icons</a>). <code>builder</code> <code>use</code> allows each change.</p>
+<p>No role can change these items, Global Admin included:</p>
+<ul>
+<li>The five built-in templates, and the templates and collections of the
+  <a href="#template-files-on-the-server">template files on the server</a>. A change
+  answers 409 with the code <code>template.item.read-only</code>.</li>
+<li>The built-in layer set <strong>Purdue Model</strong> (ID <code>builtin:purdue</code>). A change or
+  a delete answers 403 with the code <code>layerset.read-only</code>.</li>
+<li>The icons that phenix adds from template files. A rename or a delete
+  answers 403.</li>
+</ul>
+<p><strong>Duplicate</strong> makes a copy of a read-only template or layer set that users
+can change. Any Builder user can rename or delete an uploaded icon.</p>
+<p>The server has one default layer set (see
+<a href="../layers/#layers-for-new-diagrams">Layers for new diagrams</a>). When a user
+deletes it, the server has no default. A diagram
+keeps its own copies of templates and layers, so a library change does not
+change the diagram (see <a href="../templates/#linked-templates">Linked templates</a>).</p>
+<p>phenix logs each library change with the user name: each add, change or
+delete of a template, collection or layer set, each choice of a default
+layer set, and each upload, rename or delete of an icon.</p>
+<h3 id="example-role">Example role<a class="headerlink" href="#example-role" title="Permanent link">&para;</a></h3>
+<p>The example role <strong>Topology Designer</strong> cannot publish, import a config file
+or delete a topology. It also cannot store a scenario file or create the
+configs of a package. It can do all other work on drafts and the libraries,
+import stored configs, open published diagrams and download Topology YAML.
+A user with the Builder role can then publish its drafts. Download it from
+<a href="../../examples/roles/topology-designer.role.yaml">topology-designer.role.yaml</a>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">phenix.sandia.gov/v1</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Role</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-designer</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="nt">roleName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Topology Designer</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">policies</span><span class="p">:</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">resources</span><span class="p">:</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">builder</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="nt">verbs</span><span class="p">:</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">use</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">resources</span><span class="p">:</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">configs</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">    </span><span class="nt">resourceNames</span><span class="p">:</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"Topology/*"</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"Scenario/*"</span>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"Experiment/*"</span>
+</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">    </span><span class="nt">verbs</span><span class="p">:</span>
+</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">list</span>
+</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">get</span>
+</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">resources</span><span class="p">:</span>
+</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topologies</span>
+</span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">scenarios</span>
+</span><span id="__span-1-24"><a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">experiments</span>
+</span><span id="__span-1-25"><a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="w">    </span><span class="nt">resourceNames</span><span class="p">:</span>
+</span><span id="__span-1-26"><a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"*"</span>
+</span><span id="__span-1-27"><a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="w">    </span><span class="nt">verbs</span><span class="p">:</span>
+</span><span id="__span-1-28"><a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">list</span>
+</span><span id="__span-1-29"><a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">get</span>
+</span><span id="__span-1-30"><a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">resources</span><span class="p">:</span>
+</span><span id="__span-1-31"><a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">disks</span>
+</span><span id="__span-1-32"><a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="w">    </span><span class="nt">resourceNames</span><span class="p">:</span>
+</span><span id="__span-1-33"><a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"*"</span>
+</span><span id="__span-1-34"><a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="w">    </span><span class="nt">verbs</span><span class="p">:</span>
+</span><span id="__span-1-35"><a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">list</span>
+</span></code></pre></div>
+<p>Do not use <code>"*/*"</code> in the <code>configs</code> policy. It also matches User and Role
+configs, so a user could read password hashes. To let the role publish, add
+<code>create</code>, <code>update</code> and <code>delete</code> to its <code>configs</code> policy.</p>
+<p>To add the role, store it as a config, then assign it on the <strong>Users</strong> page:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>phenix<span class="w"> </span>config<span class="w"> </span>create<span class="w"> </span>topology-designer.role.yaml
+</span></code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>phenix copies the policies of a role into a user when you assign the
+role. After you change a Role config, assign the role to its users again.</p>
+</div>
+<h3 id="what-users-without-a-permission-see">What users without a permission see<a class="headerlink" href="#what-users-without-a-permission-see" title="Permanent link">&para;</a></h3>
+<p>Builder hides, or makes unavailable, each control for a task in
+<a href="#what-each-task-needs">What each task needs</a> that the role does not allow.
+The server still checks each request.</p>
+<ul>
+<li>Without <code>builder</code> <code>use</code>, there is no <strong>Builder</strong> link, and the <strong>Configs</strong>
+  page has no Builder links or buttons. <code>/builder</code> shows only "Your role
+  does not include the Builder." Each Builder API request answers 403.</li>
+<li>Without <code>configs</code> <code>update</code>, the command palette gives the reason "Your
+  role cannot publish diagrams."</li>
+<li>Without <code>disks</code> <code>list</code>, the <strong>Diagram checks</strong> dialog says "The Builder
+  does not check drive images, because the server did not list its disk
+  images." It says the
+  same when the server lists no images, for example while minimega is not
+  running.</li>
+</ul>
+<p><img alt="The Builder page for a role without the Builder. The navigation bar has no Builder link, and the page shows only Your role does not include the Builder." src="../../../images/builder/no-builder.png" /></p>
+<p>A refused request answers 403, with a message such as "deleting a Builder
+draft: user bob does not have permission". A draft that does not exist answers 404.</p>
+<h2 id="storage">Storage<a class="headerlink" href="#storage" title="Permanent link">&para;</a></h2>
+<p>Drafts, published documents and the three libraries are records in the
+phenix store (the <code>store.endpoint</code> setting), not configs.
+<code>phenix config list</code> and the <strong>Configs</strong> page do not list them.</p>
+<p>Limits:</p>
+<ul>
+<li>The server holds at most 2,000 drafts, damaged drafts included. Past it,
+  <code>POST /builder/drafts</code> answers 413 with the code <code>draft.limit</code>, and a
+  message that says to delete drafts or to run <strong>Clean up</strong>.
+  <code>GET /builder/drafts</code> reports the limit as <code>limits.drafts</code>.</li>
+<li>A draft keeps at most 50 snapshots and 50 MiB of them. Past either limit,
+  phenix deletes the oldest snapshots.</li>
+<li>A diagram (a Builder document) can be at most 5 MiB. It can hold at most
+  50 custom icons, 50 device templates and 100 notes of its own.</li>
+<li>The server holds at most 2,000 icons. The built-in icons are not part of
+  this limit, but the <strong>Icons</strong> tab counts them. An icon is a PNG of at
+  most 96 × 96 pixels and 40,960 bytes.</li>
+<li>The template library can be at most 512 KiB, with at most 200 templates
+  and 50 collections (see <a href="../templates/#limits">Limits</a>).</li>
+<li>The layer set library holds at most 200 layer sets, and the built-in
+  <strong>Purdue Model</strong>. A layer set has 1 to 32 layers, and a layer has at most
+  16 node matchers. A request that adds or replaces a layer set can be at
+  most 1 MiB, and a layer set file at most 4 MiB. A full library answers 413
+  with the code <code>layerset.library.full</code>.</li>
+</ul>
+<p>The libraries belong to the server. When someone deletes a user account,
+its icons, templates and layer sets stay, and <code>createdBy</code> and <code>updatedBy</code>
+keep the user name. The built-in templates and layer set are part of
+phenix, not store records. A template library that never changed has no
+record. phenix keeps the collections of its template files in memory only.</p>
+<p>Drafts and published documents use these store namespaces:</p>
+<ul>
+<li><code>builder.drafts</code>: one record for each draft, with its ID as the key. It
+  holds the metadata of the draft and its snapshots, not the documents.</li>
+<li><code>builder.content</code>: one gzip record for each document. The key is
+  <code>drafts/</code> and the draft and snapshot IDs, or <code>published/</code> and the
+  document ID. phenix checks the size and the sha256 digest at each read.</li>
+<li><code>builder.published</code>: one record for each published document, with its ID
+  as the key.</li>
+</ul>
+<p>Each save, undo or redo, snapshot delete and draft delete writes all its
+records in one store transaction. Thus the store never holds a draft without
+its documents, or a part of a failed save. Each stored value has a small
+header with its revision and times.</p>
+<p>The libraries use these store namespaces:</p>
+<ul>
+<li><code>builder.icons</code>: one record for each icon name, with the key <code>name/</code> and
+  the name in lower case. An icon with old names has a record for each.</li>
+<li><code>builder.templates</code>: one record, <code>library</code>, with all the templates and
+  collections.</li>
+<li><code>builder.layersets</code>: one record for each layer set, with the key <code>set/</code>
+  and its ID, and the record <code>default</code> when a user chose a default set.</li>
+</ul>
+<p>A publish stores a copy of the diagram that never changes, the published
+document. The <code>builder-doc</code> annotation of the topology names it (see
+<a href="#the-builder-doc-annotation">The builder-doc annotation</a>). After a publish,
+phenix deletes the older published documents of the topology that are more
+than one hour old.</p>
+<p>When anyone deletes or renames a topology, by any means, phenix deletes its
+published documents. A document less than one hour old can stay for a time,
+because a publish may be in progress. Deleting or renaming a topology never
+reads, changes or deletes a Builder file (see
+<a href="#renaming-and-copying-a-topology">Renaming and copying a topology</a>).</p>
+<p>The browser also keeps some Builder data:</p>
+<ul>
+<li>The IndexedDB database <code>phenix-builder</code> keeps changes until the server
+  stores them.</li>
+<li>localStorage keeps preferences: <code>phenix.builder.theme</code>,
+  <code>phenix.builder.panes</code>, <code>phenix.builder.minimap</code>,
+  <code>phenix.builder.shortcuts</code> and <code>phenix.builder.settings</code>. The last one
+  holds the Settings dialog choices, such as <strong>Snap to grid</strong>, and whether
+  <strong>Show connections</strong> is on. They apply to that browser, not to the
+  diagram.</li>
+<li>The Builder does not read <code>phenix.builder.layers</code>, the default layers of
+  earlier versions. Logging out deletes the key.</li>
+<li>Logging out, or signing in as another user in the same browser, deletes
+  the rest: unsaved changes, recent commands, the last <strong>Auto-group</strong> name
+  pattern, the last <strong>Preflight</strong> checks (<code>phenix.builder.preflight</code>) and
+  the collapsed sections of <strong>Templates</strong> (<code>phenix.builder.palette</code>). See
+  <a href="../drafts/#logging-out">Logging out</a>.</li>
+</ul>
+<h3 id="cleaning-up-storage">Cleaning up storage<a class="headerlink" href="#cleaning-up-storage" title="Permanent link">&para;</a></h3>
+<p>When phenix starts, and each hour while it runs, it deletes the published
+documents that no topology references. It also deletes the documents in
+<code>builder.content</code> that no draft and no published document names. It keeps:</p>
+<ul>
+<li>what phenix stored in the last hour, because a publish or a save may still
+  reference it</li>
+<li>every published document, when a topology cannot be read or its
+  <code>builder-doc</code> annotation does not decode</li>
+<li>a published document that it cannot read, and its content</li>
+<li>every Builder file</li>
+</ul>
+<p>phenix leaves a published document that it cannot read out of every list,
+and logs "skipping unreadable builder published document" with the ID. A
+newer phenix may have saved it. To delete it, send
+<code>DELETE /builder/documents/{document}</code> with that ID. This deletes only the
+record and its content, and changes no config. When the record still names
+its topology, the role needs <code>configs</code> <code>get</code> and <code>delete</code> on it. Otherwise
+the role needs them on <code>*/*</code>, as Global Admin has. <code>If-Match</code> must name the
+tag of the stored record. Send any tag, and the 412 answer gives the tag in
+its <code>ETag</code> header.</p>
+<p><strong>Clean up…</strong> in the Builder settings does the same at once. It also deletes
+each draft that has no change since its last publish. For such a draft, the
+current snapshot is the last one it published, no newer snapshot follows it, and
+its topology still references what it published. The topology and its
+published document stay. These drafts also stay:</p>
+<ul>
+<li>A draft whose topology someone deleted, or published again from another
+  draft. It is then the only copy of its diagram.</li>
+<li>A draft that changes while the cleanup runs.</li>
+</ul>
+<p>A cleanup waits for a publish that is in progress.</p>
+<p>With <code>?dryRun=true</code>, <code>POST /builder/cleanup</code> deletes nothing and tells what it
+would delete:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span><span class="nt">"dryRun"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="nt">"drafts"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"4b0c…"</span><span class="p">],</span><span class="w"> </span><span class="nt">"documents"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">}</span>
+</span></code></pre></div>
+<p><code>drafts</code> lists draft IDs. <code>documents</code> and <code>content</code> count published
+documents and documents in <code>builder.content</code>. When the cleanup cannot read
+or delete an item, the answer has a <code>Warning</code> header, and the server log
+gives the reason. The answer still lists the deleted drafts.</p>
+<h2 id="template-files-on-the-server">Template files on the server<a class="headerlink" href="#template-files-on-the-server" title="Permanent link">&para;</a></h2>
+<p>To give all users the same node templates, put template files in the
+template directory of the server. When <code>phenix ui</code> starts, it reads each
+file as one read-only collection (see
+<a href="../templates/#server-collections">Server collections</a>). A file has the format
+that the <strong>Node Templates</strong> tab downloads (see
+<a href="../templates/#downloading-and-importing-templates">Downloading and importing templates</a>
+and the example <a href="../../examples/node-templates.yaml">node-templates.yaml</a>).</p>
+<p>The directory is <code>&lt;base-dir.phenix&gt;/builder/templates</code>, by default
+<code>/phenix/builder/templates</code>. To change it, set <code>base-dir.builder-templates</code>
+with the root flag <code>--base-dir.builder-templates</code>, the environment variable
+<code>PHENIX_BASE_DIR_BUILDER_TEMPLATES</code>, or the phenix config file (see
+<a href="../../../settings/">Settings</a>):</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">base-dir</span><span class="p">:</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">builder-templates</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/etc/phenix/builder-templates</span>
+</span></code></pre></div>
+<p>phenix reads at most 50 files directly in the directory, in name order. It
+reads only names that end in <code>.yaml</code>, <code>.yml</code> or <code>.json</code>, in any case, and
+not names that start with <code>.</code>. It does not read subdirectories. A file must
+be a regular file of at most 8 MiB, as JSON or YAML. phenix follows a
+symbolic link only when the link stays in the directory. phenix skips a file
+that is not valid, and reads the others.</p>
+<p>phenix logs:</p>
+<ul>
+<li><code>skipping builder template file</code>, a warning with the <code>directory</code>, the
+  <code>file</code> and the <code>reason</code>. An example reason is <code>is not a valid template
+  file: templates[1].name: template name "plc" is also the name of
+  templates[0], ignoring case</code>.</li>
+<li>A directory that does not exist, at debug level only.</li>
+<li><code>builder template directory cannot be read</code>, a warning, when the path is
+  not a directory.</li>
+<li><code>read builder template files</code>, with the number of collections read and of
+  files skipped.</li>
+</ul>
+<p>When the directory does not exist or cannot be read, phenix has no server
+collections, and the Builder starts.</p>
+<p>phenix adds the custom icons of a file to the icon library, under their
+names, when the library does not have them. These icons have no uploader.
+The icon dialog shows them as from "Server", and no user can rename or
+delete them. They fill at most 1,000 of the 2,000 icons. phenix skips icons
+past that limit, and logs one warning, <code>builder icon library has no room for
+more template file icons</code>, with the number skipped. When the library has an
+icon of the same name with a different picture, the library keeps its
+picture. phenix then logs <code>builder template file icon differs from the icon
+library's, which is kept</code> with the <code>file</code>, the <code>icon</code> and the <code>owner</code> of the
+library icon (<code>the server</code> for an icon from a template file).</p>
+<p>phenix reads the directory only when it starts. Restart <code>phenix ui</code> after
+you add, change or delete a file. phenix writes only the new icons to the
+store, not the collections.</p>
+<p>phenix makes the ID of each collection and template from the file name and
+the template name. The IDs stay the same across restarts. A renamed file
+gives its collection a new ID. A diagram links its copy of a template by
+that ID (see <a href="../templates/#linked-templates">Linked templates</a>).</p>
+<h2 id="the-builder-doc-annotation">The builder-doc annotation<a class="headerlink" href="#the-builder-doc-annotation" title="Permanent link">&para;</a></h2>
+<p>A topology names its diagram in the <code>builder-doc</code> annotation of its Topology
+config. The annotation is a map with up to three keys:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">phenix.sandia.gov/v1</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Topology</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pump-station</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">    </span><span class="nt">builder-doc</span><span class="p">:</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">      </span><span class="nt">digest</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">      </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fd063e784604f43e5c39cc9959501cf117b4dc2be895e92f9bb98e23f8465c4b</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">      </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/phenix/topologies/pump-station/pump-station.builder.json</span>
+</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>digest</code></td>
+<td><code>sha256:</code> and 64 lowercase hex digits. It names the stored published document with that content for this topology. With <code>path</code>, it sets which document the file must hold.</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>The ID of a published document in the store. It applies only to the topology that received the document.</td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td>The absolute path of a Builder file on the phenix server (see <a href="#builder-documents-in-files">Builder documents in files</a>).</td>
+</tr>
+</tbody>
+</table>
+<p>The map must have at least one of these keys, and no other keys. <strong>Publish</strong>
+writes <code>digest</code> and <code>id</code>, and keeps a <code>path</code>. You write <code>path</code> yourself.</p>
+<p><code>builder-doc</code> is the only annotation that is a map, or in JSON, an object.
+All other annotations are text.</p>
+<h3 id="which-diagram-a-topology-shows">Which diagram a topology shows<a class="headerlink" href="#which-diagram-a-topology-shows" title="Permanent link">&para;</a></h3>
+<ol>
+<li>The published document that the annotation names: by <code>id</code>, or by
+   <code>digest</code> when there is no <code>id</code>. It must belong to this
+   topology, and must match the <code>digest</code>, if any.</li>
+<li>Otherwise, the Builder file at <code>path</code>. It must hold the document with the
+   <code>digest</code>, if any.</li>
+<li>Otherwise, none. <strong>Published Diagrams</strong> does not list the topology. On the
+   <strong>Configs</strong> page, its <code>builder</code> tag and its edit button open the
+   <strong>Import</strong> dialog, with "Topology pump-station has no Builder diagram to
+   open. Import it to make one."</li>
+</ol>
+<p>The stored document comes first because Publish wrote the stored topology
+from it. The file may have changed since then.</p>
+<h3 id="what-phenix-checks">What phenix checks<a class="headerlink" href="#what-phenix-checks" title="Permanent link">&para;</a></h3>
+<p>phenix checks the annotation each time anyone creates or updates a Topology
+config, by any means. It refuses a config whose <code>builder-doc</code> is not valid.
+With <code>phenix config create</code>, the log line before the error gives the reason:</p>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="gp">$ </span>phenix<span class="w"> </span>config<span class="w"> </span>create<span class="w"> </span>pump-station.topology.yaml
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="go">2026-10-01 21:52:35.595 ERR calling config hook: config validation failed: topology pump-station: builder: invalid request: builder-doc.path: must be an absolute path type=SYSTEM uuid=197b8a05-ccb3-4162-994a-c39d8ebc1dc5</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="go">Error: Unable to create configuration from pump-station.topology.yaml (search error logs for 197b8a05-ccb3-4162-994a-c39d8ebc1dc5)</span>
+</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Reason</th>
+<th>What is wrong</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>value must be an object</code></td>
+<td><code>builder-doc</code> is text, not a map</td>
+</tr>
+<tr>
+<td><code>property "file" is unsupported</code></td>
+<td>A key other than <code>digest</code>, <code>id</code> and <code>path</code></td>
+</tr>
+<tr>
+<td><code>there must be at least 1 properties</code></td>
+<td>The map is empty</td>
+</tr>
+<tr>
+<td><code>builder-doc: digest is not a sha256 digest</code></td>
+<td><code>digest</code> is not <code>sha256:</code> and 64 lowercase hex digits</td>
+</tr>
+<tr>
+<td><code>builder-doc.path: must be an absolute path</code></td>
+<td><code>path</code> does not start with <code>/</code></td>
+</tr>
+<tr>
+<td><code>builder-doc.path: must be a clean path, with no ".", "..", "//" or trailing "/"</code></td>
+<td><code>path</code> has one of these</td>
+</tr>
+<tr>
+<td><code>builder-doc.path: must end in .json, .yaml or .yml</code></td>
+<td><code>path</code> has a different ending, or an ending in capitals, such as <code>.JSON</code></td>
+</tr>
+</tbody>
+</table>
+<p>A <code>path</code> can be at most 1024 bytes. phenix does not look for the file when
+it stores the config.</p>
+<p><code>phenix config edit</code> cannot delete an annotation. To delete <code>builder-doc</code>,
+send the config without it with <code>PUT /api/v1/configs/topology/&lt;name&gt;</code>. Or
+delete the topology and create it again.</p>
+<h3 id="renaming-and-copying-a-topology">Renaming and copying a topology<a class="headerlink" href="#renaming-and-copying-a-topology" title="Permanent link">&para;</a></h3>
+<p>A published document belongs to one topology name. After a rename, or a
+copy of the config under a new name, the <code>id</code> and <code>digest</code> no longer name a
+document of that topology. phenix then changes the annotation:</p>
+<ul>
+<li>Without a <code>path</code>, phenix deletes the annotation. The topology is a plain
+  Topology config until someone publishes it again.</li>
+<li>With a <code>path</code>, phenix deletes the <code>id</code>. The <code>path</code> and the <code>digest</code> stay,
+  so phenix reads the topology from the file. The file must still hold the
+  document with that digest.</li>
+</ul>
+<h2 id="builder-documents-in-files">Builder documents in files<a class="headerlink" href="#builder-documents-in-files" title="Permanent link">&para;</a></h2>
+<p>A topology can name a Builder document in a file on the phenix server,
+instead of a published document. Use this for topologies in a repository
+that you check out on the server. The diagram then opens in Builder without
+a publish.</p>
+<h3 id="example">Example<a class="headerlink" href="#example" title="Permanent link">&para;</a></h3>
+<p>The directory <code>/phenix/topologies/pump-station/</code> holds two files:</p>
+<ul>
+<li><code>pump-station.builder.json</code>, the Builder document (the example file
+  <a href="../../examples/pump-station.builder.json">pump-station.builder.json</a>).</li>
+<li>
+<p><code>pump-station.topology.yaml</code>, the Topology config, with a <code>builder-doc</code>
+  annotation that names the document:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">phenix.sandia.gov/v1</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Topology</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pump-station</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span><span class="nt">annotations</span><span class="p">:</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">        </span><span class="nt">builder-doc</span><span class="p">:</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">            </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/phenix/topologies/pump-station/pump-station.builder.json</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">    </span><span class="nt">nodes</span><span class="p">:</span>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">general</span><span class="p">:</span>
+</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">            </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Field engineering laptop</span>
+</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">            </span><span class="nt">hostname</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">eng-ws-01</span>
+</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">        </span><span class="c1"># ... the rest of the nodes</span>
+</span></code></pre></div>
+</li>
+</ul>
+<p>To make the Topology config:</p>
+<ol>
+<li>Open the document in Builder.</li>
+<li>Click <strong>Download</strong> &gt; <strong>Topology YAML</strong> (see
+   <a href="../import-upload-download/#topology-yaml">Topology YAML</a>).</li>
+<li>Set <code>metadata.name</code>.</li>
+<li>Add the annotation. Do not change the <code>spec</code>.</li>
+</ol>
+<p>If the topology differs from what the document publishes, a draft made from
+the file cannot update it (see
+<a href="../publishing/#publishing-to-a-topology-that-names-a-builder-file">Publishing to a topology that names a Builder file</a>).
+For this reason, do not use the example file
+<a href="../../examples/pump-station.topology.yaml">pump-station.topology.yaml</a> here. Its
+node order is different.</p>
+<p>Store the config:</p>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="gp">$ </span>phenix<span class="w"> </span>config<span class="w"> </span>create<span class="w"> </span>/phenix/topologies/pump-station/pump-station.topology.yaml
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="go">2026-10-01 21:52:35.788 INF configuration created type=SYSTEM kind=Topology name=pump-station</span>
+</span></code></pre></div>
+<p><strong>Published Diagrams</strong> then lists <code>pump-station</code> with the tag <strong>File</strong>. Its
+diagram opens read only (see
+<a href="../drafts/#diagrams-read-from-a-file">Diagrams read from a file</a>).</p>
+<p>phenix reads the file each time and keeps no copy. Thus after a <code>git pull</code>
+changes the file, the next <strong>Open</strong> shows the new diagram. The stored
+Topology config does not change. To make it match the file again, create the
+config again, or publish a draft made from the file.</p>
+<h3 id="which-files-phenix-reads">Which files phenix reads<a class="headerlink" href="#which-files-phenix-reads" title="Permanent link">&para;</a></h3>
+<p>phenix reads a Builder file only when all of these conditions are true:</p>
+<ul>
+<li>The file is below the phenix base directory: <code>/phenix</code>, or the
+  <code>base-dir.phenix</code> setting (see <a href="../../../settings/">Settings</a>).</li>
+<li>It is not below the VM mount directory: <code>/phenix/mounts</code>, or the
+  <code>mount-dir</code> setting.</li>
+<li>It is a regular file, not a directory, a device or a pipe. phenix follows
+  a symbolic link only when its target is a relative path that stays below
+  the base directory and outside the mount directory. phenix refuses an
+  absolute target, such as from <code>ln -s /phenix/topologies/a.json b.json</code>.</li>
+<li>It is at most 5 MiB.</li>
+<li>It holds one valid Builder document, as JSON or YAML. The content sets the
+  format, not the file name. A YAML file must not use anchors, aliases,
+  merge keys or more than one document.</li>
+</ul>
+<p>When the CLI creates the config from a file, phenix fills in <code>${NAME}</code> in
+the <code>path</code> from the environment. A config sent to the REST API fills in only
+<code>${BRANCH_NAME}</code>. phenix does not fill in <code>${NAME}</code> in the Builder file.</p>
+<p>phenix resolves the path on the server that runs <code>phenix ui</code>. When several
+phenix servers share one store, each server reads its own file system.</p>
+<p>phenix reads the file only when someone opens the diagram, makes a draft
+from it, or publishes that draft to the topology. <strong>Published Diagrams</strong>
+reads no file, so it shows a card even when the file is missing or not
+valid. No config change and no <code>phenix</code> command reads the file.</p>
+<h3 id="who-can-read-a-builder-file">Who can read a Builder file<a class="headerlink" href="#who-can-read-a-builder-file" title="Permanent link">&para;</a></h3>
+<p>Anyone whose role has <code>configs</code> <code>get</code> on the topology can open its diagram.
+Anyone who can list the config can see the <code>path</code>.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>The name of a topology does not protect its Builder file. A user who
+has <code>configs</code> <code>get</code>, and <code>create</code> or <code>update</code>, on any one topology name
+can store a topology there with any <code>path</code> below the base directory.
+The user can then open the diagram of that file.</p>
+<p>For example, a role limited to <code>Topology/teama-*</code> cannot read the
+topologies of team B. But its users can store <code>teama-x</code> with the <code>path</code>
+of a Builder file of team B, and open it. A fixed layout such as
+<code>/phenix/topologies/&lt;name&gt;/</code> makes the path easy to guess.</p>
+<p>Keep a Builder file below the base directory only when each user who
+can create or update a topology may read it. A published document does
+not have this problem, because it belongs to its topology.</p>
+</div>
+<h3 id="pinning-the-file-with-a-digest">Pinning the file with a digest<a class="headerlink" href="#pinning-the-file-with-a-digest" title="Permanent link">&para;</a></h3>
+<p>Add <code>digest</code> beside <code>path</code> to accept one document only:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="w">    </span><span class="nt">builder-doc</span><span class="p">:</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">      </span><span class="nt">digest</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">      </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/phenix/topologies/pump-station/pump-station.builder.json</span>
+</span></code></pre></div>
+<p>When the file holds a different document, the diagram does not open.</p>
+<p>The digest is the SHA-256 of the document as phenix writes it, not of the
+file. <code>sha256sum</code> of a YAML file, or of a JSON file with different spacing,
+key order or final line break, gives a different value. To get the digest,
+use the REST API (see <a href="#examples">Examples</a>).</p>
+<h3 id="when-the-file-cannot-be-used">When the file cannot be used<a class="headerlink" href="#when-the-file-cannot-be-used" title="Permanent link">&para;</a></h3>
+<p>Opening the diagram then fails with "Could not open the diagram of topology
+pump-station." and one of these sentences. Each sentence names the path, but
+not the file content. The REST API gives the same sentence as <code>message</code>. The
+phenix log gives <code>builder document file not usable</code>, with the topology, the
+path and the reason.</p>
+<table>
+<thead>
+<tr>
+<th>Message</th>
+<th>Status</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"Builder file … is outside /phenix, the directory phenix reads Builder files from."</td>
+<td>422</td>
+<td>The path is not below the base directory, or it is below the mount directory</td>
+</tr>
+<tr>
+<td>"Builder file … does not exist on this phenix server."</td>
+<td>404</td>
+<td>No file is at the path, or a part of the path is a file</td>
+</tr>
+<tr>
+<td>"phenix cannot read Builder file …."</td>
+<td>422</td>
+<td>phenix has no read permission, a symbolic link is not allowed, or the read failed</td>
+</tr>
+<tr>
+<td>"Builder file … is not a regular file."</td>
+<td>422</td>
+<td>The path is a directory, a device or a pipe</td>
+</tr>
+<tr>
+<td>"Builder file … is larger than 5 MiB."</td>
+<td>413</td>
+<td>The file is too large</td>
+</tr>
+<tr>
+<td>"Builder file … is not a valid Builder document. Upload it in the Builder to see why."</td>
+<td>422</td>
+<td>The file is not a valid Builder document. <strong>Upload</strong> shows the problem (see <a href="../import-upload-download/#uploading-a-builder-document">Uploading a Builder document</a>)</td>
+</tr>
+<tr>
+<td>"Builder file … does not match the digest topology pump-station records for it."</td>
+<td>422</td>
+<td>The file holds a document with a different <code>digest</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="editing-and-publishing">Editing and publishing<a class="headerlink" href="#editing-and-publishing" title="Permanent link">&para;</a></h3>
+<p><strong>Edit as a draft</strong> makes a draft from the file (see
+<a href="../drafts/#diagrams-read-from-a-file">Diagrams read from a file</a>). For when
+that draft can update the topology, see
+<a href="../publishing/#publishing-to-a-topology-that-names-a-builder-file">Publishing to a topology that names a Builder file</a>.</p>
+<p><strong>Publish never writes the file.</strong> It stores a published document and writes
+<code>digest</code> and <code>id</code> beside the <code>path</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="w">    </span><span class="nt">builder-doc</span><span class="p">:</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">      </span><span class="nt">digest</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sha256:4ba9ae46494bb7d2498f5119b55996f332c52c1b95d79502361afbf50707cbc3</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">      </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">89f0a9779c2e5892da9f7a9ae2ed5c58c564fe57ea86f50f4452f174cb68ad93</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">      </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/phenix/topologies/pump-station/pump-station.builder.json</span>
+</span></code></pre></div>
+<p>The topology then shows the published document, without the <strong>File</strong> tag.
+The file is out of date until you replace it. The <code>path</code> stays for a
+different phenix server that gets this config without the published
+document. That server reads its own file, if the file matches the <code>digest</code>.</p>
+<h2 id="rest-api">REST API<a class="headerlink" href="#rest-api" title="Permanent link">&para;</a></h2>
+<p>Scripts use the same REST API as the web UI, under <code>/api/v1</code>. The
+interactive API docs of a running server, at <code>/docs/</code>, describe each route
+under the <strong>Builder</strong> tag (see
+<a href="../../../api/#interactive-api-docs-swaggeropenapi">Interactive API Docs</a>).</p>
+<p>No single request publishes a Builder file. Create a draft from the
+document, then publish the draft.</p>
+<p>Each route needs <code>builder</code> <code>use</code>. These routes also need <code>configs</code>
+permissions:</p>
+<table>
+<thead>
+<tr>
+<th>Route</th>
+<th>What it does</th>
+<th><code>configs</code> permission</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST /builder/drafts/{draft}/publish</code></td>
+<td>Create or update the Topology and Experiment configs, and add the topology to the <code>topology</code> annotation of each listed scenario. With <code>"dryRun": true</code>, tell what publishing would change, and write nothing. A dry run needs no <code>If-Match</code></td>
+<td>The permissions of each config</td>
+</tr>
+<tr>
+<td><code>POST /builder/drafts/{draft}/preflight</code></td>
+<td>Run the <a href="../checks/#preflight">preflight checks</a> named in <code>checks</code> (<code>capacity</code>, <code>network</code>, <code>disks</code>, <code>apps</code>) on the current document, against the named <code>experiment</code>, if any</td>
+<td><code>get</code>, and the permissions of each check (see <a href="#what-each-task-needs">What each task needs</a>)</td>
+</tr>
+<tr>
+<td><code>GET /builder/sources</code></td>
+<td>The configs that a document can come from or publish with</td>
+<td><code>list</code></td>
+</tr>
+<tr>
+<td><code>POST /builder/generate</code></td>
+<td>Make a document from a stored Topology or Experiment config, or a config file, with the <a href="../import-upload-download/#import-options">import options</a> (<code>includes</code>, <code>copy</code>, <code>name</code>)</td>
+<td><code>get</code>. <code>create</code> for a config file</td>
+</tr>
+<tr>
+<td><code>POST /builder/legacy</code></td>
+<td>Convert a <a href="../../legacy/">legacy Builder</a> diagram, or a Topology config file that holds one, into a document</td>
+<td><code>get</code> and <code>create</code></td>
+</tr>
+<tr>
+<td><code>POST /builder/export/topology</code></td>
+<td>The Topology YAML that a document would publish</td>
+<td><code>get</code></td>
+</tr>
+<tr>
+<td><code>POST /builder/package</code></td>
+<td>The <a href="../import-upload-download/#moving-a-diagram-with-a-builder-package">Builder package</a> of a document, with the sections in <code>include</code></td>
+<td><code>get</code>. For each config in the package, <code>get</code> with <code>scenarios</code> or <code>topologies</code> <code>list</code></td>
+</tr>
+<tr>
+<td><code>POST /builder/package/resolve</code></td>
+<td>For each item that the package diagram needs: <code>present</code>, <code>missing</code>, <code>different</code> or <code>unknown</code> on this server</td>
+<td><code>get</code>. <code>list</code> for icons, <code>disks</code> <code>list</code> for disk images, <code>applications</code> <code>list</code> for apps</td>
+</tr>
+<tr>
+<td><code>GET /builder/documents</code></td>
+<td>List the published documents (<code>source</code> <code>store</code>), and the topologies that name a Builder file (<code>source</code> <code>file</code>, with <code>path</code> and no <code>id</code>)</td>
+<td><code>list</code></td>
+</tr>
+<tr>
+<td><code>GET /builder/documents/{document}</code></td>
+<td>Read a published document</td>
+<td><code>get</code> on its topology</td>
+</tr>
+<tr>
+<td><code>DELETE /builder/documents/{document}</code></td>
+<td>Delete a published topology and its published documents, or an unreadable published document (see <a href="#cleaning-up-storage">Cleaning up storage</a>)</td>
+<td><code>get</code> and <code>delete</code> on the topology</td>
+</tr>
+<tr>
+<td><code>GET /builder/topologies/{topology}/document</code></td>
+<td>Read the diagram that <code>builder-doc</code> names, from the store or the Builder file</td>
+<td><code>get</code> on the topology</td>
+</tr>
+</tbody>
+</table>
+<p>These routes need only <code>builder</code> <code>use</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Route</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /schemas/builder/v1</code>, <code>/schemas/builder/templates/v1</code>, <code>/schemas/builder/package/v1</code>, <code>/schemas/builder/layersets/v1</code></td>
+<td>The JSON Schemas of the Builder document, a template file, a Builder package and a layer set file</td>
+</tr>
+<tr>
+<td><code>GET</code>, <code>POST</code> <code>/builder/drafts</code></td>
+<td>The list has <code>drafts</code>, latest change first, <code>damaged</code> (drafts that this server cannot read) and <code>limits.drafts</code></td>
+</tr>
+<tr>
+<td><code>GET</code>, <code>DELETE</code> <code>/builder/drafts/{draft}</code></td>
+<td><code>GET</code> gives the current document. <code>DELETE</code> also deletes a damaged draft</td>
+</tr>
+<tr>
+<td><code>GET</code>, <code>POST</code> <code>/builder/drafts/{draft}/snapshots</code></td>
+<td><code>POST</code> saves a new version of the document</td>
+</tr>
+<tr>
+<td><code>GET</code>, <code>DELETE</code> <code>/builder/drafts/{draft}/snapshots/{snapshot}</code></td>
+<td><code>current</code> names the current snapshot, which <code>DELETE</code> cannot delete</td>
+</tr>
+<tr>
+<td><code>PATCH /builder/drafts/{draft}/cursor</code></td>
+<td>Undo and redo: choose the current snapshot</td>
+</tr>
+<tr>
+<td><code>POST /builder/cleanup</code></td>
+<td>See <a href="#cleaning-up-storage">Cleaning up storage</a></td>
+</tr>
+<tr>
+<td><code>GET</code>, <code>POST</code> <code>/builder/icons</code></td>
+<td>The list has no images. It gives <code>maxIcons</code> and an <code>etag</code>. With <code>If-None-Match</code> of that tag, it answers 304 while the list does not change. <code>POST</code> uploads a PNG under a name</td>
+</tr>
+<tr>
+<td><code>GET</code>, <code>PUT</code>, <code>DELETE</code> <code>/builder/icons/{icon}</code></td>
+<td><code>GET</code> reads an icon and its image, by its name or an old name. <code>PUT</code> renames an uploaded icon, and keeps at most 16 old names. <code>DELETE</code> deletes an uploaded icon and all its names</td>
+</tr>
+<tr>
+<td><code>GET /builder/templates</code></td>
+<td>The library (<code>templates</code>, <code>collections</code>), the built-in templates (<code>builtins</code>) and the server collections (<code>preloaded</code>)</td>
+</tr>
+<tr>
+<td><code>POST /builder/templates/items</code>, <code>PUT /builder/templates/items/{template}</code></td>
+<td>Add templates, and with <code>collection</code>, a new collection that holds them. Replace a template</td>
+</tr>
+<tr>
+<td><code>POST /builder/templates/collections</code>, <code>PUT /builder/templates/collections/{collection}</code></td>
+<td>Add or replace a collection</td>
+</tr>
+<tr>
+<td><code>POST /builder/templates/delete</code></td>
+<td>Delete templates and collections</td>
+</tr>
+<tr>
+<td><code>GET</code>, <code>POST</code> <code>/builder/layersets</code></td>
+<td>The list has the built-in sets first, then the others by name. It gives <code>defaultId</code>, <code>defaultEtag</code>, <code>damaged</code> (records that this server cannot read) and the limits</td>
+</tr>
+<tr>
+<td><code>GET</code>, <code>PUT</code> <code>/builder/layersets/default</code></td>
+<td>Read or choose the default layer set. <code>"id": null</code> clears the choice</td>
+</tr>
+<tr>
+<td><code>GET</code>, <code>PUT</code>, <code>DELETE</code> <code>/builder/layersets/{layerset}</code></td>
+<td><code>PUT</code> and <code>DELETE</code> do not accept a built-in set</td>
+</tr>
+</tbody>
+</table>
+<p>A change to a read-only library item answers as
+<a href="#the-libraries">The libraries</a> tells.</p>
+<p>These requests need an <code>If-Match</code> header with the <code>etag</code> of the item from
+the last response: each change to an existing draft, <code>PUT</code> and <code>DELETE</code> of
+a layer set, <code>PUT</code> of a template or a collection,
+<code>PUT /builder/layersets/default</code>, and <code>DELETE</code> of an icon or a published
+topology. A request without it answers 400. An older tag answers 412
+(<code>template.item.stale</code>, <code>layerset.stale</code> or <code>request.stale</code>) with the
+current ETag. Then read the item again, check it, and send the request
+again. <code>POST /builder/templates/delete</code> names each item with its <code>etag</code> in
+the body (<code>{"templates": [{"id": "…", "etag": "\"3\""}]}</code>). When one of them
+changed, it answers 412 and deletes nothing.</p>
+<p>Draft responses also have the ETag in their body, as <code>etag</code>. Use that value,
+because a proxy that compresses responses can change the <code>ETag</code> header. The
+<code>etag</code> of an icon changes at a rename. The <code>etag</code> of a published topology
+changes at each change of the topology.</p>
+<p>Each template, collection, layer set and icon in a response has <code>createdBy</code>
+(who added the item) and <code>updatedBy</code> (who changed it last). An item that no
+user added, such as a built-in template, has no <code>createdBy</code>.</p>
+<p>With authentication enabled, send a token in the <code>X-Phenix-Auth-Token</code>
+header, as <code>Bearer &lt;token&gt;</code> (see
+<a href="../../../user-administration/#generating-user-authentication-tokens">Generating User Authentication Tokens</a>).</p>
+<p>A refused request answers with a JSON body whose <code>code</code> names the failure,
+such as <code>publish.topology.exists</code>. When a document is not valid, or
+only publishing refuses a draft, <code>issues</code> lists each problem with its own
+code. The warnings and failures of a publication are issues too.
+<a href="../../reference/">Error Codes</a> lists every code.</p>
+<h3 id="response-headers">Response headers<a class="headerlink" href="#response-headers" title="Permanent link">&para;</a></h3>
+<p>Each Builder response, the schema routes included, has
+<code>X-Content-Type-Options: nosniff</code>, because each response is JSON. Each also
+has <code>Cache-Control: no-store</code>, so no browser or proxy keeps a copy, also of
+an error or a 304 answer.</p>
+<p>The icon responses hold the images as base64 in the JSON. They also have
+<code>Content-Security-Policy: default-src 'none'; frame-ancestors 'none'</code>. If a
+browser shows one of them as a page, it loads, runs and frames nothing.</p>
+<h3 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">&para;</a></h3>
+<p>These examples use the example lab (see
+<a href="../../tutorial/#the-example-lab">Builder Examples</a>) and <code>jq</code>. Set the server and
+your token first:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nv">PHENIX</span><span class="o">=</span>http://localhost:3000
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nv">TOKEN</span><span class="o">=</span><span class="s1">'your-token'</span><span class="w">   </span><span class="c1"># a token from the Users page</span>
+</span></code></pre></div>
+<p>List the drafts:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span><span class="s2">"X-Phenix-Auth-Token: Bearer </span><span class="nv">$TOKEN</span><span class="s2">"</span><span class="w"> </span><span class="s2">"</span><span class="nv">$PHENIX</span><span class="s2">/api/v1/builder/drafts"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">'.drafts[] | {title, createdBy, id, etag}'</span>
+</span></code></pre></div>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="p">{</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span><span class="nt">"title"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Riverside Water"</span><span class="p">,</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span><span class="nt">"createdBy"</span><span class="p">:</span><span class="w"> </span><span class="s2">"darrow"</span><span class="p">,</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"6290aef3-24a3-4126-b90a-308cbf561f17"</span><span class="p">,</span>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">  </span><span class="nt">"etag"</span><span class="p">:</span><span class="w"> </span><span class="s2">"\"10\""</span>
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="p">}</span>
+</span></code></pre></div>
+<p>Make a document from the stored topology <code>riverside-water</code>, as <strong>Import</strong>
+does. <code>POST /builder/generate</code> writes nothing:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-H<span class="w"> </span><span class="s2">"X-Phenix-Auth-Token: Bearer </span><span class="nv">$TOKEN</span><span class="s2">"</span><span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"source":"Topology/riverside-water"}'</span><span class="w"> </span><span class="s2">"</span><span class="nv">$PHENIX</span><span class="s2">/api/v1/builder/generate"</span><span class="w"> </span>&gt;<span class="w"> </span>generated.json
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>jq<span class="w"> </span><span class="s1">'{name: .document.metadata.name, source: .source.fullName, warnings}'</span><span class="w"> </span>generated.json
+</span></code></pre></div>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="p">{</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"riverside-water"</span><span class="p">,</span>
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">  </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Topology/riverside-water"</span><span class="p">,</span>
+</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">  </span><span class="nt">"warnings"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">    </span><span class="s2">"The Builder added 2 nodes from included topology corp-services (2 nodes). The diagram shows them read only. Edit them in their own topology. Publishing keeps includeTopologies and does not copy them."</span>
+</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="w">  </span><span class="p">]</span>
+</span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="p">}</span>
+</span></code></pre></div>
+<p>Store the document as a draft. The <code>sourceToken</code> connects the draft to its
+topology, so the draft can publish back to <code>riverside-water</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>jq<span class="w"> </span><span class="s1">'{title: .document.metadata.name, sourceToken: .source.fullName, document}'</span><span class="w"> </span>generated.json<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-H<span class="w"> </span><span class="s2">"X-Phenix-Auth-Token: Bearer </span><span class="nv">$TOKEN</span><span class="s2">"</span><span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">      </span>-d<span class="w"> </span>@-<span class="w"> </span><span class="s2">"</span><span class="nv">$PHENIX</span><span class="s2">/api/v1/builder/drafts"</span><span class="w"> </span>&gt;<span class="w"> </span>created.json
+</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>jq<span class="w"> </span><span class="s1">'{id, createdBy, title, etag}'</span><span class="w"> </span>created.json
+</span></code></pre></div>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="p">{</span>
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"6b471c7d-dd32-44e7-ae85-a889f377747f"</span><span class="p">,</span>
+</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">  </span><span class="nt">"createdBy"</span><span class="p">:</span><span class="w"> </span><span class="s2">"darrow"</span><span class="p">,</span>
+</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">  </span><span class="nt">"title"</span><span class="p">:</span><span class="w"> </span><span class="s2">"riverside-water"</span><span class="p">,</span>
+</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">  </span><span class="nt">"etag"</span><span class="p">:</span><span class="w"> </span><span class="s2">"\"14\""</span>
+</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="p">}</span>
+</span></code></pre></div>
+<p>To keep the name of an uploaded file, which the Inspector shows as
+<strong>Source file</strong>, send <code>sourceFile</code> beside <code>document</code>. It must be a plain
+file name of at most 255 bytes, with no <code>/</code> or <code>\</code>.</p>
+<p>The server writes who made and last saved the diagram into its <code>metadata</code>
+(see
+<a href="../import-upload-download/#who-made-and-last-saved-a-diagram">Who made and last saved a diagram</a>).
+The answers to creating and saving a draft have no document. They give
+<code>createdBy</code>, <code>createdAt</code>, <code>updatedBy</code> and <code>updatedAt</code> as <code>stamp</code>.</p>
+<p>Convert a <a href="../../legacy/">legacy Builder</a> diagram, as <strong>Upload</strong> does. <code>content</code>
+is the XML of the diagram, or a Topology config that holds it in
+<code>builder-xml</code>. <code>name</code> names a diagram that has no topology. The answer has
+the same form as for <code>POST /builder/generate</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>jq<span class="w"> </span>-Rs<span class="w"> </span><span class="s1">'{content: ., name: "plant"}'</span><span class="w"> </span>plant.xml<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-H<span class="w"> </span><span class="s2">"X-Phenix-Auth-Token: Bearer </span><span class="nv">$TOKEN</span><span class="s2">"</span><span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="w">      </span>-d<span class="w"> </span>@-<span class="w"> </span><span class="s2">"</span><span class="nv">$PHENIX</span><span class="s2">/api/v1/builder/legacy"</span><span class="w"> </span>&gt;<span class="w"> </span>converted.json
+</span><span id="__span-18-4"><a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>jq<span class="w"> </span><span class="s1">'{name: .document.metadata.name, warnings}'</span><span class="w"> </span>converted.json
+</span></code></pre></div>
+<p>Delete the draft with its current ETag. The delete answers 204, or 400
+without <code>If-Match</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="nv">ID</span><span class="o">=</span><span class="k">$(</span>jq<span class="w"> </span>-r<span class="w"> </span>.id<span class="w"> </span>created.json<span class="k">)</span>
+</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="nv">ETAG</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span><span class="s2">"X-Phenix-Auth-Token: Bearer </span><span class="nv">$TOKEN</span><span class="s2">"</span><span class="w"> </span><span class="s2">"</span><span class="nv">$PHENIX</span><span class="s2">/api/v1/builder/drafts/</span><span class="nv">$ID</span><span class="s2">"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span>.etag<span class="k">)</span>
+</span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>DELETE<span class="w"> </span>-H<span class="w"> </span><span class="s2">"X-Phenix-Auth-Token: Bearer </span><span class="nv">$TOKEN</span><span class="s2">"</span><span class="w"> </span>-H<span class="w"> </span><span class="s2">"If-Match: </span><span class="nv">$ETAG</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-19-4"><a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="w">  </span><span class="s2">"</span><span class="nv">$PHENIX</span><span class="s2">/api/v1/builder/drafts/</span><span class="nv">$ID</span><span class="s2">"</span>
+</span></code></pre></div>
+<p>Read the diagram of the topology <code>pump-station</code> (see
+<a href="#builder-documents-in-files">Builder documents in files</a>), without the
+document:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>curl<span class="w"> </span>-s<span class="w"> </span>-H<span class="w"> </span><span class="s2">"X-Phenix-Auth-Token: Bearer </span><span class="nv">$TOKEN</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="w">  </span><span class="s2">"</span><span class="nv">$PHENIX</span><span class="s2">/api/v1/builder/topologies/pump-station/document"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">'del(.document)'</span>
+</span></code></pre></div>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="p">{</span>
+</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="w">  </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"file"</span><span class="p">,</span>
+</span><span id="__span-21-3"><a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="w">  </span><span class="nt">"digest"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sha256:1c92d3b0c95588fbb20926c1e58bb0452903c4e2cb0ffbf12fcdc19f72717732"</span><span class="p">,</span>
+</span><span id="__span-21-4"><a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="w">  </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mi">6517</span><span class="p">,</span>
+</span><span id="__span-21-5"><a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="w">  </span><span class="nt">"target"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pump-station"</span><span class="p">,</span>
+</span><span id="__span-21-6"><a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a><span class="w">  </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Topology"</span><span class="p">,</span>
+</span><span id="__span-21-7"><a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Topology/pump-station"</span><span class="p">,</span>
+</span><span id="__span-21-8"><a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="w">  </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/phenix/topologies/pump-station/pump-station.builder.json"</span>
+</span><span id="__span-21-9"><a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a><span class="p">}</span>
+</span></code></pre></div>
+<p><code>digest</code> is the digest to write beside <code>path</code> (see
+<a href="#pinning-the-file-with-a-digest">Pinning the file with a digest</a>). For a
+file, the answer has <code>"topologyDiffers": true</code> when the stored topology
+is not what the document publishes. For a published document, <code>source</code> is
+<code>store</code>, and the answer has <code>id</code>, <code>createdBy</code> and <code>createdAt</code>, not <code>path</code>.</p>
+<h2 id="compressed-files">Compressed files<a class="headerlink" href="#compressed-files" title="Permanent link">&para;</a></h2>
+<p>The Builder page loads large script files that other pages do not load. The
+UI build writes a Brotli copy and a gzip copy of each, when the copy is
+smaller. phenix sends the copy that the browser accepts, and tells the
+browser to keep the file for one year. A changed file gets a new name, so
+browsers get it after an upgrade.</p>
+<p>The environment variable <code>PHENIX_BROTLI_QUALITY</code> sets the Brotli quality of
+the UI build: a whole number from 0 to 11, by default 9. A higher quality
+makes smaller copies and a slower build. Another value stops the build with
+an error.</p>
+<p>The Docker and Podman images both build from <code>docker/Dockerfile</code>, which
+sets quality 11. <code>make docker</code> uses <code>docker/Dockerfile</code>. <code>make deb</code> builds
+<code>docker/Dockerfile</code>, then makes the package from that image. When
+<code>PHENIX_BUILD_IMAGE</code> names an image that you built before, <code>make deb</code> uses
+that image and its quality. All other builds, such as <code>make build</code> and
+<code>npm run build</code>, use quality 9.</p>
+<p>To build the UI with quality 11:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="nb">cd</span><span class="w"> </span>src/js
+</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="nv">PHENIX_BROTLI_QUALITY</span><span class="o">=</span><span class="m">11</span><span class="w"> </span>npm<span class="w"> </span>run<span class="w"> </span>build
+</span></code></pre></div>
+<p>To build the Docker image with a different quality:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>docker<span class="w"> </span>build<span class="w"> </span>--build-arg<span class="w"> </span><span class="nv">PHENIX_BROTLI_QUALITY</span><span class="o">=</span><span class="m">9</span><span class="w"> </span>-t<span class="w"> </span>phenix<span class="w"> </span>-f<span class="w"> </span>docker/Dockerfile<span class="w"> </span>.
+</span></code></pre></div>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>What you see</th>
+<th>Why</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>No <strong>Builder</strong> link, or "Your role does not include the Builder."</td>
+<td>The role has no <code>builder</code> <code>use</code></td>
+<td>See <a href="#permissions">Permissions</a></td>
+</tr>
+<tr>
+<td>A button is missing or unavailable, or "The Builder does not check drive images, because …"</td>
+<td>The role does not allow that task. A published diagram opens read only, without <strong>Publish</strong></td>
+<td>See <a href="#what-each-task-needs">What each task needs</a></td>
+</tr>
+<tr>
+<td>"Could not publish the diagram. Adding topology riverside-water-b to scenario riverside-water: user … does not have permission"</td>
+<td>The role cannot update a scenario that the diagram lists</td>
+<td>Give the role <code>configs</code> <code>update</code> on <code>Scenario/riverside-water</code>, or remove the scenario from the diagram</td>
+</tr>
+<tr>
+<td>"Could not publish the diagram. Scenario riverside-water does not exist."</td>
+<td>The listed scenario does not exist, or the role cannot read it</td>
+<td>Store the scenario, give the role <code>configs</code> <code>get</code> and <code>scenarios</code> <code>list</code> on it, or remove it from the diagram</td>
+</tr>
+<tr>
+<td>The Publish dialog says that the topology "already exists. This diagram cannot update it"</td>
+<td>The draft did not come from that topology and did not publish to it. For a topology from the legacy Builder, only the draft imported from it can update it</td>
+<td>Publish under a different name, or import the topology and change that draft (see <a href="../publishing/">Publishing</a> and <a href="../../legacy/#converting-a-stored-topology">Legacy Builder</a>)</td>
+</tr>
+<tr>
+<td>The Publish dialog says that the topology "changed after this diagram published it"</td>
+<td>Someone changed the topology after this draft published it</td>
+<td>Import the topology again, or publish under a different name (see <a href="../publishing/#publishing-again">Publishing again</a>)</td>
+</tr>
+<tr>
+<td>"Could not convert the legacy diagram. …"</td>
+<td>The file is not a legacy Builder diagram, or it is a Topology config without <code>builder-xml</code></td>
+<td>See <a href="../../legacy/#converting-a-file">Converting a file</a></td>
+</tr>
+<tr>
+<td>"Could not open the diagram of topology pump-station. Builder file … "</td>
+<td>phenix cannot use the Builder file of the topology</td>
+<td>See <a href="#when-the-file-cannot-be-used">When the file cannot be used</a></td>
+</tr>
+<tr>
+<td>"Topology … does not exist, or you do not have permission to read it."</td>
+<td>Someone deleted the topology, or the role cannot list it</td>
+<td>Give the role <code>configs</code> <code>list</code> and <code>topologies</code> <code>list</code> on the topology</td>
+</tr>
+<tr>
+<td><code>phenix config create</code> skips a file with "skipped Builder document. Upload it in the Builder to publish it", or refuses it as "a Builder document, not a configuration"</td>
+<td>The file is a Builder document, not a config</td>
+<td>See <a href="../import-upload-download/#builder-documents-and-phenix-config-create">Builder documents and phenix config create</a></td>
+</tr>
+<tr>
+<td>The save state says "Offline: …"</td>
+<td>The browser cannot reach the server, or the server did not answer in time</td>
+<td>Keep the tab open. Saving tries again when the server answers (see <a href="../drafts/#working-offline">Working offline</a>)</td>
+</tr>
+<tr>
+<td>"This draft changed on the server"</td>
+<td>Someone saved a newer version of the draft first</td>
+<td>See <a href="../drafts/#draft-merging">Draft merging</a></td>
+</tr>
+<tr>
+<td>The sign-in page opens while you work in the Builder</td>
+<td>The session ended (<code>--jwt-lifetime</code>, by default 24 hours)</td>
+<td>Log in. Changes that the server did not have are lost (see <a href="../drafts/#logging-out">Logging out</a>)</td>
+</tr>
+<tr>
+<td>A draft card says "You cannot open this draft, because the Builder cannot read it. A newer version of phenix may have saved it."</td>
+<td>A newer phenix saved the draft</td>
+<td>See <a href="../drafts/#damaged-drafts">Damaged drafts</a></td>
+</tr>
+<tr>
+<td>"Auto layout failed. The layout engine could not start." or "Auto layout failed. The Builder could not load the layout engine. Reload the page to try again.", or "The Builder could not check the pattern. Reload the page to try again." in <strong>Auto-group by name pattern</strong></td>
+<td>A proxy or a content security policy may block the worker scripts of phenix</td>
+<td>Reload the page. Let the proxy serve the phenix scripts, and let the policy allow workers from the same origin (see <a href="#availability">Availability</a>)</td>
+</tr>
+<tr>
+<td>"The Builder could not convert this image. Save it as a PNG, and then upload it again."</td>
+<td>The browser could not make a PNG icon from the file, for example an SVG that draws nothing on its own</td>
+<td>Save the picture as a PNG and upload that</td>
+</tr>
+<tr>
+<td>"The Builder cannot read the template library. A newer version of phenix may have saved it." on the <strong>Node Templates</strong> tab</td>
+<td>A newer phenix saved the template library. The server refuses each library change with 409</td>
+<td>Use that phenix version. The built-in templates and the server collections are still listed</td>
+</tr>
+<tr>
+<td>"The server cannot read 1 layer set. A newer version of phenix may have saved it." on the <strong>Layers</strong> tab</td>
+<td>A newer phenix saved that layer set. The list leaves it out</td>
+<td>Use that phenix version. The other layer sets are still listed</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        
+
+<footer class="md-footer">
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-footer-copyright">
+        
+        powered by
+        <a href="https://www.mkdocs.org">MkDocs</a>
+        and
+        <a href="https://squidfunk.github.io/mkdocs-material/">
+          Material for MkDocs</a>
+      </div>
+
+      <!-- Social links -->
+      
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/sandialabs/sceptre-phenix" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="/swagger.html" target="_blank" rel="noopener" title="" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M195.1 9.5c3-14.8 16.1-25.5 31.3-25.5h59.8c15.2 0 28.3 10.7 31.3 25.5l14.5 70c14.1 6 27.3 13.7 39.3 22.8l67.8-22.5c14.4-4.8 30.2 1.2 37.8 14.4l29.9 51.8c7.6 13.2 4.9 29.8-6.5 39.9L447 233.3c.9 7.4 1.3 15 1.3 22.7s-.5 15.3-1.3 22.7l53.4 47.5c11.4 10.1 14 26.8 6.5 39.9L477 417.9c-7.6 13.1-23.4 19.2-37.8 14.4l-67.8-22.5c-12.1 9.1-25.3 16.7-39.3 22.8l-14.4 69.9c-3.1 14.9-16.2 25.5-31.3 25.5h-59.8c-15.2 0-28.3-10.7-31.3-25.5l-14.4-69.9c-14.1-6-27.2-13.7-39.3-22.8l-68.1 22.5c-14.4 4.8-30.2-1.2-37.8-14.4L5.8 366.1c-7.6-13.2-4.9-29.8 6.5-39.9l53.4-47.5c-.9-7.4-1.3-15-1.3-22.7s.5-15.3 1.3-22.7l-53.4-47.5C.9 175.7-1.7 159 5.8 145.9l29.9-51.8c7.6-13.2 23.4-19.2 37.8-14.4l67.8 22.5c12.1-9.1 25.3-16.7 39.3-22.8zM256.3 336a80 80 0 1 0-.6-160 80 80 0 1 0 .6 160"/></svg>
+    </a>
+  
+</div>
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["content.code.copy"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
