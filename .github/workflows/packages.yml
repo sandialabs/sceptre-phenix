@@ -7,7 +7,7 @@ name: Packages
 on:
   # Path filters do not apply to tag pushes, so releases always build.
   push:
-    branches: ['**']
+    branches: ['**', '!dependabot/**']
     tags: ['v*']
     paths:
       - '**'

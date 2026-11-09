@@ -1,18 +1,110 @@
 version: 2
-updates:
-  # Keeps the SHA-pinned actions in .github/workflows current, in one weekly PR.
-  - package-ecosystem: github-actions
-    directory: /
+
+# One weekly PR per group
+multi-ecosystem-groups:
+  github-actions:
     schedule:
       interval: weekly
-    cooldown:
-      default-days: 14
-    groups:
-      github-actions:
-        patterns: ['*']
     commit-message:
       prefix: chore
       include: scope
     # The branch-name hook in prek.toml rejects '/', Dependabot's default separator.
     pull-request-branch-name:
       separator: '-'
+  go:
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    pull-request-branch-name:
+      separator: '-'
+  npm:
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    pull-request-branch-name:
+      separator: '-'
+  pip:
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    pull-request-branch-name:
+      separator: '-'
+  docker:
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    pull-request-branch-name:
+      separator: '-'
+
+# The Go, Node.js, and Ubuntu versions and the dependencies tied to them are
+# ignored below: a maintainer bumps those by hand.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    patterns: ['*']
+    multi-ecosystem-group: github-actions
+    cooldown:
+      default-days: 14
+
+  - package-ecosystem: gomod
+    directories: [/src/go, /examples/go]
+    patterns: ['*']
+    multi-ecosystem-group: go
+    cooldown:
+      default-days: 14
+    ignore:
+      # These need a newer Go than the project targets, and move with it.
+      - dependency-name: golang.org/x/*
+      # v1.8.1 serves the UI's index.html instead of a 405 for wrong-method API requests.
+      - dependency-name: github.com/gorilla/mux
+
+  - package-ecosystem: npm
+    directories: [/src/js, /src/js/e2e]
+    patterns: ['*']
+    multi-ecosystem-group: npm
+    cooldown:
+      default-days: 14
+    ignore:
+      # Moves with the Playwright image pinned in .github/workflows/e2e.yml.
+      - dependency-name: '@playwright/test'
+
+  - package-ecosystem: pip
+    directory: /docs
+    patterns: ['*']
+    multi-ecosystem-group: pip
+    cooldown:
+      default-days: 14
+
+  - package-ecosystem: docker
+    directory: /docker
+    patterns: ['*']
+    multi-ecosystem-group: docker
+    cooldown:
+      default-days: 14
+    ignore:
+      - dependency-name: '*'
+        update-types: [version-update:semver-major]
+      # Go minor releases are 1.x, so only patch tags are automatic.
+      - dependency-name: library/golang
+        update-types: [version-update:semver-minor]
+      - dependency-name: library/ubuntu
+      # Moves with the Node.js pinned by checksum in docker/jit/Dockerfile.
+      - dependency-name: library/node
+
+  - package-ecosystem: docker-compose
+    directory: /docker
+    patterns: ['*']
+    multi-ecosystem-group: docker
+    cooldown:
+      default-days: 14
+    ignore:
+      - dependency-name: '*'
+        update-types: [version-update:semver-major]
