@@ -37,9 +37,10 @@ part of the suite:
 The workflow runs only for a change that can affect the browser: `src/js/`
 outside its unit tests in `src/js/test/`, `src/go/web/`, `src/go/api/`,
 `src/go/store/`, `src/go/cmd/`, `src/go/types/builder/`,
-`src/go/types/version/`, the `Makefile`, `docker/` or the workflow itself
-(its path filters). On CI, a `test.only` left in a spec fails the run
-(`forbidOnly`). A test that fails on CI runs once more. A test that passes
+`src/go/types/version/`, the Go module files (`src/go/go.mod`, `go.sum`),
+the `Makefile`, `docker/` or the workflow itself (its path filters). On CI, a
+`test.only` left in a spec fails the run (`forbidOnly`). A test that fails on
+CI runs once more. A test that passes
 only on that retry is flaky, and it fails the run too (`failOnFlakyTests`).
 The trace and screenshot of the failed try are in the job's failure
 artifacts. On CI the Playwright run stops after 8 minutes (`globalTimeout`),
