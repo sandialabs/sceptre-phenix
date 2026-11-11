@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -126,6 +127,51 @@ func TestNodeValidate(t *testing.T) {
 
 			if err != nil {
 				t.Fatalf("expected no error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestNodeDiskInjects(t *testing.T) {
+	injections := []*Injection{{SrcF: "/a", DstF: "/a"}, {SrcF: "/b", DstF: "/b"}}
+	deletions := []*Deletion{{PathF: "/c"}}
+
+	tests := []struct {
+		name       string
+		osType     string
+		injections []*Injection
+		deletions  []*Deletion
+		want       []string
+	}{
+		{name: "none", osType: "windows"},
+		{
+			name:       "windows injections only",
+			osType:     "windows",
+			injections: injections,
+			want: []string{
+				`disk inject img:1 options "-t lowntfs-3g -o ignore_case" files "/a":"/a"`,
+				`disk inject img:1 options "-t lowntfs-3g -o ignore_case" files "/b":"/b"`,
+			},
+		},
+		{
+			name:      "linux deletions only",
+			osType:    "linux",
+			deletions: deletions,
+			want:      []string{`disk inject img:1 delete files "/c"`},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			n := Node{
+				HardwareF:   &Hardware{OSTypeF: test.osType},
+				InjectionsF: test.injections,
+				DeletionsF:  test.deletions,
+			}
+
+			got := n.DiskInjects("img", 1, "/base")
+			if !slices.Equal(got, test.want) {
+				t.Errorf("DiskInjects() = %q, want %q", got, test.want)
 			}
 		})
 	}

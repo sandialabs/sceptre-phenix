@@ -481,7 +481,7 @@ func (Minimega) RedeployVM(opts ...Option) error { //nolint:funlen // complex lo
 					)
 				}
 
-				err = inject(old.base, o.injectPart, o.injects...)
+				err = inject(old.base, o.injectPart, o.osType, o.injects...)
 				if err != nil {
 					return err
 				}
@@ -1681,15 +1681,16 @@ func flush(ns string) error {
 	return nil
 }
 
-func inject(disk string, part int, injects ...string) error {
-	files := strings.Join(injects, " ")
-
+func inject(disk string, part int, osType string, injects ...string) error {
 	cmd := mmcli.NewCommand()
-	cmd.Command = fmt.Sprintf("disk inject %s:%d files %s", disk, part, files)
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
-	if err != nil {
-		return fmt.Errorf("injecting files into disk %s: %w", disk, err)
+	for _, command := range InjectCommands(fmt.Sprintf("%s:%d", disk, part), osType, injects...) {
+		cmd.Command = command
+
+		err := mmcli.ErrorResponse(mmcli.Run(cmd))
+		if err != nil {
+			return fmt.Errorf("injecting files into disk %s: %w", disk, err)
+		}
 	}
 
 	return nil
