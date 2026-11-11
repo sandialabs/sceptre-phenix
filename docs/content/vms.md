@@ -248,7 +248,7 @@ keyboard focus. A disabled button tells why in its tooltip.
   shows a screenshot with the `Snapshot` tag.
 * `Snapshots` turns off all live tiles, and `Live` turns them on again.
 * A tile is live only while at least 25% of it is on the screen. A tile that
-  leaves the screen, or a browser tab that is hidden, disconnects after 10
+  leaves the screen, or a browser tab that is hidden, disconnects after 30
   seconds.
 * The server does not send screenshots of live tiles.
 

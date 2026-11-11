@@ -16,7 +16,7 @@ import { loadLiveTileLimit } from '@/utils/prefs.js';
 /** The part of a tile that must be visible for it to be live. */
 export const VISIBLE_RATIO = 0.25;
 /** How long a live tile stays live off screen or in a hidden tab. */
-export const OFF_SCREEN_MS = 10_000;
+export const OFF_SCREEN_MS = 30_000;
 /** New connections start this many at a time… */
 export const STAGGER_BATCH = 4;
 /** …and this many milliseconds apart. */

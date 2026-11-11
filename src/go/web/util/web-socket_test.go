@@ -77,8 +77,14 @@ func TestConnectWSHandlerCopiesBothWays(t *testing.T) {
 		t.Errorf("proxy echoed %q, want %q", got, "vnc bytes")
 	}
 
-	if n := len(logs.Records(t, plogtest.Message("websocket client connected"))); n != 1 {
-		t.Errorf("logged %d connected records, want 1", n)
+	connected := logs.Records(t, plogtest.Message("websocket client connected"))
+	if len(connected) != 1 {
+		t.Fatalf("logged %d connected records, want 1", len(connected))
+	}
+
+	// each live VNC tile connects again when it comes back on screen
+	if level := connected[0]["level"]; level != "DEBUG" {
+		t.Errorf("connected record level = %v, want DEBUG", level)
 	}
 }
 

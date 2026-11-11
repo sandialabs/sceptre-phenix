@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 
 	"phenix/util/mm"
 	"phenix/util/plog/plogtest"
+	"phenix/web/audit"
 	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -541,25 +543,22 @@ func TestVNCWebSocketDenialIsAudited(t *testing.T) {
 	wantDenied(t, events(), "vnc-attach")
 }
 
+// vncAttachRuns counts the runs of TestVNCWebSocketAttachIsAudited in this process.
+//
+//nolint:gochecknoglobals // each run in a process needs a new user
+var vncAttachRuns atomic.Uint64
+
 // Opening a VM's VNC websocket is audited once it is attached.
 func TestVNCWebSocketAttachIsAudited(t *testing.T) {
 	info, l := listenVNC(t)
-
-	// the VM's VNC server: echoes what it is sent
-	go func() {
-		conn, err := l.Accept()
-		if err != nil {
-			return
-		}
-
-		defer conn.Close()
-
-		_, _ = io.Copy(conn, conn)
-	}()
+	echoVNC(l)
 
 	useTestMM(t, &testMM{vnc: info})
 
-	api := serveAs(t, "alice", testRole("vms/vnc", "get", "test-experiment/test-vm")).URL + "/api/v1"
+	// the server's own limit audits a user and VM once a window, so each run is a new user
+	user := fmt.Sprintf("alice-%d", vncAttachRuns.Add(1))
+
+	api := serveAs(t, user, testRole("vms/vnc", "get", "test-experiment/test-vm")).URL + "/api/v1"
 	events := captureAudit(t)
 
 	ws, err := websocket.Dial(
@@ -583,7 +582,111 @@ func TestVNCWebSocketAttachIsAudited(t *testing.T) {
 	}
 
 	wantAudit(t, events(), "vnc-attach", "success", map[string]any{
-		"user.name": "alice", "phenix.experiment.name": "test-experiment", "phenix.vm.name": "test-vm",
+		"user.name": user, "phenix.experiment.name": "test-experiment", "phenix.vm.name": "test-vm",
+		"phenix.suppressed": 0,
+	})
+}
+
+// echoVNC serves the VM's VNC server on l: it echoes what each connection sends.
+func echoVNC(l net.Listener) {
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+
+			go func() {
+				defer conn.Close()
+
+				_, _ = io.Copy(conn, conn)
+			}()
+		}
+	}()
+}
+
+// testVNCAttaches is a limit of the vnc-attach records by the clock, the time since 2026-01-01 that the test moves.
+func testVNCAttaches(clock *atomic.Int64) *audit.Repeats {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	return audit.NewRepeats(vncAttachWindow, vncFailureWindow, maxVNCAuditKeys, func() time.Time {
+		return start.Add(time.Duration(clock.Load()))
+	})
+}
+
+// attachVNC opens the VNC websocket of vm in test-experiment as user, through a server that audits with attaches,
+// and closes it once it has echoed a message.
+func attachVNC(t *testing.T, attaches *audit.Repeats, user, vm string) {
+	t.Helper()
+
+	role := testRole("vms/vnc", "get", "test-experiment/vm1", "test-experiment/vm2")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), middleware.ContextKeyRole, role)
+		ctx = context.WithValue(ctx, middleware.ContextKeyUser, user)
+		r = mux.SetURLVars(r.WithContext(ctx), map[string]string{"exp": "test-experiment", "name": vm})
+
+		_ = serveVNCWebSocket(w, r, attaches)
+	}))
+	defer srv.Close()
+
+	ws, err := websocket.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), "", srv.URL)
+	if err != nil {
+		t.Fatalf("websocket.Dial(vms/%s/vnc/ws) as %s error = %v", vm, user, err)
+	}
+
+	defer ws.Close()
+
+	// the echo comes through the proxy, which starts after the audit
+	if _, err := ws.Write([]byte("RFB")); err != nil {
+		t.Fatalf("writing to vms/%s/vnc/ws: %v", vm, err)
+	}
+
+	if _, err := io.ReadFull(ws, make([]byte, 3)); err != nil {
+		t.Fatalf("reading the echo from vms/%s/vnc/ws: %v", vm, err)
+	}
+}
+
+// A user's attaches to one VM are audited once each 5 minutes, live tiles connecting again as they come back on
+// screen; another user or VM has its own record, and the first attach after the window counts those skipped.
+func TestVNCWebSocketAttachAuditedOnceAWindow(t *testing.T) {
+	info, l := listenVNC(t)
+	echoVNC(l)
+
+	useTestMM(t, &testMM{vnc: info})
+
+	var (
+		clock    = new(atomic.Int64)
+		attaches = testVNCAttaches(clock)
+		events   = captureAudit(t)
+	)
+
+	steps := []struct {
+		advance  time.Duration
+		user, vm string
+		want     int // the user's success records of vm so far
+	}{
+		{user: "alice", vm: "vm1", want: 1},
+		{user: "alice", vm: "vm1", want: 1},
+		{user: "bob", vm: "vm1", want: 1},
+		{user: "alice", vm: "vm2", want: 1},
+		{advance: vncAttachWindow - time.Second, user: "alice", vm: "vm1", want: 1},
+		{advance: time.Second, user: "alice", vm: "vm1", want: 2},
+	}
+
+	for i, s := range steps {
+		clock.Add(int64(s.advance))
+		attachVNC(t, attaches, s.user, s.vm)
+
+		fields := map[string]any{"user.name": s.user, "phenix.experiment.name": "test-experiment", "phenix.vm.name": s.vm}
+		if got := countAudit(events(), "vnc-attach", "success", fields); got != s.want {
+			t.Errorf("step %d: %s's vnc-attach success records of %s = %d, want %d", i, s.user, s.vm, got, s.want)
+		}
+	}
+
+	// the attach after the window counts the 2 skipped
+	wantAudit(t, events(), "vnc-attach", "success", map[string]any{
+		"user.name": "alice", "phenix.vm.name": "vm1", "phenix.suppressed": 2,
 	})
 }
 
@@ -623,12 +726,14 @@ func TestVNCWebSocketDialsAfterUpgrade(t *testing.T) {
 // stops, it is refused before it is upgraded.
 func TestGetVNCWebSocketFails(t *testing.T) {
 	role := testRole("vms/vnc", "get", "test-experiment/test-vm")
+	attaches := testVNCAttaches(new(atomic.Int64))
+	serve := func(w http.ResponseWriter, r *http.Request) error { return serveVNCWebSocket(w, r, attaches) }
 
 	useTestMM(t, &testMM{vncErr: errors.New("vm not found")})
 
 	events := captureAudit(t)
 
-	rec := vncServe(t.Context(), GetVNCWebSocket, role, "")
+	rec := vncServe(t.Context(), serve, role, "")
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("GET vms/test-vm/vnc/ws without an endpoint = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
@@ -644,7 +749,7 @@ func TestGetVNCWebSocketFails(t *testing.T) {
 
 	useTestMM(t, &testMM{vncErr: fmt.Errorf("vnc: %w", context.Canceled)})
 
-	if rec := vncServe(ctx, GetVNCWebSocket, role, ""); rec.Body.Len() != 0 {
+	if rec := vncServe(ctx, serve, role, ""); rec.Body.Len() != 0 {
 		t.Errorf("GET vms/test-vm/vnc/ws whose client left wrote %q, want nothing", rec.Body.String())
 	}
 
@@ -653,13 +758,58 @@ func TestGetVNCWebSocketFails(t *testing.T) {
 	lifecycle.Stop()
 	t.Cleanup(lifecycle.Start)
 
-	rec = vncServe(t.Context(), GetVNCWebSocket, role, "")
+	rec = vncServe(t.Context(), serve, role, "")
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("GET vms/test-vm/vnc/ws while stopping = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 	}
 
 	if got := rec.Header().Get("Retry-After"); got != lifecycle.RetryAfter {
 		t.Errorf("GET vms/test-vm/vnc/ws while stopping Retry-After = %q, want %q", got, lifecycle.RetryAfter)
+	}
+}
+
+// A user's failed attaches to one VM with one error are audited, and logged as errors, once a minute; the rest are
+// logged at debug level. Another error has its own record.
+func TestGetVNCWebSocketFailureRateLimited(t *testing.T) {
+	var (
+		role     = testRole("vms/vnc", "get", "test-experiment/test-vm")
+		clock    = new(atomic.Int64)
+		attaches = testVNCAttaches(clock)
+		serve    = func(w http.ResponseWriter, r *http.Request) error { return serveVNCWebSocket(w, r, attaches) }
+		events   = captureAudit(t)
+		logs     = plogtest.Capture(t)
+	)
+
+	steps := []struct {
+		advance time.Duration
+		err     string
+		want    int    // the failure records with err so far
+		level   string // of the log record of the failure
+	}{
+		{err: "vm not found", want: 1, level: "ERROR"},
+		{err: "vm not found", want: 1, level: "DEBUG"},
+		{err: "minimega timed out", want: 1, level: "ERROR"},
+		{advance: vncFailureWindow - time.Second, err: "vm not found", want: 1, level: "DEBUG"},
+		{advance: time.Second, err: "vm not found", want: 2, level: "ERROR"},
+	}
+
+	for i, s := range steps {
+		clock.Add(int64(s.advance))
+		useTestMM(t, &testMM{vncErr: errors.New(s.err)})
+
+		if rec := vncServe(t.Context(), serve, role, ""); rec.Code != http.StatusBadRequest {
+			t.Errorf("step %d: GET vms/test-vm/vnc/ws without an endpoint = %d, want %d", i, rec.Code, http.StatusBadRequest)
+		}
+
+		fields := map[string]any{"user.name": "alice", "phenix.vm.name": "test-vm", "error.message": s.err}
+		if got := countAudit(events(), "vnc-attach", "failure", fields); got != s.want {
+			t.Errorf("step %d: vnc-attach failure records of %q = %d, want %d", i, s.err, got, s.want)
+		}
+
+		logged := logs.Take(t, plogtest.Message("getting VNC endpoint"))
+		if len(logged) != 1 || logged[0]["level"] != s.level {
+			t.Errorf("step %d: getting VNC endpoint records = %v, want one at level %s", i, logged, s.level)
+		}
 	}
 }
 

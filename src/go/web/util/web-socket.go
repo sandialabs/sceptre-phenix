@@ -33,12 +33,12 @@ func ConnectWSHandler(endpoint string) func(*websocket.Conn) {
 
 		defer func() { _ = remote.Close() }()
 
-		plog.Info(plog.TypeSystem, "websocket client connected", "endpoint", endpoint)
+		plog.Debug(plog.TypeSystem, "websocket client connected", "endpoint", endpoint)
 
 		go func() { _, _ = io.Copy(ws, remote) }()
 
 		_, _ = io.Copy(remote, ws)
 
-		plog.Info(plog.TypeSystem, "websocket client disconnected", "endpoint", endpoint)
+		plog.Debug(plog.TypeSystem, "websocket client disconnected", "endpoint", endpoint)
 	}
 }

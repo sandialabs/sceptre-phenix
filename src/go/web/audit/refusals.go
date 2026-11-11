@@ -35,9 +35,9 @@ type refusalKey struct {
 	ip, reason string
 }
 
-// refusalCount is a source and reason's refusals: when the last one was
-// audited, and how many have been skipped since.
-type refusalCount struct {
+// windowCount is the events of one key: when the last one was audited, and
+// how many have been skipped since.
+type windowCount struct {
 	audited    time.Time
 	suppressed int
 }
@@ -51,7 +51,7 @@ type Refusals struct {
 	now    func() time.Time
 	window time.Duration
 	max    int
-	counts map[refusalKey]*refusalCount
+	counts map[refusalKey]*windowCount
 }
 
 // NewRefusals returns Refusals that audit one refusal a window for each
@@ -62,7 +62,7 @@ func NewRefusals(window time.Duration, maxSources int, now func() time.Time) *Re
 		now:    now,
 		window: window,
 		max:    maxSources,
-		counts: make(map[refusalKey]*refusalCount),
+		counts: make(map[refusalKey]*windowCount),
 	}
 }
 
@@ -111,7 +111,7 @@ func (rs *Refusals) admit(key refusalKey) (int, bool) {
 	}
 
 	if !ok {
-		rs.counts[key] = &refusalCount{audited: now, suppressed: 0}
+		rs.counts[key] = &windowCount{audited: now, suppressed: 0}
 
 		return 0, true
 	}

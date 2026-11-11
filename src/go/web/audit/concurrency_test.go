@@ -115,3 +115,58 @@ func TestRefusalsConcurrent(t *testing.T) {
 		t.Errorf("phenix.suppressed totals %v after the window, want %v", suppressed, want)
 	}
 }
+
+// Attaches from many goroutines at once are audited once a window for each
+// user and VM, and the next audited attach counts every one skipped.
+func TestRepeatsConcurrent(t *testing.T) {
+	const (
+		vms        = 8
+		goroutines = 32
+		calls      = 100
+	)
+
+	var (
+		events = capture(t)
+		clock  = &fakeClock{now: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+		limit  = audit.NewRepeats(5*time.Minute, time.Minute, 2*vms, clock.Now)
+		wg     sync.WaitGroup
+		attach = func(vm int) {
+			limit.Success(attachRequest("alice"), audit.VNCAttach, "vnc attached", audit.Fields{VM: fmt.Sprintf("vm%d", vm)})
+		}
+	)
+
+	for g := range goroutines {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			for i := range calls {
+				attach((g + i) % vms)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	if n := len(events()); n != vms {
+		t.Fatalf("%d attaches to %d VMs in one window audited %d times, want %d", goroutines*calls, vms, n, vms)
+	}
+
+	clock.advance(5 * time.Minute)
+
+	for vm := range vms {
+		attach(vm)
+	}
+
+	var suppressed float64
+
+	for _, record := range decoded(t, events())[vms:] {
+		n, _ := record["phenix.suppressed"].(float64)
+		suppressed += n
+	}
+
+	if want := float64(goroutines*calls - vms); suppressed != want {
+		t.Errorf("phenix.suppressed totals %v after the window, want %v", suppressed, want)
+	}
+}

@@ -1,4 +1,4 @@
-// The live tile pool (T32): the limit, the visibility rules (25%, 10 s), the
+// The live tile pool (T32): the limit, the visibility rules (25%, 30 s), the
 // stagger (4 at a time, 250 ms), and one connection for each VM in a tab.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, h, nextTick, ref } from 'vue';
@@ -191,11 +191,11 @@ describe('the visibility rules', () => {
     expect(tile.live.value).toBe(true);
   });
 
-  it('disconnects a tile 10 s after it leaves the screen', async () => {
+  it('disconnects a tile 30 s after it leaves the screen', async () => {
     pool = createLiveTilePool();
     const [tile] = tiles(1);
     show(tile.el, 0);
-    expect(OFF_SCREEN_MS).toBe(10_000);
+    expect(OFF_SCREEN_MS).toBe(30_000);
     expect(pool.stats.value.offScreen).toBe(1);
     await vi.advanceTimersByTimeAsync(OFF_SCREEN_MS - 1);
     expect(tile.live.value).toBe(true);
@@ -203,11 +203,11 @@ describe('the visibility rules', () => {
     expect(tile.live.value).toBe(false);
   });
 
-  it('keeps a tile that comes back within 10 s', async () => {
+  it('keeps a tile that comes back within 30 s', async () => {
     pool = createLiveTilePool();
     const [tile] = tiles(1);
     show(tile.el, 0);
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(25_000);
     show(tile.el, 1);
     await vi.advanceTimersByTimeAsync(OFF_SCREEN_MS);
     expect(tile.live.value).toBe(true);
@@ -221,11 +221,13 @@ describe('the visibility rules', () => {
     expect(list[4].live.value).toBe(false);
   });
 
-  it('disconnects every tile 10 s after the browser tab is hidden', async () => {
+  it('disconnects every tile 30 s after the browser tab is hidden', async () => {
     pool = createLiveTilePool();
     const list = tiles(2);
     setTabHidden(true);
-    await vi.advanceTimersByTimeAsync(OFF_SCREEN_MS);
+    await vi.advanceTimersByTimeAsync(OFF_SCREEN_MS - 1);
+    expect(liveCount(list)).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
     expect(liveCount(list)).toBe(0);
     setTabHidden(false);
     expect(liveCount(list)).toBe(2);

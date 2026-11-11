@@ -53,6 +53,23 @@ func findTopologyNode(exp, name string) ifaces.NodeSpec {
 // vncProbeTimeout bounds the dial of a probe to the VM's VNC server.
 const vncProbeTimeout = 3 * time.Second
 
+const (
+	// vncAttachWindow is how long a user's repeated attaches to a VM are not audited.
+	vncAttachWindow = 5 * time.Minute
+
+	// vncFailureWindow is how long a user's repeated attach failures with one error are not audited.
+	vncFailureWindow = time.Minute
+
+	// maxVNCAuditKeys bounds the users, VMs and errors that vncAttaches remembers.
+	maxVNCAuditKeys = 4096
+)
+
+// vncAttaches audits the vnc-attach successes and failures of a user and VM at most once a window, because live tiles
+// connect again each time they come back on screen.
+//
+//nolint:gochecknoglobals // one limit for every server and router
+var vncAttaches = audit.NewRepeats(vncAttachWindow, vncFailureWindow, maxVNCAuditKeys, time.Now)
+
 // GetVNC - GET /experiments/{exp}/vms/{name}/vnc.
 //
 // It returns the VM's VNC session as JSON. With probe=true, it also dials the VM's VNC server, and answers 502 with
@@ -123,7 +140,7 @@ func GetVNC(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Expires", "0")                                         // Proxies.
 
 	if !probe {
-		plog.Info(plog.TypeAction, "vnc opened", "user", middleware.UserFromContext(ctx), "exp", exp, "vm", name)
+		plog.Debug(plog.TypeAction, "vnc opened", "user", middleware.UserFromContext(ctx), "exp", exp, "vm", name)
 	}
 
 	return writeJSON(w, session)
@@ -158,6 +175,11 @@ func probeVNC(ctx context.Context, info mm.VNCInfo) error {
 
 // GetVNCWebSocket - GET /experiments/{exp}/vms/{name}/vnc/ws.
 func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) error {
+	return serveVNCWebSocket(w, r, vncAttaches)
+}
+
+// serveVNCWebSocket serves GetVNCWebSocket, auditing attaches and attach failures through attaches.
+func serveVNCWebSocket(w http.ResponseWriter, r *http.Request, attaches *audit.Repeats) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetVNCWebSocket")
 
 	var (
@@ -178,13 +200,17 @@ func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) error {
 
 	info, err := mm.GetVNCInfo(mm.NS(exp), mm.VMName(name), mm.Context(r.Context()))
 	if err != nil {
-		audit.Failure(r, audit.VNCAttach, "vnc attach failed", fields, err)
+		audited := attaches.Failure(r, audit.VNCAttach, "vnc attach failed", fields, err)
 
 		if requestCanceled(r, err) {
 			return nil
 		}
 
-		plog.Error(plog.TypeSystem, "getting VNC endpoint", "err", err)
+		if audited {
+			plog.Error(plog.TypeSystem, "getting VNC endpoint", "exp", exp, "vm", name, "err", err)
+		} else {
+			plog.Debug(plog.TypeSystem, "getting VNC endpoint", "exp", exp, "vm", name, "err", err)
+		}
 
 		return weberror.New(http.StatusBadRequest, "unable to get VNC endpoint")
 	}
@@ -198,7 +224,7 @@ func GetVNCWebSocket(w http.ResponseWriter, r *http.Request) error {
 	websocket.Handler(func(ws *websocket.Conn) {
 		defer lifecycle.TrackConn("VNC", ws)()
 
-		audit.Success(r, audit.VNCAttach, "vnc attached", fields)
+		attaches.Success(r, audit.VNCAttach, "vnc attached", fields)
 		proxy(ws)
 	}).ServeHTTP(w, r)
 

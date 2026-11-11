@@ -240,7 +240,7 @@ security-relevant action.
 | `console-attach` | `process` | `access` | `GET /console/{pid}/ws`; refusals of `GET /console/{pid}` and `POST /console/{pid}/size`, and of another user's console on any console route |
 | `console-terminate` | `process` | `end` | `DELETE /console/{pid}` |
 | `console-end` | `process` | `end` | none: a console ended, for any reason |
-| `vnc-attach` | `session` | `start` | `GET .../vms/{name}/vnc/ws`; refusals of `GET .../vms/{name}/vnc` |
+| `vnc-attach` | `session` | `start` | `GET .../vms/{name}/vnc/ws`, at most once in 5 minutes for each user and VM, and its failures at most once a minute for each user, VM and error (`phenix.suppressed` counts the events not logged); refusals of `GET .../vms/{name}/vnc`. Each refusal is logged. |
 | `port-forward-attach` | `network` | `connection` | `GET .../vms/{name}/forwards/{host}/{port}/ws` |
 | `disk-snapshot`, `disk-clone` | `file` | `creation` | `POST /disks/snapshot`, `POST /disks/clone`, `POST /disks/clone/jobs` |
 | `disk-rename`, `disk-commit`, `disk-rebase`, `disk-resize` | `file` | `change` | `POST /disks/rename`, `/disks/commit`, `/disks/rebase`, `/disks/resize` |
