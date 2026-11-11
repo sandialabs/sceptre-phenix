@@ -7,6 +7,7 @@ import {
   FILTERS,
   ID_SPACE,
   STATE,
+  STATE_INFO,
   cardIds,
   cardMatches,
   cellText,
@@ -124,7 +125,12 @@ describe('the ID states', () => {
     expect([states[0], states[4095]]).toEqual([STATE.INVALID, STATE.INVALID]);
     expect(states[1]).toBe(STATE.FREE);
     expect(states[105]).toBe(STATE.IN_RANGE);
-    expect(states[101]).toBe(STATE.ALLOCATED);
+    expect(states[101]).toBe(STATE.ALLOCATED_PINNED);
+    // minimega chose 330, and 110 where phēnix pins 104
+    expect([states[110], states[330]]).toEqual([
+      STATE.ALLOCATED_UNPINNED,
+      STATE.ALLOCATED_UNPINNED,
+    ]);
     expect(states[150]).toBe(STATE.PINNED);
     expect(states[999]).toBe(STATE.BLACKLISTED);
     // a blacklisted pin, a duplicate pin and an unowned ID
@@ -146,6 +152,58 @@ describe('the ID states', () => {
       'ID 160: Free, in a range. In the ranges of ics-training and substation-a.',
     );
     expect(cellText(d, states, 0)).toBe('ID 0: not a valid VLAN ID.');
+    expect(cellText(d, states, 101)).toBe(
+      'ID 101: Allocated and pinned. MGMT of substation-a. ' +
+        'In the range of substation-a.',
+    );
+    expect(cellText(d, states, 330)).toBe(
+      'ID 330: Allocated, not pinned. TAP_TEMP of red-team-2. ' +
+        'In the range of red-team-2.',
+    );
+  });
+
+  it('marks an ID allocated and pinned when one row allocates it and another pins it', () => {
+    const d = data();
+    d.vlans.push(
+      { id: 500, alias: 'A', experiment: 'x', owned: true, states: ['pinned'] },
+      {
+        id: 500,
+        alias: 'A',
+        experiment: 'x',
+        namespace: 'x',
+        owned: true,
+        states: ['allocated'],
+      },
+    );
+    expect(idStates(d)[500]).toBe(STATE.ALLOCATED_PINNED);
+  });
+
+  // WCAG relative luminance of a #rrggbb color
+  const luminance = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((i) => {
+      const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrast = (a, b) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  it('gives the two allocated states colors 3:1 apart and 3:1 on the grid ground', () => {
+    const pinned = STATE_INFO[STATE.ALLOCATED_PINNED].color;
+    const unpinned = STATE_INFO[STATE.ALLOCATED_UNPINNED].color;
+    const ground = '#2a2a2a';
+    expect(contrast(pinned, unpinned)).toBeGreaterThanOrEqual(3);
+    expect(contrast(pinned, ground)).toBeGreaterThanOrEqual(3);
+    expect(contrast(unpinned, ground)).toBeGreaterThanOrEqual(3);
+    expect(
+      contrast(pinned, STATE_INFO[STATE.BLACKLISTED].color),
+    ).toBeGreaterThanOrEqual(3);
+    expect(new Set(STATE_INFO.map((info) => info.color)).size).toBe(
+      STATE_INFO.length,
+    );
   });
 });
 

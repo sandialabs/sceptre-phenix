@@ -139,7 +139,9 @@
         const c = this.counts;
         return (
           `${c[STATE.FREE] + c[STATE.IN_RANGE]} free, ` +
-          `${c[STATE.ALLOCATED]} allocated, ${c[STATE.PINNED]} pinned only, ` +
+          `${c[STATE.ALLOCATED_PINNED]} allocated and pinned, ` +
+          `${c[STATE.ALLOCATED_UNPINNED]} allocated and not pinned, ` +
+          `${c[STATE.PINNED]} pinned only, ` +
           `${c[STATE.BLACKLISTED]} blacklisted, ` +
           `${c[STATE.CONFLICT]} with a conflict or unowned.`
         );

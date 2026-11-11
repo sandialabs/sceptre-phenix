@@ -395,11 +395,14 @@ describe('the ID space view', () => {
       grid.attributes('aria-describedby'),
     );
     expect(textOf(summary)).toBe(
-      '4076 free, 6 allocated, 5 pinned only, 1 blacklisted, 6 with a conflict or unowned.',
+      '4076 free, 4 allocated and pinned, 2 allocated and not pinned, ' +
+        '5 pinned only, 1 blacklisted, 6 with a conflict or unowned.',
     );
-    expect(textOf(wrapper.find('.vlan-grid-legend'))).toContain(
-      'Conflict or unowned',
-    );
+    const legend = textOf(wrapper.find('.vlan-grid-legend'));
+    expect(legend).toContain('Allocated, not pinned (2)');
+    expect(legend).toContain('Allocated and pinned (4)');
+    expect(legend).toContain('Pinned only (5)');
+    expect(legend).toContain('Conflict or unowned');
   });
 
   it('moves between IDs with the arrow, page and home keys, within 1 to 4094', async () => {
@@ -502,7 +505,7 @@ describe('a range of IDs in the ID space view', () => {
       'VLANs 100–104',
     );
     expect(textOf(panel(wrapper).find('.vlan-range-summary'))).toBe(
-      '5 IDs: 1 pinned only; 2 allocated; 2 conflict or unowned.',
+      '5 IDs: 1 pinned only; 2 allocated and pinned; 2 conflict or unowned.',
     );
     expect(entries(wrapper)).toEqual([
       [
@@ -512,7 +515,7 @@ describe('a range of IDs in the ID space view', () => {
       ],
       [
         'VLAN 101',
-        'Allocated',
+        'Allocated and pinned',
         ['phēnix: substation-a pins MGMT', 'minimega: substation-a: MGMT'],
       ],
       [
@@ -526,7 +529,7 @@ describe('a range of IDs in the ID space view', () => {
       ],
       [
         'VLAN 103',
-        'Allocated',
+        'Allocated and pinned',
         ['phēnix: substation-a pins FIELD', 'minimega: substation-a: FIELD'],
       ],
       ['VLAN 104', 'Pinned only', ['phēnix: substation-a pins CORP']],
@@ -555,11 +558,20 @@ describe('a range of IDs in the ID space view', () => {
     await canvas(wrapper).trigger('pointerup', { ...at(330), shiftKey: true });
     await flushPromises();
     expect(query(wrapper)).toEqual({ view: 'grid', vlans: '300-330' });
-    expect(entries(wrapper).map(([id]) => id)).toEqual([
-      'VLAN 301',
-      'VLAN 302',
-      'VLAN 330',
+    expect(entries(wrapper).map(([id, tag]) => [id, tag])).toEqual([
+      ['VLAN 301', 'Allocated and pinned'],
+      ['VLAN 302', 'Allocated and pinned'],
+      ['VLAN 330', 'Allocated, not pinned'],
     ]);
+    // each allocated state has its own tag color
+    const tags = panel(wrapper).findAll('.vlan-range-id .tag');
+    expect(tags.map((tag) => tag.classes().filter((c) => c !== 'tag'))).toEqual(
+      [['is-success'], ['is-success'], ['is-info']],
+    );
+    expect(textOf(panel(wrapper).find('.vlan-range-summary'))).toBe(
+      '31 IDs: 28 free, in a range; 1 allocated, not pinned; ' +
+        '2 allocated and pinned.',
+    );
   });
 
   it('selects from the last ID opened to the cursor with Shift+Enter', async () => {

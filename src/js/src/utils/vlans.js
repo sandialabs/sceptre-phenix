@@ -177,19 +177,21 @@ export const STATE = Object.freeze({
   FREE: 1,
   IN_RANGE: 2,
   PINNED: 3,
-  ALLOCATED: 4,
-  BLACKLISTED: 5,
-  CONFLICT: 6,
+  ALLOCATED_UNPINNED: 4,
+  ALLOCATED_PINNED: 5,
+  BLACKLISTED: 6,
+  CONFLICT: 7,
 });
 
-// Each state's legend text and color; the colors are told apart by the
-// legend and the cell names, not by color alone.
+// Each state's legend text and color, told apart also by the legend and cell
+// names. The allocated colors are 3.6:1 to each other and 3.9:1 on the ground.
 export const STATE_INFO = [
   { label: 'Not a valid ID', color: '#141414' },
   { label: 'Free', color: '#5e5e5e' },
   { label: 'Free, in a range', color: '#2d6a8f' },
   { label: 'Pinned only', color: '#d9a400' },
-  { label: 'Allocated', color: '#3fae5a' },
+  { label: 'Allocated, not pinned', color: '#da622d' },
+  { label: 'Allocated and pinned', color: '#ffffff' },
   { label: 'Blacklisted', color: '#a77bd6' },
   { label: 'Conflict or unowned', color: '#ff5c4d' },
 ];
@@ -209,7 +211,8 @@ function rangeOf(exp) {
 // the Bulma tag color of each state that holds an ID; the others are is-light
 export const STATE_TAG = {
   [STATE.CONFLICT]: 'is-danger',
-  [STATE.ALLOCATED]: 'is-success',
+  [STATE.ALLOCATED_PINNED]: 'is-success',
+  [STATE.ALLOCATED_UNPINNED]: 'is-info',
   [STATE.PINNED]: 'is-warning',
   [STATE.BLACKLISTED]: 'is-light',
 };
@@ -230,13 +233,24 @@ export function idStates(data) {
     }
   }
   for (const id of data.blacklist ?? []) raise(id, STATE.BLACKLISTED);
+  // an ID is allocated and pinned when any of its rows has each state
+  const pinned = new Set();
+  const allocated = new Set();
+  for (const row of data.vlans) {
+    if (row.states?.includes('pinned')) pinned.add(row.id);
+    if (row.states?.includes('allocated')) allocated.add(row.id);
+  }
   for (const row of data.vlans) {
     const conflict =
       unownedRow(row) ||
       (row.issues ?? []).some((kind) => severityOf(kind) === 'conflict');
     const states_ = row.states ?? [];
     let state = STATE.PINNED;
-    if (states_.includes('allocated')) state = STATE.ALLOCATED;
+    if (allocated.has(row.id)) {
+      state = pinned.has(row.id)
+        ? STATE.ALLOCATED_PINNED
+        : STATE.ALLOCATED_UNPINNED;
+    }
     if (states_.includes('blacklisted')) state = STATE.BLACKLISTED;
     if (conflict) state = STATE.CONFLICT;
     raise(row.id, state);
