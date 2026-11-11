@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"phenix/util"
-	"phenix/util/common"
 	"phenix/util/file"
 	"phenix/util/mm"
 )
@@ -161,9 +160,10 @@ func vmCaptureWrites(c mm.Capture) bool {
 	return c.State == "" || c.State == "running"
 }
 
-// localFilePath is where the headnode keeps the experiment's file.
+// localFilePath is where the headnode keeps the experiment's file: in minimega's files directory (see
+// mm.GetMMFullPath), which minimega lists, not always <base-dir.phenix>/images.
 func localFilePath(name, clean string) string {
-	return fmt.Sprintf("%s/images/%s/files/%s", common.PhenixBase, name, clean)
+	return mm.GetMMFullPath(path.Join(name, "files", clean))
 }
 
 // LocalFileExists reports whether the headnode has a file of any kind, or cannot tell, at the path clean of the
