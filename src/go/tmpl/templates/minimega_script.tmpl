@@ -33,11 +33,8 @@ ns add-host localhost
             {{ $firstDrive := index .Hardware.Drives 0 }}
 disk snapshot {{ $firstDrive.Image }} {{ $.SnapshotName .General.Hostname }}
             {{- if ne $firstDrive.GetInjectPartition 0 }}
-                {{- if gt (len .Injections) 0 }}
-disk inject {{ $.SnapshotName .General.Hostname }}:{{ $firstDrive.GetInjectPartition }} files {{ .FileInjects $basedir }}
-                {{- end }}
-                {{- if gt (len .Deletions) 0 }}
-disk inject {{ $.SnapshotName .General.Hostname }}:{{ $firstDrive.GetInjectPartition }} delete files {{ .FileDeletions }}
+                {{- range .DiskInjects ($.SnapshotName .General.Hostname) $firstDrive.GetInjectPartition $basedir }}
+{{ . }}
                 {{- end }}
             {{- end }}
         {{- end }}

@@ -58,7 +58,8 @@ for a complete, copyable two-node topology):
 - `network.interfaces[]`: `name`, `vlan`, `type: ethernet`, `proto: static|dhcp|manual`
   (router/firewall interfaces also accept `ospf`), `address`, `mask`, `gateway`, `bridge`
 - `network.rulesets[]`: firewall rules with `action: accept|drop|reject`
-- `injections[]` / `deletions[]`: files to inject into or remove from the disk image before boot
+- `injections[]` / `deletions[]`: files to inject into or remove from the disk image before boot;
+  on `windows` nodes paths match regardless of case
 - `delay`: boot delay (timer, user-ack, or C2/miniccc-based)
 - `annotations`: free-form hints for apps; the ones the default apps read are in
   [`references/annotations.md`](references/annotations.md)
