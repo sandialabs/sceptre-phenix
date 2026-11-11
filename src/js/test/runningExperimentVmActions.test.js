@@ -2053,4 +2053,30 @@ describe('the selection toolbar', () => {
     await selectAll().setValue(false);
     expect(checked(page)).toEqual([]);
   });
+
+  it('shares the selection between the VM table and the VNC tiles', async () => {
+    const page = await selected({ activeTab: 'vnc', vmSelectedArray: [] });
+    const tiles = page.findComponent({ name: 'VncTiles' });
+    const tileBox = (name) =>
+      tiles
+        .findAll('label.vnc-tile-select')
+        .find((box) => textOf(box) === `Select VM ${name}`)
+        .find('input');
+    const tableBox = (name) =>
+      page
+        .findComponent({ ref: 'vmTable' })
+        .find(`label.b-checkbox:has(input[value="${name}"]) input`);
+
+    await tileBox('web').setValue(true);
+    expect(checked(page)).toEqual(['Select VM web']);
+    expect(textOf(tiles.get('.vnc-open-split'))).toBe(
+      'Open 1 selected in split',
+    );
+
+    await tableBox('db').setValue(true);
+    expect(tileBox('db').element.checked).toBe(true);
+    expect(textOf(tiles.get('.vnc-open-split'))).toBe(
+      'Open 2 selected in split',
+    );
+  });
 });

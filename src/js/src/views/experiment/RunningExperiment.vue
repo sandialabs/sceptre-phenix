@@ -367,7 +367,7 @@
             :experiment="experiment.name"
             :width="vncWidth"
             :screenshots-due="screenshotsDue"
-            :selected="vmSelectedArray"
+            v-model:selected="vmSelectedArray"
             :action-pending="vmActionPending"
             @info="getInfo"
             @action="onVmAction" />

@@ -1,7 +1,7 @@
 // The running experiment's VNC tab (M4a, T32): a live tile per VM with a
 // console, its hover bar, the Live / Snapshots switch, the "Live tile limit"
-// option and live count, the zoom slider, "Open selected in split", and the
-// screenshots that the server sends only for tiles that are not live.
+// option and live count, the zoom slider, the selection checkboxes, "Open
+// selected in split", and the screenshots that the server sends only for tiles that are not live.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises } from '@vue/test-utils';
 
@@ -351,11 +351,7 @@ describe('Open selected in split', () => {
   });
 
   it.each([
-    [
-      'no VM is selected',
-      [],
-      'Select one to four running VMs in the VMs tab first',
-    ],
+    ['no VM is selected', [], 'Select one to four running VMs first'],
     [
       'more than four are',
       ['a', 'b', 'c', 'd', 'e'],
@@ -370,6 +366,19 @@ describe('Open selected in split', () => {
     expect(button.attributes('aria-label')).toContain(reason);
   });
 
+  it.each([
+    [[], 'Open selected in split'],
+    [['web'], 'Open 1 selected in split'],
+    [['web', 'db', 'kali'], 'Open 3 selected in split'],
+    [['a', 'b', 'c', 'd', 'e'], 'Open 5 selected in split'],
+  ])('counts the selected VMs with a console: %j', async (selected, label) => {
+    const vms = ['web', 'db', 'kali', 'a', 'b', 'c', 'd', 'e'].map((name) =>
+      vm({ name }),
+    );
+    const wrapper = await render({ vms, selected });
+    expect(textOf(wrapper.get('.vnc-open-split'))).toBe(label);
+  });
+
   it('leaves out the selected VMs without a console', async () => {
     rbac.allowed = denyOnly(['vms/vnc', 'get', 'demo/db']);
     const wrapper = await render({
@@ -377,6 +386,97 @@ describe('Open selected in split', () => {
       selected: ['web', 'db', 'off'],
     });
     expect(split(wrapper).attributes('href')).toBe('/vnc?vm=demo/web');
+  });
+});
+
+describe('selecting tiles', () => {
+  const vms = [vm(), vm({ name: 'db' }), vm({ name: 'kali' })];
+  // the checkbox whose label is "Select VM <name>"
+  const box = (wrapper, name) =>
+    wrapper
+      .findAll('label.vnc-tile-select')
+      .find((label) => textOf(label) === `Select VM ${name}`)
+      ?.get('input');
+  const lastSelected = (wrapper) => wrapper.emitted('update:selected').at(-1);
+  const toolbarButton = (wrapper, text) =>
+    wrapper.findAll('button').find((button) => textOf(button) === text);
+
+  it('gives each tile a checkbox that the keyboard reaches', async () => {
+    const wrapper = await render({ vms, selected: ['db'] });
+    for (const name of ['web', 'db', 'kali']) {
+      const input = box(wrapper, name);
+      expect(input.attributes('type')).toBe('checkbox');
+      expect(input.attributes('tabindex')).not.toBe('-1');
+      expect(input.element.closest('a')).toBeNull();
+    }
+    expect(box(wrapper, 'web').element.checked).toBe(false);
+    expect(box(wrapper, 'db').element.checked).toBe(true);
+  });
+
+  it('adds a VM to the shared selection, and the split opens it', async () => {
+    const wrapper = await render({ vms, selected: ['db'] });
+    await box(wrapper, 'web').setValue(true);
+    expect(lastSelected(wrapper)).toEqual([['db', 'web']]);
+    expect(open).not.toHaveBeenCalled();
+
+    await wrapper.setProps({ selected: ['db', 'web'] });
+    expect(wrapper.get('.vnc-open-split').attributes('href')).toBe(
+      '/vnc?vm=demo/web&vm=demo/db',
+    );
+    await box(wrapper, 'db').setValue(false);
+    expect(lastSelected(wrapper)).toEqual([['web']]);
+  });
+
+  it('shows the selection made in the VM table', async () => {
+    const wrapper = await render({ vms });
+    await wrapper.setProps({ selected: ['kali'] });
+    expect(box(wrapper, 'kali').element.checked).toBe(true);
+    expect(
+      wrapper
+        .findAll('.vnc-tile-item.is-selected')
+        .map((item) => textOf(item.get('.vnc-tile-name'))),
+    ).toEqual(['kali']);
+  });
+
+  it('gives a VM without a console a checkbox, as the table does', async () => {
+    const wrapper = await render({
+      vms: [vm(), vm({ name: 'off', running: false })],
+      selected: ['off'],
+    });
+    expect(box(wrapper, 'off').element.checked).toBe(true);
+    expect(wrapper.get('.vnc-open-split').attributes('aria-label')).toBe(
+      'Open selected in split: Select one to four running VMs first',
+    );
+  });
+
+  it('gives a busy VM no checkbox, as the table does', async () => {
+    const wrapper = await render({
+      vms: [vm(), vm({ name: 'db', busy: true })],
+    });
+    expect(box(wrapper, 'db')).toBeUndefined();
+    await toolbarButton(wrapper, 'Select all').trigger('click');
+    expect(lastSelected(wrapper)).toEqual([['web']]);
+  });
+
+  it('selects all shown tiles, and clears them, keeping the others', async () => {
+    const wrapper = await render({ vms, selected: ['hidden', 'db'] });
+    const all = toolbarButton(wrapper, 'Select all');
+    const clear = toolbarButton(wrapper, 'Clear selection');
+    expect(buttons(wrapper)).toEqual(
+      expect.arrayContaining(['Select all', 'Clear selection']),
+    );
+
+    await all.trigger('click');
+    expect(lastSelected(wrapper)).toEqual([['hidden', 'web', 'db', 'kali']]);
+    await wrapper.setProps({ selected: lastSelected(wrapper)[0] });
+    expect(buttons(wrapper)).toContain('Select all (disabled)');
+
+    await clear.trigger('click');
+    expect(lastSelected(wrapper)).toEqual([['hidden']]);
+    await wrapper.setProps({ selected: ['hidden'] });
+    expect(buttons(wrapper)).toEqual(
+      expect.arrayContaining(['Select all', 'Clear selection (disabled)']),
+    );
   });
 });
 

@@ -189,7 +189,8 @@ That pane shows a blue ring and the `Keyboard` tag. When you close a pane and
 only one VM stays, the page shows that VM in one pane.
 
 To open many VMs in one console page, select one to four running VMs in the
-VMs tab. Then click `Open selected in split` in the VNC tab.
+VMs tab, or with the check box on each tile in the VNC tab. Then click
+`Open N selected in split` in the VNC tab.
 
 #### The Keyboard Chord
 

@@ -2,6 +2,22 @@
   <div class="vnc-tiles-toolbar">
     <VncTileToolbar />
     <span class="vnc-tiles-fill"></span>
+    <div class="buttons vnc-tiles-select">
+      <button
+        type="button"
+        class="button is-small vnc-select-all"
+        :disabled="shownSelectable.every((name) => selected.includes(name))"
+        @click="selectShown(true)">
+        Select all
+      </button>
+      <button
+        type="button"
+        class="button is-small vnc-clear-selection"
+        :disabled="!shownSelectable.some((name) => selected.includes(name))"
+        @click="selectShown(false)">
+        Clear selection
+      </button>
+    </div>
     <b-field label="Zoom" class="vnc-tiles-zoom" horizontal>
       <b-slider
         aria-label="Zoom level"
@@ -28,22 +44,28 @@
         :href="split.href"
         @click="(event) => handleConsoleLinkClick(event, split.vms)">
         <b-icon icon="table-cells" size="is-small" />
-        <span>Open selected in split</span>
+        <span>{{ splitLabel }}</span>
       </a>
       <button
         v-else
         type="button"
         class="button is-small vnc-open-split"
         aria-disabled="true"
-        :aria-label="`Open selected in split: ${split.reason}`">
+        :aria-label="`${splitLabel}: ${split.reason}`">
         <b-icon icon="table-cells" size="is-small" />
-        <span>Open selected in split</span>
+        <span>{{ splitLabel }}</span>
       </button>
     </b-tooltip>
   </div>
   <div class="vnc-tiles-grid">
     <template v-if="consoleVms.length">
-      <div v-for="vm in consoleVms" :key="keyOf(vm)" class="vnc-tile-item">
+      <div
+        v-for="vm in consoleVms"
+        :key="keyOf(vm)"
+        :class="[
+          'vnc-tile-item',
+          { 'is-selected': selected.includes(vm.name) },
+        ]">
         <VncTile
           :experiment="experiment"
           :vm="vm"
@@ -105,15 +127,26 @@
             </button>
           </template>
         </VncTile>
-        <button
-          v-if="canGet(vm)"
-          type="button"
-          class="plain-button vnc-tile-name"
-          aria-haspopup="dialog"
-          @click="$emit('info', vm)">
-          {{ vm.name }}
-        </button>
-        <span v-else class="vnc-tile-name">{{ vm.name }}</span>
+        <div class="vnc-tile-label">
+          <!-- the VM table's checkbox: none while the VM is busy -->
+          <b-checkbox
+            v-if="!vm.busy"
+            class="vnc-tile-select"
+            :model-value="selected"
+            :native-value="vm.name"
+            @update:model-value="(names) => $emit('update:selected', names)">
+            <span class="is-sr-only">Select VM {{ vm.name }}</span>
+          </b-checkbox>
+          <button
+            v-if="canGet(vm)"
+            type="button"
+            class="plain-button vnc-tile-name"
+            aria-haspopup="dialog"
+            @click="$emit('info', vm)">
+            {{ vm.name }}
+          </button>
+          <span v-else class="vnc-tile-name">{{ vm.name }}</span>
+        </div>
       </div>
     </template>
     <template v-else>{{
@@ -143,6 +176,7 @@
   // console, at the zoom the slider picks. A tile opens the console page, and
   // its hover bar offers the details, the power actions and, in Live mode, a
   // screenshot and a snapshot. The bar also shows while focus is in the tile.
+  // A checkbox under each tile selects its VM, as in the VM table.
   export default {
     name: 'VncTiles',
     components: { BSlider, BSliderTick, VncTile, VncTileToolbar },
@@ -166,12 +200,12 @@
       width: { type: Number, required: true },
       // whether VMs still without screenshots have waited long enough
       screenshotsDue: { type: Boolean, default: false },
-      // the names of the VMs selected in the VM table
+      // the names of the VMs selected, shared with the VM table
       selected: { type: Array, default: () => [] },
       // the actions running in the background for each VM, by its name
       actionPending: { type: Object, default: () => ({}) },
     },
-    emits: ['info', 'action', 'update:zoom'],
+    emits: ['info', 'action', 'update:zoom', 'update:selected'],
 
     data() {
       return {
@@ -193,18 +227,30 @@
         const chosen = this.consoleVms.filter(
           (vm) => this.selected.includes(vm.name) && this.canConsole(vm),
         );
-        if (!chosen.length) {
-          return {
-            reason: 'Select one to four running VMs in the VMs tab first',
-          };
+        const count = chosen.length;
+        if (!count) {
+          return { count, reason: 'Select one to four running VMs first' };
         }
-        if (chosen.length > MAX_PANES) {
+        if (count > MAX_PANES) {
           return {
+            count,
             reason: 'Select at most four VMs: one console page shows four',
           };
         }
         const vms = chosen.map((vm) => this.keyOf(vm));
-        return { vms, href: consoleHref(this.$router, vms), reason: '' };
+        return { count, vms, href: consoleHref(this.$router, vms), reason: '' };
+      },
+
+      splitLabel() {
+        const { count } = this.split;
+        return count
+          ? `Open ${count} selected in split`
+          : 'Open selected in split';
+      },
+
+      // the names of the shown tiles that can be selected
+      shownSelectable() {
+        return this.consoleVms.filter((vm) => !vm.busy).map((vm) => vm.name);
       },
 
       liveKeys() {
@@ -283,6 +329,13 @@
         return (resource, verb) => roleAllowed(resource, verb, this.keyOf(vm));
       },
 
+      // selects the shown tiles, or clears them from the selection
+      selectShown(on) {
+        const shown = this.shownSelectable;
+        const others = this.selected.filter((name) => !shown.includes(name));
+        this.$emit('update:selected', on ? [...others, ...shown] : others);
+      },
+
       setLive(name, on) {
         const others = this.live.filter((n) => n !== name);
         this.live = on ? [...others, name] : others;
@@ -327,13 +380,45 @@
     gap: 4px;
   }
 
+  .vnc-tiles-select {
+    margin-bottom: 0 !important;
+  }
+
+  .vnc-tiles-select .button {
+    margin-bottom: 0;
+  }
+
+  .vnc-tile-item {
+    outline: 3px solid transparent;
+  }
+
+  .vnc-tile-item.is-selected {
+    outline-color: #62c0d7;
+  }
+
+  .vnc-tile-label {
+    display: flex;
+    align-items: center;
+    background-color: #4d4d4d;
+  }
+
   /* whitesmoke on #4d4d4d is 7.7:1 */
   .vnc-tile-name {
     color: whitesmoke;
     display: block;
+    flex: 1 1 auto;
     width: 100%;
     background-color: #4d4d4d;
     text-align: center;
     padding: 2px 0px;
+  }
+
+  .vnc-tile-select {
+    margin: 0 0 0 4px !important;
+  }
+
+  /* the box's border on #4d4d4d is 7.7:1 */
+  .vnc-tile-select :deep(.check) {
+    border-color: whitesmoke;
   }
 </style>
