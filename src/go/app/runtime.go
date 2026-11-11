@@ -24,8 +24,9 @@ type stageRuntime struct {
 }
 
 // PopulateRuntime adds current minimega host and VM details to an experiment.
-func PopulateRuntime(exp *types.Experiment) error {
-	hosts, vms, err := readRuntime(exp)
+// Its host read gives up once ctx is done.
+func PopulateRuntime(ctx context.Context, exp *types.Experiment) error {
+	hosts, vms, err := readRuntime(ctx, exp)
 	if err != nil {
 		return err
 	}
@@ -71,14 +72,14 @@ func withStageRuntime(ctx context.Context) context.Context {
 func populateStageRuntime(ctx context.Context, exp *types.Experiment) error {
 	rt, ok := ctx.Value(stageRuntimeKey{}).(*stageRuntime)
 	if !ok {
-		return PopulateRuntime(exp)
+		return PopulateRuntime(ctx, exp)
 	}
 
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 
 	if !rt.read {
-		hosts, vms, err := readRuntime(exp)
+		hosts, vms, err := readRuntime(ctx, exp)
 		if err != nil {
 			return err
 		}
@@ -92,8 +93,10 @@ func populateStageRuntime(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-func readRuntime(exp *types.Experiment) (mm.Hosts, mm.VMs, error) {
-	cluster, err := mm.GetClusterHosts(true)
+// readRuntime reads the schedulable hosts, with their disk usage, and the
+// experiment's VMs. The host read gives up once ctx is done.
+func readRuntime(ctx context.Context, exp *types.Experiment) (mm.Hosts, mm.VMs, error) {
+	cluster, _, err := mm.GetClusterHostsObserved(ctx, true)
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting cluster hosts: %w", err)
 	}

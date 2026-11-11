@@ -178,10 +178,6 @@ func GetBridgeMirrors(opts ...Option) ([]BridgeMirror, error) {
 	return DefaultMM.GetBridgeMirrors(opts...)
 }
 
-func GetClusterHosts(schedOnly bool) (Hosts, error) {
-	return DefaultMM.GetClusterHosts(schedOnly)
-}
-
 // clusterHostsObserver is the optional part of MM that reports when the
 // cluster hosts were read; see vmInfoObserver.
 type clusterHostsObserver interface {

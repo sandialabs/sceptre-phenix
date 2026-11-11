@@ -13,12 +13,14 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
 
 	"phenix/app"
 	"phenix/store"
 	"phenix/types"
 	"phenix/util/freshness"
 	"phenix/util/mm"
+	"phenix/util/mm/mmtest"
 )
 
 // countingMM answers the runtime queries external apps are given, counting
@@ -223,22 +225,24 @@ func runtimeOf(exp *types.Experiment) givenRuntime {
 	return got
 }
 
+// populateRuntimeCalls returns the functions that add the runtime details to
+// an experiment for an external app, by name.
+func populateRuntimeCalls() map[string]func(context.Context, *types.Experiment) error {
+	return map[string]func(context.Context, *types.Experiment) error{
+		"PopulateRuntime":                      app.PopulateRuntime,
+		"populateStageRuntime outside a stage": app.PopulateStageRuntime,
+		"populateStageRuntime in a stage": func(ctx context.Context, exp *types.Experiment) error {
+			return app.PopulateStageRuntime(app.WithStageRuntime(ctx), exp)
+		},
+	}
+}
+
 // PopulateRuntime and populateStageRuntime give an experiment minimega's
 // hosts and VMs, or the host query's error with the experiment unchanged.
 //
 //nolint:paralleltest // replaces mm.DefaultMM
 func TestPopulateRuntime(t *testing.T) {
 	hostErr := errors.New("minimega is down")
-
-	populate := map[string]func(*types.Experiment) error{
-		"PopulateRuntime": app.PopulateRuntime,
-		"populateStageRuntime outside a stage": func(exp *types.Experiment) error {
-			return app.PopulateStageRuntime(context.Background(), exp)
-		},
-		"populateStageRuntime in a stage": func(exp *types.Experiment) error {
-			return app.PopulateStageRuntime(app.WithStageRuntime(context.Background()), exp)
-		},
-	}
 
 	tests := map[string]struct {
 		hostErr error
@@ -248,7 +252,7 @@ func TestPopulateRuntime(t *testing.T) {
 		"the host query fails": {hostErr: hostErr},
 	}
 
-	for fn, call := range populate {
+	for fn, call := range populateRuntimeCalls() {
 		for name, tc := range tests {
 			t.Run(fn+"/"+name, func(t *testing.T) {
 				fake := &runtimeMM{hostErr: tc.hostErr}
@@ -256,7 +260,7 @@ func TestPopulateRuntime(t *testing.T) {
 
 				exp := runningStageExperiment(t)
 
-				err := call(exp)
+				err := call(t.Context(), exp)
 				if !errors.Is(err, tc.hostErr) || (tc.hostErr == nil) != (err == nil) {
 					t.Fatalf("%s() error = %v, want %v", fn, err, tc.hostErr)
 				}
@@ -411,6 +415,169 @@ func TestPopulateObservedRuntime(t *testing.T) { //nolint:paralleltest // replac
 
 			if diff := cmp.Diff([]bool{true}, tc.mm.schedule); diff != "" {
 				t.Errorf("PopulateObservedRuntime() asked for hosts with schedOnly mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// runtimeMinimega answers the commands of a host read for the headnode "head"
+// and its mesh peer "compute1", with their disk usage, and an empty `vm info`.
+func runtimeMinimega(cmd mmtest.Command) []*minicli.Response {
+	header := []string{"name", "cpus"}
+
+	switch {
+	case cmd.Base == "host" && cmd.Namespace == "minimega":
+		return []*minicli.Response{mmtest.Tabular("head", header, []string{"head", "8"})}
+	case cmd.Base == "mesh list peers":
+		return []*minicli.Response{mmtest.Text("head", "compute1")}
+	case cmd.Base == "mesh send all host":
+		return []*minicli.Response{mmtest.Tabular("compute1", header, []string{"compute1", "16"})}
+	case strings.HasPrefix(cmd.Base, "mesh send all shell "):
+		return []*minicli.Response{mmtest.Text("compute1", "0=10% 1=20%\n")}
+	case strings.HasPrefix(cmd.Base, "shell "):
+		return []*minicli.Response{mmtest.Text("head", "0=30% 1=40%\n")}
+	}
+
+	return nil
+}
+
+// useRuntimeMinimega points mm.DefaultMM at the fake minimega, which answers
+// with handle, and forgets the cluster details read before and after the test.
+func useRuntimeMinimega(t *testing.T, handle mmtest.Handler) func() []mmtest.Command {
+	t.Helper()
+
+	received := mmtest.Use(t, handle)
+
+	mm.ForgetCluster()
+	t.Cleanup(mm.ForgetCluster)
+
+	runtimeUseMM(t, mm.Minimega{})
+
+	return received
+}
+
+// givenHost is a host as a user app is given it, by name and disk usage.
+type givenHost struct {
+	Name      string       `json:"name"`
+	DiskUsage mm.DiskUsage `json:"diskusage"`
+}
+
+// An external app is given the schedulable hosts, without the headnode, with
+// their disk usage.
+func TestApplyAppsGivesHostDiskUsage(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	name := "test-runtime-disk"
+	out := installUserApps(t, name)
+	useRuntimeMinimega(t, runtimeMinimega)
+	exp := runningStageExperiment(t, name)
+
+	err := app.ApplyApps(t.Context(), exp, app.Stage(app.ActionPostStart), app.FilterApp(name))
+	if err != nil {
+		t.Fatalf("ApplyApps(post-start, %s) error = %v", name, err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(out, name+".json"))
+	if err != nil {
+		t.Fatalf("os.ReadFile(what %s was given) error = %v", name, err)
+	}
+
+	var given struct {
+		Hosts []givenHost `json:"hosts"`
+	}
+
+	if err := json.Unmarshal(data, &given); err != nil {
+		t.Fatalf("json.Unmarshal(what %s was given) error = %v", name, err)
+	}
+
+	want := []givenHost{{Name: "compute1", DiskUsage: mm.DiskUsage{Phenix: 10, Minimega: 20}}}
+	if diff := cmp.Diff(want, given.Hosts); diff != "" {
+		t.Errorf("hosts given to %s mismatch (-want +got):\n%s", name, diff)
+	}
+}
+
+// runKey marks the context of one app run.
+type runKey struct{}
+
+// contextMM is a minimega that records the runKey value of the context of each
+// host read.
+type contextMM struct {
+	countingMM
+
+	mu   sync.Mutex
+	runs []any
+}
+
+func (m *contextMM) GetClusterHostsObserved(
+	ctx context.Context,
+	schedOnly bool,
+) (mm.Hosts, freshness.Observation, error) {
+	m.mu.Lock()
+	m.runs = append(m.runs, ctx.Value(runKey{}))
+	m.mu.Unlock()
+
+	hosts, err := m.GetClusterHosts(schedOnly)
+
+	return hosts, freshness.Observed(time.Now()), err
+}
+
+// runtimeContextCalls returns the functions that read the runtime for an
+// external app named name, by name: populateRuntimeCalls and ApplyApps.
+func runtimeContextCalls(name string) map[string]func(context.Context, *types.Experiment) error {
+	calls := populateRuntimeCalls()
+	calls["ApplyApps"] = func(ctx context.Context, exp *types.Experiment) error {
+		return app.ApplyApps(ctx, exp, app.Stage(app.ActionPostStart), app.FilterApp(name))
+	}
+
+	return calls
+}
+
+// The host read for an external app gets the context of the app's run.
+func TestPopulateRuntimePassesItsContext(t *testing.T) { //nolint:paralleltest // replaces mm.DefaultMM
+	name := "test-runtime-context"
+	installUserApps(t, name)
+
+	for fn, call := range runtimeContextCalls(name) {
+		t.Run(fn, func(t *testing.T) {
+			fake := new(contextMM)
+			runtimeUseMM(t, fake)
+
+			exp := runningStageExperiment(t, name)
+
+			if err := call(context.WithValue(t.Context(), runKey{}, fn), exp); err != nil {
+				t.Fatalf("%s() error = %v", fn, err)
+			}
+
+			if diff := cmp.Diff([]any{fn}, fake.runs); diff != "" {
+				t.Errorf("%s() host read contexts mismatch (-want +got):\n%s", fn, diff)
+			}
+		})
+	}
+}
+
+// With the context of the app's run canceled, the host read for an external
+// app fails with the context's error, and no VMs are read. The read can send
+// its first command before the shared read sees the cancel.
+func TestPopulateRuntimeStopsWithItsContext(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	name := "test-runtime-canceled"
+	installUserApps(t, name)
+
+	for fn, call := range runtimeContextCalls(name) {
+		t.Run(fn, func(t *testing.T) {
+			received := useRuntimeMinimega(t, runtimeMinimega)
+			exp := runningStageExperiment(t, name)
+
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+
+			if err := call(ctx, exp); !errors.Is(err, context.Canceled) {
+				t.Errorf("%s() with its context canceled error = %v, want %v", fn, err, context.Canceled)
+			}
+
+			if got := mmtest.Count(received(), "vm info"); got != 0 {
+				t.Errorf("%s() with its context canceled sent %d vm info, want 0", fn, got)
+			}
+
+			if diff := cmp.Diff(givenRuntime{}, runtimeOf(exp)); diff != "" {
+				t.Errorf("%s() with its context canceled runtime mismatch (-want +got):\n%s", fn, diff)
 			}
 		})
 	}

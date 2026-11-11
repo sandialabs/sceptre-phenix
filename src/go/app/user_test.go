@@ -39,7 +39,7 @@ func TestPopulateRuntimeIncludesVMTapsInExperimentJSON(t *testing.T) {
 	exp := types.NewExperiment(store.ConfigMetadata{Name: "tap-test"})
 	exp.Spec.SetExperimentName("tap-test")
 
-	if err := PopulateRuntime(exp); err != nil {
+	if err := PopulateRuntime(t.Context(), exp); err != nil {
 		t.Fatalf("populating experiment runtime details: %v", err)
 	}
 
