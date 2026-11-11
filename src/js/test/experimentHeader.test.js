@@ -2,6 +2,7 @@
 // table's label and host filters, and the rules they lay out and list by.
 import fc from 'fast-check';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { nextTick } from 'vue';
 
 const { modules, rbac, resetMocks } = await vi.hoisted(
   () => import('./helpers/mocks.js'),
@@ -427,6 +428,56 @@ describe('the experiment summary', () => {
       expect(wrapper.find('.exp-summary-delayed').exists()).toBe(false);
       expect(wrapper.find('#exp-summary-delayed-tip').exists()).toBe(false);
       expect(wrapper.findAll('.exp-fact-vms dd')).toHaveLength(1);
+    });
+
+    it('counts down to the next start of a VM that waits for a timer', async () => {
+      const start = Date.parse('2026-01-01T10:00:00Z');
+      vi.useFakeTimers({
+        now: start,
+        toFake: ['setInterval', 'clearInterval', 'Date'],
+      });
+      try {
+        const wrapper = await mountComponent(ExperimentSummary, {
+          props: {
+            name: 'exp1',
+            experiment: { vm_count: 5 },
+            running: 3,
+            delayed: 2,
+            nextStart: start + 252_000,
+          },
+        });
+        const tag = () => wrapper.find('.exp-summary-delayed');
+        const text = '2 delayed VMs waiting, next starts in 4m 12s';
+        expect(textOf(tag())).toBe(text);
+        expect(tag().attributes('aria-label')).toBe(text);
+
+        vi.advanceTimersByTime(1000);
+        await nextTick();
+        expect(textOf(tag())).toBe(
+          '2 delayed VMs waiting, next starts in 4m 11s',
+        );
+
+        // the VMs that are left wait for a user or C2
+        await wrapper.setProps({ delayed: 1, nextStart: null });
+        expect(textOf(tag())).toBe('1 delayed VM waiting');
+        expect(vi.getTimerCount()).toBe(0);
+
+        await wrapper.setProps({ nextStart: start + 60_000 });
+        expect(vi.getTimerCount()).toBe(1);
+        wrapper.unmount();
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('passes the next start from the header to its summary', async () => {
+      const wrapper = await mountComponent(ExperimentHeader, {
+        props: { name: 'exp1', delayed: 1, nextStart: 1234 },
+      });
+      expect(wrapper.findComponent(ExperimentSummary).props('nextStart')).toBe(
+        1234,
+      );
     });
 
     it('takes the tag and count away when the last VM starts', async () => {

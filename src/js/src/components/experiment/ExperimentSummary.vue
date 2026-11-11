@@ -182,6 +182,7 @@
   import TimeWithAge from '@/components/TimeWithAge.vue';
   import { plural } from '@/utils/plural.js';
   import { roleAllowed } from '@/utils/rbac.js';
+  import { countdownText, useCountdownClock } from './delayCountdown.js';
   import {
     builderRoute,
     experimentScenarios,
@@ -212,6 +213,8 @@
       running: { type: Number, default: null },
       // how many of its VMs wait for a delayed start, null until the VM list says
       delayed: { type: Number, default: null },
+      // when the next VM that waits for a timer starts, in milliseconds, or null
+      nextStart: { type: Number, default: null },
       // the cluster hosts that run its VMs, null until the VM list says; the
       // hosts tile is left out when this is not given
       hosts: { type: Array, default: undefined },
@@ -227,8 +230,16 @@
       // how many apps it has, which the one-line counts name
       appCount: { type: Number, default: 0 },
     },
-    setup() {
-      return { configViewRoute, delayedTip: DELAYED_TIP, roleAllowed };
+    setup(props) {
+      return {
+        // the shared clock of the countdown to the next timer VM start
+        now: useCountdownClock(
+          () => props.delayed > 0 && props.nextStart !== null,
+        ),
+        configViewRoute,
+        delayedTip: DELAYED_TIP,
+        roleAllowed,
+      };
     },
     computed: {
       scenarios() {
@@ -288,7 +299,9 @@
       },
       // "3 delayed VMs waiting"
       delayedText() {
-        return `${plural(this.delayed, 'delayed VM')} waiting`;
+        const waiting = `${plural(this.delayed, 'delayed VM')} waiting`;
+        if (this.nextStart === null) return waiting;
+        return `${waiting}, next ${countdownText(this.nextStart, this.now)}`;
       },
     },
     methods: {

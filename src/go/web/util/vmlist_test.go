@@ -551,6 +551,49 @@ func TestDelayedVMs(t *testing.T) {
 	}
 }
 
+// DelayedDue gives the recorded due time of each named VM that waits for a
+// timer, and leaves out the VMs without one and the VMs not named.
+func TestDelayedDue(t *testing.T) {
+	t.Parallel()
+
+	status := &v1.ExperimentStatus{}
+	status.SetDelayedStarts(
+		map[string]string{
+			"timer":   "2026-01-01T10:05:00Z",
+			"started": "2026-01-01T10:01:00Z",
+		},
+		map[string]map[string]bool{"c2": {"server": false}},
+		true,
+	)
+
+	tests := []struct {
+		name    string
+		delayed []string
+		status  ifaces.ExperimentStatus
+		want    map[string]string
+	}{
+		{
+			name:    "timer VMs only",
+			delayed: []string{"user", "timer", "c2"},
+			status:  status,
+			want:    map[string]string{"timer": "2026-01-01T10:05:00Z"},
+		},
+		{"no delayed VMs", []string{}, status, map[string]string{}},
+		{"no status", []string{"timer"}, nil, map[string]string{}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := DelayedDue(tc.delayed, tc.status)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("DelayedDue(%v) mismatch (-want +got):\n%s", tc.delayed, diff)
+			}
+		})
+	}
+}
+
 // Every host VMHosts offers selects the VMs it runs, and filtering by all of
 // them lists every VM running on a host.
 func TestVMHostsEachSelectsItsVMs(t *testing.T) {

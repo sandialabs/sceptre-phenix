@@ -1,7 +1,8 @@
 // The running experiment's VM table on its own: what it draws for each VM and
 // what it asks the page for.
 import { flushPromises } from '@vue/test-utils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { nextTick } from 'vue';
 
 const { modules, rbac, resetMocks, store } = await vi.hoisted(
   () => import('./helpers/mocks.js'),
@@ -111,6 +112,67 @@ describe('the rows', () => {
     const columns = async (vms) => Object.keys(tableRows(await render(vms))[0]);
     expect(await columns([web])).not.toContain('Delay');
     expect(await columns([web, delayed])).toContain('Delay');
+  });
+
+  describe('the countdown of a VM that waits for a timer', () => {
+    const START = Date.parse('2026-01-01T10:00:00Z');
+    const waiting = (name, delayed_start) =>
+      vm({ name, running: false, state: 'BUILDING', delayed_start });
+    const delayOf = (wrapper, name) => textOf(rowOf(wrapper, name).Delay);
+
+    beforeEach(() => {
+      vi.useFakeTimers({
+        now: START,
+        toFake: ['setInterval', 'clearInterval', 'Date'],
+      });
+    });
+
+    afterEach(() => vi.useRealTimers());
+
+    it('counts down each second on one shared clock, and keeps the other delays', async () => {
+      const vms = [
+        waiting('late', 'timer:5m'),
+        waiting('later', 'timer:10m'),
+        waiting('manual', 'user'),
+        waiting('after', 'cc:server'),
+      ];
+      const wrapper = await render(vms, {
+        delayedDue: {
+          late: '2026-01-01T10:04:12Z',
+          later: '2026-01-01T10:10:00Z',
+        },
+      });
+      expect(vi.getTimerCount()).toBe(1);
+      expect(delayOf(wrapper, 'late')).toBe('starts in 4m 12s');
+      expect(delayOf(wrapper, 'later')).toBe('starts in 10m 0s');
+      expect(delayOf(wrapper, 'manual')).toBe('user');
+      expect(delayOf(wrapper, 'after')).toBe('cc:server');
+
+      vi.advanceTimersByTime(3000);
+      await nextTick();
+      expect(delayOf(wrapper, 'late')).toBe('starts in 4m 9s');
+      expect(delayOf(wrapper, 'later')).toBe('starts in 9m 57s');
+
+      vi.advanceTimersByTime(250_000);
+      await nextTick();
+      expect(delayOf(wrapper, 'late')).toBe('starts now');
+
+      wrapper.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('runs no clock without a due time', async () => {
+      const wrapper = await render([waiting('late', 'timer:5m')]);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(delayOf(wrapper, 'late')).toBe('timer:5m');
+      await wrapper.setProps({
+        delayedDue: { late: '2026-01-01T10:05:00Z' },
+      });
+      expect(vi.getTimerCount()).toBe(1);
+      expect(delayOf(wrapper, 'late')).toBe('starts in 5m 0s');
+      await wrapper.setProps({ delayedDue: {} });
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 
   it('marks the captured interfaces and the ones waiting on the server', async () => {

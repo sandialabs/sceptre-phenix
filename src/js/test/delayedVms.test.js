@@ -88,3 +88,59 @@ describe('the delayed count', () => {
     );
   });
 });
+
+describe('the due times of the timer VMs', () => {
+  const due = {
+    a: '2026-01-01T10:05:00Z',
+    b: '2026-01-01T10:01:00Z',
+    // not named as waiting, so it started already
+    z: '2026-01-01T10:02:00Z',
+  };
+
+  it('keeps those of the listed VMs that still wait', () => {
+    const delayed = createDelayedVms();
+    expect(delayed.dueTimes()).toEqual({});
+    delayed.listed(['a', 'b', 'c'], [vm('b', 'RUNNING')], due);
+    expect(delayed.dueTimes()).toEqual({ a: '2026-01-01T10:05:00Z' });
+    delayed.listed(undefined, []);
+    expect(delayed.dueTimes()).toEqual({});
+  });
+
+  it.each([
+    ['a VM that starts', 'start', vm('a', 'RUNNING'), { b: due.b }],
+    ['a VM that is killed', 'delete', null, { b: due.b }],
+    [
+      'a VM redeployed to wait',
+      'redeployed',
+      vm('a', 'BUILDING', 'user'),
+      {
+        b: due.b,
+      },
+    ],
+    [
+      'a VM that is updated',
+      'update',
+      vm('a', 'BUILDING', 'timer:5m'),
+      {
+        a: due.a,
+        b: due.b,
+      },
+    ],
+  ])(
+    'drops the due time of %s only when it no longer waits for it',
+    (_, action, result, want) => {
+      const delayed = createDelayedVms();
+      delayed.listed(['a', 'b'], [], due);
+      delayed.changed('a', action, result);
+      expect(delayed.dueTimes()).toEqual(want);
+    },
+  );
+
+  it('gives a copy that a change does not alter', () => {
+    const delayed = createDelayedVms();
+    delayed.listed(['a'], [], due);
+    const copy = delayed.dueTimes();
+    delayed.changed('a', 'start', vm('a', 'RUNNING'));
+    expect(copy).toEqual({ a: due.a });
+  });
+});

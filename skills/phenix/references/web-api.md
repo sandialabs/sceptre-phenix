@@ -357,7 +357,8 @@ lack it). Points that are easy to miss:
   `show_dnb` is a boolean. The VM list's `labels` and `hosts` hold every label
   and cluster host to filter by, its `running` counts the running VMs, and its
   `delayed` names the VMs that still wait for a delayed start, all
-  before filtering and paging. The websocket `experiment/vms` `list` request
+  before filtering and paging. Its `delayed_due` maps each of those VMs that
+  waits for a timer to the RFC 3339 time it starts. The websocket `experiment/vms` `list` request
   takes the same filters as `labels` and `hosts`.
 - Slow `/ws` clients are closed with code 1013 and should reconnect; the live
   log stream may skip lines under load.

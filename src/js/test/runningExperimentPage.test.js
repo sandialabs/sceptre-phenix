@@ -946,6 +946,58 @@ describe('the delayed VMs', () => {
     expect(delayedTile(page).exists()).toBe(false);
   });
 
+  it('counts down to the start of the timer VMs in the summary, the table and the details', async () => {
+    vi.setSystemTime(Date.parse('2026-01-01T10:00:00Z'));
+    const page = await openPage();
+    await apply({ ...running([]), vm_count: 3 });
+    const late = vm({
+      name: 'vm2',
+      running: false,
+      state: 'BUILDING',
+      delayed_start: 'timer:5m',
+    });
+    const manual = vm({
+      name: 'vm3',
+      running: false,
+      state: 'BUILDING',
+      delayed_start: 'user',
+    });
+    await handle(
+      wsMsg('experiment/vms', 'exp1', 'list', {
+        vms: [vm({ name: 'vm1' }), late, manual],
+        total: 3,
+        running: 1,
+        delayed: ['vm2', 'vm3'],
+        delayed_due: { vm2: '2026-01-01T10:04:12Z' },
+      }),
+    );
+    const delayOf = (name) =>
+      textOf(tableRows(page).find((r) => textOf(r.Node).includes(name)).Delay);
+    expect(textOf(delayedTag(page))).toBe(
+      '2 delayed VMs waiting, next starts in 4m 12s',
+    );
+    expect(delayOf('vm2')).toBe('starts in 4m 12s');
+    expect(delayOf('vm3')).toBe('user');
+
+    await page.setData({ expModal: { active: true, vm: late } });
+    await flushPromises();
+    const card = page.findComponent({ name: 'VmDetailsCard' });
+    expect(card.props('delayedDue')).toBe('2026-01-01T10:04:12Z');
+
+    vi.advanceTimersByTime(2000);
+    await flushPromises();
+    expect(delayOf('vm2')).toBe('starts in 4m 10s');
+    expect(textOf(delayedTag(page))).toBe(
+      '2 delayed VMs waiting, next starts in 4m 10s',
+    );
+
+    // the timer started it: the user VM has no countdown
+    await handle(
+      vmMsg('start', vm({ name: 'vm2', state: 'RUNNING', running: true })),
+    );
+    expect(textOf(delayedTag(page))).toBe('1 delayed VM waiting');
+  });
+
   it('shows no tag for a list without delayed VMs', async () => {
     const page = await openPage();
     await apply(running([]));

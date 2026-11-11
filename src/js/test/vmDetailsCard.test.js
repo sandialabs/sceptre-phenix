@@ -216,6 +216,46 @@ describe('VmDetailsCard storage', () => {
   });
 });
 
+describe('VmDetailsCard delayed start', () => {
+  const START = Date.parse('2026-01-01T10:00:00Z');
+  const waiting = (delayed_start) =>
+    makeVm({ running: false, state: 'BUILDING', delayed_start });
+  const delayText = (wrapper) =>
+    textOf(wrapper.get('.vm-card-meta [title="Delayed start"]'));
+
+  beforeEach(() => {
+    vi.useFakeTimers({
+      now: START,
+      toFake: ['setInterval', 'clearInterval', 'Date'],
+    });
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it('counts down to the start of a VM that waits for a timer', async () => {
+    const wrapper = await card({
+      vm: waiting('timer:5m'),
+      delayedDue: '2026-01-01T10:04:12Z',
+    });
+    expect(delayText(wrapper)).toBe('starts in 4m 12s');
+    vi.advanceTimersByTime(2000);
+    await nextTick();
+    expect(delayText(wrapper)).toBe('starts in 4m 10s');
+    wrapper.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([
+    ['a user', 'user', ''],
+    ['C2', 'cc:server', ''],
+    ['a timer without a due time', 'timer:5m', ''],
+  ])('keeps the delay of a VM that waits for %s', async (_, delay, due) => {
+    const wrapper = await card({ vm: waiting(delay), delayedDue: due });
+    expect(delayText(wrapper)).toBe(`starts after ${delay}`);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
 describe('VmDetailsCard capture buttons', () => {
   it('start with the capture icon and stop with the stop icon', async () => {
     const wrapper = await card();

@@ -6,6 +6,7 @@
       :experiment="experiment"
       :running="running"
       :delayed="delayed"
+      :next-start="nextStart"
       :hosts="hosts"
       :hosts-failed="hostsFailed"
       :vm-count="vmCount"
@@ -73,6 +74,7 @@
       experiment: { type: Object, default: () => ({}) },
       running: { type: Number, default: null },
       delayed: { type: Number, default: null },
+      nextStart: { type: Number, default: null },
       hosts: { type: Array, default: undefined },
       hostsFailed: { type: Boolean, default: false },
       vmCount: { type: Number, default: undefined },

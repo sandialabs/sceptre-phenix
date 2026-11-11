@@ -74,6 +74,9 @@ message VMList {
   // the names of the VMs the role may list that still wait for a delayed
   // start, unfiltered and unpaged; only VM list reads fill it
   repeated string delayed = 9;
+  // when each VM in delayed that waits for a timer starts (RFC 3339), by
+  // name; only VM list reads fill it
+  map<string, string> delayed_due = 10 [json_name="delayed_due"];
 }
 
 // VMLabel is one key=value label a VM carries.

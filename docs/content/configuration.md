@@ -161,12 +161,16 @@ three options available to set, but on only one option can be set:
     If one or more VMs are set with a delayed start, the UI will display a blue
     tag in the Delay column next to the Screenshot column. The tag will indicate
     what type of delay was set. Once all the delayed VMs have started, the Delay
-    column will no longer be visible.
+    column will no longer be visible. For a `timer` delay, the tag and the VM
+    details card show the time until the VM starts, for example
+    `starts in 4m 12s`.
 
     While VMs wait for a delayed start, the summary at the top of the running
     experiment page shows a blue tag, for example `2 delayed VMs waiting`, next
-    to the `Running` status. The VMs tile of the summary also shows the number
-    of delayed VMs. To see the tiles, click `Details` in the summary.
+    to the `Running` status. When a VM waits for a timer, the tag also shows
+    the time until the next VM starts, for example
+    `2 delayed VMs waiting, next starts in 4m 12s`. The VMs tile of the
+    summary also shows the number of delayed VMs. To see the tiles, click `Details` in the summary.
 
 #### Network Address Translation (NAT)
 

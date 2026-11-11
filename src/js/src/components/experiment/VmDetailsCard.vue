@@ -31,8 +31,7 @@
             {{ formatUptime(vm.uptime) }}
           </span>
           <span v-if="vm.delayed_start" title="Delayed start">
-            <b-icon icon="hourglass-half" size="is-small" />starts after
-            {{ vm.delayed_start }}
+            <b-icon icon="hourglass-half" size="is-small" />{{ delayText }}
           </span>
         </div>
       </div>
@@ -685,6 +684,11 @@
   import { handleConsoleLinkClick } from '@/vnc/openConsole.js';
   import VncPreview from '@/vnc/VncPreview.vue';
   import { consoleAvailable, vmPaused } from '@/vnc/vmScreen.js';
+  import {
+    countdownText,
+    startDue,
+    useCountdownClock,
+  } from './delayCountdown.js';
   import { osTypeInfo } from './osType.js';
   import VmSettingControl from './VmSettingControl.vue';
   import {
@@ -724,8 +728,12 @@
     name: 'VmDetailsCard',
     components: { AnnotationList, DiskWarning, VmSettingControl, VncPreview },
     mixins: [formattingMixin],
-    setup() {
+    setup(props) {
       return {
+        // the shared clock of the countdown, while the VM waits for its timer
+        now: useCountdownClock(
+          () => startDue(props.vm, props.delayedDue) !== null,
+        ),
         captureIcon: CAPTURE_ICON,
         plural,
         pluralWord,
@@ -780,6 +788,8 @@
       settingsPending: { type: Object, default: () => ({}) },
       // whether a reset of the settings waits on the server
       resetting: { type: Boolean, default: false },
+      // when the VM starts (RFC 3339), while it waits for a timer
+      delayedDue: { type: String, default: '' },
     },
     emits: [
       'action',
@@ -817,6 +827,13 @@
           return { label: 'Stopped', type: null, icon: 'stop' };
         }
         return vmStateInfo(this.vm);
+      },
+      // the time left before a timer VM starts, else its delay
+      delayText() {
+        const due = startDue(this.vm, this.delayedDue);
+        return due === null
+          ? `starts after ${this.vm.delayed_start}`
+          : countdownText(due, this.now);
       },
       // the guest operating system's tag, or null when the VM gives none
       os() {

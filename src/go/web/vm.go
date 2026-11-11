@@ -94,6 +94,7 @@ func GetVMs(w http.ResponseWriter, r *http.Request) error {
 	resp.Hosts = util.VMHosts(expName, vms, vmQuery.ShowDNB, role)
 	resp.Running = util.CountRunning(expName, vms, vmQuery.ShowDNB, role)
 	resp.Delayed = util.DelayedVMs(expName, vms, exp.Spec.Topology(), vmQuery.ShowDNB, role)
+	resp.DelayedDue = util.DelayedDue(resp.GetDelayed(), exp.Status)
 	freshness.SetObserved(w, observed)
 
 	body, err := marshaler.Marshal(resp)

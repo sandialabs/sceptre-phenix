@@ -161,11 +161,9 @@
       header-class="sort-inline"
       centered
       v-slot="props">
-      <b-tag
-        type="is-info"
-        v-if="props.row.delayed_start && props.row.state == 'BUILDING'"
-        >{{ props.row.delayed_start }}</b-tag
-      >
+      <b-tag type="is-info" v-if="waitsForStart(props.row)">{{
+        delayLabel(props.row)
+      }}</b-tag>
     </b-table-column>
     <b-table-column
       :visible="columns.host"
@@ -367,6 +365,12 @@
   import VmNetworkMenu from './VmNetworkMenu.vue';
   import VmRowActions from './VmRowActions.vue';
   import {
+    countdownText,
+    startDue,
+    useCountdownClock,
+    waitsForStart,
+  } from './delayCountdown.js';
+  import {
     ROW_ACTIONS,
     ROW_SWAPS,
     actionPermitted,
@@ -388,8 +392,13 @@
     name: 'VmTable',
     components: { VmLabelCount, VmNetworkMenu, VmRowActions },
     mixins: [formattingMixin],
-    setup() {
+    setup(props) {
       return {
+        // one shared clock for the countdowns of the timer VMs
+        now: useCountdownClock(
+          () => Object.keys(props.delayedDue ?? {}).length > 0,
+        ),
+        waitsForStart,
         roleAllowed,
         consoleLinkAlt,
         screenshotAlt,
@@ -424,6 +433,8 @@
       },
       // the actions running in the background for each VM, by its name
       actionPending: { type: Object, default: () => ({}) },
+      // the due time (RFC 3339) of each VM that waits for a timer, by name
+      delayedDue: { type: Object, default: () => ({}) },
       // the names of the VMs selected, and whether all of them are
       selected: { type: Array, default: () => [] },
       checkAll: { type: Boolean, default: false },
@@ -475,9 +486,7 @@
 
       // whether a VM has a delayed start still to come
       isDelayed() {
-        return this.vms.some(
-          (vm) => vm.delayed_start && vm.state == 'BUILDING',
-        );
+        return this.vms.some(waitsForStart);
       },
 
       // whether the role may take any of the Actions column's actions on
@@ -490,6 +499,12 @@
     },
 
     methods: {
+      // the time left before a timer VM starts, else the VM's delay
+      delayLabel(vm) {
+        const due = startDue(vm, this.delayedDue[vm.name]);
+        return due === null ? vm.delayed_start : countdownText(due, this.now);
+      },
+
       // a network's VLAN, the same whatever the case minimega gives it in
       vlanKey(network) {
         return vlanAlias(network)?.toLowerCase();

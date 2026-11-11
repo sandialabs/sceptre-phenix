@@ -20,6 +20,7 @@
         :snapshots="expModal.snapshots"
         :forwards="expModal.forwards"
         :features="features"
+        :delayed-due="delayedDue[expModalVm.name] ?? ''"
         @action="(name) => onVmAction(name, expModalVm)"
         @capture="(index) => handlePcap(expModalVm, index)"
         @change-vlan="(iface) => showVlanModal(expModalVm, iface.index)"
@@ -123,6 +124,7 @@
       :experiment="experiment"
       :running="runningVms"
       :delayed="delayedVms"
+      :next-start="nextDelayedStart"
       :hosts="vmsLoaded ? vmHosts : null"
       :states="appStates"
       @trigger="getApps" />
@@ -327,6 +329,7 @@
             :capture-all-pending="captureAllPending"
             :vlan-capture-pending="vlanCapturePending"
             :action-pending="vmActionPending"
+            :delayed-due="delayedDue"
             @page-change="onPageChange"
             @sort="onSort"
             @info="getInfo"
@@ -459,6 +462,7 @@
   import { vmScreenshot } from '@/components/experiment/vmScreens.js';
   import { createRunningCount } from '@/components/experiment/runningCount.js';
   import { createDelayedVms } from '@/components/experiment/delayedVms.js';
+  import { nextDue } from '@/components/experiment/delayCountdown.js';
   import {
     appStateAfter,
     hostOptions,
@@ -748,6 +752,11 @@
     },
 
     computed: {
+      // when the next VM that waits for a timer starts, in milliseconds
+      nextDelayedStart() {
+        return nextDue(this.delayedDue);
+      },
+
       // the past searches that hold the text typed; they are not the VMs that
       // match, so the list has no "no results" message
       searchOptions() {
@@ -1146,7 +1155,9 @@
         this.delayedVms = this.delayedCount.listed(
           msg.result.delayed,
           this.experiment.vms,
+          msg.result.delayed_due,
         );
+        this.delayedDue = this.delayedCount.dueTimes();
         this.table.total = msg.result.total;
         this.vmLabels = msg.result.labels ?? [];
         this.vmHosts = msg.result.hosts ?? [];
@@ -1210,6 +1221,7 @@
             msg.resource.action,
             msg.result,
           );
+          this.delayedDue = this.delayedCount.dueTimes();
         }
 
         let notice = applyVmEvent(this.experiment, msg, name);
@@ -2566,6 +2578,8 @@
         runningVms: null,
         // how many still wait for a delayed start, null until listed
         delayedVms: null,
+        // the due time (RFC 3339) of each VM that waits for a timer, by name
+        delayedDue: {},
         experiment: {},
         // the Files tab's category picker, and the categories it offers
         fileCategory: null,

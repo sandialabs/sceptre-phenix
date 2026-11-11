@@ -15266,6 +15266,16 @@ components:
           items:
             type: string
           example: [client1, client2]
+        delayed_due:
+          title: Delayed Due
+          description: >-
+            when each VM in `delayed` that waits for a timer starts, as an RFC
+            3339 time, by VM name. VMs that wait for a user or for C2 are not
+            in it. Empty for a bulk `PATCH`
+          type: object
+          additionalProperties:
+            type: string
+          example: {"client1": "2026-01-01T10:05:00Z"}
     VMLabel:
       title: VM Label
       description: A key and value label a VM carries.

@@ -400,6 +400,27 @@ func DelayedVMs(expName string, vms []mm.VM, topo ifaces.TopologySpec, showDNB b
 	return delayed
 }
 
+// DelayedDue gives the due time (RFC 3339) that the experiment status records
+// for each VM in delayed that waits for a timer. VMs that wait for a user or
+// for C2 have no due time and are left out.
+func DelayedDue(delayed []string, status ifaces.ExperimentStatus) map[string]string {
+	due := map[string]string{}
+
+	if status == nil {
+		return due
+	}
+
+	timers := status.DelayedTimers()
+
+	for _, name := range delayed {
+		if at, ok := timers[name]; ok {
+			due[name] = at
+		}
+	}
+
+	return due
+}
+
 // VMLabelsToProtobuf converts the labels VMLabels returns.
 func VMLabelsToProtobuf(labels []VMLabel) []*proto.VMLabel {
 	out := make([]*proto.VMLabel, len(labels))
@@ -427,7 +448,8 @@ func VMListToProtobuf(expName string, vms mm.VMs, total int, topo ifaces.Topolog
 		// set by the lists that count the running VMs
 		Running: 0,
 		// set by the lists that name the VMs that wait for a delayed start
-		Delayed: nil,
+		Delayed:    nil,
+		DelayedDue: nil,
 	}
 	nodes := IndexTopology(topo)
 

@@ -625,6 +625,7 @@ func (c *Client) listVMs(job listJob) {
 	resp.Hosts = util.VMHosts(expName, vms, query.ShowDNB, c.role)
 	resp.Running = util.CountRunning(expName, vms, query.ShowDNB, c.role)
 	resp.Delayed = util.DelayedVMs(expName, vms, exp.Spec.Topology(), query.ShowDNB, c.role)
+	resp.DelayedDue = util.DelayedDue(resp.GetDelayed(), exp.Status)
 
 	body, err := marshaler.Marshal(resp)
 	if err != nil {
