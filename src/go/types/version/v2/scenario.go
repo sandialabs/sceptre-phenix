@@ -26,7 +26,7 @@ func (ss *ScenarioSpec) Apps() []ifaces.ScenarioApp {
 	return apps
 }
 
-func (ss *ScenarioSpec) App(name string) ifaces.ScenarioApp { //nolint:ireturn // returns interface
+func (ss *ScenarioSpec) App(name string) ifaces.ScenarioApp {
 	if ss == nil {
 		return nil
 	}
@@ -40,7 +40,7 @@ func (ss *ScenarioSpec) App(name string) ifaces.ScenarioApp { //nolint:ireturn /
 	return nil
 }
 
-func (ss *ScenarioSpec) AddApp(name string) ifaces.ScenarioApp { //nolint:ireturn // returns interface
+func (ss *ScenarioSpec) AddApp(name string) ifaces.ScenarioApp {
 	a := &ScenarioApp{ //nolint:exhaustruct // partial initialization
 		NameF: name,
 	}
@@ -113,7 +113,7 @@ func (sa *ScenarioApp) SetHosts(hosts []ifaces.ScenarioAppHost) {
 	sa.HostsF = h
 }
 
-func (sa *ScenarioApp) AddHost(hostname string) ifaces.ScenarioAppHost { //nolint:ireturn // returns interface
+func (sa *ScenarioApp) AddHost(hostname string) ifaces.ScenarioAppHost {
 	h := &ScenarioAppHost{ //nolint:exhaustruct // partial initialization
 		HostnameF: hostname,
 	}

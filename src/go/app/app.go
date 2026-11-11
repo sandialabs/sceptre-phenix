@@ -261,7 +261,7 @@ func BuiltinApps() []string {
 
 // GetApp returns the phenix app with the given name. Preference is given to a
 // user app with the given name to allow users to override internal apps.
-func GetApp(name string) App { //nolint:ireturn // factory
+func GetApp(name string) App {
 	cmdName := UserAppPrefix + name
 
 	// Default to shelling out to a user app with the given name so internal apps

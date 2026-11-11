@@ -409,7 +409,7 @@ type summaryNoTopology struct {
 	*v1.ExperimentSpec
 }
 
-func (summaryNoTopology) Topology() ifaces.TopologySpec { //nolint:ireturn // the spec's interface
+func (summaryNoTopology) Topology() ifaces.TopologySpec {
 	return nil
 }
 

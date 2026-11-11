@@ -76,7 +76,7 @@ func (t *TopologySpec) SchedulableNodes(platform string) []ifaces.NodeSpec {
 	return schedulable
 }
 
-func (t TopologySpec) FindNodeByName(name string) ifaces.NodeSpec { //nolint:ireturn // interface
+func (t TopologySpec) FindNodeByName(name string) ifaces.NodeSpec {
 	for _, node := range t.NodesF {
 		if node.GeneralF.HostnameF == name {
 			return node
@@ -133,7 +133,7 @@ func (t TopologySpec) FindNodesWithVLAN(vlan string) []ifaces.NodeSpec {
 	return nodes
 }
 
-func (t *TopologySpec) AddNode(typ, hostname string) ifaces.NodeSpec { //nolint:ireturn // interface
+func (t *TopologySpec) AddNode(typ, hostname string) ifaces.NodeSpec {
 	n := &Node{ //nolint:exhaustruct // partial initialization
 		TypeF: typ,
 		GeneralF: &General{ //nolint:exhaustruct // partial initialization

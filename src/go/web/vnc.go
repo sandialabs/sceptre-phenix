@@ -29,7 +29,7 @@ import (
 
 // findTopologyNode returns the named VM's node from the experiment's topology,
 // or nil if the experiment or VM does not exist.
-func findTopologyNode(exp, name string) ifaces.NodeSpec { //nolint:ireturn // topology node
+func findTopologyNode(exp, name string) ifaces.NodeSpec {
 	stored, err := experiment.Get(exp)
 	if err != nil {
 		return nil

@@ -14,7 +14,7 @@ import (
 )
 
 // savedSpec decodes a saved experiment spec.
-func savedSpec(t *testing.T, spec map[string]any) ifaces.ExperimentSpec { //nolint:ireturn // the experiment's spec type
+func savedSpec(t *testing.T, spec map[string]any) ifaces.ExperimentSpec {
 	t.Helper()
 
 	exp, err := types.DecodeExperimentFromConfig(store.Config{

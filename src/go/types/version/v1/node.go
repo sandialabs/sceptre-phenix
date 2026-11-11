@@ -42,15 +42,15 @@ func (n Node) Type() string {
 	return n.TypeF
 }
 
-func (n Node) General() ifaces.NodeGeneral { //nolint:ireturn // interface
+func (n Node) General() ifaces.NodeGeneral {
 	return n.GeneralF
 }
 
-func (n Node) Hardware() ifaces.NodeHardware { //nolint:ireturn // interface
+func (n Node) Hardware() ifaces.NodeHardware {
 	return n.HardwareF
 }
 
-func (n Node) Network() ifaces.NodeNetwork { //nolint:ireturn // interface
+func (n Node) Network() ifaces.NodeNetwork {
 	return n.NetworkF
 }
 
@@ -74,7 +74,7 @@ func (n Node) Deletions() []ifaces.NodeDeletion {
 	return deletions
 }
 
-func (n Node) Delay() ifaces.NodeDelay { //nolint:ireturn // interface
+func (n Node) Delay() ifaces.NodeDelay {
 	if n.DelayF == nil {
 		return new(Delay)
 	}
@@ -178,7 +178,7 @@ func (n *Node) AddLabel(k, v string) {
 	n.LabelsF[k] = v
 }
 
-func (n *Node) AddHardware(os string, vcpu, memory int) ifaces.NodeHardware { //nolint:ireturn // interface
+func (n *Node) AddHardware(os string, vcpu, memory int) ifaces.NodeHardware {
 	h := &Hardware{ //nolint:exhaustruct // partial initialization
 		OSTypeF: os,
 		VCPUF:   vcpu,
@@ -190,7 +190,7 @@ func (n *Node) AddHardware(os string, vcpu, memory int) ifaces.NodeHardware { //
 	return h
 }
 
-func (n *Node) AddNetworkInterface(typ, name, vlan string) ifaces.NodeNetworkInterface { //nolint:ireturn // interface
+func (n *Node) AddNetworkInterface(typ, name, vlan string) ifaces.NodeNetworkInterface {
 	i := &Interface{ //nolint:exhaustruct // partial initialization
 		TypeF: typ,
 		NameF: name,
@@ -510,7 +510,7 @@ func (h *Hardware) SetMemory(m int) {
 	h.MemoryF = m
 }
 
-func (h *Hardware) AddDrive(disk string, part int) ifaces.NodeDrive { //nolint:ireturn // interface
+func (h *Hardware) AddDrive(disk string, part int) ifaces.NodeDrive {
 	d := &Drive{ //nolint:exhaustruct // partial initialization
 		ImageF:           disk,
 		InjectPartitionF: &part,

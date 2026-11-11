@@ -445,7 +445,7 @@ func validateName(name string) error {
 
 // createTopology reads the topology name for a new experiment. A store that cannot read it gives an error that
 // matches config.ErrStoreFailed.
-func createTopology(name string) (ifaces.TopologySpec, error) { //nolint:ireturn // the topology spec is an interface
+func createTopology(name string) (ifaces.TopologySpec, error) {
 	topoC, _ := store.NewConfig("topology/" + name)
 
 	err := store.Get(topoC)

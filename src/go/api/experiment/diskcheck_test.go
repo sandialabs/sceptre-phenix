@@ -39,8 +39,6 @@ type diskVM struct {
 func boolPtr(b bool) *bool { return &b }
 
 // diskSpec is an experiment spec of the VMs, deployed in mode with the schedules, with the defaults Init sets.
-//
-//nolint:ireturn // the spec as a stored experiment holds it
 func diskSpec(mode string, schedules map[string]string, vms ...diskVM) ifaces.ExperimentSpec {
 	exp := types.NewExperiment(store.ConfigMetadata{Name: "exp"})
 

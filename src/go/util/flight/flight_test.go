@@ -451,7 +451,7 @@ func TestGroupKeepsKeysApart(t *testing.T) {
 
 // value returns a Group result, panicking (which fails the test, even
 // from another goroutine) if the run aborted.
-func value[T any](val T, err error) T { //nolint:ireturn // T is concrete at each use
+func value[T any](val T, err error) T {
 	if err != nil {
 		panic(fmt.Sprintf("unexpected flight error: %v", err))
 	}

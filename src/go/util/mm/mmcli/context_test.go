@@ -122,7 +122,7 @@ func TestRunTabularContextGivesUpWaiting(t *testing.T) {
 
 // giveUp runs run with a context canceled while it waits, and returns what
 // run returned, failing the test if it keeps waiting.
-func giveUp[T any](t *testing.T, run func(ctx context.Context) T) T { //nolint:ireturn // T is concrete at each use
+func giveUp[T any](t *testing.T, run func(ctx context.Context) T) T {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())

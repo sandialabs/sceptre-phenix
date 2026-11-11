@@ -163,7 +163,7 @@ func active(ctx context.Context, c Capture) (bool, error) {
 
 // newSource returns what reads the capture's file, and whether that is the
 // file itself, on the headnode.
-func newSource(c Capture) (source, bool, error) { //nolint:ireturn // the file itself or a mesh node, by host
+func newSource(c Capture) (source, bool, error) {
 	if mm.IsHeadnode(c.Host) {
 		return &fileSource{path: c.Path, f: nil, buf: nil}, true, nil
 	}

@@ -308,6 +308,26 @@ linters:
       # Default: false
       enable-all: false
 
+    ireturn:
+      # Interfaces that a function can return. The list replaces the default
+      # (anon, error, empty, stdlib), so it names those again. The spec
+      # interfaces hide the versioned config types, and each other entry is a
+      # factory or a test seam. An allow entry replaces a //nolint:ireturn
+      # comment, which golangci-lint --fix deletes when ireturn cannot
+      # resolve the returned type.
+      # Default: [anon, error, empty, stdlib]
+      allow:
+        - anon
+        - error
+        - empty
+        - stdlib
+        - generic
+        - ^phenix/types/interfaces\.
+        - ^phenix/store\.Store$
+        - ^phenix/app\.App$
+        - ^phenix/api/scorch\.Component$
+        - ^phenix/api/livecapture\.source$
+
     mnd:
       # List of function patterns to exclude from analysis.
       # Values always ignored: `time.Date`,

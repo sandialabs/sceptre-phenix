@@ -24,7 +24,7 @@ type builtinVM struct {
 }
 
 // builtinSpec is the spec of experiment exp with the given nodes and schedules.
-func builtinSpec(t *testing.T, vms []builtinVM, schedules map[string]any) ifaces.ExperimentSpec { //nolint:ireturn // the spec type
+func builtinSpec(t *testing.T, vms []builtinVM, schedules map[string]any) ifaces.ExperimentSpec {
 	t.Helper()
 
 	nodes := make([]map[string]any, 0, len(vms))

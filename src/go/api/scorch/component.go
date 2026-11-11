@@ -61,8 +61,6 @@ func init() { //nolint:gochecknoinits // component registration
 
 // newComponent returns a new component of type typ, or a new user-shell
 // component, which runs a phenix-scorch-component-<type>, for another type.
-//
-//nolint:ireturn // factory function returns interface
 func newComponent(typ string) Component {
 	factory, ok := components[typ]
 	if !ok {

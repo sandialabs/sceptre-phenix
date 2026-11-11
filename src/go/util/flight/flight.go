@@ -38,7 +38,7 @@ type call[T any] struct {
 // Do runs fn, or joins key's unsealed run and returns its result, which callers must not modify; fn
 // may call seal to stop later joins. fn's context ends once every caller's ctx is done, and a
 // joined caller returns ctx's error at once, or ErrAborted if fn panicked.
-func (g *Group[T]) Do( //nolint:ireturn // T is concrete at each use
+func (g *Group[T]) Do(
 	ctx context.Context,
 	key string,
 	fn func(ctx context.Context, seal func()) (T, error),

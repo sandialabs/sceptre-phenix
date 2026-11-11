@@ -29,7 +29,7 @@ type BoltDB struct {
 	path string
 }
 
-func NewBoltDB() Store { //nolint:ireturn // factory
+func NewBoltDB() Store {
 	return new(BoltDB)
 }
 

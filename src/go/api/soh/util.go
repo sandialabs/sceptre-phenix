@@ -161,7 +161,7 @@ func captureSkipReason(node ifaces.NodeSpec) string {
 	}
 }
 
-func (s *SOH) buildElasticServerNode( //nolint:ireturn // complex logic
+func (s *SOH) buildElasticServerNode(
 	exp *types.Experiment,
 	ip string,
 	cidr int,
@@ -218,7 +218,7 @@ func (s *SOH) buildElasticServerNode( //nolint:ireturn // complex logic
 	return node, nil
 }
 
-func (s *SOH) buildPacketBeatNode( //nolint:funlen,ireturn // complex logic
+func (s *SOH) buildPacketBeatNode( //nolint:funlen // complex logic
 	exp *types.Experiment,
 	target ifaces.NodeSpec,
 	es, ip string,

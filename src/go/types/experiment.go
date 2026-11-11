@@ -163,7 +163,7 @@ func (e Experiment) Apps() []ifaces.ScenarioApp {
 	return nil
 }
 
-func (e Experiment) App(name string) ifaces.ScenarioApp { //nolint:ireturn // interface
+func (e Experiment) App(name string) ifaces.ScenarioApp {
 	if e.Spec.Scenario() == nil {
 		return nil
 	}

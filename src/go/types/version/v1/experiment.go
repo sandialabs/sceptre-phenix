@@ -183,7 +183,7 @@ func (e ExperimentSpec) DefaultBridge() string {
 	return e.DefaultBridgeF
 }
 
-func (e ExperimentSpec) Topology() ifaces.TopologySpec { //nolint:ireturn // interface
+func (e ExperimentSpec) Topology() ifaces.TopologySpec {
 	if e.TopologyF == nil {
 		return new(TopologySpec)
 	}
@@ -191,7 +191,7 @@ func (e ExperimentSpec) Topology() ifaces.TopologySpec { //nolint:ireturn // int
 	return e.TopologyF
 }
 
-func (e ExperimentSpec) Scenario() ifaces.ScenarioSpec { //nolint:ireturn // interface
+func (e ExperimentSpec) Scenario() ifaces.ScenarioSpec {
 	if e.ScenarioF == nil {
 		return new(v2.ScenarioSpec)
 	}
@@ -199,7 +199,7 @@ func (e ExperimentSpec) Scenario() ifaces.ScenarioSpec { //nolint:ireturn // int
 	return e.ScenarioF
 }
 
-func (e ExperimentSpec) VLANs() ifaces.VLANSpec { //nolint:ireturn // interface
+func (e ExperimentSpec) VLANs() ifaces.VLANSpec {
 	if e.VLANsF == nil {
 		return new(VLANSpec)
 	}

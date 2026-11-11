@@ -313,8 +313,6 @@ func (h *builderHarness) publishOps() builderPublishOps {
 
 // decodeTopology merges included topologies from the harness configs, the
 // way types.DecodeTopologyFromConfig merges them from the phenix store.
-//
-//nolint:ireturn // matches the decodeTopology field's signature
 func (h *builderHarness) decodeTopology(config store.Config) (ifaces.TopologySpec, error) {
 	var spec v1.TopologySpec
 

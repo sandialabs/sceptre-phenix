@@ -27,7 +27,7 @@ func init() { //nolint:gochecknoinits // interface assertion
 	_, _ = spec.(ifaces.ScenarioAppHost)
 }
 
-func DecodeScenarioFromConfig(c store.Config) (ifaces.ScenarioSpec, error) { //nolint:ireturn // interface
+func DecodeScenarioFromConfig(c store.Config) (ifaces.ScenarioSpec, error) {
 	if c.APIVersion() != version.StoredVersion[c.Kind] {
 		return nil, fmt.Errorf("unknown scenario version %s", c.APIVersion())
 	}
@@ -49,7 +49,7 @@ func DecodeScenarioFromConfig(c store.Config) (ifaces.ScenarioSpec, error) { //n
 	return spec, nil
 }
 
-func MakeCustomScenarioFromConfig( //nolint:ireturn // interface
+func MakeCustomScenarioFromConfig(
 	c store.Config,
 	disabledApps []string,
 ) (ifaces.ScenarioSpec, error) {

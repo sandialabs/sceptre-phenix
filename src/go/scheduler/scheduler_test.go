@@ -33,7 +33,7 @@ func (m clusterMM) GetClusterHosts(bool) (mm.Hosts, error) {
 
 // schedulerSpec is an experiment spec with VMs vm1 and vm2 on VLAN EXP, and
 // the given schedules.
-func schedulerSpec(t *testing.T, schedules map[string]any) ifaces.ExperimentSpec { //nolint:ireturn // the spec type
+func schedulerSpec(t *testing.T, schedules map[string]any) ifaces.ExperimentSpec {
 	t.Helper()
 
 	node := func(name string) map[string]any {

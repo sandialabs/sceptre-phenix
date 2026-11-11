@@ -521,7 +521,7 @@ type experimentNoScenarioSpec struct {
 	ifaces.ExperimentSpec
 }
 
-func (experimentNoScenarioSpec) Scenario() ifaces.ScenarioSpec { return nil } //nolint:ireturn // interface
+func (experimentNoScenarioSpec) Scenario() ifaces.ScenarioSpec { return nil }
 
 func TestExperimentApps(t *testing.T) {
 	t.Parallel()

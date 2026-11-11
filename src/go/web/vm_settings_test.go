@@ -513,7 +513,7 @@ type settingsNoTopology struct {
 	*v1.ExperimentSpec
 }
 
-func (settingsNoTopology) Topology() ifaces.TopologySpec { //nolint:ireturn // the spec's interface
+func (settingsNoTopology) Topology() ifaces.TopologySpec {
 	return nil
 }
 

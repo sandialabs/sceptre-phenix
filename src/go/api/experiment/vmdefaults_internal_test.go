@@ -17,7 +17,7 @@ type noTopologySpec struct {
 	*v1.ExperimentSpec
 }
 
-func (noTopologySpec) Topology() ifaces.TopologySpec { //nolint:ireturn // the spec's interface
+func (noTopologySpec) Topology() ifaces.TopologySpec {
 	return nil
 }
 

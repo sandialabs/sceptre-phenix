@@ -1774,7 +1774,7 @@ func experimentUpdateMatchesSource(
 
 // experimentTopology returns the topology that an experiment holds for the projection.
 // The projection only names included topologies, so it merges them as phenix does at experiment create.
-func (b *builderAPI) experimentTopology( //nolint:ireturn // returns decodeTopology's interface
+func (b *builderAPI) experimentTopology(
 	projection *bdoc.Topology,
 	topologyName string,
 ) (ifaces.TopologySpec, error) {

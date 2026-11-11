@@ -587,8 +587,6 @@ func TestLockStatus(t *testing.T) {
 }
 
 // resumeStored reads experiment exp's status back from the store.
-//
-//nolint:ireturn // the status as the experiment holds it
 func resumeStored(t *testing.T) ifaces.ExperimentStatus {
 	t.Helper()
 

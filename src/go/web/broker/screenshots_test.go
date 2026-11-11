@@ -282,7 +282,6 @@ type gapSpec struct {
 	gap   func()
 }
 
-//nolint:ireturn // implements ExperimentSpec
 func (s *gapSpec) Topology() ifaces.TopologySpec {
 	if s.reads++; s.reads == 2 {
 		s.gap()

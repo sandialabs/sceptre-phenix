@@ -177,8 +177,6 @@ func applyWorkflow(r *http.Request, branch string) (workflow.Result, error) {
 // workflowStartSpec is the experiment spec, as far as the disk check reads it, that the start after applying the
 // workflow uses, before apps run; nil when the action starts nothing or the topology is pending. exp is the
 // experiment an update acts on, nil for a create.
-//
-//nolint:ireturn // the spec the disk check reads
 func workflowStartSpec(
 	spec workflow.Spec, action workflow.Action, prep workflow.Prepared, exp *types.Experiment,
 ) ifaces.ExperimentSpec {
