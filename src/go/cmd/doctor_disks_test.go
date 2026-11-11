@@ -111,6 +111,13 @@ func TestDiskChainsCheck(t *testing.T) {
 		},
 		"images directory missing": {
 			noMinimega: true,
+			setup: func(t *testing.T, _, phenix string) {
+				t.Helper()
+
+				if err := os.Remove(filepath.Join(phenix, "images")); err != nil {
+					t.Fatalf("os.Remove(images) error = %v", err)
+				}
+			},
 			want: func(_, phenix string) doctorCheck {
 				return doctorCheck{Name: "", Status: doctorSkip, Detail: "not checked, because " + phenix + "/images does not exist"}
 			},

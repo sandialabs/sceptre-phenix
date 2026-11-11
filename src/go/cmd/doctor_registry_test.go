@@ -35,7 +35,8 @@ import (
 const doctorTestMinimega = "minimega 3.0.1 837c9174 2026-07-08"
 
 // newDoctorTestDir makes the phenix base directory, with the directories
-// derived from it, and minimega's base directory under a new directory.
+// derived from it, and minimega's base and files directories under a new
+// directory. <base-dir.phenix>/images is a symlink to the files directory.
 func newDoctorTestDir(t *testing.T) string {
 	t.Helper()
 
@@ -49,6 +50,10 @@ func newDoctorTestDir(t *testing.T) string {
 
 	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), nil, 0o600); err != nil {
 		t.Fatalf("os.WriteFile(config.yaml) error = %v", err)
+	}
+
+	if err := os.Symlink(filepath.Join("..", "files"), filepath.Join(dir, "phenix", "images")); err != nil {
+		t.Fatalf("os.Symlink(phenix/images) error = %v", err)
 	}
 
 	return dir
@@ -266,6 +271,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"minimega-env minimega files pass",
 		"minimega-env minimega base pass",
 		"minimega-env minimega mesh pass",
+		"experiment-files experiment-files pass",
 		"minimega-limits minimega-limits open files skip",
 		"minimega-limits minimega-limits memory pass",
 		"state-drift state-drift experiments skip",
@@ -411,6 +417,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 				"base-dir.injects base-dir.injects warn",
 				"base-dir.topologies base-dir.topologies warn",
 				"mount-dir mount-dir warn",
+				"experiment-files experiment-files warn",
 			),
 		},
 		"builder templates directory set and missing": {
@@ -525,11 +532,10 @@ func TestDoctorChecksFromInput(t *testing.T) {
 			modify: func(in *doctorInput) {
 				in.probe = func(string, time.Duration) (string, error) { return "", errors.New("refused") }
 			},
-			// minimega-env checks nothing, in one skip row; no <base-dir.phenix>/images to check or measure
-			want: slices.Replace(replaceNamedRows(allPass, "minimega minimega fail", "disk-chains disk chains skip",
-				"disk-formats disk formats skip", "leftovers leftovers snapshots skip", "leftovers leftovers taps skip",
-				"leftovers leftovers mirrors skip",
-				"disk-space disk-space files pass => disk-space disk-space base pass"),
+			// minimega-env checks nothing, in one skip row; the images checks read <base-dir.phenix>/images
+			want: slices.Replace(replaceNamedRows(allPass, "minimega minimega fail",
+				"experiment-files experiment-files skip", "leftovers leftovers snapshots skip",
+				"leftovers leftovers taps skip", "leftovers leftovers mirrors skip"),
 				slices.Index(allPass, "minimega-env minimega files pass"),
 				slices.Index(allPass, "minimega-env minimega mesh pass")+1,
 				"minimega-env minimega-env skip"),
@@ -695,7 +701,8 @@ func TestParseDoctorSkip(t *testing.T) {
 		"none":   {want: []string{}},
 		"one id": {args: []string{"--skip", "ui.jwt-signing-key"}, want: []string{"ui.jwt-signing-key"}},
 		"group": {args: []string{"--skip", "minimega"}, want: []string{
-			"bridge-trunk", "cc-clients", "minimega", "minimega-env", "minimega-limits", "schedule-hosts", "state-drift", "vlans",
+			"bridge-trunk", "cc-clients", "experiment-files", "minimega", "minimega-env", "minimega-limits", "schedule-hosts",
+			"state-drift", "vlans",
 		}},
 		"id": {args: []string{"--skip", "minimega-env,server"}, want: []string{"minimega-env", "server", "stuck-status", "ui-limits"}},
 		"group of several": {
@@ -871,7 +878,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 61 passed, 25 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 63 passed, 24 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},
@@ -897,8 +904,8 @@ func TestDoctorTextOutput(t *testing.T) {
 			opts: doctorOptions{output: "text", problems: true},
 			want: []string{
 				"\nCHECK", "ui.jwt-signing-key", "WARN", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 61 passed, 25 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
-					"86 passing or skipped checks hidden\n",
+				"\nFAIL: 1 failed, 1 warned, 63 passed, 24 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
+					"87 passing or skipped checks hidden\n",
 			},
 			wantNot: []string{" PASS ", " SKIP "},
 		},

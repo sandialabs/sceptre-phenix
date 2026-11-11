@@ -721,6 +721,10 @@ func doctorChecks() []doctorCheckDef {
 			run: minimegaEnvChecks,
 		},
 		{
+			id: experimentFilesName, group: doctorGroupMinimega, name: experimentFilesName, hint: experimentFilesHint,
+			run: func(_ context.Context, in *doctorInput) []doctorCheck { return one(experimentFilesCheck(in)) },
+		},
+		{
 			id: minimegaLimitsName, group: doctorGroupMinimega, name: minimegaLimitsName, hint: minimegaLimitsHint,
 			run: minimegaLimitsChecks,
 		},

@@ -105,18 +105,21 @@ Check the phenix configuration without a running server
   is marked with errors.
 
   The minimega group also compares minimega with this host and the store.
-  minimega-limits (Linux only) reads the open files limit of the minimega
-  process from /proc, and warns when it is too low for its VMs on this node.
-  It also warns when this host is short of memory or swap, or when the VMs
-  ask for more memory than the host has. state-drift names the experiments
-  that the store marks as running with no VMs in minimega, and the
-  namespaces with VMs that no stored experiment owns. vlans warns when two
-  experiments pin the same VLAN ID, or when a stopped experiment cannot get
-  its VLANs now. bridge-trunk warns when a mesh of more than one node has an
-  experiment bridge with no trunk or tunnel port. schedule-hosts names the VM
-  schedules on nodes that are not in the mesh. cc-clients names the running
-  VMs that phenix needs miniccc in but that have no client, and the clients
-  that minimega logged with another miniccc version after their VMs launched.
+  experiment-files warns when <base-dir.phenix>/images is not minimega's
+  -filepath, because the Files tab then does not show the files that phenix
+  writes for an experiment. minimega-limits (Linux only) reads the open files
+  limit of the minimega process from /proc, and warns when it is too low for
+  its VMs on this node. It also warns when this host is short of memory or
+  swap, or when the VMs ask for more memory than the host has. state-drift
+  names the experiments that the store marks as running with no VMs in
+  minimega, and the namespaces with VMs that no stored experiment owns. vlans
+  warns when two experiments pin the same VLAN ID, or when a stopped
+  experiment cannot get its VLANs now. bridge-trunk warns when a mesh of more
+  than one node has an experiment bridge with no trunk or tunnel port.
+  schedule-hosts names the VM schedules on nodes that are not in the mesh.
+  cc-clients names the running VMs that phenix needs miniccc in but that have
+  no client, and the clients that minimega logged with another miniccc
+  version after their VMs launched.
 
   The apps group lists the user apps and SCORCH components on PATH.
   scenario-apps names each app and SCORCH component type of a stored scenario
