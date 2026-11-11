@@ -113,16 +113,23 @@ function sharedFiles(bundle, files, shared) {
   return kept;
 }
 
+// The chunk of the bundle whose module is the file at path view, or
+// undefined when there is none.
+export function viewChunkOf(bundle, view) {
+  return Object.values(bundle).find(
+    (out) =>
+      out.type === 'chunk' &&
+      out.facadeModuleId &&
+      path.resolve(out.facadeModuleId) === path.resolve(view),
+  );
+}
+
 // The files, sorted, that only Builder loads: those its view's chunk loads,
 // less those the rest of the UI can load too, unless shared (a RegExp) matches
 // a module of their chunk. null when the bundle has no chunk for the view.
 export function builderFiles(bundle, view, shared = null) {
   const chunks = Object.values(bundle).filter((out) => out.type === 'chunk');
-  const viewChunk = chunks.find(
-    (chunk) =>
-      chunk.facadeModuleId &&
-      path.resolve(chunk.facadeModuleId) === path.resolve(view),
-  );
+  const viewChunk = viewChunkOf(bundle, view);
   if (!viewChunk) {
     return null;
   }

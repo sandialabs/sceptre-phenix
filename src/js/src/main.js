@@ -51,7 +51,11 @@ library.add(faLinux, faSharkFin, faWindows);
 import App from './App.vue';
 import router, { pendingNavigationHref } from './router.js';
 import { handlePreloadError } from './utils/staleChunk.js';
-import { lazyRouteLoaders, schedulePrefetch } from './utils/prefetch.js';
+import {
+  lazyRouteLoaders,
+  prefetchListedFiles,
+  schedulePrefetch,
+} from './utils/prefetch.js';
 
 const app = createApp(App);
 
@@ -78,3 +82,6 @@ router.isReady().then(() => {
     () => import('@/views/experiment/StoppedExperiment.vue'),
   ]);
 });
+
+// the Builder's files, for every user
+prefetchListedFiles();

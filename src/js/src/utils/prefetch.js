@@ -7,8 +7,9 @@ import { holdOffMs, whenServing } from '@/utils/freshness.js';
 
 // Lazy route components are the functions (not objects) in each record's
 // `components`; calling one starts the dynamic import. A route with
-// `meta.prefetch: false` loads only when a link to it shows that the user
-// will open it (see prefetchRoute).
+// `meta.prefetch: false` is imported only when a link to it shows that the
+// user will open it (see prefetchRoute). For the Builder, prefetchListedFiles
+// also downloads its files after the page loads.
 export function lazyRouteLoaders(routes) {
   const loaders = [];
   for (const route of routes) {
@@ -50,16 +51,46 @@ export function whenIdle(start, timeout) {
 
   // no idle callback (Safari): wait for the page itself to finish loading so
   // the background work never delays it
-  const afterLoad = () => setTimeout(start, 1000);
+  afterPageLoad(() => setTimeout(start, 1000));
+}
+
+// Runs start when the page has finished loading.
+function afterPageLoad(start) {
   if (document.readyState === 'complete') {
-    afterLoad();
+    start();
   } else {
-    window.addEventListener('load', afterLoad, { once: true });
+    window.addEventListener('load', start, { once: true });
   }
 }
 
 export function schedulePrefetch(loaders) {
   whenIdle(() => prefetchSequentially(loaders), 2000);
+}
+
+// The id of the list of file URLs that plugins/builder-prefetch.js writes
+// into the built index.html.
+const FILE_LIST_ID = 'builder-prefetch';
+
+// Adds a prefetch link to the head for each URL in the list, and removes the
+// list, so the links are added one time. Scripts get crossorigin, as their
+// module requests have. Does nothing without the list (dev server, tests).
+function appendPrefetchLinks() {
+  const list = document.getElementById(FILE_LIST_ID);
+  if (!list) return;
+  list.remove();
+  for (const url of JSON.parse(list.textContent)) {
+    const link = document.createElement('link');
+    link.rel = 'prefetch';
+    link.href = url;
+    if (url.endsWith('.js')) link.setAttribute('crossorigin', '');
+    document.head.append(link);
+  }
+}
+
+// Prefetches the files in the build's list after the page loads and the
+// browser is then idle, so the first open of the Builder is fast.
+export function prefetchListedFiles() {
+  afterPageLoad(() => whenIdle(appendPrefetchLinks, 2000));
 }
 
 // The loaders of routes with `meta.prefetch: false` that an intent started.

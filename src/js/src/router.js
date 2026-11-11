@@ -175,9 +175,10 @@ const router = createRouter({
       component: () => import('@/views/Builder.vue'),
       // The editor fills the viewport below the header, so App.vue drops the
       // page container, its padding and the footer for this route. The
-      // editor adds the open diagram to the title (see Builder.vue). Its
-      // large chunk is not prefetched when idle: a pointer or focus on a
-      // link to it starts the load (prefetchRoute in utils/prefetch.js).
+      // editor adds the open diagram to the title (see Builder.vue). The idle
+      // import() skips its large chunk. prefetchListedFiles downloads its files
+      // after the page loads, and a pointer or focus on a link to it starts
+      // the import (prefetchRoute). Both are in utils/prefetch.js.
       meta: { fullBleed: true, title: 'Builder', prefetch: false },
     },
 

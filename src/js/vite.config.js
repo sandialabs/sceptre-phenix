@@ -5,6 +5,7 @@ import vue from '@vitejs/plugin-vue';
 import vueDevTools from 'vite-plugin-vue-devtools';
 
 import builderAssets from './plugins/builder-assets.js';
+import builderPrefetch from './plugins/builder-prefetch.js';
 
 // Vitest leaves out the Playwright suite in e2e/ and the perf/ tooling,
 // which have their own runners.
@@ -17,6 +18,10 @@ const CONTRACT_TESTS = ['test/**/*.contract.test.js'];
 // noVNC 1.7.0 uses top-level await, so the build targets its own browser
 // minimums instead of the Vite default (es2020, Safari 14).
 const BROWSER_TARGET = ['es2022', 'chrome89', 'firefox89', 'safari15'];
+
+const BUILDER_VIEW = fileURLToPath(
+  new URL('./src/views/Builder.vue', import.meta.url),
+);
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -36,10 +41,21 @@ export default defineConfig(({ mode }) => {
       // Compresses the files only Builder loads, and the ELK files it shares
       // with State of Health, for the server (src/go/web/builder_assets.go).
       builderAssets({
-        view: fileURLToPath(
-          new URL('./src/views/Builder.vue', import.meta.url),
-        ),
+        view: BUILDER_VIEW,
         shared: /[\\/]node_modules[\\/]elkjs[\\/]/,
+      }),
+      // The list in index.html of the files that the UI prefetches for
+      // Builder: its chunks and styles, and the files of the modules below.
+      builderPrefetch({
+        view: BUILDER_VIEW,
+        // What src/builder/layouts/elk.js and src/builder/grouping.js import.
+        modules: [
+          fileURLToPath(
+            new URL('./node_modules/elkjs/lib/elk-api.js', import.meta.url),
+          ),
+          `${fileURLToPath(new URL('./node_modules/elkjs/lib/elk-worker.min.js', import.meta.url))}?url`,
+          `${fileURLToPath(new URL('./src/builder/groupingWorker.js', import.meta.url))}?worker`,
+        ],
       }),
     ],
     resolve: {

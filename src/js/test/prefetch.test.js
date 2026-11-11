@@ -4,9 +4,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { BACK_SPREAD_MS, forgetServer, setWsDown } from '@/utils/freshness.js';
 import {
   lazyRouteLoaders,
+  prefetchListedFiles,
   prefetchSequentially,
   schedulePrefetch,
 } from '@/utils/prefetch.js';
+
+import { fileListTag } from '../plugins/builder-prefetch.js';
 
 describe('lazyRouteLoaders', () => {
   test('returns only lazy (function) components', () => {
@@ -163,5 +166,135 @@ describe('schedulePrefetch', () => {
 
     schedulePrefetch([vi.fn()]);
     expect(requestIdleCallback).not.toHaveBeenCalled();
+  });
+});
+
+describe('prefetchListedFiles', () => {
+  const URLS = [
+    '/assets/Builder-A.js',
+    '/assets/Builder-A.css',
+    '/assets/groupingWorker-B.js',
+  ];
+
+  // The list as the build writes it into index.html.
+  function addList(urls) {
+    const { tag, attrs, children } = fileListTag(urls);
+    const list = document.createElement(tag);
+    for (const [name, value] of Object.entries(attrs)) {
+      list.setAttribute(name, value);
+    }
+    list.textContent = children;
+    document.head.append(list);
+  }
+
+  function prefetchLinks() {
+    return [...document.head.querySelectorAll('link[rel="prefetch"]')].map(
+      (link) => ({
+        href: link.getAttribute('href'),
+        crossorigin: link.getAttribute('crossorigin'),
+      }),
+    );
+  }
+
+  function idleCallbacks() {
+    const requestIdleCallback = vi.fn();
+    vi.stubGlobal('requestIdleCallback', requestIdleCallback);
+    return () => {
+      for (const [start] of requestIdleCallback.mock.calls) start();
+    };
+  }
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    document.head.replaceChildren();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  test('waits for the page to load and then for the browser to be idle', () => {
+    vi.spyOn(document, 'readyState', 'get').mockReturnValue('interactive');
+    const requestIdleCallback = vi.fn();
+    vi.stubGlobal('requestIdleCallback', requestIdleCallback);
+    addList(URLS);
+
+    prefetchListedFiles();
+    vi.runAllTimers();
+    expect(requestIdleCallback).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new Event('load'));
+    expect(requestIdleCallback).toHaveBeenCalledOnce();
+    expect(prefetchLinks()).toEqual([]);
+
+    requestIdleCallback.mock.calls[0][0]();
+    expect(prefetchLinks()).toHaveLength(URLS.length);
+  });
+
+  test('adds a prefetch link for each file, with crossorigin only on scripts', () => {
+    const runIdle = idleCallbacks();
+    addList(URLS);
+
+    prefetchListedFiles();
+    runIdle();
+    expect(prefetchLinks()).toEqual([
+      { href: '/assets/Builder-A.js', crossorigin: '' },
+      { href: '/assets/Builder-A.css', crossorigin: null },
+      { href: '/assets/groupingWorker-B.js', crossorigin: '' },
+    ]);
+  });
+
+  test('adds the links for any list of files', () => {
+    const file = fc
+      .tuple(fc.stringMatching(/^[\w.-]{1,12}$/), fc.constantFrom('js', 'css'))
+      .map(([name, ext]) => `/assets/${name}.${ext}`);
+
+    fc.assert(
+      fc.property(fc.uniqueArray(file, { maxLength: 8 }), (urls) => {
+        document.head.replaceChildren();
+        const runIdle = idleCallbacks();
+        addList(urls);
+
+        prefetchListedFiles();
+        runIdle();
+        expect(prefetchLinks()).toEqual(
+          urls.map((href) => ({
+            href,
+            crossorigin: href.endsWith('.js') ? '' : null,
+          })),
+        );
+      }),
+      { numRuns: 50 },
+    );
+  });
+
+  test('adds the links one time, and removes the list', () => {
+    const runIdle = idleCallbacks();
+    addList(URLS);
+
+    prefetchListedFiles();
+    prefetchListedFiles();
+    runIdle();
+    prefetchListedFiles();
+    runIdle();
+    expect(prefetchLinks()).toHaveLength(URLS.length);
+    expect(document.getElementById(fileListTag([]).attrs.id)).toBeNull();
+  });
+
+  test('does nothing without the list, as on the dev server', () => {
+    const runIdle = idleCallbacks();
+
+    prefetchListedFiles();
+    expect(() => runIdle()).not.toThrow();
+    expect(document.head.querySelectorAll('link')).toHaveLength(0);
+  });
+
+  test('skips prefetching when the user asked to save data', () => {
+    const runIdle = idleCallbacks();
+    vi.stubGlobal('navigator', { connection: { saveData: true } });
+    addList(URLS);
+
+    prefetchListedFiles();
+    runIdle();
+    expect(prefetchLinks()).toEqual([]);
   });
 });
