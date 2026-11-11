@@ -10,7 +10,10 @@ import {
   healthProblems,
   injectProblems,
   injectTargets,
+  partitionChoices,
+  partitionLabel,
   partitionTableName,
+  partitionsUnread,
   qcowFeatures,
   qemuImgInfoCommand,
   usedBy,
@@ -316,6 +319,80 @@ describe('the qemu-img info command', () => {
         expect(shellRead(word)).toBe(path);
         if (word !== path) expect(word).toBe(shellQuote(path));
       }),
+    );
+  });
+});
+
+describe('the inject partition choices', () => {
+  it('name each partition by number, file system and start', () => {
+    expect(partitionChoices(diskDetails(), 1)).toEqual([
+      { value: 1, label: '1: ext4, start 1.0 MiB' },
+      { value: 2, label: '2: extended, start 2.0 MiB' },
+      { value: 5, label: '5: Linux swap, start 5.0 MiB' },
+    ]);
+  });
+
+  it('leave out the parts phēnix did not read', () => {
+    const bare = partition(3, 'Linux', '0x83');
+    expect(partitionLabel(bare)).toBe('3: start 3.0 MiB');
+    expect(partitionLabel({ ...bare, start: undefined })).toBe('3');
+    expect(
+      partitionLabel({
+        ...bare,
+        start: undefined,
+        filesystem: { type: 'vfat', version: 'FAT32' },
+      }),
+    ).toBe('3: FAT32');
+  });
+
+  it('keep a current value the disk does not have, in order', () => {
+    expect(partitionChoices(diskDetails(), 3).map((c) => c.label)).toEqual([
+      '1: ext4, start 1.0 MiB',
+      '2: extended, start 2.0 MiB',
+      '3 (not found on the disk)',
+      '5: Linux swap, start 5.0 MiB',
+    ]);
+    expect(partitionChoices(diskDetails(), '5')).toHaveLength(3);
+    expect(partitionChoices(diskDetails(), 0)).toHaveLength(3);
+  });
+
+  it.each([
+    ['none', '', 'The disk has no partition table.'],
+    ['unknown', '', 'phēnix does not know the partition table of the disk.'],
+    ['', '', 'phēnix did not read the partition table of the disk.'],
+    [
+      'mbr',
+      'qemu-img is not installed',
+      'phēnix cannot read the partitions: qemu-img is not installed.',
+    ],
+  ])(
+    'are not known for table %j, unavailable %j',
+    (partitionTable, partitionsUnavailable, why) => {
+      const details = diskDetails({ partitionTable, partitionsUnavailable });
+      expect(partitionChoices(details, 1)).toBeNull();
+      expect(partitionsUnread(details)).toBe(why);
+    },
+  );
+
+  it('offer every partition and the current value, each once, by number', () => {
+    const part = fc
+      .integer({ min: 1, max: 128 })
+      .map((n) => partition(n, 'Linux', '0x83', { fs: 'ext4' }));
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(part, { selector: (p) => p.number, maxLength: 8 }),
+        fc.integer({ min: 0, max: 130 }),
+        (partitions, current) => {
+          const values = partitionChoices(
+            diskDetails({ partitionTable: 'gpt', partitions }),
+            current,
+          ).map((c) => c.value);
+          const want = new Set(partitions.map((p) => p.number));
+          if (current) want.add(current);
+          expect(values).toEqual([...want].sort((a, b) => a - b));
+        },
+      ),
+      { numRuns: 100 },
     );
   });
 });

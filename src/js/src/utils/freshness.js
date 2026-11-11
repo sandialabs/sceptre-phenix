@@ -105,9 +105,17 @@ export const RESOURCES = {
   captureCount: { pollMs: 30 * SECOND },
 };
 
-// Rules for the keys that name one experiment: its page, running or stopped,
-// and its SCORCH runs page.
+// Rules for the keys that name one experiment (its page, running or stopped,
+// and its SCORCH runs page) or one disk image's details, by its full path.
 const PREFIXES = [
+  {
+    prefix: 'diskdetails/',
+    resource: {
+      live: true,
+      reuseMs: MINUTE,
+      invalidatedBy: [(msg) => type(msg) === 'disks'],
+    },
+  },
   {
     prefix: 'scorchruns/',
     resource: {

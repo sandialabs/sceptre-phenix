@@ -734,6 +734,14 @@ describe('resourceFor', () => {
     expect(resourceFor(null)).toBeUndefined();
   });
 
+  it("reuses a disk's details for a minute, until the disks change", () => {
+    const rules = resourceFor('diskdetails//phenix/images/kali.qc2');
+    expect(rules.reuseMs).toBe(60 * 1000);
+    const [matches] = rules.invalidatedBy;
+    expect(matches({ resource: { type: 'disks' } })).toBe(true);
+    expect(matches({ resource: { type: 'experiment' } })).toBe(false);
+  });
+
   it("invalidates an experiment's page only for messages about it", () => {
     const [matches] = resourceFor('experiment/exp1').invalidatedBy;
     const msg = (type, name) => ({ resource: { type, name } });

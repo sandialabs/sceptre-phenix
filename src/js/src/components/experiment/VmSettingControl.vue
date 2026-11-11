@@ -63,6 +63,13 @@ its focus; a mark tells a value changed from the topology's. -->
         expanded
         @update:model-value="pick" />
 
+      <PartitionSelect
+        v-else-if="field == 'inject_partition'"
+        :model-value="shown"
+        :disk="vm.disk"
+        :label="`Partition for VM ${vm.name}`"
+        @update:model-value="pick" />
+
       <b-tooltip
         v-else-if="field == 'snapshot'"
         :label="persistTip"
@@ -139,6 +146,7 @@ its focus; a mark tells a value changed from the topology's. -->
 <script>
   import DiskWarning from '@/components/DiskWarning.vue';
   import DiskSelect from './DiskSelect.vue';
+  import PartitionSelect from './PartitionSelect.vue';
   import {
     chainProblem,
     diskLabel,
@@ -148,7 +156,6 @@ its focus; a mark tells a value changed from the topology's. -->
   } from '@/utils/diskChain.js';
   import {
     CPU_CHOICES,
-    PARTITION_CHOICES,
     RAM_CHOICES,
     changedSettings,
     changedTip,
@@ -160,24 +167,21 @@ its focus; a mark tells a value changed from the topology's. -->
   const FIELD_NAMES = {
     cpus: 'CPUs',
     ram: 'Memory',
-    inject_partition: 'Partition',
   };
 
   const SELECT_TIPS = {
     cpus: "menu for assigning the VM's CPUs",
     ram: "menu for assigning the VM's memory",
-    inject_partition: 'menu for assigning inject partition',
   };
 
   const CHOICES = {
     cpus: CPU_CHOICES,
     ram: RAM_CHOICES,
-    inject_partition: PARTITION_CHOICES,
   };
 
   export default {
     name: 'VmSettingControl',
-    components: { DiskSelect, DiskWarning },
+    components: { DiskSelect, DiskWarning, PartitionSelect },
     setup() {
       return {
         FIELD_NAMES,

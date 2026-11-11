@@ -1,9 +1,11 @@
 // What the Disks page's details card shows of a disk image, from the disk
 // list (GET disks) and the details the server reads from the image when the
 // card opens (GET disks/details, DiskDetails in openapi.yml).
-import { parseBytes } from '@/utils/bytes.js';
+import * as disksApi from '@/api/disks.js';
+import { bytesText, parseBytes } from '@/utils/bytes.js';
 import { OUTSIDE_GROUP, chainProblem } from '@/utils/diskChain.js';
 import { formatIssueLevel, formatIssueName } from '@/utils/diskFormat.js';
+import { cachedPage, isInvalidated, recentPage } from '@/utils/pageCache.js';
 import { listText, pluralWord } from '@/utils/plural.js';
 import { shellWord } from '@/utils/shell.js';
 
@@ -82,6 +84,80 @@ export function allocation(disk, details) {
 
 // a VM as the card names it: "kali (bennu)"
 const vmName = (use) => `${use.vm} (${use.experiment})`;
+
+// the page cache key of a disk's details, by its full path (see freshness.js)
+const detailsKey = (path) => `diskdetails/${path}`;
+
+// The details of the disk at a full path, from the cache when recent, joining
+// the request that loads them when one is running: one request for each disk,
+// however many controls ask.
+export function readDiskDetails(path) {
+  return recentPage(
+    detailsKey(path),
+    async (signal, meta) =>
+      (await disksApi.getDiskDetails(path, { signal, meta })).data ?? {},
+  );
+}
+
+// the cached details of the disk at a full path, or null when there are none
+// or a change made them out of date
+export function cachedDiskDetails(path) {
+  const entry = path ? cachedPage(detailsKey(path)) : undefined;
+  return entry && !isInvalidated(entry) ? entry.data : null;
+}
+
+// A partition as the inject partition picker names it, with what the card
+// shows of it: "1: ext4, start 1.0 MiB". Parts it does not know are left out.
+export function partitionLabel(partition) {
+  const fs = partition.extended
+    ? 'extended'
+    : filesystemName(partition.filesystem);
+  const start = Number.isFinite(partition.start)
+    ? `start ${bytesText(partition.start)}`
+    : '';
+  const parts = [fs, start].filter(Boolean);
+  return parts.length
+    ? `${partition.number}: ${parts.join(', ')}`
+    : String(partition.number);
+}
+
+// The inject partition choices of a disk, from its details: its partitions
+// as { value, label }, by number, plus the current value when the disk does
+// not have it. Null when phēnix did not read an MBR or GPT table.
+export function partitionChoices(details, current) {
+  if (
+    !['mbr', 'gpt'].includes(details?.partitionTable) ||
+    details.partitionsUnavailable
+  ) {
+    return null;
+  }
+  const choices = (details.partitions ?? [])
+    .filter((p) => p.number > 0)
+    .map((p) => ({ value: p.number, label: partitionLabel(p) }));
+  const value = Number(current);
+  if (
+    current &&
+    Number.isFinite(value) &&
+    !choices.some((c) => c.value === value)
+  ) {
+    choices.push({ value, label: `${value} (not found on the disk)` });
+  }
+  return choices.sort((a, b) => a.value - b.value);
+}
+
+// Why the inject partition picker cannot list a disk's partitions from its
+// details, in a sentence.
+export function partitionsUnread(details) {
+  if (details?.partitionsUnavailable) {
+    return `phēnix cannot read the partitions: ${details.partitionsUnavailable}.`;
+  }
+  if (details?.partitionTable === 'none')
+    return 'The disk has no partition table.';
+  if (details?.partitionTable === 'unknown') {
+    return 'phēnix does not know the partition table of the disk.';
+  }
+  return 'phēnix did not read the partition table of the disk.';
+}
 
 // The VMs that inject files into each partition of the disk, by partition
 // number: only the first drive of a VM gets files, into its inject partition.
