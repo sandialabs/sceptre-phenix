@@ -321,6 +321,28 @@
       </b-table-column>
 
       <b-table-column
+        field="inUse"
+        label="In Use"
+        width="7em"
+        centered
+        sortable
+        header-class="sort-inline"
+        :custom-sort="sortByUse"
+        v-slot="props">
+        <template v-if="usersOf(props.row)?.length">
+          <b-tooltip
+            :label="`In use by ${usersText(props.row)}`"
+            type="is-dark"
+            multilined>
+            <b-icon icon="flask" size="is-small" />
+            <span class="is-sr-only">Yes, by {{ usersText(props.row) }}</span>
+          </b-tooltip>
+        </template>
+        <span v-else-if="usersOf(props.row)" class="is-sr-only">No</span>
+        <span v-else class="is-sr-only">Not applicable</span>
+      </b-table-column>
+
+      <b-table-column
         field="metadata.updated"
         label="Last Updated"
         header-class="sort-inline"
@@ -419,6 +441,13 @@
     builderLink,
     builderTagLabel,
   } from '@/builder/configs.js';
+
+  // the annotation of an experiment that names the config it was made from,
+  // by the kind of that config
+  const USE_ANNOTATION = { Topology: 'topology', Scenario: 'scenario' };
+
+  // the most experiments an In Use tooltip names
+  const USERS_SHOWN = 10;
 
   export default {
     components: { ConfigViewer, StatStrip, TimeWithAge },
@@ -548,19 +577,25 @@
         return 'No configs match your search';
       },
       // The listed experiments whose topology or scenario annotation names
-      // the topology or scenario in the viewer; null for other kinds.
+      // each topology and scenario, sorted, by config key.
+      configUsers() {
+        const users = new Map();
+        for (const c of this.configs) {
+          if (c.kind !== 'Experiment') continue;
+          for (const [kind, key] of Object.entries(USE_ANNOTATION)) {
+            const name = c.metadata.annotations?.[key];
+            if (!name) continue;
+            const used = `${kind}/${name}`;
+            users.set(used, [...(users.get(used) ?? []), c.metadata.name]);
+          }
+        }
+        for (const list of users.values()) list.sort();
+        return users;
+      },
+      // the experiments that use the topology or scenario in the viewer;
+      // null for other kinds
       viewerUsedBy() {
-        const cfg = this.viewer.config;
-        const key = { Topology: 'topology', Scenario: 'scenario' }[cfg?.kind];
-        if (!key) return null;
-        return this.configs
-          .filter(
-            (c) =>
-              c.kind === 'Experiment' &&
-              c.metadata.annotations?.[key] === cfg.metadata.name,
-          )
-          .map((c) => c.metadata.name)
-          .toSorted();
+        return this.viewer.config ? this.usersOf(this.viewer.config) : null;
       },
       paginationNeeded() {
         return this.filteredConfigs.length > this.table.perPage;
@@ -625,6 +660,26 @@
       loadEditor() {
         // the editor reports a failure when opened
         loadAce().catch(() => {});
+      },
+
+      // The listed experiments that use a topology or scenario, or null for
+      // a kind that no experiment names.
+      usersOf(cfg) {
+        if (!USE_ANNOTATION[cfg?.kind]) return null;
+        return this.configUsers.get(configKey(cfg)) ?? [];
+      },
+      // the experiments that use a config, as a tooltip names them
+      usersText(cfg) {
+        const users = this.usersOf(cfg) ?? [];
+        const shown = users.slice(0, USERS_SHOWN).join(', ');
+        const more = users.length - USERS_SHOWN;
+        return more > 0 ? `${shown} and ${more} more` : shown;
+      },
+      // by how many experiments use each config; the kinds no experiment
+      // names come first
+      sortByUse(a, b, isAsc) {
+        const count = (cfg) => this.usersOf(cfg)?.length ?? -1;
+        return (count(a) - count(b)) * (isAsc ? 1 : -1);
       },
 
       sortByUpdated(a, b, isAsc) {

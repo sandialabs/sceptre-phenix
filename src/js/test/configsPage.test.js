@@ -154,6 +154,84 @@ describe('the config list', () => {
     }
   });
 
+  describe('In Use column', () => {
+    const exp = (name, annotations) => ({
+      kind: 'Experiment',
+      metadata: { name, annotations },
+    });
+    const image = { kind: 'Image', metadata: { name: 'web' } };
+    const lab = { kind: 'Topology', metadata: { name: 'lab' } };
+    const configs = [
+      topology,
+      scenario,
+      lab,
+      image,
+      exp('zeta', { topology: 'web', scenario: 'web' }),
+      exp('alpha', { topology: 'web' }),
+      exp('other', { topology: 'missing' }),
+    ];
+
+    // each row's In Use cell: its words for a screen reader, and its tooltip
+    const uses = (wrapper) =>
+      tableRows(wrapper).map((cells) => {
+        const tip = cells['In Use'].findComponent({ name: 'BTooltip' });
+        return [
+          `${textOf(cells.Kind)} ${textOf(cells.Name.find('.config-name'))}`,
+          textOf(cells['In Use'].find('.is-sr-only')),
+          tip.exists() ? textOf(tip.vm.$refs.content) : '',
+        ];
+      });
+
+    it('names the experiments made from each topology and scenario, in words too', async () => {
+      const wrapper = await list(configs);
+      const byRow = Object.fromEntries(
+        uses(wrapper).map(([name, ...cell]) => [name, cell]),
+      );
+
+      expect(byRow).toEqual({
+        'Topology web': ['Yes, by alpha, zeta', 'In use by alpha, zeta'],
+        'Scenario web': ['Yes, by zeta', 'In use by zeta'],
+        'Topology lab': ['No', ''],
+        'Image web': ['Not applicable', ''],
+        'Experiment zeta': ['Not applicable', ''],
+        'Experiment alpha': ['Not applicable', ''],
+        'Experiment other': ['Not applicable', ''],
+      });
+    });
+
+    it('names at most ten experiments, then how many more', async () => {
+      const many = Array.from({ length: 12 }, (_, i) =>
+        exp(`e${String(i).padStart(2, '0')}`, { topology: 'web' }),
+      );
+      const wrapper = await list([topology, ...many]);
+
+      const [, , tip] = uses(wrapper).find(([name]) => name === 'Topology web');
+      expect(tip).toBe(
+        `In use by ${many
+          .slice(0, 10)
+          .map((e) => e.metadata.name)
+          .join(', ')} and 2 more`,
+      );
+    });
+
+    it('sorts by how many experiments use each config, the kinds none can use first', async () => {
+      const wrapper = await list(configs);
+      const header = wrapper
+        .findAll('thead th')
+        .find((th) => textOf(th) === 'In Use');
+
+      await header.trigger('click');
+      expect(uses(wrapper).map(([, words]) => words)).toEqual([
+        ...Array(4).fill('Not applicable'),
+        'No',
+        'Yes, by zeta',
+        'Yes, by alpha, zeta',
+      ]);
+      await header.trigger('click');
+      expect(uses(wrapper)[0][1]).toBe('Yes, by alpha, zeta');
+    });
+  });
+
   // whether each row's download button spins, by kind
   const rowSpinners = (wrapper) =>
     Object.fromEntries(

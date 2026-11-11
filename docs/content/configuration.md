@@ -710,6 +710,12 @@ count of a kind to filter on that kind. Click the `Configs` total, or the
 count of the kind again, to show all kinds. The `Kind` selector shows the same
 filter.
 
+The `In Use` column shows an icon for a topology or scenario that an
+experiment uses. An experiment uses the topology or scenario that its
+`topology` or `scenario` annotation names. This includes experiments that are
+not running. Hold the pointer on the icon to see the names of the experiments.
+For the other kinds of config, the column is empty.
+
 ### View a Config
 
 There are two ways to view a specific config:
