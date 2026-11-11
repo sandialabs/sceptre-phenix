@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -278,15 +279,10 @@ func GetApp(name string) App {
 	return app()
 }
 
-// DefaultApps returns a slice of all the initialized default phenix apps.
+// DefaultApps returns the names of the default phenix apps, sorted, which is
+// the order ApplyApps runs them in.
 func DefaultApps() []string {
-	apps := make([]string, 0, len(defaultApps))
-
-	for app := range defaultApps {
-		apps = append(apps, app)
-	}
-
-	return apps
+	return slices.Sorted(maps.Keys(defaultApps))
 }
 
 // ExperimentApps returns the names of all apps (default and scenario) that

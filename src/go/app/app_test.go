@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/app"
 	"phenix/store"
@@ -341,6 +342,18 @@ func TestExperimentAppsIncludesDefaultAndScenarioApps(t *testing.T) {
 	for _, d := range app.DefaultApps() {
 		if !seen[d] {
 			t.Fatalf("expected experiment apps to include default app %s, got: %v", d, names)
+		}
+	}
+}
+
+// The default apps run in one fixed order, so logs and progress list them the
+// same way on each start.
+func TestDefaultAppsHaveAFixedOrder(t *testing.T) {
+	want := []string{"ntp", "serial", "startup", "vrouter"}
+
+	for range 20 {
+		if diff := cmp.Diff(want, app.DefaultApps()); diff != "" {
+			t.Fatalf("DefaultApps() mismatch (-want +got):\n%s", diff)
 		}
 	}
 }
