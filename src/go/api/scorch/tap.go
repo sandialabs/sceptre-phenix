@@ -65,7 +65,7 @@ func (t Tap) Start(ctx context.Context) error {
 
 	var status scorchmd.ScorchStatus
 
-	err = t.options.Exp.Status.ParseAppStatus("scorch", &status)
+	err = t.options.Exp.Status.ParseAppStatus(appName, &status)
 	if err != nil {
 		return fmt.Errorf("getting experiment status for scorch app: %w", err)
 	}
@@ -88,7 +88,7 @@ func (t Tap) deleteTap() error {
 
 	var status scorchmd.ScorchStatus
 
-	if err := t.options.Exp.Status.ParseAppStatus("scorch", &status); err != nil {
+	if err := t.options.Exp.Status.ParseAppStatus(appName, &status); err != nil {
 		return nil //nolint:nilerr // missing status means no taps were recorded
 	}
 
@@ -116,14 +116,14 @@ func setScorchStatus(exp *types.Experiment, fn func(*scorchmd.ScorchStatus)) err
 	apply := func(s ifaces.ExperimentStatus) {
 		var status scorchmd.ScorchStatus
 
-		_ = s.ParseAppStatus("scorch", &status) // a missing status stays empty
+		_ = s.ParseAppStatus(appName, &status) // a missing status stays empty
 
 		if status.Taps == nil {
 			status.Taps = make(map[string]*tap.Tap)
 		}
 
 		fn(&status)
-		s.SetAppStatus("scorch", status)
+		s.SetAppStatus(appName, status)
 	}
 
 	apply(exp.Status)
@@ -150,7 +150,7 @@ func discoverUsedPairs() []netaddr.IPPrefix {
 	for _, exp := range running {
 		var scorch scorchmd.ScorchStatus
 
-		err = exp.Status.ParseAppStatus("scorch", &scorch)
+		err = exp.Status.ParseAppStatus(appName, &scorch)
 		if err == nil {
 			for _, tap := range scorch.Taps {
 				if pair, parseErr := netaddr.ParseIPPrefix(tap.Subnet); parseErr == nil {

@@ -216,7 +216,7 @@ func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data [
 	if len(stdoutBytes) != 0 {
 		plog.Info(plog.TypePhenixApp, string(stdoutBytes),
 			"experiment", u.options.Exp.Spec.ExperimentName(),
-			"app", "scorch",
+			"app", appName,
 			"component", u.options.Name,
 			"stage", string(stage),
 			"run", strconv.Itoa(u.options.Run),

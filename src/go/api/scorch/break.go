@@ -84,7 +84,7 @@ func (b Break) breakPoint(ctx context.Context, stage Action) error {
 
 		var status scorchmd.ScorchStatus
 
-		err := b.options.Exp.Status.ParseAppStatus("scorch", &status)
+		err := b.options.Exp.Status.ParseAppStatus(appName, &status)
 		if err != nil {
 			return fmt.Errorf("getting experiment status for scorch app: %w", err)
 		}

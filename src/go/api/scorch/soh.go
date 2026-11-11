@@ -197,7 +197,7 @@ func (s SOH) check(ctx context.Context, stage Action) error {
 	updateComponent(string(body) + "\n")
 
 	var (
-		runDir = filepath.Join(exp.FilesDir(), "scorch", fmt.Sprintf("run-%d", s.options.Run))
+		runDir = filepath.Join(exp.FilesDir(), appName, fmt.Sprintf("run-%d", s.options.Run))
 		path   = filepath.Join(
 			runDir,
 			s.options.Name,

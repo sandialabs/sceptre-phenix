@@ -32,6 +32,7 @@ import (
 )
 
 const (
+	appName        = "scorch"
 	statusRunning  = "running"
 	statusSuccess  = "success"
 	statusFailure  = "failure"
@@ -45,7 +46,7 @@ const (
 )
 
 func init() { //nolint:gochecknoinits // app registration
-	_ = app.RegisterUserApp("scorch", func() app.App { return newScorch(scorch.UpdatePipeline) })
+	_ = app.RegisterUserApp(appName, func() app.App { return newScorch(scorch.UpdatePipeline) })
 }
 
 type Scorch struct {
@@ -64,14 +65,14 @@ func (*Scorch) Init(...app.Option) error {
 }
 
 func (Scorch) Name() string {
-	return "scorch"
+	return appName
 }
 
 func (Scorch) Configure(ctx context.Context, exp *types.Experiment) error {
 	var app ifaces.ScenarioApp
 
 	for _, app = range exp.Apps() {
-		if app.Name() == "scorch" {
+		if app.Name() == appName {
 			break // this will keep `app` set to SCORCH app
 		}
 	}
@@ -114,7 +115,7 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 
 	var (
 		runID  = scorchexe.MustRunID(ctx)
-		runDir = filepath.Join(exp.FilesDir(), "scorch", fmt.Sprintf("run-%d", runID))
+		runDir = filepath.Join(exp.FilesDir(), appName, fmt.Sprintf("run-%d", runID))
 		start  = time.Now().UTC()
 	)
 
@@ -336,7 +337,7 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 				"err",
 				err,
 				"app",
-				"scorch",
+				appName,
 			)
 		}
 
@@ -370,7 +371,7 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 				"max",
 				maxTimer,
 				"app",
-				"scorch",
+				appName,
 			)
 
 			_ = cmd.Process.Signal(os.Interrupt)
@@ -391,7 +392,7 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 					"err",
 					err,
 					"app",
-					"scorch",
+					appName,
 				)
 
 				_ = cmd.Process.Signal(os.Interrupt)
@@ -407,7 +408,7 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 					"err",
 					err,
 					"app",
-					"scorch",
+					appName,
 				)
 
 				_ = cmd.Process.Signal(os.Interrupt)
@@ -425,7 +426,7 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 					"err",
 					err,
 					"app",
-					"scorch",
+					appName,
 				)
 
 				_ = cmd.Process.Signal(os.Interrupt)
@@ -443,7 +444,7 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 					"err",
 					err,
 					"app",
-					"scorch",
+					appName,
 				)
 
 				continue
@@ -475,7 +476,7 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 					plog.TypePhenixApp,
 					"Filebeat has completed harvesting inputs",
 					"app",
-					"scorch",
+					appName,
 				)
 
 				_ = cmd.Process.Signal(os.Interrupt)
@@ -571,7 +572,7 @@ func executor(
 		"replacements",
 		mergedReplacements,
 		"app",
-		"scorch",
+		appName,
 	)
 
 	options.Replacements = mergedReplacements
