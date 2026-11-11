@@ -180,7 +180,8 @@ experiment, and a grid of the whole ID space.
             :states="states"
             :outlines="outlines"
             :shown="filtering ? shownIds : null"
-            @open="openVlan" />
+            @open="openVlan"
+            @select="openRange" />
           <p v-else class="vlans-empty">{{ loadingText('VLANs') }}</p>
         </template>
         <template v-else>
@@ -214,8 +215,16 @@ experiment, and a grid of the whole ID space.
           </div>
         </template>
       </div>
+      <VlanRangeDetails
+        v-if="panelOpen && query.range"
+        :range="query.range"
+        class="vlans-panel"
+        :data="data"
+        :states="states"
+        @close="closePanel"
+        @open="openVlan" />
       <VlanDetails
-        v-if="panelOpen"
+        v-else-if="panelOpen"
         :vlan="query.vlan"
         class="vlans-panel"
         :data="data"
@@ -241,6 +250,7 @@ experiment, and a grid of the whole ID space.
   import VlanFreeFinder from '@/components/vlans/VlanFreeFinder.vue';
   import VlanGrid from '@/components/vlans/VlanGrid.vue';
   import VlanIdsDialog from '@/components/vlans/VlanIdsDialog.vue';
+  import VlanRangeDetails from '@/components/vlans/VlanRangeDetails.vue';
   import VlanRangeDialog from '@/components/vlans/VlanRangeDialog.vue';
   import { escapeHTML } from '@/utils/escapeHTML.js';
   import { showError, useErrorNotification } from '@/utils/errorNotif.js';
@@ -252,6 +262,7 @@ experiment, and a grid of the whole ID space.
   import {
     FILTERS,
     MIN_VLAN,
+    SELECTION_COLOR,
     cardIds,
     conflictSuggestions,
     idStates,
@@ -292,6 +303,7 @@ experiment, and a grid of the whole ID space.
       VlanFreeFinder,
       VlanGrid,
       VlanIdsDialog,
+      VlanRangeDetails,
       VlanRangeDialog,
     },
     directives: { masonry: vMasonry },
@@ -386,14 +398,23 @@ experiment, and a grid of the whole ID space.
         return 'No cards match the filter or the search.';
       },
       panelOpen() {
-        return this.loaded && this.query.vlan !== null;
+        return (
+          this.loaded && (this.query.vlan !== null || this.query.range !== null)
+        );
       },
       selectedCard() {
         return this.cards.find((card) => card.key === this.selected) ?? null;
       },
-      // the selected card's range and IDs, and a free block found
+      // the IDs selected in the ID space view, the selected card's range and
+      // IDs, and a free block found
       outlines() {
         const list = [];
+        if (this.query.range) {
+          const [first, last] = this.query.range;
+          const ids = new Set();
+          for (let id = first; id <= last; id++) ids.add(id);
+          list.push({ label: 'Selected IDs', color: SELECTION_COLOR, ids });
+        }
         const card = this.selectedCard;
         if (card?.range) {
           const ids = new Set();
@@ -511,13 +532,18 @@ experiment, and a grid of the whole ID space.
       },
       // opens the details of an ID; closing them puts focus back here
       openVlan(id) {
-        if (this.query.vlan === null) this.opener = document.activeElement;
-        this.setQuery({ vlan: id });
+        if (!this.panelOpen) this.opener = document.activeElement;
+        this.setQuery({ vlan: id, range: null });
+      },
+      // opens the details of each ID of a range, [first, last]
+      openRange(range) {
+        if (!this.panelOpen) this.opener = document.activeElement;
+        this.setQuery({ vlan: null, range });
       },
       closePanel() {
         const opener = this.opener;
         this.opener = null;
-        this.setQuery({ vlan: null });
+        this.setQuery({ vlan: null, range: null });
         this.$nextTick(() => {
           if (opener?.isConnected) opener.focus();
         });

@@ -138,6 +138,33 @@ describe('the By experiment view', () => {
     );
   });
 
+  it('sets the pinned aliases apart from the others by edge, ground and a thumbtack', async () => {
+    const wrapper = await page();
+    const rows = (name) =>
+      expCard(wrapper, name)
+        .findAll('.vlan-alias')
+        .map((li) => [
+          textOf(li.find('.vlan-alias-name')),
+          li.classes('vlan-alias-pinned')
+            ? 'pinned'
+            : li.classes('vlan-alias-unpinned')
+              ? 'unpinned'
+              : '',
+          li.find('.vlan-pin-icon').exists(),
+        ]);
+    expect(rows('red-team-2')).toEqual([
+      ['RT_C2', 'pinned', true],
+      ['RT_TARGET', 'pinned', true],
+      ['TAP_TEMP', 'unpinned', false],
+    ]);
+    // minimega alone holds the IDs of a namespace with no experiment
+    expect(
+      card(wrapper, 'namespace:old-demo')
+        .findAll('.vlan-alias')
+        .every((li) => li.classes('vlan-alias-unpinned')),
+    ).toBe(true);
+  });
+
   it('offers the fixes each card needs', async () => {
     const wrapper = await page();
     expect(
@@ -428,6 +455,173 @@ describe('the ID space view', () => {
     expect(textOf(wrapper.find('.vlan-grid-legend'))).toContain(
       'IDs of substation-a',
     );
+  });
+});
+
+describe('a range of IDs in the ID space view', () => {
+  const canvas = (wrapper) => wrapper.find('.vlan-grid-canvas');
+  const cursor = (wrapper) => wrapper.find('[data-testid="vlan-grid-cursor"]');
+  // the middle of the cell of an ID; the grid has no layout here, so its
+  // canvas starts at 0, 0
+  const at = (id) => ({
+    clientX: (id % 64) * 9 + 4,
+    clientY: Math.floor(id / 64) * 9 + 4,
+    button: 0,
+    pointerId: 1,
+  });
+
+  async function drag(wrapper, from, to) {
+    await canvas(wrapper).trigger('pointerdown', at(from));
+    await canvas(wrapper).trigger('pointermove', at(to));
+    await canvas(wrapper).trigger('pointerup', at(to));
+    await flushPromises();
+  }
+
+  const panel = (wrapper) => wrapper.find('.vlan-range-details');
+  const entries = (wrapper) =>
+    panel(wrapper)
+      .findAll('.vlan-range-id')
+      .map((li) => [
+        textOf(li.find('.vlan-id')),
+        textOf(li.find('.tag')),
+        li.findAll('.vlan-range-lines li').map((l) => textOf(l)),
+      ]);
+
+  it('shows the details of each ID in use that a drag crosses, in either direction', async () => {
+    const wrapper = await page('/vlans?view=grid');
+    await canvas(wrapper).trigger('pointerdown', at(104));
+    await canvas(wrapper).trigger('pointermove', at(100));
+    expect(textOf(wrapper.find('.vlan-grid-status'))).toBe(
+      'IDs 100 to 104: release to show their details.',
+    );
+    await canvas(wrapper).trigger('pointerup', at(100));
+    await flushPromises();
+
+    expect(query(wrapper)).toEqual({ view: 'grid', vlans: '100-104' });
+    expect(textOf(panel(wrapper).find('.vlan-details-title'))).toBe(
+      'VLANs 100–104',
+    );
+    expect(textOf(panel(wrapper).find('.vlan-range-summary'))).toBe(
+      '5 IDs: 1 pinned only; 2 allocated; 2 conflict or unowned.',
+    );
+    expect(entries(wrapper)).toEqual([
+      [
+        'VLAN 100',
+        'Conflict or unowned',
+        ['phēnix: lab pins MGMT', 'Blacklist: minimega gives it to no alias'],
+      ],
+      [
+        'VLAN 101',
+        'Allocated',
+        ['phēnix: substation-a pins MGMT', 'minimega: substation-a: MGMT'],
+      ],
+      [
+        'VLAN 102',
+        'Conflict or unowned',
+        [
+          'phēnix: scratch pins EXP',
+          'phēnix: substation-a pins SCADA',
+          'minimega: substation-a: SCADA',
+        ],
+      ],
+      [
+        'VLAN 103',
+        'Allocated',
+        ['phēnix: substation-a pins FIELD', 'minimega: substation-a: FIELD'],
+      ],
+      ['VLAN 104', 'Pinned only', ['phēnix: substation-a pins CORP']],
+    ]);
+    expect(textOf(panel(wrapper))).toContain('substation-a 100–199');
+    expect(textOf(panel(wrapper))).toContain(
+      'substation-a SCADA: Also pinned by scratch (EXP).',
+    );
+    // the range is outlined, with its name in the legend
+    expect(textOf(wrapper.find('.vlan-grid-legend'))).toContain('Selected IDs');
+    // the panel reads nothing from the server
+    expect(axios.get).not.toHaveBeenCalled();
+  });
+
+  it('opens the details of one ID for a press and release on it', async () => {
+    const wrapper = await page('/vlans?view=grid');
+    await drag(wrapper, 102, 102);
+    expect(query(wrapper)).toEqual({ view: 'grid', vlan: '102' });
+    expect(textOf(wrapper.find('.vlan-details-title'))).toBe('VLAN 102');
+  });
+
+  it('selects from the last ID opened to the one clicked with Shift', async () => {
+    const wrapper = await page('/vlans?view=grid');
+    await drag(wrapper, 300, 300);
+    await canvas(wrapper).trigger('pointerdown', at(330));
+    await canvas(wrapper).trigger('pointerup', { ...at(330), shiftKey: true });
+    await flushPromises();
+    expect(query(wrapper)).toEqual({ view: 'grid', vlans: '300-330' });
+    expect(entries(wrapper).map(([id]) => id)).toEqual([
+      'VLAN 301',
+      'VLAN 302',
+      'VLAN 330',
+    ]);
+  });
+
+  it('selects from the last ID opened to the cursor with Shift+Enter', async () => {
+    const wrapper = await page('/vlans?view=grid');
+    await cursor(wrapper).trigger('keydown', { key: 'End', ctrlKey: true });
+    await cursor(wrapper).trigger('click');
+    await flushPromises();
+    expect(query(wrapper)).toEqual({ view: 'grid', vlan: '4094' });
+    for (let i = 0; i < 3; i++) {
+      await cursor(wrapper).trigger('keydown', { key: 'ArrowLeft' });
+    }
+    const event = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      shiftKey: true,
+      cancelable: true,
+    });
+    cursor(wrapper).element.dispatchEvent(event);
+    await flushPromises();
+    expect(event.defaultPrevented).toBe(true);
+    expect(query(wrapper)).toEqual({ view: 'grid', vlans: '4091-4094' });
+    expect(textOf(panel(wrapper))).toContain(
+      'No experiment or minimega namespace uses these IDs.',
+    );
+  });
+
+  it('leaves out the IDs that are not valid, and the other buttons', async () => {
+    const wrapper = await page('/vlans?view=grid');
+    await drag(wrapper, 0, 0);
+    await canvas(wrapper).trigger('pointerdown', { ...at(5), button: 2 });
+    await canvas(wrapper).trigger('pointerup', at(5));
+    await flushPromises();
+    expect(query(wrapper)).toEqual({ view: 'grid' });
+  });
+
+  it("opens an ID's own details from the range, and gives focus back as it closes", async () => {
+    const wrapper = await page('/vlans?view=grid');
+    cursor(wrapper).element.focus();
+    await drag(wrapper, 100, 110);
+    expect(document.activeElement).toBe(
+      panel(wrapper).find('.vlan-details-title').element,
+    );
+    await panel(wrapper).find('[aria-label="Show VLAN 110"]').trigger('click');
+    await flushPromises();
+    expect(query(wrapper)).toEqual({ view: 'grid', vlan: '110' });
+    expect(panel(wrapper).exists()).toBe(false);
+    await wrapper.find('.vlan-details-close').trigger('click');
+    await flushPromises();
+    expect(query(wrapper)).toEqual({ view: 'grid' });
+    expect(document.activeElement).toBe(cursor(wrapper).element);
+  });
+
+  it('opens on the range a link names', async () => {
+    const wrapper = await page('/vlans?view=grid&vlans=398-403');
+    expect(textOf(panel(wrapper).find('.vlan-range-summary'))).toBe(
+      '6 IDs: 2 free, in a range; 4 conflict or unowned.',
+    );
+    expect(entries(wrapper).map(([id, state]) => `${id} ${state}`)).toEqual([
+      'VLAN 400 Conflict or unowned',
+      'VLAN 401 Conflict or unowned',
+      'VLAN 402 Conflict or unowned',
+      'VLAN 403 Conflict or unowned',
+    ]);
   });
 });
 

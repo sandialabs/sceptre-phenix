@@ -12,9 +12,11 @@
       <div
         class="vlan-grid-canvas"
         :style="{ width: `${size}px`, height: `${size}px` }"
-        @click="onClick"
-        @mousemove="onHover"
-        @mouseleave="hovered = null">
+        @pointerdown="onPointerDown"
+        @pointermove="onPointerMove"
+        @pointerup="onPointerUp"
+        @pointercancel="endDrag"
+        @pointerleave="hovered = null">
         <canvas
           ref="canvas"
           :width="size * scale"
@@ -29,13 +31,15 @@
           :aria-describedby="`${uid}-help`"
           data-testid="vlan-grid-cursor"
           @keydown="onKey"
-          @click.stop="$emit('open', active)"></button>
+          @click.stop="open(active)"></button>
       </div>
     </div>
     <p :id="`${uid}-help`" class="is-sr-only">
       Use the arrow keys to move between IDs, Page Up and Page Down to move 8
       rows, and Home and End to go to the start or end of a row. Press Enter to
-      show the details of an ID.
+      show the details of an ID. Press Shift+Enter to show the details of each
+      ID from the last ID that you opened to this ID. With a pointer, drag
+      across IDs, or hold Shift and click an ID.
     </p>
     <p class="vlan-grid-status">{{ statusText }}</p>
     <ul class="vlan-grid-legend" aria-label="Legend">
@@ -61,6 +65,7 @@
     ID_SPACE,
     MAX_VLAN,
     MIN_VLAN,
+    SELECTION_COLOR,
     STATE,
     STATE_INFO,
     cellText,
@@ -95,13 +100,18 @@
       // the IDs the filters show, or null for all; the others are dimmed
       shown: { type: Set, default: null },
     },
-    // open(id): show an ID's details
-    emits: ['open', 'update:active'],
+    // open(id): show an ID's details; select([first, last]): show the
+    // details of each ID of a range
+    emits: ['open', 'select', 'update:active'],
     data() {
       return {
         uid: `vlan-grid-${++grids}`,
         hovered: null,
         scale: pixelScale(),
+        // the IDs a pointer drags across, { start, end }, or null
+        drag: null,
+        // the ID that a Shift selection starts from: the last ID opened
+        anchor: null,
       };
     },
     computed: {
@@ -134,7 +144,16 @@
           `${c[STATE.CONFLICT]} with a conflict or unowned.`
         );
       },
+      // the range a drag would select, as [first, last], or null
+      dragRange() {
+        if (!this.drag || this.drag.start === this.drag.end) return null;
+        return [this.drag.start, this.drag.end].sort((a, b) => a - b);
+      },
       statusText() {
+        if (this.dragRange) {
+          const [first, last] = this.dragRange;
+          return `IDs ${first} to ${last}: release to show their details.`;
+        }
         const id = this.hovered ?? this.active;
         return this.cellLabel(id);
       },
@@ -152,6 +171,7 @@
       states: 'draw',
       outlines: 'draw',
       shown: 'draw',
+      dragRange: 'draw',
       // a new canvas size clears the canvas
       scale: { handler: 'draw', flush: 'post' },
     },
@@ -194,14 +214,61 @@
         }
         return row * GRID_SIZE + col;
       },
-      onHover(event) {
-        this.hovered = this.idAt(event);
-      },
-      onClick(event) {
+      // the valid ID under a pointer event, or null
+      validIdAt(event) {
         const id = this.idAt(event);
-        if (id === null || id < MIN_VLAN || id > MAX_VLAN) return;
+        return id === null || id < MIN_VLAN || id > MAX_VLAN ? null : id;
+      },
+      // shows an ID's details, and starts the next Shift selection there
+      open(id) {
+        this.anchor = id;
         this.$emit('update:active', id);
         this.$emit('open', id);
+      },
+      // shows the details of each ID from first to last, in either order
+      select(first, last) {
+        if (first === last) return this.open(last);
+        this.$emit('update:active', last);
+        this.$emit(
+          'select',
+          [first, last].sort((a, b) => a - b),
+        );
+      },
+      // a drag starts on the ID under the main button; the cells keep the
+      // pointer until it is released, also outside them
+      onPointerDown(event) {
+        if (event.button !== 0) return;
+        const id = this.validIdAt(event);
+        if (id === null) return;
+        event.preventDefault();
+        this.drag = { start: id, end: id };
+        try {
+          event.currentTarget?.setPointerCapture?.(event.pointerId);
+        } catch {
+          // a pointer that is gone cannot be captured
+        }
+      },
+      onPointerMove(event) {
+        const id = this.idAt(event);
+        this.hovered = id;
+        if (this.drag && id !== null) {
+          this.drag.end = Math.min(Math.max(id, MIN_VLAN), MAX_VLAN);
+        }
+      },
+      // a release on the ID the drag started on is a click, which Shift
+      // turns into a selection from the last ID opened
+      onPointerUp(event) {
+        const drag = this.drag;
+        this.endDrag();
+        if (!drag) return;
+        if (drag.start !== drag.end) return this.select(drag.start, drag.end);
+        if (event.shiftKey) {
+          return this.select(this.anchor ?? this.active, drag.end);
+        }
+        this.open(drag.end);
+      },
+      endDrag() {
+        this.drag = null;
       },
       // moves the cursor by the key, staying on valid IDs
       onKey(event) {
@@ -218,7 +285,13 @@
           End: event.ctrlKey ? MAX_VLAN : id - col + GRID_SIZE - 1,
         };
         // Alt and Meta keys belong to the browser, such as Alt+Left for Back
-        if (event.altKey || event.metaKey || !(event.key in moves)) return;
+        if (event.altKey || event.metaKey) return;
+        if (event.key === 'Enter' && event.shiftKey) {
+          event.preventDefault();
+          this.select(this.anchor ?? id, id);
+          return;
+        }
+        if (!(event.key in moves)) return;
         event.preventDefault();
         const next = Math.min(Math.max(moves[event.key], MIN_VLAN), MAX_VLAN);
         if (next === id) return;
@@ -240,6 +313,12 @@
         }
         ctx.globalAlpha = 1;
         for (const outline of this.outlines) this.outline(ctx, outline);
+        if (this.dragRange) {
+          const [first, last] = this.dragRange;
+          const ids = new Set();
+          for (let id = first; id <= last; id++) ids.add(id);
+          this.outline(ctx, { ids, color: SELECTION_COLOR });
+        }
       },
       // draws the outer edges of a set of cells
       outline(ctx, { ids, color }) {
@@ -319,11 +398,14 @@
     line-height: 1;
   }
 
+  /* a drag on the cells selects IDs: it does not select text or scroll */
   .vlan-grid-canvas {
     position: relative;
     flex: none;
     background-color: #2a2a2a;
     cursor: pointer;
+    touch-action: none;
+    user-select: none;
   }
 
   .vlan-grid-canvas canvas {

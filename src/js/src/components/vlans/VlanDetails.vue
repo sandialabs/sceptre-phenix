@@ -148,8 +148,8 @@
   import { roleAllowed } from '@/utils/rbac.js';
   import {
     RUNNING_TIP,
-    STATE,
     STATE_INFO,
+    STATE_TAG,
     issueText,
     rangeText,
     rangesHolding,
@@ -161,13 +161,6 @@
   const VMS_SHOWN = 10;
 
   let panels = 0;
-
-  const STATE_TAG = {
-    [STATE.CONFLICT]: 'is-danger',
-    [STATE.ALLOCATED]: 'is-success',
-    [STATE.PINNED]: 'is-warning',
-    [STATE.BLACKLISTED]: 'is-light',
-  };
 
   // The details of one VLAN ID, for both views: who holds it and how, its
   // range, its VMs and issues, the fixes the role may make and links to the

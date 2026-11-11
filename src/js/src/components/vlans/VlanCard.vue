@@ -100,8 +100,19 @@
       <li
         v-for="a in card.aliases"
         :key="a.alias"
-        :class="['vlan-alias', aliasSeverity(a) && `is-${aliasSeverity(a)}`]">
-        <span class="vlan-alias-name">{{ a.alias }}</span>
+        :class="[
+          'vlan-alias',
+          a.pinned ? 'vlan-alias-pinned' : 'vlan-alias-unpinned',
+          aliasSeverity(a) && `is-${aliasSeverity(a)}`,
+        ]">
+        <span class="vlan-alias-name"
+          ><b-icon
+            v-if="a.pinned"
+            icon="thumbtack"
+            size="is-small"
+            class="vlan-pin-icon"
+            aria-hidden="true" />{{ a.alias }}</span
+        >
         <span class="vlan-alias-ids">
           <template v-if="!a.pinned && !a.live">
             <span class="vlan-card-none">Not pinned</span>
@@ -565,6 +576,23 @@
     margin: 0 -0.4rem;
     padding: 0.2rem 0.4rem;
     border-radius: 4px;
+  }
+
+  /* A pinned alias has a solid cyan edge, a thumbtack and a blue ground
+     (white is 9.8:1 on it); an alias with no pin has a dashed gray edge.
+     An issue's ground below replaces the blue. */
+  .vlan-alias-pinned {
+    border-left: 3px solid #62c0d7;
+    background-color: #2f4750;
+  }
+
+  .vlan-alias-unpinned {
+    border-left: 3px dashed #b5b5b5;
+  }
+
+  .vlan-pin-icon {
+    margin-right: 0.25rem;
+    color: #62c0d7;
   }
 
   /* white text is 13:1 on the red and 8.9:1 on the yellow */

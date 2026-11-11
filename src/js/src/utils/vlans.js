@@ -194,6 +194,10 @@ export const STATE_INFO = [
   { label: 'Conflict or unowned', color: '#ff5c4d' },
 ];
 
+// The outline of the IDs a range selection holds in the ID space view: 7.5:1
+// on the grid's ground.
+export const SELECTION_COLOR = '#ff9ecf';
+
 // An experiment's range as [min, max] within 1–4094, or null without one.
 function rangeOf(exp) {
   if (!exp || !(exp.min > 0) || !(exp.max >= exp.min)) return null;
@@ -201,6 +205,14 @@ function rangeOf(exp) {
   const hi = Math.min(exp.max, MAX_VLAN);
   return lo <= hi ? [lo, hi] : null;
 }
+
+// the Bulma tag color of each state that holds an ID; the others are is-light
+export const STATE_TAG = {
+  [STATE.CONFLICT]: 'is-danger',
+  [STATE.ALLOCATED]: 'is-success',
+  [STATE.PINNED]: 'is-warning',
+  [STATE.BLACKLISTED]: 'is-light',
+};
 
 // The state of every ID, 0 to 4095, as a Uint8Array of STATE values.
 export function idStates(data) {
@@ -619,6 +631,16 @@ export function cellText(data, states, id) {
 // The views of the page: By experiment, ID space and Blacklist.
 const VIEWS = ['cards', 'grid', 'blacklist'];
 
+// A range of IDs from the query string, "100-163", as [100, 163], or null
+// when it is not two valid IDs.
+function rangeQuery(value) {
+  const match = /^(\d+)-(\d+)$/.exec(typeof value === 'string' ? value : '');
+  if (!match) return null;
+  const ids = [Number(match[1]), Number(match[2])];
+  if (!ids.every(validVlan)) return null;
+  return ids.sort((a, b) => a - b);
+}
+
 // The page's query string keys, read into the page's state.
 export function vlansQuery(query) {
   const id = Number(query?.vlan);
@@ -634,17 +656,26 @@ export function vlansQuery(query) {
     search: typeof query?.q === 'string' ? query.q : '',
     experiment: typeof query?.experiment === 'string' ? query.experiment : '',
     vlan: validVlan(id) ? id : null,
+    range: rangeQuery(query?.vlans),
   };
 }
 
 // The query string for the page's state; defaults are left out.
-export function vlansQueryOf({ view, filter, search, experiment, vlan }) {
+export function vlansQueryOf({
+  view,
+  filter,
+  search,
+  experiment,
+  vlan,
+  range,
+}) {
   return {
     ...(VIEWS.includes(view) && view !== 'cards' && { view }),
     ...(filter && filter !== 'all' && { filter }),
     ...(search && { q: search }),
     ...(experiment && { experiment }),
     ...(validVlan(vlan) && { vlan: String(vlan) }),
+    ...(range && { vlans: `${range[0]}-${range[1]}` }),
   };
 }
 

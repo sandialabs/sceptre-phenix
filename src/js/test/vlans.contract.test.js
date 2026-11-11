@@ -405,12 +405,24 @@ describe('the query string', () => {
       search: '',
       experiment: '',
       vlan: null,
+      range: null,
     });
     expect(vlansQuery({ view: 'x', filter: 'y', vlan: '5000' })).toMatchObject({
       view: 'cards',
       filter: 'all',
       vlan: null,
     });
+  });
+
+  it('reads a range of two valid IDs in either order, and drops any other', () => {
+    expect(vlansQuery({ vlans: '100-163' }).range).toEqual([100, 163]);
+    expect(vlansQuery({ vlans: '163-100' }).range).toEqual([100, 163]);
+    expect(vlansQuery({ vlans: '7-7' }).range).toEqual([7, 7]);
+    for (const vlans of ['0-5', '1-4095', '5', 'a-b', '1-2-3', ' 1-2', '']) {
+      expect(vlansQuery({ vlans }).range).toBeNull();
+    }
+    expect(vlansQuery({ vlans: ['1-2'] }).range).toBeNull();
+    expect(vlansQueryOf({ range: [100, 163] })).toEqual({ vlans: '100-163' });
   });
 
   it('opens the Blacklist view from its own key and from the old filter link', () => {
@@ -437,6 +449,15 @@ describe('the query string', () => {
       search: fc.string({ maxLength: 8 }),
       experiment: fc.string({ maxLength: 8 }),
       vlan: fc.option(fc.integer({ min: 1, max: 4094 }), { nil: null }),
+      range: fc.option(
+        fc
+          .tuple(
+            fc.integer({ min: 1, max: 4094 }),
+            fc.integer({ min: 1, max: 4094 }),
+          )
+          .map((ids) => ids.sort((a, b) => a - b)),
+        { nil: null },
+      ),
     });
     fc.assert(
       fc.property(state, (s) => {
