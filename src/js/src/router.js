@@ -50,6 +50,8 @@ const router = createRouter({
         title: 'Experiment',
         titleParam: 'id',
         allowed: (to) => roleAllowed('experiments', 'get', to.params.id),
+        // the VM table has many columns, so it uses the whole window width (App.vue)
+        wide: true,
       },
       component: () => import('@/views/experiment/Base.vue'),
     },

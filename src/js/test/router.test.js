@@ -449,12 +449,13 @@ describe('a page whose build file the server no longer has', () => {
 });
 
 describe('page width', () => {
-  it('lets only the State of Health graph use the window width', () => {
+  it('lets only the State of Health graph and the experiment page use the window width', () => {
     const wide = router
       .getRoutes()
       .filter((r) => r.meta.wide)
-      .map((r) => r.name);
-    expect(wide).toEqual(['soh']);
+      .map((r) => r.name)
+      .sort();
+    expect(wide).toEqual(['experiment', 'soh']);
     // the Builder fills the window and has no footer instead
     expect(router.resolve('/builder').meta).toMatchObject({ fullBleed: true });
     // the console page also has its own top bar in place of the header
