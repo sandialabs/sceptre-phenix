@@ -81,7 +81,7 @@ positional args and rejected with "must provide an image name as the only argume
 | `phenix image remove <name>` | Remove overlays/packages/scripts from a config; a removed script also leaves `script_order` |
 | `phenix image update <name>` | Re-read on-disk scripts into the config. The scripts keep their order; a URL or a file not on disk keeps its stored contents. It does not add or remove scripts, or change packages or overlays |
 | `phenix image edit <name>` | Open the config in `$EDITOR` |
-| `phenix image delete <name>...` | Same as `phenix config delete image/<name>`; aliased as `del`. Takes several names, carries on past a failure and names each one; `--dry-run` deletes nothing |
+| `phenix image delete <name>...` | Same as `phenix config delete image/<name>`; aliased as `del`. Takes several names, carries on past a failure and names each one; `--dry-run` deletes nothing. A quoted name with `*`, such as `'cm-*'`, selects each matching image (`'*'` selects all) and prints the matches first |
 | `phenix image inject-miniexe <exe> <disk[:part]>` | `--init-system systemd` (default) or `sysinitv` for Linux, `startup` for Windows; partition defaults to `1`. Linux: binary to `/usr/local/bin/<exe>` plus unit/init script and enable symlink. Windows: `.exe` to `C:\minimega\`, plus a Startup-folder scheduler for `miniccc.exe` when `startup` |
 
 `build` runs: `vmdb2 <out>/<name>.vmdb --output <out>/<name> --rootfs-tarball <out>/<name>.tar`

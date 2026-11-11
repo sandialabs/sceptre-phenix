@@ -196,6 +196,13 @@ Delete one or more image configurations
   When phenix cannot delete an image configuration, it continues with the
   other ones. Then it exits with an error that names each failure.
 
+  A name can contain the wildcard *, which matches zero or more characters.
+  For example, cm-* selects each image configuration whose name starts with
+  "cm-", and * selects all of them. Put quotation marks around a pattern, so
+  that your shell does not expand it. Before phenix deletes the image
+  configurations that a pattern selects, it shows their names. Another
+  pattern that selects no image configuration is an error.
+
   With --dry-run, phenix shows the image configurations that it would
   delete, and deletes nothing.
 ```
@@ -209,6 +216,8 @@ phenix image delete <configuration name>... [flags]
 ```text
 phenix image delete ubuntu
 phenix image delete ubuntu kali-mini
+phenix image delete 'cm-*'
+phenix image delete 'cm-*' --dry-run
 ```
 
 ### Options

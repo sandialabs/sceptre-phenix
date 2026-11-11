@@ -150,10 +150,31 @@ Delete a configuration(s)
   This subcommand is used to delete one or more configurations. With
   --dry-run, it shows the configurations that it would delete, and deletes
   nothing.
+
+  A name can contain the wildcard *, which matches zero or more characters.
+  For example, topology/cm-* selects each topology whose name starts with
+  "cm-". Put quotation marks around a pattern, so that your shell does not
+  expand it. The kind cannot contain *. The pattern <kind>/* does the same
+  as "delete all <kind>", and */* does the same as "delete all". Another
+  pattern that selects no configuration is an error. Before phenix deletes
+  the configurations that a pattern selects, it shows their names. A pattern
+  does not delete the configuration of a running experiment.
+
+  When phenix cannot delete a configuration, it continues with the other
+  ones. Then it exits with an error that names each failure.
 ```
 
 ```text
 phenix config delete <kind/name> ... [flags]
+```
+
+### Examples
+
+```text
+phenix config delete topology/foo
+phenix config delete topology/foo scenario/bar
+phenix config delete 'topology/cm-*'
+phenix config delete 'topology/cm-*' --dry-run
 ```
 
 ### Options

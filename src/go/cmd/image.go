@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -446,8 +447,21 @@ func newImageDeleteCmd() *cobra.Command {
   When phenix cannot delete an image configuration, it continues with the
   other ones. Then it exits with an error that names each failure.
 
+  A name can contain the wildcard *, which matches zero or more characters.
+  For example, cm-* selects each image configuration whose name starts with
+  "cm-", and * selects all of them. Put quotation marks around a pattern, so
+  that your shell does not expand it. Before phenix deletes the image
+  configurations that a pattern selects, it shows their names. Another
+  pattern that selects no image configuration is an error.
+
   With --dry-run, phenix shows the image configurations that it would
   delete, and deletes nothing.`
+
+	example := `
+  phenix image delete ubuntu
+  phenix image delete ubuntu kali-mini
+  phenix image delete 'cm-*'
+  phenix image delete 'cm-*' --dry-run`
 
 	var dry dryRun
 
@@ -456,7 +470,7 @@ func newImageDeleteCmd() *cobra.Command {
 		Aliases: []string{deleteAlias},
 		Short:   "Delete one or more image configurations",
 		Long:    desc,
-		Example: "  phenix image delete ubuntu\n  phenix image delete ubuntu kali-mini",
+		Example: example,
 		Args:    cobra.MinimumNArgs(1),
 		// every argument is another image name
 		ValidArgsFunction: completePositional(completeConfigNamesOf("Image")),
@@ -465,28 +479,39 @@ func newImageDeleteCmd() *cobra.Command {
 				return errors.New("the name of the configuration to delete is required")
 			}
 
-			var failed []*util.HumanizedError
+			plan := newDeletePlan()
 
-			for _, name := range uniqueNames(args) {
-				if dry.enabled() {
-					if _, err := config.Get("image/" + name); err != nil {
-						failed = append(failed, util.HumanizeError(err, "%s", "Unable to delete the "+name+" image"))
+			for _, name := range args {
+				if isDeletePattern(name) {
+					plan.addPattern(name, commandImage, name, name == deleteWildcard)
+				} else {
+					plan.addExact(name, commandImage, name)
+				}
+			}
 
-						continue
+			failed := plan.failed
+			imageName := func(key string) string { return strings.TrimPrefix(key, commandImage+"/") }
+			item := func(key string) string { return "image " + imageName(key) }
+			deleted := func(key string) {
+				plog.Info(plog.TypeSystem, "image configuration deleted", "image", imageName(key))
+			}
+
+			for _, step := range plan.steps {
+				if step.key == "" {
+					names := make([]string, 0, len(step.matches))
+					for _, key := range step.matches {
+						names = append(names, imageName(key))
 					}
-				}
 
-				if dry.skip("delete", "image "+name) {
-					continue
-				}
-
-				if err := config.Delete("image/" + name); err != nil {
-					failed = append(failed, util.HumanizeError(err, "%s", "Unable to delete the "+name+" image"))
+					writeDeleteMatches(cmd.OutOrStdout(), "image configuration", step.arg, names)
+					failed = append(failed, deleteStepMatches(dry, step, item, deleted)...)
 
 					continue
 				}
 
-				plog.Info(plog.TypeSystem, "image configuration deleted", "image", name)
+				if err := deleteImage(dry, step.arg); err != nil {
+					failed = append(failed, err)
+				}
 			}
 
 			return deleteFailures(failed, "images")
@@ -498,20 +523,26 @@ func newImageDeleteCmd() *cobra.Command {
 	return cmd
 }
 
-// uniqueNames returns names in order without repeats, so a name given twice
-// is acted on once.
-func uniqueNames(names []string) []string {
-	seen := make(map[string]bool, len(names))
-	out := make([]string, 0, len(names))
-
-	for _, name := range names {
-		if !seen[name] {
-			seen[name] = true
-			out = append(out, name)
+// deleteImage deletes the image configuration name, or shows the delete in a
+// dry run.
+func deleteImage(dry dryRun, name string) *util.HumanizedError {
+	if dry.enabled() {
+		if _, err := config.Get("image/" + name); err != nil {
+			return util.HumanizeError(err, "%s", "Unable to delete the "+name+" image")
 		}
 	}
 
-	return out
+	if dry.skip("delete", "image "+name) {
+		return nil
+	}
+
+	if err := config.Delete("image/" + name); err != nil {
+		return util.HumanizeError(err, "%s", "Unable to delete the "+name+" image")
+	}
+
+	plog.Info(plog.TypeSystem, "image configuration deleted", "image", name)
+
+	return nil
 }
 
 func newImageAppendCmd() *cobra.Command {

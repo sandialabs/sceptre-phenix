@@ -147,6 +147,7 @@ phenix config apply -f <file|dir> [-f ...] [--dry-run]  # create new configs, up
 phenix config diff <file|dir>...                    # unified diff from each stored config to the file; exit 0 same, 1 differs, 2 error
 phenix config edit <kind>/<name> [--force]          # open in $EDITOR
 phenix config delete <kind>/<name> ... [--dry-run]  # delete one or more specific configs by kind/name
+phenix config delete 'topology/cm-*' [--dry-run]    # delete each topology whose name matches; quote the pattern
 phenix config delete all [kind] [--dry-run]         # delete every stored config, or every config of one kind
 ```
 
@@ -164,6 +165,20 @@ goes through the checks of `config edit`, refuses a running experiment's
 config, and refuses a config that changes while the command runs. `apply`
 tries every config, prints one line for each, and fails when one failed.
 `config delete all` leaves the config of a running experiment.
+
+In `config delete` and `image delete`, a name can contain `*`, which matches
+zero or more characters. It is the only wildcard: `?`, `[` and `\` match only
+themselves, and the name match is case-sensitive. Quote each pattern: zsh
+stops on an unquoted `cm-*` ("no matches found"), and bash can expand it to
+local file names. The kind cannot contain `*`, but `*/*` selects every config.
+`<kind>/*` and `*/*` act as `config delete all [kind]`, and `image delete '*'`
+selects every image. Before a delete, the command prints the names that each
+pattern selects, sorted, with a count, such as
+`2 configurations match topology/cm-*:`. `--dry-run` prints the same list.
+A pattern that selects nothing is an error, except a name that is only `*`.
+A pattern does not delete the config of a running experiment. The command
+tries every argument, deletes a config that two arguments select one time,
+and then names each failure.
 
 Stored configs carry `metadata.revision`, set by the store on every write and
 ignored on input. `config edit` refuses to save if the config was written
@@ -425,6 +440,7 @@ phenix image create-from <existing> <new>
 phenix image edit <name>
 phenix image build <name> [flags]
 phenix image delete <name>... [--dry-run]           # carries on past a failure, then names each one
+phenix image delete 'cm-*' [--dry-run]              # delete each image whose name matches; quote the pattern
 phenix image append|remove|update <name> ...
 phenix image inject-miniexe <path/to/exe> <path/to/disk>
 ```

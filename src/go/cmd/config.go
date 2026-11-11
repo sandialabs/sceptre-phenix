@@ -497,7 +497,25 @@ func newConfigDeleteCmd() *cobra.Command {
   This subcommand is used to delete one or more configurations. With
   --dry-run, it shows the configurations that it would delete, and deletes
   nothing.
+
+  A name can contain the wildcard *, which matches zero or more characters.
+  For example, topology/cm-* selects each topology whose name starts with
+  "cm-". Put quotation marks around a pattern, so that your shell does not
+  expand it. The kind cannot contain *. The pattern <kind>/* does the same
+  as "delete all <kind>", and */* does the same as "delete all". Another
+  pattern that selects no configuration is an error. Before phenix deletes
+  the configurations that a pattern selects, it shows their names. A pattern
+  does not delete the configuration of a running experiment.
+
+  When phenix cannot delete a configuration, it continues with the other
+  ones. Then it exits with an error that names each failure.
 	`
+
+	example := `
+  phenix config delete topology/foo
+  phenix config delete topology/foo scenario/bar
+  phenix config delete 'topology/cm-*'
+  phenix config delete 'topology/cm-*' --dry-run`
 
 	var dry dryRun
 
@@ -506,39 +524,102 @@ func newConfigDeleteCmd() *cobra.Command {
 		Aliases:           []string{deleteAlias},
 		Short:             "Delete a configuration(s)",
 		Long:              desc,
-		Args:              configKindArgsValidator(true),
+		Example:           example,
+		Args:              configDeleteArgsValidator(),
 		ValidArgsFunction: completePositional(completeConfigNames),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			for _, c := range args {
-				if dry.enabled() {
-					if _, err := config.Get(c); err != nil {
-						err := util.HumanizeError(err, "%s", "Unable to delete the "+c+" configuration")
+			plan := newDeletePlan()
 
-						return err.Humanized()
-					}
+			for _, arg := range args {
+				kind, name, _ := strings.Cut(arg, "/")
+
+				switch {
+				case arg == deleteWildcard+"/"+deleteWildcard:
+					plan.addPattern(arg, allExperiments, deleteWildcard, true)
+				case isDeletePattern(name):
+					plan.addPattern(arg, strings.ToLower(kind), name, name == deleteWildcard)
+				default:
+					plan.addExact(arg, kind, name)
 				}
+			}
 
-				if dry.skip("delete", "configuration "+c) {
+			failed := plan.failed
+			item := func(key string) string { return "configuration " + key }
+			deleted := func(key string) { plog.Info(plog.TypeSystem, "configuration deleted", "config", key) }
+
+			for _, step := range plan.steps {
+				if step.key == "" {
+					writeDeleteMatches(cmd.OutOrStdout(), "configuration", step.arg, step.matches)
+					failed = append(failed, deleteStepMatches(dry, step, item, deleted)...)
+
 					continue
 				}
 
-				err := config.Delete(c)
-				if err != nil {
-					err := util.HumanizeError(err, "%s", "Unable to delete the "+c+" configuration")
-
-					return err.Humanized()
+				if err := deleteConfig(dry, step.arg); err != nil {
+					failed = append(failed, err)
 				}
-
-				plog.Info(plog.TypeSystem, "configuration deleted", "config", c)
 			}
 
-			return nil
+			return deleteFailures(failed, "configurations")
 		},
 	}
 
 	dry = addDryRunFlag(cmd)
 
 	return cmd
+}
+
+// deleteConfig deletes the config c, given as kind/name, or shows the delete
+// in a dry run.
+func deleteConfig(dry dryRun, c string) *util.HumanizedError {
+	if dry.enabled() {
+		if _, err := config.Get(c); err != nil {
+			return util.HumanizeError(err, "%s", "Unable to delete the "+c+" configuration")
+		}
+	}
+
+	if dry.skip("delete", "configuration "+c) {
+		return nil
+	}
+
+	if err := config.Delete(c); err != nil {
+		return util.HumanizeError(err, "%s", "Unable to delete the "+c+" configuration")
+	}
+
+	plog.Info(plog.TypeSystem, "configuration deleted", "config", c)
+
+	return nil
+}
+
+// configDeleteArgsValidator checks the arguments of config delete as
+// configKindArgsValidator does, and also takes */*. A kind that contains the
+// wildcard * is an error.
+func configDeleteArgsValidator() cobra.PositionalArgs {
+	every := deleteWildcard + "/" + deleteWildcard
+	check := configKindArgsValidator(true)
+
+	return func(cmd *cobra.Command, args []string) error {
+		rest := make([]string, 0, len(args))
+
+		for _, arg := range args {
+			if arg == every {
+				continue
+			}
+
+			if kind, _, _ := strings.Cut(arg, "/"); isDeletePattern(kind) {
+				return fmt.Errorf("the configuration kind cannot contain %s (use %s for all configurations), received %s",
+					deleteWildcard, every, arg)
+			}
+
+			rest = append(rest, arg)
+		}
+
+		if len(args) > 0 && len(rest) == 0 {
+			return nil
+		}
+
+		return check(cmd, rest)
+	}
 }
 
 func newConfigDeleteAllCmd() *cobra.Command {

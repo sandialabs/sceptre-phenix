@@ -135,6 +135,20 @@ the new configuration.
 phenix image delete <image name>
 ```
 
+A name can contain the wildcard `*`, which matches zero or more characters.
+Other characters, such as `?` and `[`, match only themselves. Put quotation
+marks around a pattern. If you do not, zsh stops with "no matches found", and
+bash can change the pattern to the names of local files.
+
+```shell
+phenix image delete 'cm-*' --dry-run
+phenix image delete 'cm-*'
+```
+
+Before phenix deletes the configurations that a pattern selects, it shows
+their names and their count. The pattern `'*'` selects all image
+configurations. Another pattern that selects no configuration is an error.
+
 An alternative could be to use the configuration management tool.
 
 ```shell
