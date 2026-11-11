@@ -298,6 +298,7 @@
             "
             type="is-dark">
             <router-link
+              v-prefetch-route="builderLink(props.row)"
               class="tag is-info is-light config-builder"
               :to="builderLink(props.row)"
               :aria-label="tagControlName(props.row)"
@@ -414,6 +415,7 @@
   import * as configsApi from '@/api/configs.js';
   import FileSaver from 'file-saver';
   import { roleAllowed } from '@/utils/rbac.js';
+  import { vPrefetchRoute } from '@/utils/prefetch.js';
   import { showError, useErrorNotification } from '@/utils/errorNotif';
   import {
     configKey,
@@ -451,6 +453,7 @@
 
   export default {
     components: { ConfigViewer, StatStrip, TimeWithAge },
+    directives: { prefetchRoute: vPrefetchRoute },
     emits: ['edit', 'create'],
     props: {
       // The config ("Kind/name") whose edit button takes focus on the first

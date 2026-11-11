@@ -32,7 +32,12 @@ import {
 import { componentDeclarations } from './helpers/css.js';
 import { vm } from './helpers/fixtures.js';
 import { allowOnly, denyOnly } from './helpers/permissions.js';
-import { mountComponent, textOf, tooltipButtons } from './helpers/mount.js';
+import {
+  mountComponent,
+  onDemandRoute,
+  textOf,
+  tooltipButtons,
+} from './helpers/mount.js';
 
 beforeEach(() => resetMocks());
 
@@ -585,6 +590,22 @@ describe('the experiment summary', () => {
         expect(link.attributes('href')).toBe('/builder?draft=d1');
         expect(textOf(link)).toBe('Open in Builder');
       }
+    },
+  );
+
+  it.each(['pointerenter', 'focus'])(
+    'loads the Builder one time on %s on its link',
+    async (type) => {
+      const wrapper = await render({ topology: 't', builder: { draft: 'd1' } });
+      const load = onDemandRoute(wrapper.router, 'builder');
+      const link = wrapper.get('.exp-summary-builder');
+
+      await link.trigger(type);
+      expect(load).toHaveBeenCalledOnce();
+      for (const intent of ['pointerenter', 'focus']) {
+        await link.trigger(intent);
+      }
+      expect(load).toHaveBeenCalledOnce();
     },
   );
 

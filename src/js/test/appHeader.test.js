@@ -25,6 +25,7 @@ import { pageStatus } from '@/utils/pageLoader.js';
 import {
   byLabel,
   mountComponent,
+  onDemandRoute,
   textOf,
   tooltipButtons,
 } from './helpers/mount.js';
@@ -1315,24 +1316,10 @@ describe('Logout', () => {
 describe('the load of a page before it opens', () => {
   const INTENTS = ['pointerenter', 'focus', 'pointerdown', 'touchstart'];
 
-  // Makes the page `name` of the header's router skip the idle prefetch and
-  // load with a loader that counts its calls; returns the loader.
-  function onDemand(page, name) {
-    const load = vi.fn(() => Promise.resolve({ default: {} }));
-    const { path } = page.router.resolve({ name });
-    page.router.addRoute({
-      path,
-      name,
-      component: load,
-      meta: { prefetch: false },
-    });
-    return load;
-  }
-
   it('loads the Builder one time for a pointer, focus or press on its link', async () => {
     store.role = role('Builder', ['builder', 'use']);
     const page = await header();
-    const load = onDemand(page, 'builder');
+    const load = onDemandRoute(page.router, 'builder');
     const link = page.find('[data-testid="nav-builder"]');
 
     await link.trigger('pointerenter');
@@ -1344,7 +1331,7 @@ describe('the load of a page before it opens', () => {
   it('loads no Builder for a role that may not use it', async () => {
     store.role = role('Viewer', ['experiments', 'list']);
     const page = await header();
-    const load = onDemand(page, 'builder');
+    const load = onDemandRoute(page.router, 'builder');
 
     expect(page.find('[data-testid="nav-builder"]').exists()).toBe(false);
     for (const link of page.findAll('a')) {
@@ -1356,7 +1343,7 @@ describe('the load of a page before it opens', () => {
   it('loads a page in a menu that skips the idle prefetch', async () => {
     store.role = role('Configs', ['configs', 'list']);
     const page = await header();
-    const load = onDemand(page, 'configs');
+    const load = onDemandRoute(page.router, 'configs');
 
     await page.find('.nav-menu-button').trigger('click');
     const link = page.find('.nav-menu-link');

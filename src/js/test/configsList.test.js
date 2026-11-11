@@ -7,6 +7,9 @@ import { useErrorNotification } from '@/utils/errorNotif';
 import ConfigsList from '@/components/configs/ConfigsList.vue';
 import { clearConfigCache } from '@/utils/configCache.js';
 import { clearPageCache } from '@/utils/pageCache.js';
+import { createMemoryHistory, createRouter } from 'vue-router';
+import { onDemandRoute } from './helpers/mount.js';
+import { ROUTES } from './helpers/routes.js';
 
 const site = {
   kind: 'Topology',
@@ -304,6 +307,71 @@ describe('ConfigsList Builder control', () => {
     // The row keeps its plain tag, and the name still opens the viewer.
     expect(wrapper.get('span.tag').text()).toBe('builder');
     expect((await viewerButton(wrapper)).exists()).toBe(false);
+  });
+});
+
+describe('ConfigsList Builder load before it opens', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Mounts the list on a router of the app's named routes, whose Builder
+  // loads with a loader that counts its calls.
+  async function mountRouted() {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: ROUTES,
+    });
+    await router.push('/configs/');
+    const load = onDemandRoute(router, 'builder');
+    const wrapper = mount(ConfigsList, {
+      attachTo: document.body,
+      global: {
+        plugins: [Buefy, router],
+        stubs: { 'router-link': RouterLinkStub },
+      },
+    });
+    await flushPromises();
+    return { wrapper, load };
+  }
+
+  // Each control into the Builder: the row's tag, and the viewer's button.
+  const controls = {
+    tag: async (wrapper) =>
+      wrapper.get('[data-config-builder="Topology/site"]'),
+    'viewer button': async (wrapper) => {
+      await wrapper.get('[data-config-view="Topology/site"]').trigger('click');
+      await flushPromises();
+      return wrapper.get('[data-testid="viewer-builder"]');
+    },
+  };
+
+  test.each([
+    ['tag', 'pointerenter'],
+    ['tag', 'focus'],
+    ['viewer button', 'pointerenter'],
+    ['viewer button', 'focus'],
+  ])('the %s loads the Builder one time on %s', async (control, type) => {
+    setRole(['*']);
+    const { wrapper, load } = await mountRouted();
+    const el = await controls[control](wrapper);
+
+    await el.trigger(type);
+    expect(load).toHaveBeenCalledOnce();
+    for (const intent of ['pointerenter', 'focus']) await el.trigger(intent);
+    expect(load).toHaveBeenCalledOnce();
+  });
+
+  test('a role without the Builder has no control that loads it', async () => {
+    setRole(['configs']);
+    const { wrapper, load } = await mountRouted();
+    await controls['viewer button'](wrapper).catch(() => {});
+
+    for (const el of wrapper.findAll('a, button')) {
+      await el.trigger('pointerenter');
+      await el.trigger('focus');
+    }
+    expect(load).not.toHaveBeenCalled();
   });
 });
 

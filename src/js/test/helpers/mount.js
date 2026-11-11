@@ -1,6 +1,7 @@
 // Mounts components with @vue/test-utils, the real Buefy and the app's named
 // routes, and reads back what they draw; for files run in happy-dom.
 import { createWrapperError, flushPromises, mount } from '@vue/test-utils';
+import { vi } from 'vitest';
 import { h } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
 
@@ -46,6 +47,15 @@ export async function mountPage(component, options) {
   const wrapper = await mountComponent(component, options);
   await flushPromises();
   return wrapper;
+}
+
+// Makes the route `name` of `router` skip the idle prefetch, as the Builder
+// does, and load with a loader that counts its calls; returns the loader.
+export function onDemandRoute(router, name) {
+  const load = vi.fn(() => Promise.resolve({ default: {} }));
+  const { path } = router.resolve({ name });
+  router.addRoute({ path, name, component: load, meta: { prefetch: false } });
+  return load;
 }
 
 // the text of a wrapper or element, with runs of space collapsed

@@ -34,6 +34,7 @@
         </template>
         <router-link
           v-if="builderLink && roleAllowed('builder', 'use')"
+          v-prefetch-route="builderLink"
           class="button is-light is-small exp-summary-builder"
           :to="builderLink">
           <b-icon icon="pencil" size="is-small" />
@@ -182,6 +183,7 @@
   import TimeWithAge from '@/components/TimeWithAge.vue';
   import { plural } from '@/utils/plural.js';
   import { roleAllowed } from '@/utils/rbac.js';
+  import { vPrefetchRoute } from '@/utils/prefetch.js';
   import { countdownText, useCountdownClock } from './delayCountdown.js';
   import {
     builderRoute,
@@ -205,6 +207,7 @@
   export default {
     name: 'ExperimentSummary',
     components: { TimeWithAge },
+    directives: { prefetchRoute: vPrefetchRoute },
     props: {
       // the experiment's name, shown before the experiment has loaded
       name: { type: String, default: '' },

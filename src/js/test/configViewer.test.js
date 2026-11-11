@@ -12,7 +12,13 @@ vi.mock('@/store.js', modules.store);
 vi.mock('@/utils/errorNotif', modules.errorNotif);
 
 import ConfigViewer from '@/components/configs/ConfigViewer.vue';
-import { buttons, mountComponent, textOf, toasts } from './helpers/mount.js';
+import {
+  buttons,
+  mountComponent,
+  onDemandRoute,
+  textOf,
+  toasts,
+} from './helpers/mount.js';
 import { denyOnly } from './helpers/permissions.js';
 
 const topology = {
@@ -278,6 +284,27 @@ describe('the action buttons', () => {
     const foot = wrapper.find('footer');
     expect(foot.exists() ? buttons(foot) : null).toEqual(footer);
   });
+
+  it.each([
+    ['open', 'pointerenter'],
+    ['open', 'focus'],
+    ['import', 'pointerenter'],
+    ['import', 'focus'],
+  ])(
+    'loads the Builder one time when its %s button gets %s',
+    async (builder, type) => {
+      const wrapper = await mountViewer({ builder });
+      const load = onDemandRoute(wrapper.router, 'builder');
+      const button = wrapper.get('[data-testid="viewer-builder"]');
+
+      await button.trigger(type);
+      expect(load).toHaveBeenCalledOnce();
+      for (const intent of ['pointerenter', 'focus']) {
+        await button.trigger(intent);
+      }
+      expect(load).toHaveBeenCalledOnce();
+    },
+  );
 
   it('reports each button the page acts on', async () => {
     const wrapper = await mountViewer({ builder: 'open', canEdit: true });

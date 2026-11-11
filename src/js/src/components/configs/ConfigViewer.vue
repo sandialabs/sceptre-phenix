@@ -127,6 +127,7 @@
            colors of the list's Builder tag, whose text meets the 4.5:1
            contrast that white on the info color does not. -->
       <button
+        v-prefetch-route="{ name: 'builder' }"
         class="button is-info is-light"
         data-testid="viewer-builder"
         @click="$emit('builder')">
@@ -143,6 +144,7 @@
   import { LEGACY_ANNOTATION, isBuilderAnnotation } from '@/builder/configs.js';
   import { showError } from '@/utils/errorNotif';
   import { roleAllowed } from '@/utils/rbac.js';
+  import { vPrefetchRoute } from '@/utils/prefetch.js';
 
   const FORMATS = [
     { value: 'yaml', label: 'YAML' },
@@ -156,6 +158,7 @@
   export default {
     name: 'ConfigViewer',
     components: { TimeWithAge },
+    directives: { prefetchRoute: vPrefetchRoute },
     props: {
       title: { type: String, default: '' },
       // the full config, or null while it loads
