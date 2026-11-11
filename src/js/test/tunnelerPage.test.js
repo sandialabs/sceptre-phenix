@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { docsPage } from '@/utils/docs.js';
 import Tunneler from '@/views/Tunneler.vue';
 import { never } from './helpers/async.js';
+import { componentDeclarations, contrast } from './helpers/css.js';
 import { mountPage, tableRows, textOf } from './helpers/mount.js';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -158,6 +159,26 @@ describe('the Tunneler page', () => {
       target: '_blank',
       rel: 'noopener',
     });
+  });
+
+  it('sets the quick start text on a panel, at 7:1 or more', () => {
+    const panel = componentDeclarations(
+      'src/views/Tunneler.vue',
+      '#quick-start',
+    );
+    const text = componentDeclarations('src/views/Tunneler.vue', 'p');
+    const code = componentDeclarations('src/views/Tunneler.vue', 'code');
+
+    expect(panel['background-color']).toBe('#484848');
+    expect(
+      contrast(
+        text.color.replace(' !important', ''),
+        panel['background-color'],
+      ),
+    ).toBeGreaterThanOrEqual(7);
+    expect(
+      contrast(code.color, code['background-color']),
+    ).toBeGreaterThanOrEqual(7);
   });
 
   it('says it is loading until the list arrives', async () => {

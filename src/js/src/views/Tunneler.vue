@@ -161,7 +161,7 @@
 
 <style scoped lang="scss">
   p {
-    color: whitesmoke !important;
+    color: #f5f5f5 !important;
   }
 
   div.tunneler {
@@ -178,13 +178,22 @@
     margin-top: 1.5em;
   }
 
+  /* the card surface, $background-bis: the whitesmoke text is 8.4:1 on it */
+  #quick-start {
+    padding: 1.25rem 1.5rem;
+    background-color: #484848;
+    border: 1px solid #686868;
+    border-radius: 6px;
+  }
+
   #quick-start p {
     font-size: calc(1em + 2pt);
+    line-height: 1.6;
   }
 
   /* Keeps the light red on black (8.5:1); the global $code is dark red. */
   code {
-    background-color: black;
+    background-color: #000000;
     color: #ff7b95;
   }
 </style>
