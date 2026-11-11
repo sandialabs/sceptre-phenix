@@ -492,7 +492,8 @@ again. `GET .../captures/{iface}/stream` is a live stream with no ranges.
 
 An experiment capture records a running experiment's traffic on all its hosts
 into one file in the experiment's files directory on the head node. It needs
-minimega 3.4.0 or later on every node. The RBAC resource is
+a minimega build with experiment captures on every node; phenix does not check
+the minimega version. The RBAC resource is
 `experiments/captures`, and the resource name is the experiment. Of the
 built-in roles, only `global-admin` has `create` and `delete`. The routes are
 in `openapi.yml`:
@@ -525,11 +526,10 @@ in `openapi.yml`:
   `near` (>= 28), `half` (experiment > 16) or `ok`. `warnings` name the levels
   that the new capture passes. A mirror count that fails starts the capture
   with `cannot count Open vSwitch mirrors: <err>`.
-- `support` is `{available, reason, version}`, for example reason
-  `requires minimega 3.4.0 or later; the head node runs 3.3.0`. `phenix ui`
-  reads the head node's version once at startup, asking every 10 s until
-  minimega answers, and never again: restart it after a minimega upgrade.
-  `ui.features` `minimega-captures` forces support on.
+- `support` is `{available, reason, version}`. `available` is always true
+  (`mm.CaptureVersionRequired` is false), and `version` is the head node's
+  minimega version, which `phenix ui` reads once at startup. `ui.features`
+  `minimega-captures` is accepted and has no effect.
 - A capture has `id`, `state` (`starting`, `running`, `stalled`, `stopping`,
   `stopped`, `failed`, `orphaned`, `full`), `running`, `path`, `file`
   (relative to the experiment files, for their download and delete), `format`,
@@ -545,7 +545,6 @@ in `openapi.yml`:
   interface blocks. Its `frame.interface_name` is `<host>/<bridge>`.
 - `POST .../vms/{name}/captures` and `POST .../captureVlan` take an optional
   `format` (`pcapng` default, `pcap`), and the file extension follows it.
-  minimega before 3.4.0 writes only pcap.
 
 ## minimega Console
 

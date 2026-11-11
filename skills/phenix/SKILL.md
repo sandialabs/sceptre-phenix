@@ -19,7 +19,7 @@ Detailed references and examples, loaded only when needed:
 | Global flags, what each subcommand is for, and where the generated flag reference lives | [`references/cli.md`](references/cli.md) |
 | REST auth modes, route gotchas, and where the route reference (`openapi.yml`) lives | [`references/web-api.md`](references/web-api.md) |
 | Background jobs (bulk VM actions, file archives, disk clones): statuses, routes, RBAC, `phenix job` | [`references/jobs.md`](references/jobs.md) |
-| Experiment captures (one merged capture of all hosts, minimega 3.4.0): routes, mirror budget, `phenix experiment capture` | [`references/web-api.md`](references/web-api.md#experiment-captures), [`references/cli.md`](references/cli.md) |
+| Experiment captures (one merged capture of all hosts, no minimega version check): routes, mirror budget, `phenix experiment capture` | [`references/web-api.md`](references/web-api.md#experiment-captures), [`references/cli.md`](references/cli.md) |
 | `runPeriodically`, `fromScenario`, app catalog | [`references/scenario.md`](references/scenario.md) |
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |

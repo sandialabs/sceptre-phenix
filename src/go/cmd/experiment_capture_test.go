@@ -104,7 +104,7 @@ func useExpCaptureCluster(t *testing.T, c *expCaptureCluster) func() []string {
 
 	mm.ForgetCluster()
 	t.Cleanup(func() {
-		mm.SetCaptureFeaturesForced(false)
+		mm.SetCaptureFeaturesForced(!mm.CaptureVersionRequired)
 		mm.ForgetCluster()
 	})
 
@@ -176,7 +176,11 @@ func TestExperimentCaptureStart(t *testing.T) {
 			want:    "capture pcap namespace test-experiment/files/x.pcapng snaplen=1600 format=pcapng maxsize=64M",
 			wantOut: "Started experiment capture 4 of test-experiment into x.pcapng\n",
 		},
-		"refuses an older minimega":       {args: []string{"test-experiment"}, version: "minimega 3.3.0 abc 2026-01-01"},
+		"starts on an older minimega": {
+			args: []string{"test-experiment", "--name", "x"}, version: "minimega 3.3.0 abc 2026-01-01",
+			want:    "capture pcap namespace test-experiment/files/x.pcapng snaplen=1600 format=pcapng maxsize=64M",
+			wantOut: "Started experiment capture 4 of test-experiment into x.pcapng\n",
+		},
 		"refuses another format":          {args: []string{"test-experiment", "--format", "erf"}},
 		"refuses a VLAN of no experiment": {args: []string{"test-experiment", "--vlan", "EXP_9"}},
 		"refuses a full bridge":           {args: []string{"test-experiment"}, mirrors: 32},
@@ -303,7 +307,7 @@ func TestExperimentCaptureRefusesInvalidMaxSize(t *testing.T) {
 }
 
 // capture list says when an experiment has no captures, and prints no mirror budgets for a stopped experiment. It
-// warns when the mirrors cannot be counted, and fails when minimega cannot list captures.
+// warns when the mirrors cannot be counted, and lists the captures whatever the minimega version.
 func TestExperimentCaptureListOutcomes(t *testing.T) {
 	tests := map[string]struct {
 		cluster     *expCaptureCluster
@@ -322,7 +326,12 @@ func TestExperimentCaptureListOutcomes(t *testing.T) {
 		},
 		"older minimega": {
 			cluster: &expCaptureCluster{version: "minimega 3.3.0 abc 2026-01-01"},
-			wantErr: "Unable to list the experiment captures of test-experiment",
+			wantOut: "Experiment test-experiment has no experiment captures\n\n" +
+				"+----------+--------+---------+------------+-------+-------+\n" +
+				"|   HOST   | BRIDGE | MIRRORS | EXPERIMENT | LIMIT | LEVEL |\n" +
+				"+----------+--------+---------+------------+-------+-------+\n" +
+				"| compute1 | phenix |       0 |          0 |    32 | ok    |\n" +
+				"+----------+--------+---------+------------+-------+-------+\n",
 		},
 	}
 

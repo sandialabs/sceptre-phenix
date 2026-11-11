@@ -17,6 +17,10 @@ import (
 // MinCaptureVersion is the first minimega release with experiment captures and the refreshed VM capture commands.
 const MinCaptureVersion = "v3.4.0"
 
+// CaptureVersionRequired tells whether the capture support needs MinCaptureVersion. While it is false, the support
+// starts forced on, as with ui.features minimega-captures, so phenix uses the capture commands of every minimega.
+const CaptureVersionRequired = false
+
 // ErrCaptureUnsupported is wrapped by the error of a capture call that the head node's minimega cannot do.
 var ErrCaptureUnsupported = errors.New("experiment captures are not supported")
 
@@ -42,13 +46,13 @@ var (
 // minimegaVersion is the first version answer of minimega in this process, kept until phenix restarts.
 //
 //nolint:gochecknoglobals // process-wide answer
-var minimegaVersion struct {
+var minimegaVersion = struct {
 	mu       sync.Mutex
-	forced   bool   // ui.features has minimega-captures
+	forced   bool   // ui.features has minimega-captures, or CaptureVersionRequired is false
 	answered bool   // minimega gave answer
 	answer   string // the whole answer, such as "minimega 3.4.0 abc123 2026-10-01"
 	watching bool   // StartVersionCheck runs, so a capture call does not ask itself
-}
+}{mu: sync.Mutex{}, forced: !CaptureVersionRequired, answered: false, answer: "", watching: false}
 
 // versionAsk lets one capture call at a time ask minimega for its version.
 var versionAsk sync.Mutex //nolint:gochecknoglobals // shared by all callers
@@ -201,14 +205,17 @@ func knownVersion(ctx context.Context, query func(context.Context) (string, erro
 	}
 
 	minimegaVersion.answered, minimegaVersion.answer = true, answer
-	logCaptureSupport(captureSupportOf(true, answer, false), answer)
+	logCaptureSupport(captureSupportOf(true, answer, false), answer, minimegaVersion.forced)
 
 	return answer, nil
 }
 
-// logCaptureSupport writes the one log line about minimega's first version answer.
-func logCaptureSupport(s CaptureSupport, answer string) {
+// logCaptureSupport writes the one log line about minimega's first version answer. With forced, it logs only the
+// answer, because phenix uses the capture commands whatever the version.
+func logCaptureSupport(s CaptureSupport, answer string, forced bool) {
 	switch {
+	case forced:
+		plog.Info(plog.TypeSystem, "minimega answered the version query", "answer", strings.TrimSpace(answer))
 	case s.Available:
 		plog.Info(plog.TypeSystem, "minimega supports experiment captures", "version", s.Version)
 	case s.Version == "":

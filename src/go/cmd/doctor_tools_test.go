@@ -497,7 +497,8 @@ func TestFeaturesHint(t *testing.T) {
 	}
 }
 
-// The minimega-captures check reads the version that the minimega check found, and never asks minimega.
+// The minimega-captures check reads the version that the minimega check found, and never asks minimega. The
+// capture support is on for every minimega version, with or without ui.features minimega-captures.
 func TestMinimegaCapturesCheck(t *testing.T) {
 	t.Parallel()
 
@@ -512,29 +513,28 @@ func TestMinimegaCapturesCheck(t *testing.T) {
 	}{
 		"minimega 3.4.0": {
 			found: up("minimega 3.4.0 abc 2026-10-01"),
-			want:  row("", doctorPass, "minimega 3.4.0 supports experiment captures"),
+			want:  row("", doctorPass, `on for every minimega version (minimega gives "minimega 3.4.0 abc 2026-10-01")`),
 		},
 		"older minimega": {
 			found: up("minimega 3.3.0 abc 2026-01-01"),
-			want:  row("", doctorPass, "off: requires minimega 3.4.0 or later; the head node runs 3.3.0"),
+			want:  row("", doctorPass, `on for every minimega version (minimega gives "minimega 3.3.0 abc 2026-01-01")`),
 		},
 		"a version doctor cannot read": {
 			found: up("minimega devel"),
-			want:  row("", doctorWarn, `off: requires minimega 3.4.0 or later; cannot read the minimega version "minimega devel"`),
+			want:  row("", doctorPass, `on for every minimega version (minimega gives "minimega devel")`),
 		},
-		"forced on an older minimega": {
+		"minimega-captures in ui.features": {
 			features: []string{"vm-mount", "minimega-captures"},
 			found:    up("minimega 3.3.0 abc 2026-01-01"),
-			want: row("", doctorPass,
-				`on, because ui.features has minimega-captures (minimega gives "minimega 3.3.0 abc 2026-01-01")`),
+			want:     row("", doctorPass, `on for every minimega version (minimega gives "minimega 3.3.0 abc 2026-01-01")`),
 		},
 		"no minimega": {
 			found: &doctorFound{},
-			want:  row("", doctorSkip, "not checked, because minimega gave no version"),
+			want:  row("", doctorPass, "on for every minimega version"),
 		},
-		"forced without minimega": {
+		"minimega-captures without minimega": {
 			features: []string{"minimega-captures"},
-			want:     row("", doctorPass, "on, because ui.features has minimega-captures"),
+			want:     row("", doctorPass, "on for every minimega version"),
 		},
 	}
 

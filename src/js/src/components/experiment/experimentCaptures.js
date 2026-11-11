@@ -18,7 +18,7 @@ export const FORMAT_HELP =
 // the support status that the /features list gives when the capture list
 // cannot be read
 const FEATURE = 'minimega-captures';
-const NO_SUPPORT_REASON = 'requires minimega 3.4.0 or later';
+const NO_SUPPORT_REASON = 'the server did not report capture support';
 
 // the BPF filters the server accepts: no quotes, backslash or #
 const FILTER = /^[A-Za-z0-9 .:/[\]()&|!<>=+\-*,]{0,1024}$/;
@@ -52,7 +52,6 @@ export function unsupportedNotice(reason) {
   return (
     'Experiment captures are not available. ' +
     `${text.charAt(0).toUpperCase()}${text.slice(1)}. ` +
-    'Upgrade minimega on every node, relays included, and restart phēnix. ' +
     'VM interface captures still work, without the new options.'
   );
 }

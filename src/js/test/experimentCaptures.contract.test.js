@@ -52,7 +52,7 @@ describe('captureSupport', () => {
       'the list gives no reason',
       { support: { available: false, reason: '', version: '' } },
       [],
-      { available: false, reason: 'requires minimega 3.4.0 or later' },
+      { available: false, reason: 'the server did not report capture support' },
     ],
     [
       'no list, with the feature',
@@ -64,13 +64,13 @@ describe('captureSupport', () => {
       'no list, without the feature',
       null,
       ['webshark'],
-      { available: false, reason: 'requires minimega 3.4.0 or later' },
+      { available: false, reason: 'the server did not report capture support' },
     ],
     [
       'no list and no features',
       null,
       undefined,
-      { available: false, reason: 'requires minimega 3.4.0 or later' },
+      { available: false, reason: 'the server did not report capture support' },
     ],
     [
       'a list from an older server, without support',
@@ -84,26 +84,27 @@ describe('captureSupport', () => {
 
   it('shortens a reason to its part before the semicolon', () => {
     expect(shortReason(OLD)).toBe('requires minimega 3.4.0 or later');
-    expect(shortReason('')).toBe('requires minimega 3.4.0 or later');
+    expect(shortReason('')).toBe('the server did not report capture support');
   });
 
   it('says what to do when not available', () => {
     expect(unsupportedNotice(OLD)).toBe(
       'Experiment captures are not available. Requires minimega 3.4.0 or' +
-        ' later; the head node runs 3.3.0. Upgrade minimega on every node,' +
-        ' relays included, and restart phēnix. VM interface captures still' +
+        ' later; the head node runs 3.3.0. VM interface captures still' +
         ' work, without the new options.',
     );
   });
 
   it('says what to do with the default reason, ending one full stop', () => {
     const want =
-      'Experiment captures are not available. Requires minimega 3.4.0 or' +
-      ' later. Upgrade minimega on every node, relays included, and restart' +
-      ' phēnix. VM interface captures still work, without the new options.';
+      'Experiment captures are not available. The server did not report' +
+      ' capture support. VM interface captures still work, without the new' +
+      ' options.';
     expect(unsupportedNotice('')).toBe(want);
     expect(unsupportedNotice(undefined)).toBe(want);
-    expect(unsupportedNotice(' requires minimega 3.4.0 or later. ')).toBe(want);
+    expect(
+      unsupportedNotice(' the server did not report capture support. '),
+    ).toBe(want);
   });
 });
 

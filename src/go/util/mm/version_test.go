@@ -155,6 +155,31 @@ func TestCaptureSupportOf(t *testing.T) {
 	}
 }
 
+// While CaptureVersionRequired is false, a process starts with the support forced on: it is on before minimega
+// answers, and a capture call does not ask minimega for its version.
+func TestCaptureSupportForcedAtStart(t *testing.T) { //nolint:paralleltest // reads package state
+	minimegaVersion.mu.Lock()
+	forced := minimegaVersion.forced
+	minimegaVersion.mu.Unlock()
+
+	if want := !CaptureVersionRequired; forced != want {
+		t.Errorf("capture support forced at start = %t, want %t", forced, want)
+	}
+
+	useMinimegaVersion(t, nil, forced, false)
+
+	q := &versionQueries{answer: unsupportedAnswer}
+	queryVersion = q.query
+
+	if s := QueryCaptureSupport(t.Context()); s.Available != !CaptureVersionRequired {
+		t.Errorf("QueryCaptureSupport() at start = %+v, want available %t", s, !CaptureVersionRequired)
+	}
+
+	if got, want := q.count(), 0; !CaptureVersionRequired && got != want {
+		t.Errorf("version queries = %d, want %d", got, want)
+	}
+}
+
 // Until minimega answers, the support is off and says so, unless ui.features forces it on.
 func TestCaptureSupportStatusWithoutAnswer(t *testing.T) { //nolint:paralleltest // replaces package state
 	useMinimegaVersion(t, nil, false, true)
@@ -393,19 +418,21 @@ func TestAskMinimegaVersion(t *testing.T) { //nolint:paralleltest // shares the 
 }
 
 // The first version answer logs one line about the capture support: info when minimega supports captures or is
-// older, a warning when the version cannot be read.
+// older, a warning when the version cannot be read, and only the answer when the support is forced on.
 func TestKnownVersionLogsCaptureSupport(t *testing.T) { //nolint:paralleltest // replaces package state
 	tests := map[string]struct {
 		answer, msg, level string
+		forced             bool
 	}{
 		"supported":  {answer: supportedAnswer, msg: "minimega supports experiment captures", level: "INFO"},
 		"older":      {answer: unsupportedAnswer, msg: "minimega does not support experiment captures", level: "INFO"},
 		"unreadable": {answer: "minimega devel", msg: "cannot read the minimega version", level: "WARN"},
+		"forced":     {answer: unsupportedAnswer, msg: "minimega answered the version query", level: "INFO", forced: true},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			useMinimegaVersion(t, nil, false, false)
+			useMinimegaVersion(t, nil, tc.forced, false)
 
 			logs := plogtest.Capture(t)
 

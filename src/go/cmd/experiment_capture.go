@@ -43,7 +43,7 @@ func captureFormatFlag(cmd *cobra.Command) (string, error) {
 func addCaptureFormatFlag(cmd *cobra.Command) {
 	cmd.Flags().String(
 		"format", mm.CaptureFormatPcapng,
-		"capture file format, pcapng or pcap (minimega before 3.4.0 writes only pcap)",
+		"capture file format, pcapng or pcap",
 	)
 }
 
@@ -55,7 +55,8 @@ func newExperimentCaptureCmd() *cobra.Command {
 
   An experiment capture records the traffic of all the VLANs, or of the given
   VLANs, of a running experiment on all its hosts into one file in the
-  experiment's files directory. It needs minimega 3.4.0 or later.`,
+  experiment's files directory. It needs a minimega build that has the
+  experiment capture commands; phenix does not check the minimega version.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},

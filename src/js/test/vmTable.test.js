@@ -343,7 +343,7 @@ describe('the network menus', () => {
   const FILES_ITEM = 'Show capture files in the Files tab';
   // the experiment capture item, greyed out while minimega lacks support
   const CAPTURE_VLAN = (vlan) =>
-    `Capture VLAN ${vlan}… (requires minimega 3.4.0 or later) (disabled)`;
+    `Capture VLAN ${vlan}… (the server did not report capture support) (disabled)`;
 
   // the network buttons of a VM's interfaces
   const triggers = (wrapper, name) =>
@@ -535,7 +535,9 @@ describe('the network menus', () => {
         },
       });
       await openMenu(wrapper, 'web', 0);
-      expect(itemTexts()).toContain(CAPTURE_VLAN('dmz'));
+      expect(itemTexts()).toContain(
+        'Capture VLAN dmz… (requires minimega 3.4.0 or later) (disabled)',
+      );
       // a disabled item cannot be picked
       items()
         .find((b) => textOf(b).startsWith('Capture VLAN'))

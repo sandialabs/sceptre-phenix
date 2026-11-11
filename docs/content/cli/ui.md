@@ -24,7 +24,7 @@ phenix ui [flags]
 
 ```text
   -b, --base-path string              base path to use for UI (must run behind proxy if not '/') (default "/")
-      --captures.max-size int         maximum size in megabytes of each packet capture file that minimega 3.4.0 or later writes (0 sets no limit) (default 10240)
+      --captures.max-size int         maximum size in megabytes of each packet capture file that minimega writes (0 sets no limit) (default 10240)
       --features strings              list of features to enable (options: vm-mount, minimega-captures)
       --file-server-endpoint string   port or host:port to serve experiment file uploads on; port-only binds 127.0.0.1 (default "0")
   -h, --help                          help for ui

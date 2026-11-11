@@ -927,7 +927,7 @@ describe('the Captures tab', () => {
       captures: [],
     });
     expect(textOf(wrapper.find('.captures-unsupported'))).toBe(
-      'Experiment captures are not available. Requires minimega 3.4.0 or later; the head node runs 3.3.0. Upgrade minimega on every node, relays included, and restart phēnix. VM interface captures still work, without the new options.',
+      'Experiment captures are not available. Requires minimega 3.4.0 or later; the head node runs 3.3.0. VM interface captures still work, without the new options.',
     );
     const [button] = tooltipButtons(wrapper);
     expect(button).toMatchObject({
@@ -1125,7 +1125,7 @@ describe('the running experiment page', () => {
         throw httpError(500, 'boom');
       },
       ['minimega-captures-not'],
-      'requires minimega 3.4.0 or later',
+      'the server did not report capture support',
     ],
   ])(
     'greys out the toolbar button, saying why, when %s',

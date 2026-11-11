@@ -128,7 +128,7 @@ phenix vm capture start <experiment name> <vm name> <iface name/index> <output f
 ### Options
 
 ```text
-      --format string   capture file format, pcapng or pcap (minimega before 3.4.0 writes only pcap) (default "pcapng")
+      --format string   capture file format, pcapng or pcap (default "pcapng")
   -h, --help            help for start
 ```
 
@@ -148,7 +148,7 @@ phenix vm capture start-subnet <experiment name> <subnet> [flags]
 
 ```text
   -f, --filter string   Filter to restrict the list of VMs
-      --format string   capture file format, pcapng or pcap (minimega before 3.4.0 writes only pcap) (default "pcapng")
+      --format string   capture file format, pcapng or pcap (default "pcapng")
   -h, --help            help for start-subnet
 ```
 
@@ -177,7 +177,7 @@ phenix vm capture start-vlan <experiment name> <vlan alias> [flags]
 
 ```text
   -f, --filter string   Filter to restrict the list of VMs
-      --format string   capture file format, pcapng or pcap (minimega before 3.4.0 writes only pcap) (default "pcapng")
+      --format string   capture file format, pcapng or pcap (default "pcapng")
   -h, --help            help for start-vlan
 ```
 

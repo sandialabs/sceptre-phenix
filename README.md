@@ -103,7 +103,7 @@ See [Workflow](https://phenix.sceptre.dev/latest/workflow/) for the directory la
 
 ### Capture Experiment Traffic
 
-An experiment capture records the traffic of a running experiment on all of its hosts into one file on the head node. It needs minimega 3.4.0 or later on every node:
+An experiment capture records the traffic of a running experiment on all of its hosts into one file on the head node. It needs a minimega build with experiment captures on every node:
 
 ```bash
 # Capture all VLANs of exp1. The command prints the capture ID.
@@ -268,7 +268,7 @@ Logging settings are managed via the `phenix settings` command, which modifies t
 | `ui.logs.level` | `PHENIX_UI_LOGS_LEVEL` | `""` | Log level for the web UI stream (defaults to `log.level`). |
 | `ui.logs.minimega-path` | `PHENIX_UI_LOGS_MINIMEGA_PATH` | `""` | Path to the minimega log file to display in the UI and offer for download on the Logs page. **(Restart Required)** |
 | `ui.netflow.max-size` | `PHENIX_UI_NETFLOW_MAX_SIZE` | `100` | Maximum size in megabytes of each recorded netflow capture; `0` does not record captures. **(Restart Required)** |
-| `ui.captures.max-size` | `PHENIX_UI_CAPTURES_MAX_SIZE` | `10240` | Maximum size in megabytes of each packet capture file that minimega 3.4.0 or later writes; `0` sets no limit. **(Restart Required)** |
+| `ui.captures.max-size` | `PHENIX_UI_CAPTURES_MAX_SIZE` | `10240` | Maximum size in megabytes of each packet capture file that minimega writes; `0` sets no limit. **(Restart Required)** |
 | `base-dir.injects` | `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Directory that `phenix workflow apply` stages a topology directory's `phenix-injects/` into, as `<base-dir.injects>/<name>`. The `phenix ui` server's value is used unless `--base-dir.injects` is given. Use an absolute path. **(Restart Required)** |
 | `base-dir.topologies` | `PHENIX_BASE_DIR_TOPOLOGIES` | `<base-dir.phenix>/topologies` | Directory where `phenix workflow apply NAME` looks for `NAME` when it isn't an existing path. Use an absolute path. |
 | `base-dir.builder-templates` | `PHENIX_BASE_DIR_BUILDER_TEMPLATES` | `<base-dir.phenix>/builder/templates` | Directory of Builder node template files that `phenix ui` reads at start as read-only server collections. Use an absolute path. **(Restart Required)** |

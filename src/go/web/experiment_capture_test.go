@@ -47,7 +47,7 @@ func useCaptureSupport(t *testing.T, available bool) {
 	t.Cleanup(mm.ForgetCluster)
 
 	mm.SetCaptureFeaturesForced(available)
-	t.Cleanup(func() { mm.SetCaptureFeaturesForced(false) })
+	t.Cleanup(func() { mm.SetCaptureFeaturesForced(!mm.CaptureVersionRequired) })
 }
 
 // captureRole may do what verbs name on test-experiment's experiment captures.

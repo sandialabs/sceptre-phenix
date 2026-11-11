@@ -338,7 +338,7 @@ func TestVMCaptureStartFormat(t *testing.T) {
 			}}
 
 			mm.SetCaptureFeaturesForced(true)
-			t.Cleanup(func() { mm.SetCaptureFeaturesForced(false) })
+			t.Cleanup(func() { mm.SetCaptureFeaturesForced(!mm.CaptureVersionRequired) })
 
 			received := mmtest.Use(t, nil)
 

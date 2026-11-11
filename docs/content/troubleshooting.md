@@ -30,9 +30,9 @@ Ensure timestamps in your JSON logs are in a consistent format that phēnix can 
 
 ### Experiment Captures Are Not Available
 
-Experiment captures need minimega 3.4.0 or later on every node. phēnix reads
-the minimega version only when it starts. Restart phēnix after you upgrade
-minimega. For the disabled controls, a refused start, and a skew warning, see
+Experiment captures need a minimega build with experiment captures on every
+node. phēnix does not check the minimega version. For the disabled controls, a
+refused start, and a skew warning, see
 [Experiment Packet Captures](packet-captures.md#troubleshooting).
 
 ## Configuration Issues

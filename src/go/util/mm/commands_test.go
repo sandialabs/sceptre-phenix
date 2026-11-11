@@ -106,6 +106,9 @@ func TestOneCommandFunctions(t *testing.T) { //nolint:paralleltest // shares the
 	host := inExp(`.columns "name" .filter name=a vm info`)
 	state := inExp(`.columns "state" .filter name=a vm info summary`)
 
+	// no version answer and no forced support: the capture listing of a minimega older than 3.4.0
+	useMinimegaVersion(t, nil, false, true)
+
 	for name, tc := range map[string]commandCase{
 		"ReadScriptFromFile": {
 			call: errOnly(func() error { return ReadScriptFromFile("exp", "/s.mm") }),
@@ -412,7 +415,7 @@ func TestOneCommandFunctions(t *testing.T) { //nolint:paralleltest // shares the
 			sent: []string{inExp(`.columns "name","state" vm info summary`)},
 			want: map[string]string{"a": "RUNNING"},
 		},
-		"GetExperimentCaptures leaves out bridge captures and unknown interfaces": {
+		"GetExperimentCaptures of an older minimega leaves out bridge captures and unknown interfaces": {
 			call: func() (any, error) { return GetExperimentCaptures(NS("exp")), nil },
 			answers: map[string][]*minicli.Response{
 				captureCmd: {mmtest.Tabular("head", []string{"interface", "path"},

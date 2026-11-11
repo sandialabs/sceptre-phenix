@@ -79,7 +79,8 @@ Experiment capture management
 
   An experiment capture records the traffic of all the VLANs, or of the given
   VLANs, of a running experiment on all its hosts into one file in the
-  experiment's files directory. It needs minimega 3.4.0 or later.
+  experiment's files directory. It needs a minimega build that has the
+  experiment capture commands; phenix does not check the minimega version.
 ```
 
 ```text
@@ -157,7 +158,7 @@ phenix experiment capture start exp1 --vlan EXP_1 --vlan EXP_2 --filter "tcp por
 
 ```text
       --filter string      BPF filter of the frames to capture
-      --format string      capture file format, pcapng or pcap (minimega before 3.4.0 writes only pcap) (default "pcapng")
+      --format string      capture file format, pcapng or pcap (default "pcapng")
   -h, --help               help for start
       --name string        file name in the experiment's files directory (default <exp>[-<vlan>]-<time>)
       --snaplen int        most bytes of each frame to keep, from 14 to 65535 (0 keeps 1600)

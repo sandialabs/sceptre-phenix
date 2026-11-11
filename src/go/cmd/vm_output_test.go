@@ -63,7 +63,7 @@ func TestVMCmdCaptureListOutput(t *testing.T) { //nolint:paralleltest // replace
 	fake := vmCmdMinimega{rows: vmCmdRunning(), captures: [][]string{{"db:1", "/p/db1.pcap"}}}
 	mmtest.Use(t, fake.handle)
 
-	db := []mm.Capture{{VM: "db", Interface: 1, Filepath: "/p/db1.pcap"}}
+	db := []mm.Capture{{VM: "db", Interface: 1, Filepath: "/p/db1.pcap", Format: "pcap"}}
 
 	for _, tt := range []struct {
 		args []string

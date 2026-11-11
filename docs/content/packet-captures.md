@@ -26,25 +26,20 @@ An experiment capture also works on the default `phenix` bridge. Unlike
 
 ## Requirements
 
-* minimega 3.4.0 or later on every node of the mesh, relays included.
-  minimega on the head node refuses a start when a mesh node runs an older
-  version.
+* A minimega build with experiment captures on every node of the mesh,
+  relays included. minimega on the head node refuses a start when a mesh node
+  runs a minimega version without experiment captures.
 * Synchronized clocks on all hosts. Use chrony or PTP. The head node puts the
   frames of different hosts in order by their timestamps. A clock offset
   changes that order.
 * A running experiment.
 * The permissions that [Permissions](#permissions) gives.
 
-phēnix reads the minimega version of the head node one time, when `phenix ui`
-starts. If minimega does not answer, phēnix asks again every 10 seconds until
-minimega answers. A `phenix experiment capture` command reads the version when
-it starts. The result does not change while phēnix runs. After you upgrade
-minimega, restart phēnix.
-
-With an older minimega, the capture controls stay visible but are disabled.
-Each control shows the reason, for example
-`requires minimega 3.4.0 or later; the head node runs 3.3.0`. VM interface
-captures still work, but without the format and size options.
+phēnix does not check the minimega version before it sends a capture command.
+It uses the capture commands with all minimega versions. If minimega does not
+have experiment captures, the start fails, and phēnix shows the minimega error.
+`phenix ui` reads the minimega version of the head node one time, when it
+starts, and `phenix doctor` shows that version.
 
 ## Capture Options
 
@@ -75,8 +70,8 @@ captures still work, but without the format and size options.
 
 The `ui.captures.max-size` setting sets the maximum size of each capture file,
 in megabytes. The default is `10240` (10 GiB). `0` sets no limit. The setting
-also applies to VM interface captures with minimega 3.4.0 or later. Restart
-`phenix ui` after you change it. See [Settings](settings.md).
+also applies to VM interface captures. Restart `phenix ui` after you change
+it. See [Settings](settings.md).
 
 ### Formats
 
@@ -331,26 +326,13 @@ The controls show the reason. The `Captures` tab shows it too.
 
 | Reason | Fix |
 |---|---|
-| `requires minimega 3.4.0 or later; the head node runs <version>` | Upgrade minimega on every node, relays included. Then restart phēnix. |
-| `requires minimega 3.4.0 or later; minimega did not answer` | Make sure that minimega runs. phēnix asks again every 10 seconds. |
-| `requires minimega 3.4.0 or later; cannot read the minimega version "<answer>"` | See [A Development Build of minimega](#a-development-build-of-minimega). |
+| `the server did not report capture support` | Reload the page. If the controls stay disabled, make sure that `phenix ui` runs. |
 
-`phenix doctor` shows the result of the version check in its
-`minimega-captures` row.
+`phenix doctor` shows the capture support in its `minimega-captures` row.
 
-### A Development Build of minimega
-
-A development build of minimega can give a version that phēnix cannot read,
-or an older version. If the build supports experiment captures, do these steps:
-
-1. Add `minimega-captures` to the `ui.features` setting, or give
-   `phenix ui --features minimega-captures`.
-2. Restart phēnix.
-
-### The Controls Stay Disabled After an Upgrade
-
-phēnix reads the minimega version only one time. Restart phēnix after you
-upgrade minimega.
+phēnix accepts `minimega-captures` in the `ui.features` setting, but the
+feature has no effect: phēnix uses the capture commands with all minimega
+versions.
 
 ### The Start Is Refused
 

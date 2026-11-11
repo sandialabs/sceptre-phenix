@@ -1862,7 +1862,8 @@ paths:
       description: >-
         Starts one packet capture of the running experiment's traffic on all
         its hosts, which minimega merges into one file in the experiment's
-        files directory on the head node. It needs minimega 3.4.0 or later.
+        files directory on the head node. It needs a minimega build with
+        experiment captures; phenix does not check the minimega version.
         The capture uses one Open vSwitch mirror on each host and bridge where
         the experiment's VMs have an interface on a captured VLAN. phenix
         refuses the start, and sends nothing to minimega, when one of those
@@ -1937,7 +1938,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "501":
-          description: minimega does not support experiment captures (it needs 3.4.0 or later)
+          description: minimega does not support experiment captures
           content:
             application/json:
               schema:
@@ -6502,8 +6503,7 @@ paths:
                 format:
                   title: Format
                   description: >-
-                    the file format; empty is pcapng. A minimega older than
-                    3.4.0 writes pcap, whatever the format.
+                    the file format; empty is pcapng.
                   example: pcapng
                   type: string
                   enum: [pcapng, pcap, ""]
@@ -15795,8 +15795,8 @@ components:
     Capture:
       title: "Capture"
       description: >-
-        One VM interface capture: the VM, the index of its interface and the capture file. With minimega
-        3.4.0 or later, also its ID, state, format and counters; with an older minimega these are empty or 0.
+        One VM interface capture: the VM, the index of its interface and the capture file, also its ID, state,
+        format and counters. With a minimega that lists only the interface and the file, these are empty or 0.
       type: object
       properties:
         vm:
@@ -15852,7 +15852,9 @@ components:
           type: string
     CaptureSupport:
       title: Capture Support
-      description: Whether minimega supports experiment captures, which need minimega 3.4.0 or later, and why not.
+      description: >-
+        Whether phenix uses the capture commands of minimega, and why not. phenix does not check the minimega
+        version now, so available is always true.
       type: object
       properties:
         available:
@@ -23640,8 +23642,7 @@ components:
           title: Format
           description: >-
             the file format of the captures that a start makes; empty is
-            pcapng. A minimega older than 3.4.0 writes pcap, whatever the
-            format. A stop does not read it.
+            pcapng. A stop does not read it.
           example: pcapng
           type: string
           enum: [pcapng, pcap, ""]

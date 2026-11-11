@@ -319,9 +319,19 @@ func featuresHint(c doctorCheck) string {
 
 // minimegaCapturesCheck reports whether phenix ui uses the capture commands of
 // minimega 3.4.0, from the version answer that the minimega check read. It
-// never asks minimega itself. features is ui.features.
+// never asks minimega itself. features is ui.features. While
+// mm.CaptureVersionRequired is false, the support is on for every version.
 func minimegaCapturesCheck(features []string, found *doctorFound) doctorCheck {
 	const forcedText = "on, because ui.features has " + web.FeatureMinimegaCaptures
+
+	if !mm.CaptureVersionRequired {
+		const everyVersionText = "on for every minimega version"
+		if found == nil || !found.minimegaUp {
+			return passCheck(everyVersionText)
+		}
+
+		return passCheck(fmt.Sprintf("%s (minimega gives %q)", everyVersionText, found.minimegaVersion))
+	}
 
 	forced := slices.Contains(features, web.FeatureMinimegaCaptures)
 

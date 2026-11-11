@@ -129,8 +129,8 @@ The menu has these capture items:
   The menu shows this item only when an interface on that VLAN has a capture.
 * `Capture VLAN <alias>…` opens the dialog of an experiment capture of that
   VLAN. An experiment capture records the VLAN on all hosts into one file. See
-  [Experiment Packet Captures](packet-captures.md). With minimega before
-  3.4.0, the item is disabled and shows the reason.
+  [Experiment Packet Captures](packet-captures.md). When the server does not
+  report capture support, the item is disabled and shows the reason.
 * `Show capture files in the Files tab` opens the `Files` tab with a search for
   the capture files of that interface.
 * `Open live capture in WebShark` opens the capture of that interface on the
@@ -139,11 +139,11 @@ The menu has these capture items:
 
 The VM must be running to start or stop a capture from the menu.
 
-With minimega 3.4.0 or later, `Start capture on this interface` and
+`Start capture on this interface` and
 `Start interface captures on VLAN <alias>` open a dialog. Select the `Format`,
 `pcapng` or `pcap`, and click `Start`. The capture file name ends in `.pcapng`
-or `.pcap` to match the format. With an older minimega, the items start the
-captures at once in pcap format.
+or `.pcap` to match the format. When the server does not report capture
+support, the items start the captures at once in pcap format.
 
 The menu also has these items:
 
@@ -207,8 +207,7 @@ The `--filter` flag of these four commands limits them to the VMs that the
 filter matches.
 
 The `--format` flag of `start-subnet` and `start-vlan` sets the capture file
-format, `pcapng` (the default) or `pcap`. minimega before 3.4.0 writes only
-pcap.
+format, `pcapng` (the default) or `pcap`.
 
 To stop all packet captures for an experiment, use the following command.
 

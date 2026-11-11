@@ -190,7 +190,7 @@ func newUICmd() *cobra.Command {
 	uiCmd.Flags().Int64(
 		"captures.max-size",
 		web.DefaultCaptureMaxSize,
-		"maximum size in megabytes of each packet capture file that minimega 3.4.0 or later writes (0 sets no limit)",
+		"maximum size in megabytes of each packet capture file that minimega writes (0 sets no limit)",
 	)
 
 	for _, name := range uiSettings {

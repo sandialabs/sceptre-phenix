@@ -524,7 +524,6 @@ func TestDoctorChecksFromInput(t *testing.T) {
 			},
 			// minimega-env checks nothing, in one skip row; no <base-dir.phenix>/images to check or measure
 			want: slices.Replace(replaceNamedRows(allPass, "minimega minimega fail", "disk-chains disk chains skip",
-				"minimega-captures minimega-captures skip",
 				"disk-formats disk formats skip", "leftovers leftovers snapshots skip", "leftovers leftovers taps skip",
 				"leftovers leftovers mirrors skip",
 				"disk-space disk-space files pass => disk-space disk-space base pass"),
@@ -869,7 +868,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 59 passed, 26 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 60 passed, 25 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},
@@ -895,7 +894,7 @@ func TestDoctorTextOutput(t *testing.T) {
 			opts: doctorOptions{output: "text", problems: true},
 			want: []string{
 				"\nCHECK", "ui.jwt-signing-key", "WARN", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 59 passed, 26 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
+				"\nFAIL: 1 failed, 1 warned, 60 passed, 25 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
 					"85 passing or skipped checks hidden\n",
 			},
 			wantNot: []string{" PASS ", " SKIP "},

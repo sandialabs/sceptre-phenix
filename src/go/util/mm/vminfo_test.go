@@ -104,6 +104,9 @@ func (c *vmInfoCluster) reply(cmd mmtest.Command) []*minicli.Response {
 }
 
 func TestGetVMInfoCommandsAndDiskCache(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	// the capture listing of a minimega older than 3.4.0
+	useMinimegaVersion(t, nil, false, true)
+
 	cluster := new(vmInfoCluster)
 	cluster.set(
 		fakeVM{host: "compute1", name: "a", uptime: "1h0m0s", disk: "snap-a", snapshot: true},

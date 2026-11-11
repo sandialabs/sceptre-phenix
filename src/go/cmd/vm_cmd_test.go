@@ -178,7 +178,7 @@ func (f vmCmdMinimega) handle(cmd mmtest.Command) []*minicli.Response {
 func vmCmdChanges(cmds []mmtest.Command) []string {
 	var (
 		reads     = regexp.MustCompile(`^(cc client|vm info|vm info summary|capture|host|args|version|mesh send head disk info .*)$`)
-		timestamp = regexp.MustCompile(`_\d{8}_\d{4}\.pcap$`)
+		timestamp = regexp.MustCompile(`_\d{8}_\d{4}\.pcap`)
 		changes   []string
 	)
 
@@ -958,14 +958,14 @@ func TestVMCmdCapture(t *testing.T) { //nolint:paralleltest // replaces the phen
 		{
 			name: "start subnet", args: []string{"start-subnet", "exp", "10.0.0.0/24"},
 			want: []string{
-				"mesh send head shell mkdir -p /phenix/images/exp/files", "capture pcap vm web 0 exp/files/web_0_TIME.pcap",
-				"mesh send head shell mkdir -p /phenix/images/exp/files", "capture pcap vm db 0 exp/files/db_0_TIME.pcap",
+				"capture pcap vm web 0 exp/files/web_0_TIME.pcapng format=pcapng maxsize=10240M",
+				"capture pcap vm db 0 exp/files/db_0_TIME.pcapng format=pcapng maxsize=10240M",
 			},
 			wantRows: [][3]string{{"db", "1", "/p/db1.pcap"}},
 		},
 		{
 			name: "start subnet with filter", args: []string{"start-subnet", "exp", "10.0.0.0/24", "--filter", "db"},
-			want:     []string{"mesh send head shell mkdir -p /phenix/images/exp/files", "capture pcap vm db 0 exp/files/db_0_TIME.pcap"},
+			want:     []string{"capture pcap vm db 0 exp/files/db_0_TIME.pcapng format=pcapng maxsize=10240M"},
 			wantRows: [][3]string{{"db", "1", "/p/db1.pcap"}},
 		},
 		{
@@ -1021,15 +1021,15 @@ func TestVMCmdCapture(t *testing.T) { //nolint:paralleltest // replaces the phen
 		{
 			name: "start VLAN", args: []string{"start-vlan", "exp", "EXP_1"},
 			want: []string{
-				"mesh send head shell mkdir -p /phenix/images/exp/files", "capture pcap vm web 0 exp/files/web_0_TIME.pcap",
-				"mesh send head shell mkdir -p /phenix/images/exp/files", "capture pcap vm db 0 exp/files/db_0_TIME.pcap",
+				"capture pcap vm web 0 exp/files/web_0_TIME.pcapng format=pcapng maxsize=10240M",
+				"capture pcap vm db 0 exp/files/db_0_TIME.pcapng format=pcapng maxsize=10240M",
 			},
 		},
 		// db already captures on its EXP_2 interface, so no capture starts
 		{name: "start VLAN on a capturing interface", args: []string{"start-vlan", "exp", "EXP_2"}},
 		{
 			name: "start VLAN with filter", args: []string{"start-vlan", "exp", "EXP_1", "--filter", "web"},
-			want: []string{"mesh send head shell mkdir -p /phenix/images/exp/files", "capture pcap vm web 0 exp/files/web_0_TIME.pcap"},
+			want: []string{"capture pcap vm web 0 exp/files/web_0_TIME.pcapng format=pcapng maxsize=10240M"},
 		},
 		{
 			name:    "start VLAN filter matches nothing",
