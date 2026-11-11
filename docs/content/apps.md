@@ -65,7 +65,7 @@ The supported metadata is:
 |----------|----------|--------|--------|
 | `domain_controller` | Linux, RHEL, or CentOS | `domain`, `username`, `password` | Joins the guest to the domain with `realm join`. |
 | `domain_controller` | Windows | `domain`, `ip`, `username`, `password` | Uses `ip` as the first network adapter's DNS server, then joins the domain. |
-| `auto_logon` | Windows | `username`, `password`, and optional `local` | Configures automatic logon and adds the account to the local Administrators group. |
+| `auto_logon` | Windows | `username`, `password`, and optional `local` | Configures automatic logon. |
 
 ##### Linux Domain Join
 
