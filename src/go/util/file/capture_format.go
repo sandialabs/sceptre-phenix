@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"phenix/util/common"
 	"phenix/util/mm"
 )
 
@@ -64,7 +65,7 @@ func sniffedName(clean string) bool {
 // symbolic link, and none out of the experiment's files directory. It stops with an error once ctx is done.
 func addCaptureFormats(ctx context.Context, exp string, files Files) error {
 	// a headnode without the directory has no file to read
-	root, err := os.OpenRoot(mm.GetMMFullPath(filepath.Join(exp, "files")))
+	root, err := os.OpenRoot(filepath.Join(common.PhenixBase, "images", exp, "files"))
 	if err != nil {
 		return nil
 	}

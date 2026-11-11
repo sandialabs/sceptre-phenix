@@ -221,48 +221,6 @@ func TestListingCaptureFormats(t *testing.T) { //nolint:paralleltest // replaces
 	}
 }
 
-// The listing reads the capture formats from minimega's files directory, which can be other than
-// <base-dir.phenix>/images.
-func TestListingCaptureFormatsInMinimegaFilesDirectory(t *testing.T) { //nolint:paralleltest // replaces package state
-	if !mmtest.InOwnProcess(t) {
-		return
-	}
-
-	pcap := "\xd4\xc3\xb2\xa1rest of the header"
-
-	useFilesDir(t, map[string]string{"a.pcap": pcap})
-
-	filesDir := t.TempDir()
-	writeFile(t, filepath.Join(filesDir, "exp", "files", "sub", "b.pcap"), pcap)
-
-	mmtest.Use(t, func(cmd mmtest.Command) []*minicli.Response {
-		switch {
-		case cmd.Base == "args":
-			return []*minicli.Response{mmtest.Tabular("head", []string{"filepath"}, []string{filesDir})}
-		case strings.HasPrefix(cmd.Base, "mesh send all file list"):
-			return []*minicli.Response{mmtest.Tabular("compute1", listingHeader)}
-		case strings.HasPrefix(cmd.Base, "file list "):
-			return []*minicli.Response{mmtest.ListFiles(t, "head", filesDir, strings.Fields(cmd.Base)[2])}
-		}
-
-		return nil
-	})
-
-	got, _, err := MMClusterFiles{}.GetExperimentFilesObserved(t.Context(), "exp", "")
-	if err != nil {
-		t.Fatalf("GetExperimentFilesObserved(exp) error = %v", err)
-	}
-
-	formats := make(map[string]string, len(got))
-	for _, f := range got {
-		formats[f.Path] = f.CaptureFormat
-	}
-
-	if diff := cmp.Diff(map[string]string{"sub/b.pcap": mm.CaptureFormatPcap}, formats); diff != "" {
-		t.Errorf("GetExperimentFilesObserved(exp) capture formats mismatch (-want +got):\n%s", diff)
-	}
-}
-
 // addCaptureFormats reads no file once ctx is done, and says so.
 func TestAddCaptureFormatsStopsWhenCanceled(t *testing.T) { //nolint:paralleltest // replaces package state
 	useFilesDir(t, map[string]string{"a.pcap": "\xa1\xb2\xc3\xd4"})

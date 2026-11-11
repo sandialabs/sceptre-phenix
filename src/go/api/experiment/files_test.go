@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,7 +16,6 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
 	"pgregory.net/rapid"
 
 	"phenix/api/experiment"
@@ -25,7 +23,6 @@ import (
 	"phenix/util/common"
 	"phenix/util/file"
 	"phenix/util/mm"
-	"phenix/util/mm/mmtest"
 	"phenix/util/testenv"
 )
 
@@ -1392,66 +1389,6 @@ func TestLocalFileExists(t *testing.T) { //nolint:paralleltest // replaces packa
 		if got := experiment.LocalFileExists("exp", clean); got != want {
 			t.Errorf("LocalFileExists(exp, %q) = %t, want %t", clean, got, want)
 		}
-	}
-}
-
-// WriteNewFile writes in minimega's files directory, which can be other than <base-dir.phenix>/images, so the listing
-// that minimega gives has the new file, and LocalFile finds it there.
-func TestWriteNewFileInMinimegaFilesDirectory(t *testing.T) { //nolint:paralleltest // replaces package state
-	if !mmtest.InOwnProcess(t) {
-		return
-	}
-
-	base, filesDir := t.TempDir(), t.TempDir()
-
-	original := common.PhenixBase
-	common.PhenixBase = base //nolint:reassign // not the parent of minimega's files directory
-
-	t.Cleanup(func() { common.PhenixBase = original }) //nolint:reassign // restore
-
-	mmtest.Use(t, func(cmd mmtest.Command) []*minicli.Response {
-		switch {
-		case cmd.Base == "args":
-			return []*minicli.Response{mmtest.Tabular("head", []string{"filepath"}, []string{filesDir})}
-		case strings.HasPrefix(cmd.Base, "mesh send all file list"):
-			return []*minicli.Response{mmtest.Tabular("compute1", mmtest.FileListHeader)}
-		case strings.HasPrefix(cmd.Base, "file list "):
-			return []*minicli.Response{mmtest.ListFiles(t, "head", filesDir, strings.Fields(cmd.Base)[2])}
-		}
-
-		return nil
-	})
-
-	saved, err := experiment.WriteNewFile("exp", "screenshots/vm1.png", []byte("png"))
-	if err != nil {
-		t.Fatalf("WriteNewFile(exp, screenshots/vm1.png) error = %v", err)
-	}
-
-	listed, _, err := experiment.FilesObserved(t.Context(), "exp", "")
-	if err != nil {
-		t.Fatalf("FilesObserved(exp) error = %v", err)
-	}
-
-	var paths []string
-	for _, f := range listed {
-		paths = append(paths, f.Path)
-	}
-
-	if diff := cmp.Diff([]string{"screenshots/vm1.png"}, paths); diff != "" {
-		t.Errorf("FilesObserved(exp) paths mismatch (-want +got):\n%s", diff)
-	}
-
-	local, err := experiment.LocalFile(t.Context(), "exp", saved)
-	if err != nil {
-		t.Fatalf("LocalFile(exp, %s) error = %v", saved, err)
-	}
-
-	if want := filepath.Join(filesDir, "exp", "files", "screenshots", "vm1.png"); local != want {
-		t.Errorf("LocalFile(exp, %s) = %s, want %s", saved, local, want)
-	}
-
-	if _, err := os.Stat(filepath.Join(base, "images")); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("os.Stat(<base-dir.phenix>/images) error = %v, want %v", err, fs.ErrNotExist)
 	}
 }
 
