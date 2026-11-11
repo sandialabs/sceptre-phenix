@@ -203,11 +203,28 @@ func within(dir, path string) (string, bool) {
 }
 
 // locate sets where the image is relative to the minimega files directory
-// dir.
+// dir, and the target of its file when that file is a symlink.
 func locate(image *Details, dir string) {
 	image.RelativePath, _ = within(dir, image.FullPath)
 	image.OutsideFilesDir = !file.WithinDir(dir, image.FullPath)
 	image.ReadOnly = managed(dir, image.FullPath) != nil
+	image.LinkTarget = linkTarget(image.FullPath)
+}
+
+// linkTarget returns what the symlink at path points to, as the link stores it, or "" when path is not a symlink or
+// cannot be read. It reads one link only, so a symlink loop cannot stop it.
+func linkTarget(path string) string {
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&fs.ModeSymlink == 0 {
+		return ""
+	}
+
+	target, err := os.Readlink(path)
+	if err != nil {
+		return ""
+	}
+
+	return target
 }
 
 // openRegular opens path for reading when it is a regular file outside the system directories (see

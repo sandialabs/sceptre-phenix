@@ -810,6 +810,36 @@ describe('disks with a broken backing chain', () => {
   });
 });
 
+describe('disks that are symlinks', () => {
+  const link = disk('/phenix/images/ubuntu.qc2', 'ubuntu.qc2', {
+    linkTarget: '../shared/ubuntu-22.04.qc2',
+  });
+  const plain = disk('/phenix/images/kali.qc2', 'kali.qc2', { linkTarget: '' });
+
+  it('says in words that a disk is a symlink, and shows its target in the row and the card', async () => {
+    const wrapper = await page([link, plain]);
+
+    const targets = tableRows(wrapper).map((cells) =>
+      cells.Name.find('.disk-link').exists()
+        ? textOf(cells.Name.find('.disk-link'))
+        : '',
+    );
+    expect(names(wrapper)).toEqual(['kali.qc2', 'ubuntu.qc2']);
+    expect(targets).toEqual(['', 'Symlink to ../shared/ubuntu-22.04.qc2']);
+
+    const details = await openDetails(wrapper, 'ubuntu.qc2');
+    expect(textOf(details.find('.disk-meta-link'))).toBe(
+      'Symlink to ../shared/ubuntu-22.04.qc2',
+    );
+  });
+
+  it('shows no symlink line in the card of a disk that is not one', async () => {
+    const details = await openDetails(await page([link, plain]), 'kali.qc2');
+
+    expect(details.find('.disk-meta-link').exists()).toBe(false);
+  });
+});
+
 describe('the Type column', () => {
   const IMAGES = '/phenix/images';
   const V2 = {

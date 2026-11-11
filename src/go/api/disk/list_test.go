@@ -173,6 +173,10 @@ func TestGetImagesSearchesFolders(t *testing.T) {
 				want[path] = Details{Kind: VMImage, Name: filepath.Base(rel), FullPath: path, RelativePath: rel}
 			}
 
+			link := want[filepath.Join(dir, "link.qc2")]
+			link.LinkTarget = "win/win10.qcow2"
+			want[link.FullPath] = link
+
 			tools := want[filepath.Join(dir, "tools.iso")]
 			tools.Kind = ISOImage
 			want[tools.FullPath] = tools
@@ -352,12 +356,15 @@ func TestGetImagesThroughMinimega(t *testing.T) {
 	backed := inside("win/win10.qcow2")
 	backed.BackingImages = []string{dir + "/a.qc2"}
 
+	link := inside("win/link.qc2")
+	link.LinkTarget = "../exp1/kept.qc2"
+
 	want := map[string]Details{
 		dir + "/a.qc2":           inside("a.qc2"),
 		dir + "/win/10/a.qc2":    inUse,
 		dir + "/exp1/kept.qc2":   inside("exp1/kept.qc2"),
 		dir + "/win/win10.qcow2": backed,
-		dir + "/win/link.qc2":    inside("win/link.qc2"),
+		dir + "/win/link.qc2":    link,
 		outside + "/o.img":       {Kind: UNKNOWN, Name: "o.img", FullPath: outside + "/o.img", OutsideFilesDir: true},
 	}
 

@@ -320,6 +320,8 @@ lack it). Points that are easy to miss:
   empty). They come from the image header, cached with the chain. An image
   that qemu-img cannot open for its version or feature bits is listed from
   its header alone.
+- Each `GET /disks` image also has `linkTarget`: what its file points to when
+  it is a symlink, as the link stores it (one link only), or empty.
 - `DELETE /disks?disk=` refuses (`409`, code `disk_in_use`, `metadata.retry`
   `force`) an image that backs other images or that an experiment uses,
   directly or through a backing chain. `details.images` (full paths) and

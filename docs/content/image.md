@@ -8,6 +8,11 @@ minimega files directory.
 Click the `In use` count above the table to show only the images in use.
 Click it again, or click the `X` beside the search box, to show all images.
 
+If the file of an image is a symbolic link (symlink), the Disks page shows
+`Symlink to` and the target of the link under the name of the image. The
+details card of the image also shows the target. A relative target is relative
+to the folder of the image.
+
 Before it deletes an image, phēnix checks for images that it backs and for
 experiments that use it. If it finds any, the Disks page lists them, and you can
 cancel or select **Delete anyway**.

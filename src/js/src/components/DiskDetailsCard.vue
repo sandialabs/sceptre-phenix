@@ -70,6 +70,13 @@ opens, and asks the page by event to run an action or open another image. -->
               </button>
             </b-tooltip>
           </span>
+          <span v-if="disk.linkTarget" class="disk-meta-link">
+            <b-icon icon="arrow-right" size="is-small" />
+            <span>Symlink to</span>{{ ' ' }}
+            <span class="disk-mono disk-link-target">{{
+              disk.linkTarget
+            }}</span>
+          </span>
           <span class="disk-location">
             <b-icon icon="folder" size="is-small" />
             <span class="is-sr-only">Location: </span>
@@ -1137,7 +1144,8 @@ opens, and asks the page by event to run an action or open another image. -->
     opacity: 0.8;
   }
 
-  .disk-full-path {
+  .disk-full-path,
+  .disk-link-target {
     overflow-wrap: anywhere;
   }
 

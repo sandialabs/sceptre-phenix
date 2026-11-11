@@ -293,6 +293,11 @@
             <DiskWarning :reasons="['outside']" :files-dir="filesDir" />
           </span>
         </span>
+        <span v-if="props.row.linkTarget" class="disk-link">
+          <b-icon icon="arrow-right" size="is-small" />
+          <span>Symlink to</span>{{ ' ' }}
+          <span class="disk-link-target">{{ props.row.linkTarget }}</span>
+        </span>
       </b-table-column>
 
       <b-table-column
@@ -1053,5 +1058,19 @@
 
   .name-warning {
     flex: none;
+  }
+
+  /* a symlink's target, on a line under the name */
+  .disk-link {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+  }
+
+  .disk-link-target {
+    min-width: 0;
+    font-family: monospace;
+    overflow-wrap: anywhere;
   }
 </style>

@@ -94,6 +94,9 @@ type Details struct {
 	FormatVersion int `json:"formatVersion"`
 	// FormatIssue is why the image's format needs care, or nil.
 	FormatIssue *FormatIssue `json:"formatIssue"`
+	// LinkTarget is what the image's file points to when it is a symlink, as the link stores it, or "" when it is
+	// not a symlink. A relative target is relative to the folder of the image.
+	LinkTarget string `json:"linkTarget"`
 }
 
 // Refusal returns an error that says why qemu cannot open d read/write, or nil when its format issue, if any, is not

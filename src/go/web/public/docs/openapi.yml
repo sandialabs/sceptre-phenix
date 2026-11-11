@@ -17016,6 +17016,14 @@ components:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/DiskFormatIssue"
+        linkTarget:
+          title: Link Target
+          example: ../shared/ubuntu.qc2
+          type: string
+          description: >-
+            what the image's file points to when it is a symlink, as the link
+            stores it, or empty when the file is not a symlink. A relative
+            target is relative to the folder of the image
     DiskFormatIssue:
       title: Disk Format Issue
       description: why the format of a disk image needs care

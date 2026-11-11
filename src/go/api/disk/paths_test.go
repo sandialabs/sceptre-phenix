@@ -323,6 +323,62 @@ func pathsFiles(t *testing.T) string {
 	return dir
 }
 
+// linkTarget gives what a symlink stores, one link only, so a loop or a dangling link still gives its target; a file
+// that is not a symlink, or is missing, gives "".
+func TestLinkTarget(t *testing.T) {
+	t.Parallel()
+
+	dir := pathsFiles(t)
+	abs := filepath.Join(dir, "a.qc2")
+
+	for link, target := range map[string]string{
+		"abs.qc2": abs, "loop1.qc2": "loop2.qc2", "loop2.qc2": "loop1.qc2", "up.qc2": "../x/a.qc2",
+	} {
+		if err := os.Symlink(target, filepath.Join(dir, link)); err != nil {
+			t.Fatalf("os.Symlink(%s, %s) error = %v", target, link, err)
+		}
+	}
+
+	tests := map[string]string{
+		"a.qc2":        "",
+		"sub":          "",
+		"pipe.qc2":     "",
+		"missing.qc2":  "",
+		"link.qc2":     "a.qc2",
+		"dangling.qc2": "gone.qc2",
+		"abs.qc2":      abs,
+		"loop1.qc2":    "loop2.qc2",
+		"up.qc2":       "../x/a.qc2",
+	}
+
+	for name, want := range tests {
+		if got := linkTarget(filepath.Join(dir, name)); got != want {
+			t.Errorf("linkTarget(%s) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// locate sets the target of an image that is a symlink, and clears it for one that is not.
+func TestLocateSymlink(t *testing.T) {
+	t.Parallel()
+
+	dir := pathsFiles(t)
+
+	tests := map[string]Details{
+		"a.qc2":    {FullPath: filepath.Join(dir, "a.qc2"), RelativePath: "a.qc2"},
+		"link.qc2": {FullPath: filepath.Join(dir, "link.qc2"), RelativePath: "link.qc2", LinkTarget: "a.qc2"},
+	}
+
+	for name, want := range tests {
+		got := Details{FullPath: filepath.Join(dir, name), LinkTarget: "stale"}
+		locate(&got, dir)
+
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("locate(%s) mismatch (-want +got):\n%s", name, diff)
+		}
+	}
+}
+
 // openRegular opens a regular file, or a symlink to one, and refuses anything else as not managed, without blocking
 // on a FIFO; a missing file is not found.
 func TestOpenRegular(t *testing.T) {
