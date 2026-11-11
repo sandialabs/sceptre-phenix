@@ -1,6 +1,6 @@
 // How App.vue lays out the page for a route: the centered container, the
 // window width of a wide route, or the full bleed of the Builder and the
-// console page, which also drops the header.
+// console page, which also drops the header. Every layout has the page load bar.
 import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { h } from 'vue';
@@ -33,6 +33,7 @@ vi.mock('@/utils/jobs.js', () => ({
 }));
 
 import App from '@/App.vue';
+import PageLoadBar from '@/components/PageLoadBar.vue';
 
 const page = { render: () => h('p', 'page') };
 
@@ -47,7 +48,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// the app opened at path: the classes of its main area, and whether it has a footer
+// the app opened at path: the classes of its main area, and whether it has a
+// footer, a header and the page load bar
 async function opened(path) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -74,6 +76,7 @@ async function opened(path) {
     main: app.find('#main').classes(),
     footer: app.find('app-footer-stub').exists(),
     header: app.find('app-header-stub').exists(),
+    loadBar: app.findComponent(PageLoadBar).exists(),
   };
 }
 
@@ -108,6 +111,6 @@ describe('App layout', () => {
       false,
     ],
   ])('%s', async (_, path, main, footer, header) => {
-    expect(await opened(path)).toEqual({ main, footer, header });
+    expect(await opened(path)).toEqual({ main, footer, header, loadBar: true });
   });
 });

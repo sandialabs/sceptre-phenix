@@ -533,3 +533,45 @@ textarea:focus-visible,
   outline: 2px solid currentColor;
   outline-offset: 2px;
 }
+
+// The bar that shows a page is loading (components/PageLoadBar.vue). A
+// segment moves across it, as it cannot tell how much is left. $link has
+// 4.2:1 on the header.
+.page-load-bar {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 50;
+  height: 3px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.page-load-bar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background-color: $link;
+  animation: page-load-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes page-load-slide {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(250%);
+  }
+}
+
+// a still bar across the window, with no movement
+@media (prefers-reduced-motion: reduce) {
+  .page-load-bar {
+    background-color: $link;
+  }
+
+  .page-load-bar::before {
+    content: none;
+  }
+}

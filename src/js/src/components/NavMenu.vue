@@ -43,6 +43,7 @@ screen it also opens on hover.
           position="is-right"
           class="nav-menu-tip">
           <router-link
+            v-prefetch-route="{ name: link.route }"
             :to="{ name: link.route }"
             class="nav-menu-link"
             @click="close(false)">
@@ -55,6 +56,7 @@ screen it also opens on hover.
         </b-tooltip>
         <router-link
           v-else
+          v-prefetch-route="{ name: link.route }"
           :to="{ name: link.route }"
           class="nav-menu-link"
           @click="close(false)">
@@ -67,12 +69,15 @@ screen it also opens on hover.
 </template>
 
 <script>
+  import { vPrefetchRoute } from '@/utils/prefetch.js';
+
   // the wait before a menu opened by hover closes, so a pointer can cross a gap
   const LEAVE_MS = 150;
   // the burger menu starts below this width, and it opens on click only
   const HOVER_QUERY = '(hover: hover) and (min-width: 1024px)';
 
   export default {
+    directives: { prefetchRoute: vPrefetchRoute },
     props: {
       // the button's text and tooltip
       label: { type: String, required: true },

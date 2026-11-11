@@ -10,6 +10,7 @@
   } from './utils/websocket';
   import AppHeader from '@/components/AppHeader.vue';
   import AppFooter from '@/components/AppFooter.vue';
+  import PageLoadBar from '@/components/PageLoadBar.vue';
   import { computed, onUnmounted, onMounted } from 'vue';
   import { useRoute } from 'vue-router';
   import router from '@/router';
@@ -122,6 +123,7 @@
     @click="timeout.resetTimer"
     @keydown="timeout.resetTimer">
     <a class="skip-link" href="#main">Skip to main content</a>
+    <page-load-bar></page-load-bar>
     <!-- The Builder's focus mode hides the navigation bar, so the editor
          fills the window (builder/focusMode.js). v-show keeps the header's
          state. A route with meta.header false, such as the VNC console, has

@@ -26,6 +26,7 @@ what their role allows.
           position="is-bottom"
           class="nav-tip">
           <router-link
+            v-prefetch-route="{ name: item.route }"
             :to="{ name: item.route }"
             class="navbar-item nav-link"
             :data-testid="item.testid">
@@ -104,9 +105,11 @@ what their role allows.
   import JobsMenu from '@/components/jobs/JobsMenu.vue';
   import NavMenu from '@/components/NavMenu.vue';
   import { DOCS_URL } from '@/utils/docs.js';
+  import { vPrefetchRoute } from '@/utils/prefetch.js';
 
   export default {
     components: { RefreshStatus, JobsMenu, NavMenu },
+    directives: { prefetchRoute: vPrefetchRoute },
     setup() {
       return { DOCS_URL };
     },

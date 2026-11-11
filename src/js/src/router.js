@@ -176,7 +176,8 @@ const router = createRouter({
       // The editor fills the viewport below the header, so App.vue drops the
       // page container, its padding and the footer for this route. The
       // editor adds the open diagram to the title (see Builder.vue). Its
-      // large chunk loads only on demand, so it is not prefetched.
+      // large chunk is not prefetched when idle: a pointer or focus on a
+      // link to it starts the load (prefetchRoute in utils/prefetch.js).
       meta: { fullBleed: true, title: 'Builder', prefetch: false },
     },
 
