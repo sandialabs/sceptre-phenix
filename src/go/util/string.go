@@ -2,19 +2,15 @@
 
 package util
 
-import (
-	"math/rand/v2"
-	"time"
-)
+import "math/rand/v2"
 
 var chars = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") //nolint:gochecknoglobals // global constant
 
 func RandomString(n int) string {
-	rng := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 1)) //nolint:gosec // G404 names, not secrets
 	b := make([]rune, n)
 
 	for i := range b {
-		b[i] = chars[rng.IntN(len(chars))]
+		b[i] = chars[rand.IntN(len(chars))] //nolint:gosec // G404 names, not secrets
 	}
 
 	return string(b)
