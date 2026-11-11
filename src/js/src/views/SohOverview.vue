@@ -111,20 +111,23 @@
         sortable
         centered
         v-slot="props">
-        <div v-if="props.row.status === 'starting'" class="starting">
-          <b-progress
-            size="is-medium"
-            type="is-warning"
-            show-value
-            :value="Math.round((props.row.percent ?? 0) * 100)"
-            format="percent"></b-progress>
-        </div>
-        <span
-          v-else
-          class="tag is-medium status-width"
-          :class="statusDecorator(props.row.status)">
-          {{ props.row.status }}
-        </span>
+        <experiment-progress
+          v-if="progressShown(props.row)"
+          class="starting"
+          :name="props.row.name"
+          :progress="listedProgress(props.row)" />
+        <template v-else>
+          <span
+            class="tag is-medium status-width"
+            :class="statusDecorator(props.row.status)">
+            {{ props.row.status }}
+          </span>
+          <experiment-progress
+            v-if="failures[props.row.name]"
+            class="starting status-failure"
+            :name="props.row.name"
+            :failure="failures[props.row.name]" />
+        </template>
       </b-table-column>
 
       <b-table-column
@@ -392,7 +395,15 @@
 
 <script>
   import * as experimentsApi from '@/api/experiments.js';
+  import ExperimentProgress from '@/components/ExperimentProgress.vue';
   import { debug } from '@/utils/debug.js';
+  import {
+    afterMessage,
+    failureLabel,
+    listedProgress,
+    mergeProgress,
+    progressActive,
+  } from '@/utils/experimentProgress.js';
   import { showError, useErrorNotification } from '@/utils/errorNotif.js';
   import { inForeground } from '@/utils/foreground.js';
   import { startPoll } from '@/utils/freshness.js';
@@ -460,8 +471,10 @@
   };
 
   export default {
+    components: { ExperimentProgress },
+
     setup() {
-      return { ...useTable(), pluralWord };
+      return { ...useTable(), listedProgress, pluralWord };
     },
 
     data() {
@@ -472,6 +485,8 @@
         searchName: '',
         opened: [],
         showAll: {},
+        // the last failed start or stop, by experiment name
+        failures: {},
         filters: FILTERS,
         healthyReachability: HEALTHY_REACHABILITY,
         trendRuns: 12,
@@ -496,11 +511,22 @@
         key: 'soh',
         fetch: pageFetchers.soh,
         apply: (experiments, { seq }) => {
-          this.experiments = this.liveRows.merge(
-            experiments,
-            this.experiments,
-            seq,
+          const before = new Map(
+            this.experiments.map((exp) => [exp.name, exp]),
           );
+          const listed = new Set(experiments);
+          // within one start or stop, the bar never goes back
+          this.experiments = this.liveRows
+            .merge(experiments, this.experiments, seq)
+            .map((exp) => {
+              const prev = before.get(exp.name);
+              if (!listed.has(exp) || !prev?.progress) return exp;
+              const progress = mergeProgress(
+                prev.progress,
+                listedProgress(exp),
+              );
+              return { ...exp, progress };
+            });
           this.loaded = true;
         },
       });
@@ -808,8 +834,27 @@
         }
       },
 
+      // whether the row shows the bar in place of its status
+      progressShown(row) {
+        return (
+          row.status === 'starting' ||
+          row.status === 'stopping' ||
+          progressActive(row.progress)
+        );
+      },
+
       handleExperiment(name, action, result, seq) {
         const exp = this.find(name);
+        const next = afterMessage(
+          {
+            progress: exp && listedProgress(exp),
+            failure: this.failures[name],
+          },
+          action,
+          result,
+        );
+        if (next.failure) this.failures[name] = next.failure;
+        else delete this.failures[name];
 
         switch (action) {
           case 'starting':
@@ -817,14 +862,30 @@
             if (exp) {
               this.liveRows.touch(name, seq);
               exp.status = action;
-              exp.percent = 0;
+              exp.progress = next.progress;
             }
             break;
           case 'progress':
-            if (exp) exp.percent = result?.percent ?? exp.percent;
+            if (exp) exp.progress = next.progress;
+            break;
+          case 'errorStarting':
+          case 'errorStopping':
+            if (exp) {
+              exp.progress = undefined;
+              if (action === 'errorStarting') exp.running = false;
+              exp.status = exp.running ? 'started' : 'stopped';
+            }
+            showError(
+              `The ${name} experiment did not ${action === 'errorStarting' ? 'start' : 'stop'}`,
+              next.failure && result ? failureLabel(result) : '',
+            );
+            this.reloadSoon();
             break;
           case 'start':
           case 'stop':
+            if (exp) exp.progress = next.progress;
+            this.reloadSoon();
+            break;
           case 'create':
           case 'update':
           case 'delete':
@@ -1009,6 +1070,10 @@
   .starting {
     width: 7.5rem;
     margin-inline: auto;
+  }
+
+  .status-failure {
+    margin-top: 0.25rem;
   }
 
   .verdict {

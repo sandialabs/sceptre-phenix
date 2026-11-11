@@ -8,8 +8,9 @@ type MM interface { //nolint:interfacebloat // legacy interface
 	ReadScriptFromFile(string, string) error
 	ClearNamespace(string) error
 
-	LaunchVMs(string, ...string) error
-	GetLaunchProgress(string, int) (float64, error)
+	LaunchVMs(string) error
+	StartLaunchedVMs(string, ...string) error
+	GetLaunchProgress(context.Context, string, []string) (int, error)
 
 	GetVMInfo(...Option) VMs
 	GetVMScreenshot(...Option) ([]byte, error)

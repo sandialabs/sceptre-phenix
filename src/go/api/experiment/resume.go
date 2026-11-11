@@ -128,13 +128,19 @@ func setPending(exp *types.Experiment, timers map[string]string, c2 map[string]m
 	}
 }
 
-// finishStart runs steps once the experiment is stored as started, sending errChan each error and closing it.
-// A failed step stops the experiment, unless ctx was canceled, as the web UI does before it calls Stop itself.
-func finishStart(ctx context.Context, exp *types.Experiment, dryrun bool, steps pendingSteps, errChan chan error) {
+// finishStart runs steps once the experiment is stored as started, sending errChan each error and closing it. rep,
+// which can be nil, reports the post-start-apps phase, and the end of the start when the steps succeed. A failed
+// step stops the experiment, unless ctx was canceled, as the web UI does before it calls Stop itself.
+func finishStart(
+	ctx context.Context, exp *types.Experiment, dryrun bool, steps pendingSteps, errChan chan error,
+	rep *progressReporter,
+) {
 	defer close(errChan)
 
-	step, err := afterLaunch(ctx, exp, dryrun, steps, nil)
+	step, err := afterLaunch(ctx, exp, dryrun, steps, nil, rep)
 	if err == nil {
+		rep.finish()
+
 		return
 	}
 
@@ -287,7 +293,7 @@ func ResumeStart(ctx context.Context, name string, errChan chan error) (bool, er
 		"exp", name, "delayed_vms", len(plan.delays)+len(plan.c2s), "post_start", plan.postStart,
 	)
 
-	go finishStart(ctx, exp, false, steps, errChan)
+	go finishStart(ctx, exp, false, steps, errChan, nil)
 
 	return true, nil
 }

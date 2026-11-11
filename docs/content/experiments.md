@@ -59,6 +59,10 @@ While `phenix exp start` runs, the Experiments page of the web UI shows the
 experiment as `starting` after a page refresh. phēnix refuses a second start of
 the experiment until the first start ends.
 
+The web UI also shows how far a start or a stop is: the phase, the step and the
+percent that is done. While `phenix exp stop` runs, the page shows the
+experiment as `stopping` after a page refresh.
+
 After an experiment stops successfully, phēnix deletes the VM disk snapshots
 created for file injection. To keep these snapshots for debugging, use
 `--keep-injection-snapshots` or its `-K` shorthand:

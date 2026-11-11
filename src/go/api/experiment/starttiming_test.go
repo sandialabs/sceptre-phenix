@@ -83,7 +83,7 @@ func TestStartLogsItsStepTimes(t *testing.T) { //nolint:paralleltest // replaces
 			name: "started",
 			want: []string{
 				"claim", "pre-start-apps", "disk-check", "scripts", "snapshot-cleanup", "minimega-script", "launch",
-				"vm-hosts-and-vlans", "c2-script", "delayed-vms", "post-start-apps", "record",
+				"vm-start", "vm-hosts-and-vlans", "c2-script", "delayed-vms", "post-start-apps", "record",
 			},
 		},
 		{

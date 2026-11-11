@@ -9,6 +9,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 
 	"phenix/types"
+	ifaces "phenix/types/interfaces"
 )
 
 // Keys the soh app keeps in its app status besides `hosts`, `initialized` and
@@ -84,6 +85,8 @@ type Summary struct {
 	Status   string  `json:"status"`
 	Percent  float64 `json:"percent"`
 	Running  bool    `json:"running"`
+	// Progress is how far the experiment's start or stop is, while one is in progress.
+	Progress *ifaces.OperationProgress `json:"progress,omitempty"`
 
 	Configured     bool `json:"configured"`
 	SOHDisabled    bool `json:"soh_disabled"`

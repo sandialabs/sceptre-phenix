@@ -291,10 +291,11 @@ func TestExperimentDeleteForceStopsRunningExperimentBeforeDeleting(t *testing.T)
 		*c = cfg
 		return nil
 	}).AnyTimes()
+	// the stop marks each phase and app, then records the stop
 	m.EXPECT().Update(gomock.Any()).DoAndReturn(func(c *store.Config) error {
 		cfg = *c
 		return nil
-	}).Times(1)
+	}).Times(6)
 	m.EXPECT().Delete(gomock.Any()).Return(nil).Times(1)
 
 	originalStore := store.DefaultStore

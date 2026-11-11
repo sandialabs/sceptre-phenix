@@ -14,8 +14,8 @@ import (
 	"phenix/util/shell"
 )
 
-// StartMarkerMaxAge is how long the start marker of another host stays live: phenix cannot check the process of
-// another host, so it uses the age of the marker.
+// StartMarkerMaxAge is how long the start or stop marker of another host stays live: phenix cannot check the process
+// of another host, so it uses the age of the marker.
 const StartMarkerMaxAge = 24 * time.Hour
 
 // maxClaimAttempts is how many times Start reads the experiment again when it changes before the marker is stored.
@@ -46,8 +46,8 @@ func (e *StartingError) Unwrap() error {
 	return ErrExperimentStarting
 }
 
-// StartMarkerLive reports whether the start that m records can still be in progress. A marker of this host is live
-// while its process runs. A marker of another host is live until it is StartMarkerMaxAge old.
+// StartMarkerLive reports whether the start or stop that m records can still be in progress. A marker of this host is
+// live while its process runs. A marker of another host is live until it is StartMarkerMaxAge old.
 func StartMarkerLive(m ifaces.StartMarker) bool {
 	host, _ := os.Hostname()
 
@@ -76,11 +76,22 @@ func StartingElsewhere(status ifaces.ExperimentStatus) bool {
 	return status != nil && status.StartTime() == "" && StartMarkerLive(status.Starting())
 }
 
-// newStartMarker is the start marker of this process for a start that begins at now.
+// StoppingElsewhere reports whether status records a live stop marker of a running experiment, such as when
+// phenix experiment stop runs in another process.
+func StoppingElsewhere(status ifaces.ExperimentStatus) bool {
+	return status != nil && status.StartTime() != "" && StartMarkerLive(status.Stopping())
+}
+
+// newStartMarker is the start or stop marker of this process for an operation that begins at now.
 func newStartMarker(now time.Time) ifaces.StartMarker {
 	host, _ := os.Hostname()
 
-	return ifaces.StartMarker{Since: now.UTC().Format(time.RFC3339), PID: os.Getpid(), Host: host}
+	return ifaces.StartMarker{
+		Since:    now.UTC().Format(time.RFC3339),
+		PID:      os.Getpid(),
+		Host:     host,
+		Progress: ifaces.OperationProgress{}, //nolint:exhaustruct // no progress
+	}
 }
 
 // claimStart reads experiment name for Start and stores the start marker of this process in its status. It refuses an
@@ -131,11 +142,29 @@ func claimStart(name string) (*store.Config, *types.Experiment, ifaces.StartMark
 // It changes no other part of the status.
 func dropStartMarker(name string, m ifaces.StartMarker) error {
 	return updateStatus(name, func(s ifaces.ExperimentStatus) bool {
-		if s.Starting() != m {
+		if !s.Starting().Same(m) {
 			return false
 		}
 
-		s.SetStarting(ifaces.StartMarker{Since: "", PID: 0, Host: ""})
+		var none ifaces.StartMarker
+
+		s.SetStarting(none)
+
+		return true
+	})
+}
+
+// dropStopMarker removes the stop marker m from the stored status of experiment name, if the status still holds m.
+// It changes no other part of the status.
+func dropStopMarker(name string, m ifaces.StopMarker) error {
+	return updateStatus(name, func(s ifaces.ExperimentStatus) bool {
+		if !s.Stopping().Same(m) {
+			return false
+		}
+
+		var none ifaces.StopMarker
+
+		s.SetStopping(none)
 
 		return true
 	})

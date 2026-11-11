@@ -15,6 +15,7 @@ this will only show a list of VMs that a user can view.
 </template>
 
 <script setup>
+  import { provideExperimentProgress } from '@/components/experiment/headerProgress.js';
   import { usePhenixStore } from '@/store';
   import { useErrorNotification } from '@/utils/errorNotif.js';
   import { cachedPage, dropPage, fetchIntoCache } from '@/utils/pageCache.js';
@@ -79,6 +80,7 @@ this will only show a list of VMs that a user can view.
   }
 
   const name = route.params.id;
+  provideExperimentProgress(name);
   const known = knownRunning(name);
   let request = null;
 

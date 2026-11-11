@@ -244,6 +244,7 @@ type startOptions struct {
 	// a dry run that does not record the start, so the experiment stays stopped
 	keepStopped bool
 	result      *StartResult
+	progress    ProgressFunc
 }
 
 // StartResult is what Start reports of a start that StartWithResult asked for.
@@ -314,11 +315,19 @@ func StartWithResult(r *StartResult) StartOption {
 	}
 }
 
+// StartWithProgress has Start call f with each change of its progress, until the post-start work ends.
+func StartWithProgress(f ProgressFunc) StartOption {
+	return func(o *startOptions) {
+		o.progress = f
+	}
+}
+
 type StopOption func(*stopOptions)
 
 type stopOptions struct {
 	keepInjectionSnapshots bool
 	force                  bool
+	progress               ProgressFunc
 }
 
 func newStopOptions(opts ...StopOption) stopOptions {
@@ -342,5 +351,12 @@ func StopWithKeepInjectionSnapshots(k bool) StopOption {
 func StopWithForce(f bool) StopOption {
 	return func(o *stopOptions) {
 		o.force = f
+	}
+}
+
+// StopWithProgress has Stop call f with each change of its progress.
+func StopWithProgress(f ProgressFunc) StopOption {
+	return func(o *stopOptions) {
+		o.progress = f
 	}
 }

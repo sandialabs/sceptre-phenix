@@ -252,7 +252,7 @@ func TestRecoverySkipsAConfigThatDoesNotDecode(t *testing.T) { //nolint:parallel
 		run  func() error
 	}{
 		{"app running flag reset", ResetAppsRunning},
-		{"start marker cleanup", ClearStaleStartMarkers},
+		{"start and stop marker cleanup", ClearStaleMarkers},
 		{"pending start scan", func() error {
 			var err error
 

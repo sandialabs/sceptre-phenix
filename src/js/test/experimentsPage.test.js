@@ -76,14 +76,21 @@ const reloads = () => {
   return loaderSpy.load.mock.calls;
 };
 
+// the bar in a status cell: "bar <percent>", then its label when it has one
+const barOf = (cell) => {
+  const label = cell.find('.exp-progress-label');
+  return [
+    `bar ${textOf(cell.find('.progress-value'))}`,
+    ...(label.exists() ? [textOf(label)] : []),
+  ].join(' ');
+};
+
 // Each row's name and status, and its topology, VM count and VLANs when
-// `details`; a starting experiment shows its progress in place of a tag.
+// `details`; a starting or stopping experiment shows its bar in place of a tag.
 const shown = (wrapper, details) =>
   tableRows(wrapper).map((cells) => {
     const tag = cells.Status.find('.exp-status');
-    const status = tag.exists()
-      ? textOf(tag)
-      : `starting ${textOf(cells.Status.find('.progress-value'))}`;
+    const status = tag.exists() ? textOf(tag) : barOf(cells.Status);
     return [
       textOf(cells.Name),
       status,
@@ -363,8 +370,8 @@ describe('websocket messages', () => {
     });
 
     expect(shown(wrapper)).toEqual([
-      ['new', 'starting 0%'],
-      ['newer', 'starting 0%'],
+      ['new', 'bar 0%'],
+      ['newer', 'bar 0%'],
       ['old', 'stopped'],
     ]);
     // one request covers both
@@ -381,7 +388,7 @@ describe('websocket messages', () => {
       seq: 20,
     });
     // with no details yet, not even its VLANs
-    expect(shown(wrapper, true)).toEqual([['new', 'starting 50%', '', '', '']]);
+    expect(shown(wrapper, true)).toEqual([['new', 'bar 50%', '', '', '']]);
 
     loaderSpy.options.apply(
       [
@@ -398,7 +405,7 @@ describe('websocket messages', () => {
     await wrapper.vm.$nextTick();
 
     expect(shown(wrapper, true)).toEqual([
-      ['new', 'starting 50%', 'topo', '7', '- ()'],
+      ['new', 'bar 50%', 'topo', '7', '- ()'],
     ]);
   });
 
@@ -673,9 +680,15 @@ describe('the Start and Stop buttons', () => {
       spinning: true,
     });
 
+    // the server tells of the start before it answers
+    await send(wrapper, {
+      resource: { type: 'experiment', name: 'a', action: 'start' },
+      result: { name: 'a', running: true },
+    });
     answer.resolve({});
     await flushPromises();
     expect(power(wrapper, 'a')[0].spinning).toBe(false);
+    expect(reloads()).toEqual([]);
   });
 
   it('stop it after confirming, spinning until the server answers', async () => {
@@ -688,7 +701,7 @@ describe('the Start and Stop buttons', () => {
     await confirmDialog();
     expect(axios.post.mock.calls).toEqual([['experiments/b/stop']]);
     expect(power(wrapper, 'b')[1]).toMatchObject({
-      tooltip: 'Cannot stop: the experiment is being stopped',
+      tooltip: 'Cannot stop: the experiment is stopping',
       disabled: true,
       spinning: true,
     });
@@ -765,18 +778,6 @@ describe('the status', () => {
       denyOnly(['experiments/stop', 'update', 'x']),
       tag('is-success', 'started'),
     ],
-    [
-      'a stopping experiment, a role that may stop it',
-      { status: 'stopping', running: true },
-      () => true,
-      button('is-warning', 'stop', 'stopping'),
-    ],
-    [
-      'a stopping experiment, a role that may not stop it',
-      { status: 'stopping', running: true },
-      denyOnly(['experiments/stop', 'update', 'x']),
-      tag('is-warning', 'stopping'),
-    ],
   ])('draws %s', async (_, exp, role, expected) => {
     rbac.allowed = role;
     const wrapper = await page([{ name: 'x', ...exp }]);
@@ -784,15 +785,19 @@ describe('the status', () => {
     expect(drawn(wrapper)).toEqual(expected);
   });
 
-  it('gives the progress of a starting experiment the same width', async () => {
-    const wrapper = await page([
-      { name: 'x', status: 'starting', running: false, percent: 40 },
-    ]);
+  it.each([
+    ['starting', { status: 'starting', running: false }],
+    ['stopping', { status: 'stopping', running: true }],
+  ])(
+    'gives the bar of a %s experiment the same width, in place of its status',
+    async (_, exp) => {
+      const wrapper = await page([{ name: 'x', ...exp }]);
 
-    const cell = tableRows(wrapper)[0].Status;
-    expect(cell.find('.status-progress .progress').exists()).toBe(true);
-    expect(cell.find('.exp-status').exists()).toBe(false);
-  });
+      const cell = tableRows(wrapper)[0].Status;
+      expect(cell.find('.status-progress .progress').exists()).toBe(true);
+      expect(cell.find('.exp-status').exists()).toBe(false);
+    },
+  );
 
   it('draws every status, button and progress at one width', () => {
     const style = (selector) =>
@@ -801,6 +806,324 @@ describe('the status', () => {
     expect(style('.status-progress')).toEqual({
       width: '7.5rem',
       'margin-inline': 'auto',
+    });
+  });
+});
+
+describe('the start and stop bar', () => {
+  // a websocket message about experiment `name`
+  const msg = (name, action, result, seq) => ({
+    resource: { type: 'experiment', name, action },
+    result,
+    seq,
+  });
+  const progress = (operation, percent, phase, done, total, step) => ({
+    operation,
+    percent,
+    phase,
+    done,
+    total,
+    step,
+  });
+  // the bar or status of row `i`, and its failure when it has one
+  const statusOf = (wrapper, i = 0) => {
+    const cell = tableRows(wrapper)[i].Status;
+    const failure = cell.find('.exp-progress-failure');
+    return [
+      shown(wrapper)[i][1],
+      ...(failure.exists() ? [textOf(failure)] : []),
+    ];
+  };
+
+  it('follows a start from the click to its post-start apps', async () => {
+    const answer = Promise.withResolvers();
+    axios.post.mockReturnValue(answer.promise);
+    const wrapper = await page(three());
+
+    await byLabel(wrapper, 'Start experiment a').trigger('click');
+    await confirmDialog();
+    expect(statusOf(wrapper)).toEqual(['bar 0% Sending start request']);
+
+    await send(wrapper, msg('a', 'starting'));
+    expect(statusOf(wrapper)).toEqual(['bar 0% Sending start request']);
+
+    const steps = [
+      [
+        progress('start', 0.1, 'pre-start-apps', 1, 3, 'ntp'),
+        'bar 10% Pre-start apps 1/3: ntp',
+      ],
+      [progress('start', 0.2, 'prepare', 0, 0, ''), 'bar 20% Preparing'],
+      [
+        progress('start', 0.6, 'launch-vms', 12, 40, ''),
+        'bar 60% Launching VMs 12/40',
+      ],
+      // a late message does not take the bar back
+      [
+        progress('start', 0.5, 'start-vms', 3, 40, ''),
+        'bar 60% Starting VMs 3/40',
+      ],
+    ];
+    for (const [body, want] of steps) {
+      await send(wrapper, msg('a', 'progress', body));
+      expect(statusOf(wrapper)).toEqual([want]);
+    }
+
+    // running before its post-start apps are done
+    await send(wrapper, msg('a', 'start', { name: 'a', running: true }));
+    answer.resolve({});
+    await flushPromises();
+    await send(
+      wrapper,
+      msg(
+        'a',
+        'progress',
+        progress('start', 0.9, 'post-start-apps', 1, 2, 'scorch'),
+      ),
+    );
+    expect(statusOf(wrapper)).toEqual(['bar 90% Post-start apps 1/2: scorch']);
+    expect(byLabel(wrapper, 'Stop experiment a').exists()).toBe(true);
+
+    await send(
+      wrapper,
+      msg('a', 'progress', progress('start', 1, 'done', 2, 2)),
+    );
+    expect(statusOf(wrapper)).toEqual(['started']);
+    expect(reloads()).toEqual([]);
+  });
+
+  it('follows a stop from its own start at 0, then ends it at the stop message', async () => {
+    axios.post.mockReturnValue(never());
+    const wrapper = await page([
+      {
+        name: 'b',
+        status: 'started',
+        running: true,
+        progress: progress('start', 0.95, 'post-start-apps', 1, 2, 'scorch'),
+      },
+    ]);
+    expect(statusOf(wrapper)).toEqual(['bar 95% Post-start apps 1/2: scorch']);
+
+    await byLabel(wrapper, 'Stop experiment b').trigger('click');
+    await confirmDialog();
+    expect(statusOf(wrapper)).toEqual(['bar 0% Sending stop request']);
+
+    await send(wrapper, msg('b', 'stopping'));
+    await send(
+      wrapper,
+      msg('b', 'progress', progress('stop', 0.1, 'cleanup-apps', 0, 1)),
+    );
+    expect(statusOf(wrapper)).toEqual(['bar 10% Cleanup apps 0/1']);
+    await send(
+      wrapper,
+      msg('b', 'progress', progress('stop', 0.5, 'stop-vms', 2, 4)),
+    );
+    expect(statusOf(wrapper)).toEqual(['bar 50% Stopping VMs 2/4']);
+    await send(
+      wrapper,
+      msg('b', 'progress', progress('stop', 0.9, 'cleanup', 0, 0)),
+    );
+    expect(statusOf(wrapper)).toEqual(['bar 90% Cleaning up']);
+
+    // a stop sends no done: its stop message ends the bar
+    await send(wrapper, msg('b', 'stop', { name: 'b', running: false }));
+    expect(statusOf(wrapper)).toEqual(['stopped']);
+  });
+
+  it("shows only the bar of an old server's percent", async () => {
+    const wrapper = await page(three());
+
+    await send(wrapper, msg('a', 'starting'));
+    await send(wrapper, msg('a', 'progress', { percent: 0.4 }));
+    expect(statusOf(wrapper)).toEqual(['bar 40%']);
+
+    await send(wrapper, msg('a', 'start', { name: 'a', running: true }));
+    expect(statusOf(wrapper)).toEqual(['started']);
+  });
+
+  it.each([
+    [
+      'start',
+      'Start experiment a',
+      { name: 'a', status: 'stopped', running: false },
+    ],
+    [
+      'stop',
+      'Stop experiment a',
+      {
+        name: 'a',
+        status: 'started',
+        running: true,
+        progress: progress('start', 0.9, 'post-start-apps', 1, 2, 'scorch'),
+      },
+    ],
+  ])(
+    'puts back the status and bar a row had when its %s request fails',
+    async (_, label, row) => {
+      axios.post.mockRejectedValue(httpError(500, { message: 'no' }));
+      const wrapper = await page([row]);
+      const before = statusOf(wrapper);
+
+      await byLabel(wrapper, label).trigger('click');
+      await confirmDialog();
+
+      expect(notify.error).toHaveBeenCalledTimes(1);
+      expect(statusOf(wrapper)).toEqual(before);
+      expect(wrapper.vm.experiments[0]).toMatchObject(row);
+      expect(reloads()).toEqual([]);
+    },
+  );
+
+  it('keeps the bar of its own request over a list read before the server began', async () => {
+    axios.post.mockReturnValue(never());
+    const wrapper = await page(three());
+
+    await byLabel(wrapper, 'Start experiment a').trigger('click');
+    await confirmDialog();
+    loaderSpy.options.apply(three(), { seq: 50 });
+    await wrapper.vm.$nextTick();
+
+    expect(statusOf(wrapper)).toEqual(['bar 0% Sending start request']);
+  });
+
+  it('keeps the whole progress of a loaded list, its percent never going back', async () => {
+    const wrapper = await page(three());
+    await send(
+      wrapper,
+      msg('a', 'progress', progress('start', 0.5, 'launch-vms', 5, 10, ''), 20),
+    );
+    // read after that message, with the phase alone (another process)
+    const listed = (body) => [
+      {
+        name: 'a',
+        status: 'starting',
+        running: false,
+        percent: 0.3,
+        progress: body,
+      },
+      ...three().slice(1),
+    ];
+
+    loaderSpy.options.apply(
+      listed({ operation: 'start', percent: 0.3, phase: 'start-vms' }),
+      { seq: 30 },
+    );
+    await wrapper.vm.$nextTick();
+    expect(statusOf(wrapper)).toEqual(['bar 50% Starting VMs']);
+
+    // a stop afterwards starts from its own percent
+    loaderSpy.options.apply(
+      listed({ operation: 'stop', percent: 0.2, phase: 'stop-vms' }),
+      { seq: 40 },
+    );
+    await wrapper.vm.$nextTick();
+    expect(statusOf(wrapper)).toEqual(['bar 20% Stopping VMs']);
+  });
+
+  describe('a failure', () => {
+    const failed = {
+      operation: 'start',
+      phase: 'launch-vms',
+      step: 'vm-3',
+      error: 'no image',
+    };
+
+    it('shows where a start failed under the status, until the next start', async () => {
+      axios.post.mockReturnValue(never());
+      const wrapper = await page(three());
+      await send(wrapper, msg('a', 'starting'));
+      await send(
+        wrapper,
+        msg('a', 'progress', progress('start', 0.3, 'launch-vms', 1, 9)),
+      );
+
+      await send(wrapper, msg('a', 'errorStarting', failed));
+
+      const reason = 'Failed at Launching VMs: vm-3: no image';
+      expect(statusOf(wrapper)).toEqual(['stopped', reason]);
+      expect(notify.show.mock.calls).toEqual([
+        ['The a experiment did not start', reason],
+      ]);
+      expect(reloads()).toEqual([[{ force: true }]]);
+
+      // a list loaded since keeps it
+      loaderSpy.options.apply(three(), { seq: 99 });
+      await wrapper.vm.$nextTick();
+      expect(statusOf(wrapper)).toEqual(['stopped', reason]);
+
+      await byLabel(wrapper, 'Start experiment a').trigger('click');
+      await confirmDialog();
+      expect(statusOf(wrapper)).toEqual(['bar 0% Sending start request']);
+    });
+
+    it('shows where a stop failed, and the status it had', async () => {
+      const wrapper = await page(three());
+      await send(wrapper, msg('b', 'stopping'));
+
+      await send(
+        wrapper,
+        msg('b', 'errorStopping', {
+          operation: 'stop',
+          phase: 'stop-vms',
+          step: '',
+          error: 'VMs survived',
+        }),
+      );
+
+      // running, as it was, until the list says otherwise
+      expect(statusOf(wrapper, 1)).toEqual([
+        'started',
+        'Failed at Stopping VMs: VMs survived',
+      ]);
+      expect(notify.show).toHaveBeenCalledWith(
+        'The b experiment did not stop',
+        'Failed at Stopping VMs: VMs survived',
+      );
+      expect(reloads()).toEqual([[{ force: true }]]);
+    });
+
+    it.each([
+      ['errorStarting', 'start', 'stopped'],
+      ['errorStopping', 'stop', 'started'],
+    ])(
+      'from an old server (%s with no body) tells it with no reason',
+      async (action, verb, status) => {
+        const wrapper = await page([
+          { name: 'x', status: 'started', running: true },
+        ]);
+
+        await send(wrapper, msg('x', action, null));
+
+        expect(statusOf(wrapper)).toEqual([status]);
+        expect(notify.show.mock.calls).toEqual([
+          [`The x experiment did not ${verb}`, ''],
+        ]);
+        expect(reloads()).toEqual([[{ force: true }]]);
+      },
+    );
+
+    it('of an experiment not listed adds no row', async () => {
+      const wrapper = await page(three());
+      await send(wrapper, msg('new', 'errorStarting', failed));
+      expect(shown(wrapper).map(([name]) => name)).toEqual(['a', 'b', 'c']);
+    });
+
+    it("of this page's own start is told once, by its request", async () => {
+      const answer = Promise.withResolvers();
+      axios.post.mockReturnValue(answer.promise);
+      const wrapper = await page(three());
+      await byLabel(wrapper, 'Start experiment a').trigger('click');
+      await confirmDialog();
+
+      await send(wrapper, msg('a', 'errorStarting', failed));
+      answer.reject(httpError(500, { message: 'no image' }));
+      await flushPromises();
+
+      expect(notify.show).not.toHaveBeenCalled();
+      expect(notify.error).toHaveBeenCalledTimes(1);
+      expect(statusOf(wrapper)).toEqual([
+        'stopped',
+        'Failed at Launching VMs: vm-3: no image',
+      ]);
     });
   });
 });
@@ -836,12 +1159,12 @@ describe('one experiment', () => {
     );
     const wrapper = await page(three());
 
-    const label = 'Start experiment a (stopped)';
-    await byLabel(wrapper, label).trigger('click');
+    await byLabel(wrapper, 'Start experiment a (stopped)').trigger('click');
     await confirmDialog();
     // the websocket has not yet said the experiment is starting
+    const label = 'Start experiment a';
     expect(control(wrapper, label)).toMatchObject({
-      tooltip: 'Cannot start: the experiment is being started',
+      tooltip: 'Cannot start: the experiment is starting',
       disabled: true,
     });
     await byLabel(wrapper, label).trigger('click');
@@ -905,7 +1228,7 @@ describe('one experiment', () => {
     [
       'a stopping experiment',
       { name: 'x', status: 'stopping', running: true },
-      'Stop experiment x (stopping)',
+      'Stop experiment x',
       'Cannot stop: the experiment is stopping',
     ],
     [

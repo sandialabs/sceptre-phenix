@@ -820,6 +820,138 @@ describe('SohOverview view', () => {
     expect(loaderSpy.load).not.toHaveBeenCalled();
   });
 
+  describe('the start and stop bar', () => {
+    let seq = 0;
+    const exp = (action, result) =>
+      wsMsg('experiment', 'ot-substation', action, result, ++seq);
+    // the status cell: its bar and label, its status tag, its failure
+    const status = (wrapper) => {
+      const cell = tableRows(wrapper)[0]['Experiment Status'];
+      const part = (selector) =>
+        cell.find(selector).exists() ? textOf(cell.find(selector)) : null;
+      return {
+        bar: part('.progress-value'),
+        label: part('.exp-progress-label'),
+        tag: part('.tag'),
+        failure: part('.exp-progress-failure'),
+      };
+    };
+    const bar = (percent, label = null) => ({
+      bar: percent,
+      label,
+      tag: null,
+      failure: null,
+    });
+
+    beforeEach(() => vi.useFakeTimers());
+
+    it('labels each phase of a start, into its post-start apps', async () => {
+      const wrapper = await page([
+        summary({ running: false, status: 'stopped' }),
+      ]);
+
+      await publish(exp('starting'));
+      expect(status(wrapper)).toEqual(bar('0%'));
+      await publish(
+        exp('progress', {
+          operation: 'start',
+          percent: 0.4,
+          phase: 'launch-vms',
+          done: 4,
+          total: 10,
+          step: '',
+        }),
+      );
+      expect(status(wrapper)).toEqual(bar('40%', 'Launching VMs 4/10'));
+
+      // the reload after the start lists it running, its apps still going
+      await publish(exp('start', { name: 'ot-substation' }));
+      loaderSpy.options.apply(
+        [
+          summary({
+            progress: {
+              operation: 'start',
+              percent: 0.3,
+              phase: 'post-start-apps',
+            },
+          }),
+        ],
+        { seq: seq + 1 },
+      );
+      await flushPromises();
+      expect(status(wrapper)).toEqual(bar('40%', 'Post-start apps'));
+
+      await publish(
+        exp('progress', { operation: 'start', percent: 1, phase: 'done' }),
+      );
+      expect(status(wrapper)).toMatchObject({ bar: null, tag: 'started' });
+    });
+
+    it('shows a stop', async () => {
+      const wrapper = await page([summary()]);
+
+      await publish(exp('stopping'));
+      await publish(
+        exp('progress', {
+          operation: 'stop',
+          percent: 0.5,
+          phase: 'stop-vms',
+          done: 12,
+          total: 24,
+        }),
+      );
+      expect(status(wrapper)).toEqual(bar('50%', 'Stopping VMs 12/24'));
+    });
+
+    it('shows where a start failed, until the next start', async () => {
+      const wrapper = await page([
+        summary({ running: false, status: 'stopped' }),
+      ]);
+      await publish(exp('starting'));
+
+      await publish(
+        exp('errorStarting', {
+          operation: 'start',
+          phase: 'pre-start-apps',
+          step: 'startup',
+          error: 'exit 1',
+        }),
+      );
+      const reason = 'Failed at Pre-start apps: startup: exit 1';
+      expect(status(wrapper)).toEqual({
+        bar: null,
+        label: null,
+        tag: 'stopped',
+        failure: reason,
+      });
+      expect(notify.show.mock.calls).toEqual([
+        ['The ot-substation experiment did not start', reason],
+      ]);
+
+      await publish(exp('starting'));
+      expect(status(wrapper)).toEqual(bar('0%'));
+    });
+
+    it('tells a failed stop of an old server with no reason', async () => {
+      const wrapper = await page([summary()]);
+      await publish(exp('stopping'));
+
+      await publish(exp('errorStopping', null));
+
+      expect(status(wrapper)).toEqual({
+        bar: null,
+        label: null,
+        tag: 'started',
+        failure: null,
+      });
+      expect(notify.show.mock.calls).toEqual([
+        ['The ot-substation experiment did not stop', ''],
+      ]);
+      vi.advanceTimersByTime(RELOAD_DELAY_MS);
+      expect(loaderSpy.load).toHaveBeenCalled();
+    });
+  });
+
   // they look like the Experiments page's plain status tags, not its buttons
   it('draws the status and verdict as plain tags, the status at one width', async () => {
     const wrapper = await page([

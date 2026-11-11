@@ -77,7 +77,6 @@ const (
 	vmInfoCmd        = "vm info"
 	vmInfoSummaryCmd = "vm info summary"
 	vmLaunchCmd      = "vm launch"
-	nsQueueCmd       = "ns queue"
 	ccClientCmd      = "cc client"
 	ccCommandsCmd    = "cc commands"
 	clearCCFilterCmd = "clear cc filter"
@@ -88,6 +87,7 @@ const (
 const (
 	hostColumn             = "host"
 	stateColumn            = "state"
+	pidColumn              = "pid"
 	stateRunning           = "RUNNING"
 	c2ActiveCheckInterval  = 2 * time.Second
 	responseWaitInterval   = 1 * time.Second
@@ -112,11 +112,6 @@ var headnode struct { //nolint:gochecknoglobals // process-wide cache
 // responseRegex matches the line minimega writes before each C2 response file,
 // `<command ID>/<client UUID>/<file>:`, and only that whole line.
 var responseRegex = regexp.MustCompile(`^(\d+)/(.+)/(stdout|stderr):$`)
-
-// queuedCountRegex matches the number of VMs in each batch `ns queue` lists.
-// The batch's `Names:` line is no use for counting: minimega compresses it into
-// ranges such as `vm[1-50]`.
-var queuedCountRegex = regexp.MustCompile(`(?m)^VMs: (\d+)$`)
 
 type Minimega struct{}
 
@@ -206,7 +201,7 @@ func (Minimega) ClearNamespace(ns string) error {
 	return nil
 }
 
-func (Minimega) LaunchVMs(ns string, start ...string) error {
+func (Minimega) LaunchVMs(ns string) error {
 	cmd := mmcli.NewNamespacedCommand(ns)
 	cmd.Command = vmLaunchCmd
 
@@ -217,6 +212,12 @@ func (Minimega) LaunchVMs(ns string, start ...string) error {
 	if err != nil {
 		return fmt.Errorf("launching VMs: %w", err)
 	}
+
+	return nil
+}
+
+func (Minimega) StartLaunchedVMs(ns string, start ...string) error {
+	cmd := mmcli.NewNamespacedCommand(ns)
 
 	if start == nil {
 		cmd.Command = "vm start all"
@@ -349,61 +350,39 @@ func vmsInErrorState(ns string, names []string) []string {
 	return failed
 }
 
-func (Minimega) GetLaunchProgress(ns string, expected int) (float64, error) {
-	var (
-		queued   int
-		parseErr error
-	)
-
+func (Minimega) GetLaunchProgress(ctx context.Context, ns string, vms []string) (int, error) {
 	cmd := mmcli.NewNamespacedCommand(ns)
-	cmd.Command = nsQueueCmd
+	cmd.Command = vmInfoCmd
+	cmd.Columns = []string{"name", stateColumn, pidColumn}
 
-	for resps := range mmcli.RunReadOnly(context.Background(), nsLine(ns), cmd) {
-		for _, resp := range resps.Resp {
-			if resp.Error != "" {
-				continue
-			}
+	rows, err := mmcli.RunTabularReadOnlyChecked(ctx, nsLine(ns), cmd, nil)
+	if err == nil {
+		err = ended(ctx)
+	}
 
-			for _, m := range queuedCountRegex.FindAllStringSubmatch(resp.Response, -1) {
-				count, err := strconv.Atoi(m[1])
-				if err != nil {
-					// Keep draining the responses; see mmcli.RunReadOnly.
-					parseErr = fmt.Errorf("parsing queued VM count %q: %w", m[1], err)
+	if err != nil {
+		return 0, fmt.Errorf("getting launched VMs in namespace %s: %w", ns, err)
+	}
 
-					continue
-				}
+	waiting := make(map[string]bool, len(vms))
+	for _, name := range vms {
+		waiting[name] = true
+	}
 
-				queued += count
-			}
+	launched := 0
+
+	for _, row := range rows {
+		name := row["name"]
+
+		// before its process starts, a launched VM has the state BUILDING and the PID 0
+		if waiting[name] && (row[stateColumn] != "BUILDING" || (row[pidColumn] != "" && row[pidColumn] != "0")) {
+			launched++
+
+			delete(waiting, name)
 		}
 	}
 
-	if parseErr != nil {
-		return 0, parseErr
-	}
-
-	// `ns queue` will be empty once queued VMs have been launched.
-
-	if queued == 0 {
-		// Only the state is wanted, and `vm info summary` has it without
-		// gathering every other VM detail on each node.
-		cmd.Command = vmInfoSummaryCmd
-		cmd.Columns = []string{stateColumn}
-
-		status := mmcli.RunTabularReadOnly(context.Background(), nsLine(ns), cmd)
-
-		if len(status) == 0 {
-			return 0.0, nil
-		}
-
-		for _, s := range status {
-			if s[stateColumn] == "BUILDING" {
-				queued++
-			}
-		}
-	}
-
-	return float64(queued) / float64(expected), nil
+	return launched, nil
 }
 
 // GetVMInfo returns minimega's details for a namespace's VMs, or one VM's. Concurrent identical

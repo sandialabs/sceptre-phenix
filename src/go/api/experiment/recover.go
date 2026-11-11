@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 
 	"phenix/types"
+	ifaces "phenix/types/interfaces"
 	"phenix/util/plog"
 	"phenix/util/shell"
 )
@@ -56,11 +57,11 @@ func ResetAppsRunning() error {
 	return errs //nolint:wrapcheck // returning multierror
 }
 
-// ClearStaleStartMarkers removes the start markers whose start cannot be in progress, which phenix ui calls as it
-// starts. Stale markers are those of a process of this host that does not run, of this process, and of another host
-// that are StartMarkerMaxAge old.
-func ClearStaleStartMarkers() error {
-	exps, err := recoverableExperiments(false, "start marker cleanup")
+// ClearStaleMarkers removes the start and stop markers whose operation cannot be in progress, which phenix ui calls
+// as it starts. Stale markers are those of a process of this host that does not run, of this process, and of another
+// host that are StartMarkerMaxAge old.
+func ClearStaleMarkers() error {
+	exps, err := recoverableExperiments(false, "start and stop marker cleanup")
 	if err != nil {
 		return fmt.Errorf("listing experiments: %w", err)
 	}
@@ -72,24 +73,31 @@ func ClearStaleStartMarkers() error {
 		self    = os.Getpid()
 	)
 
+	// this process starts and stops no experiment before it recovers them
+	stale := func(m ifaces.StartMarker) bool {
+		return !m.IsZero() && (!StartMarkerLiveOn(m, host, now, shell.ProcessExists) || (m.Host == host && m.PID == self))
+	}
+
 	for _, exp := range exps {
-		m := exp.Status.Starting()
-
-		// this process starts no experiment before it recovers them
-		if m.IsZero() || (StartMarkerLiveOn(m, host, now, shell.ProcessExists) && (m.Host != host || m.PID != self)) {
-			continue
-		}
-
 		name := exp.Metadata.Name
 
-		if err := dropStartMarker(name, m); err != nil {
-			errs = multierror.Append(errs, fmt.Errorf("clearing the start marker of experiment %s: %w", name, err))
-
-			continue
+		if m := exp.Status.Starting(); stale(m) {
+			if err := dropStartMarker(name, m); err != nil {
+				errs = multierror.Append(errs, fmt.Errorf("clearing the start marker of experiment %s: %w", name, err))
+			} else {
+				plog.Warn(plog.TypeSystem, "cleared a stale experiment start marker",
+					"exp", name, "pid", m.PID, "host", m.Host, "since", m.Since)
+			}
 		}
 
-		plog.Warn(plog.TypeSystem, "cleared a stale experiment start marker",
-			"exp", name, "pid", m.PID, "host", m.Host, "since", m.Since)
+		if m := exp.Status.Stopping(); stale(m) {
+			if err := dropStopMarker(name, m); err != nil {
+				errs = multierror.Append(errs, fmt.Errorf("clearing the stop marker of experiment %s: %w", name, err))
+			} else {
+				plog.Warn(plog.TypeSystem, "cleared a stale experiment stop marker",
+					"exp", name, "pid", m.PID, "host", m.Host, "since", m.Since)
+			}
+		}
 	}
 
 	return errs //nolint:wrapcheck // returning multierror

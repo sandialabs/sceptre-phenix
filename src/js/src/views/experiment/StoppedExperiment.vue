@@ -205,6 +205,7 @@
 <script>
   import ExperimentFilesTab from '@/components/experiment/ExperimentFilesTab.vue';
   import ExperimentHeader from '@/components/experiment/ExperimentHeader.vue';
+  import { EXPERIMENT_PROGRESS } from '@/components/experiment/headerProgress.js';
   import ScheduleMenu from '@/components/experiment/ScheduleMenu.vue';
   import StoppedSelectionToolbar from '@/components/experiment/StoppedSelectionToolbar.vue';
   import StoppedVmTable from '@/components/experiment/StoppedVmTable.vue';
@@ -308,6 +309,8 @@
 
   export default {
     emits: ['running'],
+    // the header's start progress (see headerProgress.js)
+    inject: { progressTracker: { from: EXPERIMENT_PROGRESS, default: null } },
     components: {
       ExperimentFilesTab,
       ExperimentHeader,
@@ -899,23 +902,28 @@
         const options = await confirmStart(this.$buefy, name);
         if (!options || this.starting) return;
         this.starting = true;
+        const sending = this.progressTracker?.begin('start');
         let result;
         try {
           result = startResult(
             (await experimentsApi.startExperiment(name, options))?.data,
           );
         } catch (err) {
+          sending?.undo();
           useErrorNotification(err);
           this.starting = false;
           return;
         }
         notifyStartResult(name, result);
         if (result.dryRun) {
+          // a dry run starts nothing, so its bar goes
+          sending?.undo();
           this.starting = false;
           // the apps of the dry run can change the experiment's VMs
           this.updateExperiment();
           return;
         }
+        sending?.done();
         // Base shows the running view, which loads the experiment afresh
         this.$emit('running', true);
       },

@@ -15,7 +15,7 @@ import (
 	"phenix/api/job"
 	"phenix/api/vm"
 	"phenix/types"
-	"phenix/util/mm"
+	ifaces "phenix/types/interfaces"
 	"phenix/util/notes"
 	"phenix/util/plog"
 	"phenix/web/broker"
@@ -32,9 +32,7 @@ const (
 	retryKey   = "retry"
 	retryForce = "force"
 
-	statusKeyPercent             = "percent"
-	percentMultiplier            = 100.0
-	experimentStartCheckInterval = 2 * time.Second
+	statusKeyPercent = "percent"
 )
 
 var (
@@ -111,12 +109,16 @@ func startExperiment(name, owner string, opts startopts.Options) (startOutcome, 
 	}
 
 	defer cache.UnlockExperiment(name)
+	defer cache.KeepExperimentStarting(name)()
 
 	broker.Broadcast(
 		bt.NewRequestPolicy("experiments/start", "update", name),
 		bt.NewResource("experiment", name, "starting"),
 		nil,
 	)
+
+	// the post-start progress goes on after the start message, so it waits for it
+	sink := newProgressSink(name, experiment.OperationStart, !opts.DryRun, broker.Broadcast)
 
 	type result struct {
 		outcome startOutcome
@@ -135,7 +137,9 @@ func startExperiment(name, owner string, opts startopts.Options) (startOutcome, 
 		var (
 			ch     = make(chan error)
 			report experiment.StartResult
-			start  = append(opts.StartOptions(name), experiment.StartWithResult(&report))
+			start  = append(
+				opts.StartOptions(name), experiment.StartWithResult(&report), experiment.StartWithProgress(sink.report),
+			)
 		)
 
 		// a dry run does its post-start stage before Start returns, and records nothing
@@ -159,7 +163,7 @@ func startExperiment(name, owner string, opts startopts.Options) (startOutcome, 
 		}
 
 		if !opts.DryRun {
-			followStart(ctx, name, ch)
+			followStart(ctx, name, ch, sink)
 		}
 
 		exp, err := experiment.Get(name)
@@ -167,113 +171,48 @@ func startExperiment(name, owner string, opts startopts.Options) (startOutcome, 
 		status <- result{startOutcome{exp: exp, warnings: warnings, mmScript: report.MMScript, periodic: nil}, err}
 	}()
 
-	var progress float64
+	s := <-status
+	if s.err != nil {
+		sink.release()
+		sink.fail(s.err)
 
-	// the experiment list reports the latest progress to pages opened
-	// mid-start
-	defer startProgress.Delete(name)
-
-	// a dry run sends minimega nothing, so it waits without asking for progress
-	var count int
-	if !opts.DryRun {
-		count, _ = vm.Count(name)
+		return startOutcome{}, startWebError(s.err, "unable to start experiment %s", name)
 	}
 
-	for {
-		var (
-			s        result
-			finished bool
-		)
+	if opts.DryRun {
+		sink.end()
 
-		if opts.DryRun {
-			s, finished = <-status, true
-		} else {
-			select {
-			case s = <-status:
-				finished = true
-			default:
-			}
-		}
-
-		switch {
-		case finished:
-			if s.err != nil {
-				broker.Broadcast(
-					bt.NewRequestPolicy("experiments/start", "update", name),
-					bt.NewResource("experiment", name, "errorStarting"),
-					nil,
-				)
-
-				return startOutcome{}, startWebError(s.err, "unable to start experiment %s", name)
-			}
-
-			if opts.DryRun {
-				return s.outcome, broadcastDryRun(name, s.outcome.exp)
-			}
-
-			// Clear previous SCORCH pipeline runtime state after successful experiment start.
-			scorch.DeletePipeline(name, -1, -1, false)
-
-			if opts.Periodic(true) {
-				s.outcome.periodic = startPeriodicJob(owner, s.outcome.exp, opts.HonorRunPeriodically != nil)
-			}
-
-			// Like GET /experiments?vms=false: counts come from the topology and
-			// no VM list is asked of minimega. The UI's start handlers replace the
-			// experiment row (Experiments.vue) or reload (Scorch, SoH, runs) and
-			// never read `vms` from this body.
-			body, err := marshaler.Marshal(util.ExperimentSummaryToProtobuf(*s.outcome.exp, ""))
-			if err != nil {
-				err := weberror.NewWebError(err, "unable to start experiment %s", name)
-
-				return startOutcome{}, err.SetStatus(http.StatusInternalServerError)
-			}
-
-			broker.Broadcast(
-				bt.NewRequestPolicy("experiments/start", "update", name),
-				bt.NewResource("experiment", name, "start"),
-				body,
-			)
-
-			return s.outcome, nil
-		default:
-			p, err := mm.GetLaunchProgress(name, count)
-			if err != nil {
-				plog.Error(
-					plog.TypeSystem,
-					"getting progress for experiment",
-					"exp",
-					name,
-					"err",
-					err,
-				)
-
-				continue
-			}
-
-			if p > progress {
-				progress = p
-			}
-
-			startProgress.Store(name, progress)
-
-			plog.Debug(plog.TypeSystem, "percent deployed", statusKeyPercent, progress*percentMultiplier, "exp", name)
-
-			status := map[string]any{
-				statusKeyPercent: progress,
-			}
-
-			marshalled, _ := json.Marshal(status)
-
-			broker.Broadcast(
-				bt.NewRequestPolicy("experiments/start", "update", name),
-				bt.NewResource("experiment", name, "progress"),
-				marshalled,
-			)
-
-			time.Sleep(experimentStartCheckInterval)
-		}
+		return s.outcome, broadcastDryRun(name, s.outcome.exp)
 	}
+
+	// sends the held post-start progress after the start message
+	defer sink.release()
+
+	// Clear previous SCORCH pipeline runtime state after successful experiment start.
+	scorch.DeletePipeline(name, -1, -1, false)
+
+	if opts.Periodic(true) {
+		s.outcome.periodic = startPeriodicJob(owner, s.outcome.exp, opts.HonorRunPeriodically != nil)
+	}
+
+	// Like GET /experiments?vms=false: counts come from the topology and
+	// no VM list is asked of minimega. The UI's start handlers replace the
+	// experiment row (Experiments.vue) or reload (Scorch, SoH, runs) and
+	// never read `vms` from this body.
+	body, err := marshaler.Marshal(util.ExperimentSummaryToProtobuf(*s.outcome.exp, ""))
+	if err != nil {
+		err := weberror.NewWebError(err, "unable to start experiment %s", name)
+
+		return startOutcome{}, err.SetStatus(http.StatusInternalServerError)
+	}
+
+	broker.Broadcast(
+		bt.NewRequestPolicy("experiments/start", "update", name),
+		bt.NewResource("experiment", name, "start"),
+		body,
+	)
+
+	return s.outcome, nil
 }
 
 // broadcastDryRun tells the clients that the dry run of experiment exp ended with it stopped, as a stop does, so a
@@ -340,8 +279,9 @@ func startWebError(err error, format string, args ...any) *weberror.WebError {
 }
 
 // followStart logs the notes of the experiment's start as it goes on in the
-// background, and reports each error ch gets, until ch closes.
-func followStart(ctx context.Context, name string, ch chan error) {
+// background, and reports each error ch gets, until ch closes. The first error
+// of a start that was not canceled goes to sink, when there is one.
+func followStart(ctx context.Context, name string, ch chan error, sink *progressSink) {
 	for _, note := range notes.Info(ctx, false) {
 		plog.Info(plog.TypeSystem, note)
 	}
@@ -366,6 +306,11 @@ func followStart(ctx context.Context, name string, ch chan error) {
 	go func() {
 		for err := range ch {
 			plog.Warn(plog.TypeSystem, "delayed error starting experiment", "exp", name, "err", err)
+
+			// a stop cancels ctx, and the errors it causes are not failures of the start
+			if sink != nil && ctx.Err() == nil {
+				sink.fail(err)
+			}
 
 			var delayErr experiment.DelayedVMError
 
@@ -422,29 +367,34 @@ func resumeStart(name string) {
 		return
 	}
 
-	followStart(ctx, name, ch)
+	followStart(ctx, name, ch, nil)
 }
 
-// startProgress holds each starting experiment's launch progress, from 0 to 1.
-var startProgress sync.Map //nolint:gochecknoglobals // shared with the list handler
+// experimentStatus is the experiment's status as the experiment lists report it, and how far its start or stop is
+// while one is in progress, or nil. A start or stop that another process runs gives the progress its marker records.
+func experimentStatus(exp types.Experiment) (cache.Status, *ifaces.OperationProgress) {
+	name := exp.Metadata.Name
+	status := cache.ExperimentStatus(name, exp.Running())
 
-// experimentStatus is the experiment's status as the experiment lists report
-// it, and how far along its start is while it is starting. A start that
-// another process runs is starting, with an unknown progress of 0.
-func experimentStatus(exp types.Experiment) (cache.Status, float64) {
-	status := cache.ExperimentStatus(exp.Metadata.Name, exp.Running())
-	if status == cache.StatusStopped && experiment.StartingElsewhere(exp.Status) {
-		return cache.StatusStarting, 0
+	switch {
+	case status == cache.StatusStopped && experiment.StartingElsewhere(exp.Status):
+		status = cache.StatusStarting
+	case status == cache.StatusStarted && experiment.StoppingElsewhere(exp.Status):
+		status = cache.StatusStopping
 	}
 
-	if status != cache.StatusStarting {
-		return status, 0
+	if p, ok := liveProgress.get(name); ok {
+		return status, &p
 	}
 
-	progress, _ := startProgress.Load(exp.Metadata.Name)
-	percent, _ := progress.(float64)
-
-	return status, percent
+	switch status { //nolint:exhaustive // only a start or stop has progress
+	case cache.StatusStarting:
+		return status, markerProgress(exp.Status.Starting())
+	case cache.StatusStopping:
+		return status, markerProgress(exp.Status.Stopping())
+	default:
+		return status, nil
+	}
 }
 
 // takeCancelers removes and returns the cancelers and the wait group of
@@ -480,12 +430,16 @@ func stopExperiment(name string, force, keep bool) ([]byte, error) {
 	}
 
 	defer cache.UnlockExperiment(name)
+	defer cache.KeepExperimentStopping(name)()
 
 	broker.Broadcast(
 		bt.NewRequestPolicy("experiments/stop", "update", name),
 		bt.NewResource("experiment", name, "stopping"),
 		nil,
 	)
+
+	sink := newProgressSink(name, experiment.OperationStop, false, broker.Broadcast)
+	defer sink.end()
 
 	periodic := periodicJobOwner(name)
 	cancels, wg := takeCancelers(name)
@@ -500,12 +454,9 @@ func stopExperiment(name string, force, keep bool) ([]byte, error) {
 
 	if err := experiment.Stop(
 		name, experiment.StopWithForce(force), experiment.StopWithKeepInjectionSnapshots(keep),
+		experiment.StopWithProgress(sink.report),
 	); err != nil {
-		broker.Broadcast(
-			bt.NewRequestPolicy("experiments/stop", "update", name),
-			bt.NewResource("experiment", name, "errorStopping"),
-			nil,
-		)
+		sink.fail(err)
 
 		werr := weberror.NewWebError(err, "unable to stop experiment %s", name)
 

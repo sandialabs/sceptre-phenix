@@ -24,6 +24,7 @@ import { TAB } from '@/components/experiment/experimentTabs.js';
 import { cachedPage, clearPageCache } from '@/utils/pageCache.js';
 import { experimentKey } from '@/utils/pageData.js';
 import RunningExperiment from '@/views/experiment/RunningExperiment.vue';
+import { EXPERIMENT_PROGRESS } from '@/components/experiment/headerProgress.js';
 import { httpError, vm, wsMsg } from './helpers/fixtures.js';
 import {
   byLabel,
@@ -339,6 +340,42 @@ describe('websocket traffic', () => {
     expect(page.emitted('running')).toEqual([[false]]);
     expect(page.router.currentRoute.value.path).toBe('/experiment/exp1');
   });
+
+  it.each([
+    ['answers', () => axios.post.mockResolvedValue({}), ['begin stop', 'done']],
+    [
+      'fails',
+      () => axios.post.mockRejectedValue(httpError(500, { message: 'boom' })),
+      ['begin stop', 'undo'],
+    ],
+  ])(
+    "shows the header's bar from the click, and settles it when the server %s",
+    async (_, answer, want) => {
+      answer();
+      const calls = [];
+      const progressTracker = {
+        state: {},
+        begin: (operation) => {
+          calls.push(`begin ${operation}`);
+          return {
+            done: () => calls.push('done'),
+            undo: () => calls.push('undo'),
+          };
+        },
+      };
+      const page = await mountPage(RunningExperiment, {
+        route: '/experiment/exp1',
+        stubs: { RouterLink: RouterLinkStub },
+        provide: { [EXPERIMENT_PROGRESS]: progressTracker },
+      });
+      await apply(running([]));
+
+      await byLabel(page, 'Stop experiment').trigger('click');
+      expect(calls).toEqual([]);
+      await confirmDialog();
+      expect(calls).toEqual(want);
+    },
+  );
 
   it('stays on the running view when the stop fails', async () => {
     axios.post.mockRejectedValue(httpError(500, { message: 'boom' }));

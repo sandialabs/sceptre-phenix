@@ -176,8 +176,10 @@ lack it). Points that are easy to miss:
   `?force=true` marks it stopped anyway.
 - `POST /experiments/{name}/start` answers 409 while another phenix process,
   such as `phenix experiment start`, starts the experiment. The stored status
-  key `starting` (`since`, `pid`, `host`) records that start, and the
-  experiment list reports it as `starting` with `percent` 0.
+  key `starting` (`since`, `pid`, `host`, `progress`) records that start, and
+  the experiment list reports it as `starting` with its `progress` and
+  `percent`. A stop records the stored status key `stopping` in the same way,
+  and the list reports `stopping`.
 - The start takes an optional JSON body with the options of
   `phenix experiment start`: `dryRun`, `treatMinimegaErrorsAsWarnings`,
   `honorRunPeriodically`, `vlanMin` and `vlanMax` (1-4094, min not above
@@ -380,6 +382,16 @@ lack it). Points that are easy to miss:
   takes the same filters as `labels` and `hosts`.
 - Slow `/ws` clients are closed with code 1013 and should reconnect; the live
   log stream may skip lines under load.
+- A start sends the `experiment` actions `starting`, `progress`, then `start`
+  or `errorStarting`. More `progress` follows `start` until the post-start
+  apps end with the phase `done`. A stop sends `stopping`, `progress`, then
+  `stop` or `errorStopping`. `progress` is `{operation, percent, phase, done,
+  total, step}`; `percent` is 0 to 1. The start phases are `pre-start-apps`,
+  `prepare`, `launch-vms`, `start-vms` and `post-start-apps`. The stop phases
+  are `cleanup-apps`, `stop-vms` and `cleanup`. An error body is `{operation,
+  phase, step, error}`. `GET /experiments` items and SoH summaries give the
+  latest `progress` (null or absent when idle). `apps/<app>` results name the
+  `stage`.
 
 When a config fails its schema, the config routes (`POST /configs`,
 `PUT /configs/{kind}/{name}`) and the workflow routes answer 400 with the

@@ -391,6 +391,9 @@ type ExperimentStatus struct {
 
 	// The start in progress, so another phenix process can report the experiment as starting.
 	StartingF ifaces.StartMarker `json:"starting,omitzero" mapstructure:"starting" structs:"starting,omitempty" yaml:"starting,omitempty"`
+
+	// The stop in progress, so another phenix process can report the experiment as stopping.
+	StoppingF ifaces.StopMarker `json:"stopping,omitzero" mapstructure:"stopping" structs:"stopping,omitempty" yaml:"stopping,omitempty"`
 }
 
 func (s *ExperimentStatus) Init() error { //nolint:unparam // implements ifaces.ExperimentStatus
@@ -608,4 +611,12 @@ func (s ExperimentStatus) Starting() ifaces.StartMarker {
 
 func (s *ExperimentStatus) SetStarting(m ifaces.StartMarker) {
 	s.StartingF = m
+}
+
+func (s ExperimentStatus) Stopping() ifaces.StopMarker {
+	return s.StoppingF
+}
+
+func (s *ExperimentStatus) SetStopping(m ifaces.StopMarker) {
+	s.StoppingF = m
 }

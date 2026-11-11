@@ -251,6 +251,13 @@ func (in *doctorInput) storedExperiments(ctx context.Context) ([]doctorExperimen
 	return read.list, read.why
 }
 
+// noStartMarker is the zero start marker, which records no start.
+func noStartMarker() ifaces.StartMarker {
+	var none ifaces.StartMarker
+
+	return none
+}
+
 // decodeDoctorExperiment is what doctor reads of the stored experiment config c.
 func decodeDoctorExperiment(c store.Config) doctorExperiment {
 	exp := doctorExperiment{
@@ -258,7 +265,7 @@ func decodeDoctorExperiment(c store.Config) doctorExperiment {
 		vlans: doctorVLANs{min: 0, max: 0, pinned: nil, count: 0}, schedules: nil,
 		nodes: nil, apps: nil, components: nil, appHosts: nil,
 		stuck:    doctorStuck{apps: nil, scorch: false, scorchRun: -1, pending: false, interrupted: false},
-		starting: ifaces.StartMarker{Since: "", PID: 0, Host: ""},
+		starting: noStartMarker(),
 	}
 
 	decoded, err := types.DecodeExperimentFromConfig(c)
@@ -452,7 +459,7 @@ func experimentNamed(experiments []doctorExperiment, name string) (doctorExperim
 		name: "", baseDir: "", running: false, vms: nil, vlans: doctorVLANs{min: 0, max: 0, pinned: nil, count: 0},
 		schedules: nil, nodes: nil, apps: nil, components: nil, appHosts: nil,
 		stuck:    doctorStuck{apps: nil, scorch: false, scorchRun: -1, pending: false, interrupted: false},
-		starting: ifaces.StartMarker{Since: "", PID: 0, Host: ""},
+		starting: noStartMarker(),
 	}, false
 }
 

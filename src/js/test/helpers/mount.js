@@ -14,11 +14,11 @@ const Icon = {
   render: (ctx) => h('i', { 'data-icon': [ctx.icon].flat().at(-1) }),
 };
 
-// Mounts `component` at `route`; `data` is set over its data(). The wrapper
-// also has the `router`.
+// Mounts `component` at `route`; `data` is set over its data(), and
+// `provide` gives what it injects. The wrapper also has the `router`.
 export async function mountComponent(
   component,
-  { props, data, route = '/', stubs, slots, attachTo } = {},
+  { props, data, route = '/', stubs, slots, attachTo, provide } = {},
 ) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -36,6 +36,7 @@ export async function mountComponent(
         'font-awesome-icon': Icon,
       },
       stubs,
+      provide,
     },
   });
   return Object.assign(wrapper, { router });

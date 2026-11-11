@@ -92,7 +92,8 @@ func runExperimentCmd(t *testing.T, cfg *store.Config, writes int, sub *cobra.Co
 func TestExperimentStartPrintsBrokenDisks(t *testing.T) { //nolint:paralleltest // replaces the store
 	cfg, image := brokenDiskExperiment(t, "foo", "")
 
-	err := runExperimentCmd(t, &cfg, 2, newExperimentStartCmd(), "start", "foo")
+	// the claim, a progress mark for each of the four default apps and for the prepare phase, and the marker drop
+	err := runExperimentCmd(t, &cfg, 7, newExperimentStartCmd(), "start", "foo")
 
 	want := "unable to start the foo experiment: qemu cannot open 1 disk on 1 VM: " +
 		"1 error occurred:\n\t* VM a: disk " + image + ": backing chain loops back to " + image

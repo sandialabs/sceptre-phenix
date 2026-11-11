@@ -17,6 +17,7 @@ import (
 	"pgregory.net/rapid"
 
 	"phenix/types"
+	ifaces "phenix/types/interfaces"
 	"phenix/util/mm"
 	"phenix/util/polltest"
 	"phenix/web/cache"
@@ -112,12 +113,11 @@ func TestExperimentEndpointsListVMs(t *testing.T) {
 					t.Fatalf("cache.LockExperimentForStarting(test-experiment) error = %v", err)
 				}
 
-				startProgress.Store("test-experiment", tt.wantPercent)
-
-				t.Cleanup(func() {
-					startProgress.Delete("test-experiment")
-					cache.UnlockExperiment("test-experiment")
+				useLiveProgress(t, "test-experiment", ifaces.OperationProgress{
+					Operation: "start", Percent: tt.wantPercent, Phase: "launch-vms", Done: 1, Total: 4, Step: "launch",
 				})
+
+				t.Cleanup(func() { cache.UnlockExperiment("test-experiment") })
 			}
 
 			var (

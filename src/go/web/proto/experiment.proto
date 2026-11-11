@@ -49,6 +49,25 @@ message Experiment {
 	// the Builder draft and published document that last published the
 	// experiment (its builder-experiment annotation); unset otherwise
 	BuilderLink builder = 25;
+
+	// how far the experiment's start or stop is, while one is in progress;
+	// only experiment lists set it
+	ExperimentProgress progress = 26;
+}
+
+// The progress of a start or stop of an experiment.
+message ExperimentProgress {
+	// start or stop
+	string operation = 1;
+	// the part of the operation that is done, from 0 to 1
+	double percent = 2;
+	// the current phase, or done when the start is complete
+	string phase = 3;
+	// the steps of the phase that are done, and all its steps
+	uint32 done = 4;
+	uint32 total = 5;
+	// the current step, such as an app name, or empty
+	string step = 6;
 }
 
 message BuilderLink {

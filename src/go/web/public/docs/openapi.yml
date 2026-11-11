@@ -14828,6 +14828,16 @@ paths:
         permission of the route that made the change. It gets `log` entries
         only once it subscribes, and only when its role may `get` `logs`.
 
+        An experiment start sends the `experiment` actions `starting`, then
+        `progress`, then `start` or `errorStarting`. After `start`, more
+        `progress` messages come until the post-start apps finish. The last
+        one has the phase `done`. A stop sends `stopping`, then `progress`,
+        then `stop` or `errorStopping`. The result of `progress` is an
+        `ExperimentProgress`. The result of `errorStarting` and
+        `errorStopping` has `operation`, `phase`, `step` and `error`. The
+        `apps/<app>` messages of an app run name its lifecycle stage in
+        `stage`.
+
         A client sends JSON `WebSocketRequest`s, of at most 2 KiB:
 
         - `{"resource": {"type": "log", "action": "subscribe"}}` (or
@@ -15135,8 +15145,20 @@ components:
           example: 0.5
           type: number
           description: >-
-            start progress from 0 to 1 while the experiment is starting. Only
+            the part of the start or stop in progress that is done, from 0
+            to 1, as in `progress`. It is 0 when no start or stop is in
+            progress. Only `GET /experiments` reports it
+        progress:
+          title: Progress
+          type: object
+          nullable: true
+          description: >-
+            how far the start or stop of the experiment is. It is null when
+            no start or stop is in progress. A start keeps it after the
+            experiment runs, until its post-start apps finish. Only
             `GET /experiments` reports it
+          allOf:
+            - $ref: "#/components/schemas/ExperimentProgress"
         vms_unknown:
           title: VMs Unknown
           example: false
@@ -15227,6 +15249,61 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/VM"
+    ExperimentProgress:
+      title: Experiment Progress
+      type: object
+      description: >-
+        How far a start or stop of an experiment is. The `experiment`
+        `progress` websocket message has the same fields. A start has the
+        phases `pre-start-apps`, `prepare`, `launch-vms`, `start-vms` and
+        `post-start-apps`. A stop has the phases `cleanup-apps`, `stop-vms`
+        and `cleanup`. A phase with no work does not occur.
+      properties:
+        operation:
+          title: Operation
+          type: string
+          enum: [start, stop]
+          description: the operation in progress
+        percent:
+          title: Percent
+          type: number
+          example: 0.5
+          description: >-
+            the part of the operation that is done, from 0 to 1. Each phase
+            has a fixed part of the operation
+        phase:
+          title: Phase
+          type: string
+          enum:
+            - pre-start-apps
+            - prepare
+            - launch-vms
+            - start-vms
+            - post-start-apps
+            - cleanup-apps
+            - stop-vms
+            - cleanup
+            - done
+          description: >-
+            the current phase. `done` tells that the post-start work of a
+            start is complete
+        done:
+          title: Done
+          type: integer
+          example: 3
+          description: the steps of the phase that are done
+        total:
+          title: Total
+          type: integer
+          example: 10
+          description: >-
+            all steps of the phase: its apps, its VMs to launch, or its
+            fixed steps
+        step:
+          title: Step
+          type: string
+          example: ntp
+          description: the current step, such as an app name, or empty
     VMs:
       title: "VMs"
       description: >-
@@ -22334,7 +22411,16 @@ components:
           title: Percent
           example: 0.5
           type: number
-          description: start progress from 0 to 1 while starting
+          description: >-
+            the part of the start or stop in progress that is done, from 0
+            to 1, as in `progress`
+        progress:
+          title: Progress
+          description: >-
+            how far the start or stop of the experiment is. Absent when no
+            start or stop is in progress
+          allOf:
+            - $ref: "#/components/schemas/ExperimentProgress"
         running:
           title: Running
           description: whether the experiment is running

@@ -431,6 +431,7 @@
   import ExperimentCapturesTab from '@/components/experiment/ExperimentCapturesTab.vue';
   import ExperimentFilesTab from '@/components/experiment/ExperimentFilesTab.vue';
   import ExperimentHeader from '@/components/experiment/ExperimentHeader.vue';
+  import { EXPERIMENT_PROGRESS } from '@/components/experiment/headerProgress.js';
   import VMLabelsModal from '@/components/VMLabelsModal.vue';
   import NetflowPanel from '@/components/experiment/NetflowPanel.vue';
   import OpticalDiscModal from '@/components/experiment/OpticalDiscModal.vue';
@@ -588,6 +589,8 @@
 
   export default {
     emits: ['running'],
+    // the header's stop progress (see headerProgress.js)
+    inject: { progressTracker: { from: EXPERIMENT_PROGRESS, default: null } },
     components: {
       CaptureFormatModal,
       ExperimentCaptureModal,
@@ -1774,13 +1777,16 @@
         if (this.stopping) return;
         const name = this.$route.params.id;
         this.stopping = true;
+        const sending = this.progressTracker?.begin('stop');
 
         return experimentsApi
           .stopExperiment(name, { force })
           .then(() => {
+            sending?.done();
             this.$emit('running', false);
           })
           .catch((err) => {
+            sending?.undo();
             useErrorNotification(err);
             this.stopping = false;
             if (!force && stopCanBeForced(err)) {

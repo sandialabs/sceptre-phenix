@@ -227,9 +227,13 @@ func GetSoHSummary(w http.ResponseWriter, r *http.Request) error {
 			summary.VMsStale = obs.Stale
 		}
 
-		status, percent := experimentStatus(exp)
+		status, progress := experimentStatus(exp)
 		summary.Status = string(status)
-		summary.Percent = percent
+		summary.Progress = progress
+
+		if progress != nil {
+			summary.Percent = progress.Percent
+		}
 
 		summaries = append(summaries, summary)
 	}
@@ -250,10 +254,6 @@ func GetSoHSummary(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// sohVMStates reads the VM states of exp for a summary, waiting for minimega
-// at most liveReadWait. Past it, it gives the states last read, marked stale,
-// or unknown states, while the read goes on and keeps its states for later
-// summaries (see sohStateReads). It asks nothing about an experiment that is
 // sohStateRead is one result of sohVMStates.
 type sohStateRead struct {
 	states map[string]string
@@ -287,6 +287,10 @@ func readSoHVMStates(ctx context.Context, experiments []types.Experiment) []sohS
 	return reads
 }
 
+// sohVMStates reads the VM states of exp for a summary, waiting for minimega
+// at most liveReadWait. Past it, it gives the states last read, marked stale,
+// or unknown states, while the read goes on and keeps its states for later
+// summaries (see sohStateReads). It asks nothing about an experiment that is
 // stopped or a dry run.
 func sohVMStates(ctx context.Context, exp types.Experiment) (map[string]string, freshness.Observation, error) {
 	name := exp.Metadata.Name

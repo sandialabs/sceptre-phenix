@@ -92,7 +92,7 @@ type TriggerPublication struct {
 	Verb       string
 	App        string
 	Resource   string
-	// Stage is the lifecycle stage that a trigger runs, when the publisher names it.
+	// Stage is the lifecycle stage of the app run, when the publisher names it.
 	Stage string
 	State string
 	Error error
@@ -357,6 +357,36 @@ type App interface {
 	Cleanup(context.Context, *types.Experiment) error
 }
 
+// PlannedApps lists the apps that ApplyApps with opts runs on exp, in order: the default apps, then the scenario
+// apps. For the running stage it lists no default app, because they have no running stage.
+func PlannedApps(exp *types.Experiment, opts ...Option) []string {
+	options := NewOptions(opts...)
+
+	var names []string
+
+	if options.Stage != ActionRunning {
+		for _, name := range DefaultApps() {
+			if options.matches(name) {
+				names = append(names, name)
+			}
+		}
+	}
+
+	if exp.Spec.Scenario() == nil {
+		return names
+	}
+
+	for _, a := range exp.Spec.Scenario().Apps() {
+		if _, ok := defaultApps[a.Name()]; ok || !options.matches(a.Name()) || options.skipsDisabled(exp, a) {
+			continue
+		}
+
+		names = append(names, a.Name())
+	}
+
+	return names
+}
+
 // ApplyApps applies all the default phenix apps and any configured user apps to
 // the given experiment for the given lifecycle phase. It returns any errors
 // encountered while applying the apps.
@@ -382,30 +412,27 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 		exp.Status.ResetAppStatus()
 	}
 
-	// Publish triggered app events so web broker can propagate the publish out to
+	// Publish app events, with their stage, so web broker can propagate the publish out to
 	// web clients. This was initially setup to help convey SOH status in the UI.
-	var triggeredStage string
-	if options.Trigger {
-		triggeredStage = string(options.Stage)
-	}
-
 	publish := func(app, state string, err error) {
 		pubsub.Publish("trigger-app", TriggerPublication{ //nolint:exhaustruct // partial initialization
 			Experiment: exp.Metadata.Name,
 			App:        app,
-			Stage:      triggeredStage,
+			Stage:      string(options.Stage),
 			State:      state,
 			Error:      err,
 		})
 	}
 
-	matchesFilter := func(name string) bool {
-		if len(options.Filter) == 0 {
-			return true
+	// how many apps ran, for OnApp
+	ran := 0
+
+	onApp := func(name string) {
+		if options.OnApp != nil {
+			options.OnApp(ran, name)
 		}
 
-		_, ok := options.Filter[name]
-		return ok
+		ran++
 	}
 
 	queueCleanup := func(name string) {
@@ -427,8 +454,12 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 			return ctx.Err()
 		}
 
-		if !matchesFilter(name) {
+		if !options.matches(name) {
 			continue
+		}
+
+		if options.Stage != ActionRunning {
+			onApp(name)
 		}
 
 		a := GetApp(name)
@@ -493,7 +524,7 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 				continue
 			}
 
-			if !matchesFilter(app.Name()) {
+			if !options.matches(app.Name()) {
 				plog.Debug(
 					plog.TypePhenixApp,
 					fmt.Sprintf(
@@ -506,16 +537,11 @@ func ApplyApps(ctx context.Context, exp *types.Experiment, opts ...Option) error
 				continue
 			}
 
-			// Running-stage triggers historically include disabled apps. Explicit
-			// filters provide the same override for other lifecycle stages.
-			cleanupPending := options.Stage == ActionCleanup &&
-				exp.Status.AppCleanup()[app.Name()]
-			hasExplicitFilter := len(options.Filter) > 0
-			shouldSkipDisabledApp := app.Disabled() && options.Stage != ActionRunning &&
-				!hasExplicitFilter && !cleanupPending
-			if shouldSkipDisabledApp {
+			if options.skipsDisabled(exp, app) {
 				continue
 			}
+
+			onApp(app.Name())
 
 			a := GetApp(app.Name())
 			_ = a.Init(Name(app.Name()), DryRun(options.DryRun))

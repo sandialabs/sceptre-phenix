@@ -28,6 +28,7 @@ vi.mock('@/utils/notify.js', modules.notify);
 vi.mock('@/utils/pageLoader.js', capturing);
 
 import DiskSelect from '@/components/experiment/DiskSelect.vue';
+import { EXPERIMENT_PROGRESS } from '@/components/experiment/headerProgress.js';
 import StoppedExperiment from '@/views/experiment/StoppedExperiment.vue';
 import VMtilesView from '@/views/experiment/VMtilesView.vue';
 import VMLabelsModal from '@/components/VMLabelsModal.vue';
@@ -239,6 +240,43 @@ describe('StoppedExperiment', () => {
       expect(noticeText()).toContain(`minimega script: ${script}`);
       expect(loaderSpy.load.mock.calls.length).toBe(loads + 1);
     });
+
+    it.each([
+      ['answers', { data: {} }, ['begin start', 'done']],
+      ['fails', null, ['begin start', 'undo']],
+      [
+        'answers a dry run, which starts nothing',
+        { data: { experiment: { name: 'exp1' }, dryRun: true } },
+        ['begin start', 'undo'],
+      ],
+    ])(
+      "shows the header's bar from the click, and settles it when the server %s",
+      async (_, answer, want) => {
+        if (answer) axios.post.mockResolvedValue(answer);
+        else axios.post.mockRejectedValue(httpError(500, { message: 'no' }));
+        const calls = [];
+        const progressTracker = {
+          state: {},
+          begin: (operation) => {
+            calls.push(`begin ${operation}`);
+            return {
+              done: () => calls.push('done'),
+              undo: () => calls.push('undo'),
+            };
+          },
+        };
+        const page = await mountPage(StoppedExperiment, {
+          route: '/experiment/exp1',
+          data: { experiment: { name: 'exp1', vms: [{ name: 'vm1' }] } },
+          provide: { [EXPERIMENT_PROGRESS]: progressTracker },
+        });
+
+        await byLabel(page, 'Start experiment').trigger('click');
+        expect(calls).toEqual([]);
+        await confirmDialog();
+        expect(calls).toEqual(want);
+      },
+    );
 
     it('shows the running view after a start with warnings, and lists them', async () => {
       axios.post.mockResolvedValue({

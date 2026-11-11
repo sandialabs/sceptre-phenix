@@ -45,29 +45,42 @@
           @click="toggle" />
       </template>
     </ExperimentAppsBox>
+    <ExperimentProgress
+      v-if="progressShown"
+      class="experiment-header-progress"
+      :name="name"
+      :progress="progressState.progress"
+      :failure="progressState.failure" />
   </div>
 </template>
 
 <script>
+  import ExperimentProgress from '@/components/ExperimentProgress.vue';
+  import { progressActive } from '@/utils/experimentProgress.js';
   import { readPref, writePref } from '@/utils/prefs.js';
   import AppsTriggerButton from './AppsTriggerButton.vue';
   import DetailsToggle from './DetailsToggle.vue';
   import ExperimentAppsBox from './ExperimentAppsBox.vue';
   import ExperimentSummary from './ExperimentSummary.vue';
   import { HEADER_EXPANDED_PREF } from './experimentHeader.js';
+  import { EXPERIMENT_PROGRESS } from './headerProgress.js';
 
   // The experiment page's header: its summary and Apps box, or collapsed
   // (the default) one line with its name, status, links, counts and Trigger.
   // The browser remembers which, for every experiment page. Details stays at
   // the header's top right: in the Apps box when it is beside the summary.
+  // Under them is the bar of a start or stop, or why it failed.
   export default {
     name: 'ExperimentHeader',
     components: {
       AppsTriggerButton,
       DetailsToggle,
       ExperimentAppsBox,
+      ExperimentProgress,
       ExperimentSummary,
     },
+    // the page's start and stop progress (see headerProgress.js)
+    inject: { progressTracker: { from: EXPERIMENT_PROGRESS, default: null } },
     props: {
       // see ExperimentSummary for each of these
       name: { type: String, default: '' },
@@ -94,6 +107,15 @@
     computed: {
       apps() {
         return this.experiment.apps ?? [];
+      },
+      progressState() {
+        return this.progressTracker?.state ?? {};
+      },
+      progressShown() {
+        return (
+          !!this.progressState.failure ||
+          progressActive(this.progressState.progress)
+        );
       },
       toggleInApps() {
         return this.expanded && this.apps.length > 0 && !this.wrapped;
@@ -155,5 +177,9 @@
 
   .experiment-header-apps {
     flex: 0 1 36rem;
+  }
+
+  .experiment-header-progress {
+    flex: 1 1 100%;
   }
 </style>

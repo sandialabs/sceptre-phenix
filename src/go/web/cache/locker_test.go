@@ -3,6 +3,7 @@ package cache
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"pgregory.net/rapid"
@@ -235,4 +236,55 @@ func TestIsExperimentLocked(t *testing.T) {
 	if got := DefaultWebCache.Locked("vm|exp1/exp1"); got != StatusStarting {
 		t.Errorf("VM lock after UnlockExperiment(exp1) = %q, want %q kept", got, StatusStarting)
 	}
+}
+
+// A kept lock outlives its timeout while it is kept, and expires one timeout after the keeping stops. Renew changes
+// only a lock that holds the status it is given.
+//
+//nolint:paralleltest // replaces the default cache
+func TestKeepLocked(t *testing.T) {
+	original := DefaultWebCache
+	DefaultWebCache = NewGoWebCache()
+
+	t.Cleanup(func() { DefaultWebCache = original })
+
+	const timeout = 150 * time.Millisecond
+
+	if status := Lock("experiment|kept", StatusStopping, timeout); status != "" {
+		t.Fatalf("Lock(kept) = %q, want it locked", status)
+	}
+
+	stop := keepLocked("experiment|kept", StatusStopping, timeout)
+
+	time.Sleep(4 * timeout)
+
+	if got := IsExperimentLocked("kept"); got != StatusStopping {
+		t.Errorf("IsExperimentLocked(kept) after 4 timeouts kept = %q, want %q", got, StatusStopping)
+	}
+
+	stop()
+	stop()
+
+	time.Sleep(2 * timeout)
+
+	if got := IsExperimentLocked("kept"); got != "" {
+		t.Errorf("IsExperimentLocked(kept) 2 timeouts after the keeping stopped = %q, want none", got)
+	}
+
+	if status := Lock("experiment|other", StatusStarting, time.Hour); status != "" {
+		t.Fatalf("Lock(other) = %q, want it locked", status)
+	}
+
+	for key, status := range map[string]Status{"experiment|other": StatusStopping, "experiment|none": StatusStopping} {
+		if Renew(key, status, time.Hour) {
+			t.Errorf("Renew(%s, %s) = true, want false", key, status)
+		}
+	}
+
+	if !Renew("experiment|other", StatusStarting, time.Hour) {
+		t.Error("Renew(other, starting) = false, want true")
+	}
+
+	KeepExperimentStarting("other")()
+	KeepExperimentStopping("other")()
 }

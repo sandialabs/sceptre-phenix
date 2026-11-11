@@ -192,16 +192,11 @@
             header-class="sort-inline"
             centered
             v-slot="props">
-            <template v-if="props.row.status == 'starting'">
-              <section class="status-progress">
-                <b-progress
-                  size="is-medium"
-                  type="is-warning"
-                  show-value
-                  :value="props.row.percent"
-                  format="percent"></b-progress>
-              </section>
-            </template>
+            <experiment-progress
+              v-if="progressShown(props.row)"
+              class="status-progress"
+              :name="props.row.name"
+              :progress="props.row.progress" />
             <template v-else-if="rowActions[props.row.name].power.permitted">
               <b-tooltip
                 :label="
@@ -235,6 +230,11 @@
                 {{ props.row.status }}
               </span>
             </template>
+            <experiment-progress
+              v-if="failures[props.row.name] && !progressShown(props.row)"
+              class="status-progress status-failure"
+              :name="props.row.name"
+              :failure="failures[props.row.name]" />
             <b-tooltip
               v-if="props.row.running && props.row.interrupted"
               class="exp-interrupted"
@@ -404,6 +404,7 @@
 
 <script>
   import CreateExperimentCard from '@/components/CreateExperimentCard.vue';
+  import ExperimentProgress from '@/components/ExperimentProgress.vue';
   import StatStrip from '@/components/StatStrip.vue';
   import TimeWithAge from '@/components/TimeWithAge.vue';
   import { createLiveRows } from '@/utils/liveRows.js';
@@ -417,8 +418,17 @@
   import { useTable } from '@/utils/useTable.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import { namedList, plural, pluralWord } from '@/utils/plural.js';
-  import { useErrorNotification } from '@/utils/errorNotif';
+  import { showError, useErrorNotification } from '@/utils/errorNotif';
   import { escapeHTML } from '@/utils/escapeHTML.js';
+  import {
+    afterMessage,
+    failureLabel,
+    isSending,
+    listedProgress,
+    mergeProgress,
+    progressActive,
+    sendingProgress,
+  } from '@/utils/experimentProgress.js';
   import {
     BULK_ACTIONS,
     EXPERIMENT_ACTIONS,
@@ -452,7 +462,12 @@
   } from '@/utils/experimentList.js';
 
   export default {
-    components: { CreateExperimentCard, StatStrip, TimeWithAge },
+    components: {
+      CreateExperimentCard,
+      ExperimentProgress,
+      StatStrip,
+      TimeWithAge,
+    },
     mixins: [formattingMixin],
 
     setup() {
@@ -481,23 +496,17 @@
         key: 'experiments',
         fetch: pageFetchers.experiments,
         apply: (experiments, { seq }) => {
-          // the server reports a starting experiment's progress from 0 to 1
           const loaded = experiments.map((exp) => ({
             ...exp,
-            percent: Math.round((exp.percent ?? 0) * 100),
+            progress: listedProgress(exp),
           }));
           const byName = new Map(loaded.map((exp) => [exp.name, exp]));
-          // a row known only from websocket messages takes the loaded
-          // details and keeps the progress the messages reported
+          const before = new Map(
+            this.experiments.map((exp) => [exp.name, exp]),
+          );
           this.experiments = this.liveRows
             .merge(loaded, this.experiments, seq)
-            .map((exp) => {
-              const row = exp.partial && byName.get(exp.name);
-              if (!row) return exp;
-              return exp.status == row.status
-                ? { ...row, percent: Math.max(exp.percent, row.percent) }
-                : row;
-            });
+            .map((exp) => this.mergedRow(exp, byName.get(exp.name), before));
           this.loaded = true;
         },
       });
@@ -714,18 +723,18 @@
         // An experiment this list has not seen yet (created elsewhere, or
         // while the list was loading): show it at once and fetch its details.
         const known = exp.some((e) => e.name == msg.resource.name);
-        const ownRow = ['create', 'delete', 'errorStopping'];
+        const ownRow = ['create', 'delete', 'errorStarting', 'errorStopping'];
         if (!known && !ownRow.includes(msg.resource.action)) {
+          const stopping = msg.result?.operation == 'stop';
           this.experiments = [
             ...exp,
             {
               name: msg.resource.name,
               status: {
                 starting: 'starting',
-                progress: 'starting',
+                progress: stopping ? 'stopping' : 'starting',
                 stopping: 'stopping',
               }[msg.resource.action],
-              percent: 0,
               partial: true,
             },
           ];
@@ -775,8 +784,9 @@
           case 'start': {
             for (let i = 0; i < exp.length; i++) {
               if (exp[i].name == msg.resource.name) {
-                exp[i] = msg.result;
-                exp[i].status = 'started';
+                // the post-start apps can still be running
+                const { progress } = this.progressAfter(exp[i], msg);
+                exp[i] = { ...msg.result, status: 'started', progress };
 
                 break;
               }
@@ -803,8 +813,8 @@
           case 'stop': {
             for (let i = 0; i < exp.length; i++) {
               if (exp[i].name == msg.resource.name) {
-                exp[i] = msg.result;
-                exp[i].status = 'stopped';
+                const { progress } = this.progressAfter(exp[i], msg);
+                exp[i] = { ...msg.result, status: 'stopped', progress };
 
                 break;
               }
@@ -826,7 +836,8 @@
             for (let i = 0; i < exp.length; i++) {
               if (exp[i].name == msg.resource.name) {
                 exp[i].status = msg.resource.action;
-                exp[i].percent = 0;
+                exp[i].progress = this.progressAfter(exp[i], msg).progress;
+                delete this.failures[msg.resource.name];
 
                 break;
               }
@@ -843,27 +854,110 @@
             break;
           }
 
-          // the experiment may still be running, or stopped with an error
+          // a failed start leaves the experiment stopped; a failed stop may
+          // leave it running
+          case 'errorStarting':
           case 'errorStopping': {
+            this.showFailure(msg);
             this.reloadSoon();
             break;
           }
 
           case 'progress': {
-            let percent = (msg.result.percent * 100).toFixed(0);
-
-            for (let i = 0; i < exp.length; i++) {
-              if (exp[i].name == msg.resource.name) {
-                exp[i].percent = parseInt(percent);
-                break;
-              }
-            }
+            const row = exp.find((e) => e.name == msg.resource.name);
+            if (row) row.progress = this.progressAfter(row, msg).progress;
 
             this.experiments = [...exp];
 
             break;
           }
         }
+      },
+
+      // the progress and failure of a row after a websocket message
+      progressAfter(row, msg) {
+        return afterMessage(
+          { progress: row?.progress, failure: this.failures[row?.name] },
+          msg.resource.action,
+          msg.result,
+        );
+      },
+
+      // whether the row shows the bar in place of its status
+      progressShown(row) {
+        return this.updating(row.status) || progressActive(row.progress);
+      },
+
+      // A row from a list load: a row known only from messages takes the list's
+      // details, and the bar keeps its percent and this page's own request.
+      mergedRow(exp, listed, before) {
+        if (!listed) return exp;
+        if (exp.partial) {
+          if (exp.status != listed.status) return listed;
+          return {
+            ...listed,
+            progress: mergeProgress(listed.progress, exp.progress),
+          };
+        }
+        const prev = before.get(exp.name);
+        if (exp !== listed || !prev) return exp;
+        const out = this.starting[exp.name] || this.stopping[exp.name];
+        if (out && isSending(prev.progress) && !exp.progress) {
+          return { ...exp, status: prev.status, progress: prev.progress };
+        }
+        return { ...exp, progress: mergeProgress(prev.progress, exp.progress) };
+      },
+
+      // Shows a failed start or stop under the row's status until the next
+      // action on it, and tells of it unless this page's own request will.
+      showFailure(msg) {
+        const name = msg.resource.name;
+        const starting = msg.resource.action == 'errorStarting';
+        const row = this.experiments.find((exp) => exp.name == name);
+        const { progress, failure } = this.progressAfter(row ?? { name }, msg);
+        if (row) {
+          row.progress = progress;
+          if (starting) row.running = false;
+          // the list reload tells whether a failed stop left it running
+          row.status = row.running ? 'started' : 'stopped';
+        }
+        if (failure) this.failures[name] = failure;
+
+        const own = starting ? this.starting[name] : this.stopping[name];
+        if (own || this.bulkPending.has(name)) return;
+        const body = msg.result && typeof msg.result == 'object';
+        showError(
+          `The ${name} experiment did not ${starting ? 'start' : 'stop'}`,
+          body ? failureLabel(msg.result) : '',
+        );
+      },
+
+      // Shows the row starting or stopping from the click. Call done() when the
+      // server answers, or undo() on failure to put back its status and bar.
+      showSending(name, operation) {
+        const row = this.experiments.find((exp) => exp.name == name);
+        delete this.failures[name];
+        if (!row) return { done() {}, undo() {} };
+        const { status, progress } = row;
+        this.liveRows.touch(name);
+        row.status = operation == 'start' ? 'starting' : 'stopping';
+        row.progress = sendingProgress(operation);
+        const now = () => this.experiments.find((exp) => exp.name == name);
+        return {
+          done: () => {
+            if (isSending(now()?.progress)) this.reloadSoon();
+          },
+          undo: () => {
+            const current = now();
+            if (!current) return;
+            if (!isSending(current.progress)) {
+              this.reloadSoon();
+              return;
+            }
+            current.status = status;
+            current.progress = progress;
+          },
+        };
       },
 
       // a toast about one experiment, unless a selection action or a dry
@@ -938,14 +1032,15 @@
       async startExperiment(name, options = {}) {
         this.starting[name] = true;
         if (options.dryRun) this.dryRunPending.add(name);
+        const sending = this.showSending(name, 'start');
         try {
           const resp = await experimentsApi.startExperiment(name, options);
           const result = startResult(resp?.data);
           if (result.dryRun) this.showDryRun(name, result.experiment);
+          else sending.done();
           notifyStartResult(name, result);
         } catch (err) {
-          const row = this.experiments.find((exp) => exp.name == name);
-          if (row) row.status = 'stopped';
+          sending.undo();
           throw err;
         } finally {
           delete this.starting[name];
@@ -959,7 +1054,12 @@
         const i = this.experiments.findIndex((exp) => exp.name == name);
         if (i < 0) return;
         const row = experiment?.name == name ? experiment : this.experiments[i];
-        this.experiments[i] = { ...row, running: false, status: 'stopped' };
+        this.experiments[i] = {
+          ...row,
+          running: false,
+          status: 'stopped',
+          progress: undefined,
+        };
       },
 
       stop(name) {
@@ -991,8 +1091,14 @@
       // sends one stop, its buttons disabled until the server answers
       async sendStop(name, force = false) {
         this.stopping[name] = true;
+        const sending = this.showSending(name, 'stop');
         try {
-          return await experimentsApi.stopExperiment(name, { force });
+          const resp = await experimentsApi.stopExperiment(name, { force });
+          sending.done();
+          return resp;
+        } catch (err) {
+          sending.undo();
+          throw err;
         } finally {
           delete this.stopping[name];
         }
@@ -1159,6 +1265,7 @@
         deleting: {}, // names of the experiments being deleted
         starting: {}, // names of the experiments whose start request is out
         stopping: {}, // names of the experiments whose stop request is out
+        failures: {}, // the last failed start or stop, by experiment name
         loaded: false, // false until the first list arrives
         options: {},
       };
@@ -1182,6 +1289,10 @@
   .status-progress {
     width: 7.5rem;
     margin-inline: auto;
+  }
+
+  .status-failure {
+    margin-top: 0.25rem;
   }
 
   /* the totals at the left, the search and its controls at the right */

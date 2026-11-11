@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"runtime"
 	"strings"
@@ -15,7 +16,7 @@ type launchMM struct {
 	*testMM
 }
 
-func (launchMM) GetLaunchProgress(string, int) (float64, error) { return 0, nil }
+func (launchMM) GetLaunchProgress(context.Context, string, []string) (int, error) { return 0, nil }
 
 // startGoroutines counts the goroutines that run an experiment start.
 func startGoroutines() int {

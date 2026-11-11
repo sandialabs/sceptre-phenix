@@ -389,23 +389,33 @@ func TestOneCommandFunctions(t *testing.T) { //nolint:paralleltest // shares the
 			sent: []string{bare("shell hostname")},
 			want: "head",
 		},
-		"LaunchVMs starts every VM": {
+		"LaunchVMs launches the queued VMs": {
 			call: errOnly(func() error { return LaunchVMs("exp") }),
-			sent: []string{inExp(vmLaunchCmd), inExp("vm start all")},
+			sent: []string{inExp(vmLaunchCmd)},
 		},
-		"LaunchVMs reports a failed start": {
+		"LaunchVMs reports a failed launch": {
 			call:    errOnly(func() error { return LaunchVMs("exp") }),
-			answers: map[string][]*minicli.Response{"vm start all": failed("no VMs")},
-			sent:    []string{inExp(vmLaunchCmd), inExp("vm start all")},
+			answers: map[string][]*minicli.Response{vmLaunchCmd: failed("no VMs")},
+			sent:    []string{inExp(vmLaunchCmd)},
 			wantMsg: "no VMs",
 		},
-		"GetLaunchProgress counts the queued VMs": {
-			call: func() (any, error) { return GetLaunchProgress("exp", 4) },
+		"StartLaunchedVMs starts every VM": {
+			call: errOnly(func() error { return StartLaunchedVMs("exp") }),
+			sent: []string{inExp("vm start all")},
+		},
+		"StartLaunchedVMs reports a failed start": {
+			call:    errOnly(func() error { return StartLaunchedVMs("exp") }),
+			answers: map[string][]*minicli.Response{"vm start all": failed("no VMs")},
+			sent:    []string{inExp("vm start all")},
+			wantMsg: "no VMs",
+		},
+		"GetLaunchProgress counts the launched VMs": {
+			call: func() (any, error) { return GetLaunchProgress(t.Context(), "exp", []string{"a", "b"}) },
 			answers: map[string][]*minicli.Response{
-				nsQueueCmd: {mmtest.Text("head", "Names: vm[1-3]\nVMs: 3\n")},
+				vmInfoCmd: {mmtest.Tabular("head", []string{"name", "state", "pid"}, []string{"a", "BUILDING", "42"})},
 			},
-			sent: []string{inExp(nsQueueCmd)},
-			want: 0.75,
+			sent: []string{inExp(`.columns "name","state","pid" vm info`)},
+			want: 1,
 		},
 		"GetVMHosts": {
 			call: func() (any, error) { return GetVMHosts(NS("exp"), VMName("a")), nil },

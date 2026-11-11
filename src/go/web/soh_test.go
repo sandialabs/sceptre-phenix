@@ -20,6 +20,7 @@ import (
 	"phenix/api/soh"
 	"phenix/store"
 	"phenix/types"
+	ifaces "phenix/types/interfaces"
 	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/mm/mmtest"
@@ -714,12 +715,9 @@ func TestGetSoHSummaryCannotEncode(t *testing.T) {
 		t.Fatalf("cache.LockExperimentForStarting(starting) error = %v", err)
 	}
 
-	startProgress.Store("starting", math.NaN())
+	useLiveProgress(t, "starting", ifaces.OperationProgress{Operation: "start", Percent: math.NaN(), Phase: "prepare"})
 
-	t.Cleanup(func() {
-		startProgress.Delete("starting")
-		cache.UnlockExperiment("starting")
-	})
+	t.Cleanup(func() { cache.UnlockExperiment("starting") })
 
 	records := captureRecords(t)
 

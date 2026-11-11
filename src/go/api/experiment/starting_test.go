@@ -13,6 +13,7 @@ import (
 	"phenix/store"
 	"phenix/store/storetest"
 	ifaces "phenix/types/interfaces"
+	v1 "phenix/types/version/v1"
 	dct "phenix/util/diskchain/diskchaintest"
 	"phenix/util/file"
 	"phenix/util/mm"
@@ -36,7 +37,9 @@ func (m *markerMM) ReadScriptFromFile(string, string) error {
 	return m.readErr
 }
 
-func (*markerMM) LaunchVMs(string, ...string) error { return nil }
+func (*markerMM) LaunchVMs(string) error { return nil }
+
+func (*markerMM) StartLaunchedVMs(string, ...string) error { return nil }
 
 func (*markerMM) GetVMHosts(...mm.Option) map[string]string { return map[string]string{} }
 
@@ -244,6 +247,39 @@ func TestStartDryRunClearsTheMarker(t *testing.T) { //nolint:paralleltest // rep
 	}
 }
 
+// launchFailMM is a markerMM whose vm launch fails. It counts the vm start calls.
+type launchFailMM struct {
+	*markerMM
+
+	starts int
+}
+
+func (*launchFailMM) LaunchVMs(string) error { return errors.New("vm launch failed") }
+
+func (m *launchFailMM) StartLaunchedVMs(string, ...string) error {
+	m.starts++
+
+	return nil
+}
+
+// A failed vm launch sends no vm start, also when Start treats minimega errors as warnings. The start continues.
+func TestStartSendsNoVMStartAfterAFailedLaunch(t *testing.T) { //nolint:paralleltest // replaces package globals
+	fake := &launchFailMM{markerMM: useMarkerStart(t, map[string]any{}, &markerMM{}), starts: 0}
+	mm.DefaultMM = fake //nolint:reassign // useStartMM restores the default
+
+	if err := Start(notes.Context(t.Context(), false), StartWithName("exp"), StartWithMMErrorsAsWarnings(true)); err != nil {
+		t.Fatalf("Start(minimega errors as warnings) error = %v", err)
+	}
+
+	if fake.starts != 0 {
+		t.Errorf("vm start calls after a failed vm launch = %d, want 0", fake.starts)
+	}
+
+	if !experimentNamed(t, "exp").Running() {
+		t.Error("experiment running after Start(minimega errors as warnings) = false, want true")
+	}
+}
+
 // Start refuses an experiment that another live process starts. It tells minimega nothing and keeps the marker.
 func TestStartRefusesALiveMarker(t *testing.T) { //nolint:paralleltest // replaces package globals
 	since := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
@@ -378,9 +414,9 @@ func (s *conflictStore) Update(c *store.Config) error {
 	return s.Store.Update(c) //nolint:wrapcheck // test double
 }
 
-// ClearStaleStartMarkers removes the markers of processes of this host that do not run, of this process and of other
-// hosts that are too old. It keeps the live markers and the rest of each status.
-func TestClearStaleStartMarkers(t *testing.T) { //nolint:paralleltest // replaces package globals
+// ClearStaleMarkers removes the start and stop markers of processes of this host that do not run, of this process
+// and of other hosts that are too old. It keeps the live markers and the rest of each status.
+func TestClearStaleMarkers(t *testing.T) { //nolint:paralleltest // replaces package globals
 	storetest.Use(t)
 	useMarkerShell(t, 4242)
 
@@ -397,33 +433,98 @@ func TestClearStaleStartMarkers(t *testing.T) { //nolint:paralleltest // replace
 		}
 	)
 
-	for name, m := range stale {
+	// each experiment holds the same marker as its start and its stop marker, the stop marker with progress
+	withStop := func(m ifaces.StartMarker) map[string]any {
 		status := markerStatus(m)
+		status["stopping"] = map[string]any{
+			"since": m.Since, "pid": m.PID, "host": m.Host,
+			"progress": map[string]any{"operation": "stop", "percent": 0.5, "phase": "stop-vms", "done": 0, "total": 1},
+		}
+
+		return status
+	}
+
+	for name, m := range stale {
+		status := withStop(m)
 		status["interrupted"] = "kept"
 		storeExperiment(t, name, status)
 	}
 
-	storeExperiment(t, "live", markerStatus(live))
-	storeExperiment(t, "remote", markerStatus(remote))
+	storeExperiment(t, "live", withStop(live))
+	storeExperiment(t, "remote", withStop(remote))
 	storeExperiment(t, "none", map[string]any{})
 
-	if err := ClearStaleStartMarkers(); err != nil {
-		t.Fatalf("ClearStaleStartMarkers() error = %v", err)
+	if err := ClearStaleMarkers(); err != nil {
+		t.Fatalf("ClearStaleMarkers() error = %v", err)
 	}
 
-	got := make(map[string]ifaces.StartMarker)
+	type markers struct{ Start, Stop ifaces.StartMarker }
+
+	got := make(map[string]markers)
 
 	for _, name := range []string{"dead", "self", "old", "live", "remote", "none"} {
 		exp := experimentNamed(t, name)
-		got[name] = exp.Status.Starting()
+		got[name] = markers{Start: exp.Status.Starting(), Stop: exp.Status.Stopping()}
 
 		if _, ok := stale[name]; ok && exp.Status.Interrupted() != "kept" {
-			t.Errorf("experiment %s interrupted after ClearStaleStartMarkers() = %q, want kept", name, exp.Status.Interrupted())
+			t.Errorf("experiment %s interrupted after ClearStaleMarkers() = %q, want kept", name, exp.Status.Interrupted())
 		}
 	}
 
-	want := map[string]ifaces.StartMarker{"dead": {}, "self": {}, "old": {}, "live": live, "remote": remote, "none": {}}
+	stopping := func(m ifaces.StartMarker) ifaces.StartMarker {
+		m.Progress = ifaces.OperationProgress{Operation: "stop", Percent: 0.5, Phase: "stop-vms", Done: 0, Total: 1, Step: ""}
+
+		return m
+	}
+
+	want := map[string]markers{
+		"dead": {}, "self": {}, "old": {}, "none": {},
+		"live":   {Start: live, Stop: stopping(live)},
+		"remote": {Start: remote, Stop: stopping(remote)},
+	}
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("start markers after ClearStaleStartMarkers() mismatch (-want +got):\n%s", diff)
+		t.Errorf("markers after ClearStaleMarkers() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// StoppingElsewhere reports a live stop marker of a running experiment only. StartingElsewhere ignores a stop marker.
+func TestStoppingElsewhere(t *testing.T) {
+	t.Parallel()
+
+	var (
+		live = ifaces.StartMarker{Since: time.Now().UTC().Format(time.RFC3339), PID: 7, Host: "elsewhere"}
+		old  = ifaces.StartMarker{
+			Since: time.Now().UTC().Add(-StartMarkerMaxAge - time.Minute).Format(time.RFC3339), PID: 7, Host: "elsewhere",
+		}
+	)
+
+	status := func(started string, m ifaces.StartMarker) ifaces.ExperimentStatus {
+		s := new(v1.ExperimentStatus)
+		s.SetStartTime(started)
+		s.SetStopping(m)
+
+		return s
+	}
+
+	tests := []struct {
+		name   string
+		status ifaces.ExperimentStatus
+		want   bool
+	}{
+		{"a live marker of a running experiment", status(stopTestStart, live), true},
+		{"a stale marker", status(stopTestStart, old), false},
+		{"a stopped experiment", status("", live), false},
+		{"no marker", status(stopTestStart, ifaces.StartMarker{}), false},
+		{"no status", nil, false},
+	}
+
+	for _, tc := range tests {
+		if got := StoppingElsewhere(tc.status); got != tc.want {
+			t.Errorf("StoppingElsewhere(%s) = %t, want %t", tc.name, got, tc.want)
+		}
+
+		if tc.status != nil && StartingElsewhere(tc.status) {
+			t.Errorf("StartingElsewhere(%s) = true, want false", tc.name)
+		}
 	}
 }

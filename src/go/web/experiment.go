@@ -198,7 +198,7 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 	lists := experimentVMLists(ctx, experiments, !noVMs)
 
 	for i, exp := range experiments {
-		status, percent := experimentStatus(exp)
+		status, progress := experimentStatus(exp)
 
 		var pb *proto.Experiment
 
@@ -213,7 +213,8 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 			pb.VmsUnknown = !obs.Known
 		}
 
-		pb.Percent = percent
+		pb.Progress = progressProto(progress)
+		pb.Percent = pb.GetProgress().GetPercent()
 		allowed = append(allowed, pb)
 	}
 

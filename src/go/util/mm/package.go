@@ -25,12 +25,22 @@ func ClearNamespace(ns string) error {
 	return DefaultMM.ClearNamespace(ns)
 }
 
-func LaunchVMs(ns string, start ...string) error {
-	return DefaultMM.LaunchVMs(ns, start...)
+// LaunchVMs launches the VMs queued in namespace ns. They stay in the BUILDING state until StartLaunchedVMs starts
+// them.
+func LaunchVMs(ns string) error {
+	return DefaultMM.LaunchVMs(ns)
 }
 
-func GetLaunchProgress(ns string, expected int) (float64, error) {
-	return DefaultMM.GetLaunchProgress(ns, expected)
+// StartLaunchedVMs starts the launched VMs of namespace ns that start names, every VM when start is nil, or no VM
+// when start is empty.
+func StartLaunchedVMs(ns string, start ...string) error {
+	return DefaultMM.StartLaunchedVMs(ns, start...)
+}
+
+// GetLaunchProgress returns how many of the VMs named vms minimega launched in namespace ns. A VM is launched when
+// minimega lists it with a process, or in a state other than BUILDING.
+func GetLaunchProgress(ctx context.Context, ns string, vms []string) (int, error) {
+	return DefaultMM.GetLaunchProgress(ctx, ns, vms)
 }
 
 func GetVMInfo(opts ...Option) VMs {

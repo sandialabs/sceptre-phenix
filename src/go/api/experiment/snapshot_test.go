@@ -89,7 +89,7 @@ func TestStopVMsDoesNotDeleteSnapshotsWhenNamespaceClearFails(t *testing.T) {
 		NodesF: []*v1.Node{{GeneralF: &v1.General{HostnameF: "vm-one"}}},
 	})
 
-	killed, err := stopVMsAndDeleteSnapshots(exp, false)
+	killed, err := stopVMsAndDeleteSnapshots(exp, false, nil)
 	if killed || !errors.Is(err, ErrTeardownFailed) {
 		t.Fatalf("stopVMsAndDeleteSnapshots() = %t, %v, want false and an error wrapping ErrTeardownFailed", killed, err)
 	}

@@ -2,10 +2,17 @@ package cache
 
 import (
 	"fmt"
+	"sync"
 	"time"
 )
 
-const lockTimeout = 5 * time.Minute
+const (
+	lockTimeout     = 5 * time.Minute
+	stopLockTimeout = 1 * time.Minute
+
+	// renewalsPerTimeout is how many times a kept lock is renewed in each of its timeouts.
+	renewalsPerTimeout = 3
+)
 
 // LockedError is returned when locking an experiment or VM another action
 // holds. It is temporary: the action ends and frees the lock.
@@ -101,11 +108,57 @@ func LockExperimentForStarting(name string) error {
 func LockExperimentForStopping(name string) error {
 	key := "experiment|" + name
 
-	if status := Lock(key, StatusStopping, 1*time.Minute); status != "" {
+	if status := Lock(key, StatusStopping, stopLockTimeout); status != "" {
 		return &LockedError{What: "experiment", Name: name, Status: status}
 	}
 
 	return nil
+}
+
+// KeepExperimentStarting renews the start lock of experiment name until the returned function is called, so a start
+// that takes longer than the lock timeout keeps it. Without renewals, the lock expires after the timeout.
+func KeepExperimentStarting(name string) func() {
+	return keepLocked("experiment|"+name, StatusStarting, lockTimeout)
+}
+
+// KeepExperimentStopping is KeepExperimentStarting for the stop lock of experiment name.
+func KeepExperimentStopping(name string) func() {
+	return keepLocked("experiment|"+name, StatusStopping, stopLockTimeout)
+}
+
+// keepLocked renews the lock key with status for timeout, renewalsPerTimeout times in each timeout, until the
+// returned function is called. It stops when the lock no longer holds status.
+func keepLocked(key string, status Status, timeout time.Duration) func() {
+	var (
+		done = make(chan struct{})
+		once sync.Once
+		wg   sync.WaitGroup
+	)
+
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		ticker := time.NewTicker(timeout / renewalsPerTimeout)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if !Renew(key, status, timeout) {
+					return
+				}
+			}
+		}
+	}()
+
+	return func() {
+		once.Do(func() { close(done) })
+		wg.Wait()
+	}
 }
 
 func LockVMForStarting(exp, name string) error {

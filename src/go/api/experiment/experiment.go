@@ -715,13 +715,23 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	// the startup app marks a VM do not boot when its first disk image is missing; the disk check still reports it
 	booting := bootingVMs(exp.Spec)
 
+	// the post-start work runs after Start returns, in finishStart
+	background := o.errChan != nil && (!o.dryrun || !o.keepStopped)
+
+	plan := newProgressPlan(OperationStart, startPhases(), startWork(exp, o.dryrun, background))
+	rep := newProgressReporter(plan, o.progress, markStart(exp, marker))
+
 	timer.begin("pre-start-apps")
+
+	preStart := app.PlannedApps(exp, app.Stage(app.ActionPreStart), app.DryRun(o.dryrun))
+	rep.begin(PhasePreStartApps, len(preStart), firstApp(preStart))
 
 	err = app.ApplyApps(
 		ctx,
 		exp,
 		app.Stage(app.ActionPreStart),
 		app.DryRun(o.dryrun),
+		rep.appSteps(0),
 	)
 	if err != nil {
 		return fmt.Errorf("applying apps to experiment: %w", err)
@@ -729,6 +739,13 @@ func Start(ctx context.Context, opts ...StartOption) error {
 
 	// pre-start apps may change the drives, so the check comes after them and before minimega is told anything
 	timer.begin("disk-check")
+
+	prepare := prepareSteps
+	if o.dryrun {
+		prepare = prepareDryRunSteps
+	}
+
+	rep.begin(PhasePrepare, prepare, "disk-check")
 
 	warnings, err := CheckDisks(ctx, exp.Spec, CheckAsWarnings(o.dryrun || o.mmErrAsWarn), checkBooting(booting))
 	reportDiskWarnings(ctx, exp.Metadata.Name, warnings)
@@ -738,6 +755,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	}
 
 	timer.begin("scripts")
+	rep.step(prepareScripts, "scripts", false)
 
 	var (
 		mmScript = fmt.Sprintf("%s/mm_files/%s.mm", exp.Spec.BaseDir(), exp.Spec.ExperimentName())
@@ -780,6 +798,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		// previously before starting the experiment. This way, cluster nodes that VMs
 		// get scheduled on will pull the most up-to-date snapshot files.
 		timer.begin("snapshot-cleanup")
+		rep.step(prepareSnapshotCleanup, "snapshot-cleanup", false)
 
 		err = deleteC2AndSnapshots(exp)
 		if err != nil {
@@ -787,6 +806,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		}
 
 		timer.begin("minimega-script")
+		rep.step(prepareMinimegaScript, "minimega-script", false)
 
 		err = mm.ReadScriptFromFile(exp.Spec.ExperimentName(), mmScript)
 		err = explainVLANInUse(ctx, exp.Spec.ExperimentName(), exp.Spec.VLANs().Aliases(), err)
@@ -794,75 +814,34 @@ func Start(ctx context.Context, opts ...StartOption) error {
 			return err
 		}
 
-		var (
-			bootable = exp.Spec.Topology().BootableNodes()
-			start    = make([]string, 0) // nil vs. slice makes a difference here
-		)
+		launch := planLaunch(exp.Spec)
+		delays, c2s = launch.delays, launch.c2s
 
-		var userDelayed, c2Delayed, timerDelayed []string
-
-		for _, node := range bootable {
-			if node.External() {
-				continue
-			}
-
-			hostname := node.General().Hostname()
-
-			if node.Delay().User() {
-				userDelayed = append(userDelayed, hostname)
-
-				continue
-			}
-
-			if others := node.Delay().C2(); len(others) > 0 {
-				var (
-					c2    = make(map[string]bool)
-					hosts = make([]string, 0, len(others))
-				)
-
-				for _, other := range others {
-					if other.Hostname() == "" {
-						continue
-					}
-
-					c2[other.Hostname()] = other.UseUUID()
-					hosts = append(hosts, other.Hostname())
-				}
-
-				if len(c2) > 0 {
-					c2s[hostname] = c2
-					c2Delayed = append(c2Delayed, fmt.Sprintf("%s (after %s)", hostname, strings.Join(hosts, ", ")))
-
-					continue
-				}
-			}
-
-			if d := node.Delay().Timer(); d != 0 {
-				delays[hostname] = d
-				timerDelayed = append(timerDelayed, fmt.Sprintf("%s (after %v)", hostname, d))
-
-				continue
-			}
-
-			start = append(start, hostname)
-		}
-
-		noteDelayed(ctx, "to be started by user", userDelayed)
-		noteDelayed(ctx, "will be started when C2 is active on other VMs", c2Delayed)
-		noteDelayed(ctx, "will be started after a set time", timerDelayed)
-
-		if len(start) == len(bootable) {
-			// Reset start slice so the call to mm.LaunchVMs results in `vm start all`
-			// being used (to reduce calls to minimega). A nil slice vs. an empty
-			// slice makes a difference here.
-			start = nil
-		}
+		noteDelayed(ctx, "to be started by user", launch.userDelayed)
+		noteDelayed(ctx, "will be started when C2 is active on other VMs", launch.c2Delayed)
+		noteDelayed(ctx, "will be started after a set time", launch.timerDelayed)
 
 		timer.begin("launch")
+		rep.begin(PhaseLaunchVMs, len(launch.vms), "launch")
 
-		err = mm.LaunchVMs(exp.Spec.ExperimentName(), start...)
-		if err = mmStepFailed(ctx, exp.Spec.ExperimentName(), o.mmErrAsWarn, "launching experiment VMs", err); err != nil {
+		stopPolling := pollLaunch(ctx, exp.Spec.ExperimentName(), launch.vms, rep, launchPollInterval)
+		launchErr := mm.LaunchVMs(exp.Spec.ExperimentName())
+
+		stopPolling()
+
+		if err = mmStepFailed(ctx, exp.Spec.ExperimentName(), o.mmErrAsWarn, "launching experiment VMs", launchErr); err != nil {
 			return err
+		}
+
+		timer.begin("vm-start")
+		rep.begin(PhaseStartVMs, startVMSteps(exp, background), "vm-start")
+
+		// A failed launch, also as a warning, sends no vm start.
+		if launchErr == nil {
+			err = mm.StartLaunchedVMs(exp.Spec.ExperimentName(), launch.start...)
+			if err = mmStepFailed(ctx, exp.Spec.ExperimentName(), o.mmErrAsWarn, "launching experiment VMs", err); err != nil {
+				return err
+			}
 		}
 
 		// Creating experiment bridge after launching VMs to ensure the bridge
@@ -870,8 +849,13 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		// them. This cannot be done as part of the minimega script template since
 		// the VM taps (and thus bridges) do not get created until the overall
 		// minimega namespace is launched.
+		next := 1
+
 		if exp.Spec.UseGREMesh() {
 			timer.begin("bridge")
+			rep.step(next, "bridge", false)
+
+			next++
 
 			err = mm.CreateBridge(mm.NS(exp.Metadata.Name), mm.Bridge(exp.Spec.DefaultBridge()))
 			if err = mmStepFailed(ctx, exp.Spec.ExperimentName(), o.mmErrAsWarn, "creating experiment bridge", err); err != nil {
@@ -880,6 +864,7 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		}
 
 		timer.begin("vm-hosts-and-vlans")
+		rep.step(next, "vm-hosts-and-vlans", false)
 
 		exp.Status.SetSchedule(mm.GetVMHosts(mm.NS(exp.Spec.ExperimentName())))
 
@@ -906,12 +891,14 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	exp.Status.SetInterrupted("")
 	exp.Status.SetDelayedStarts(nil, nil, false)
 
-	if o.errChan == nil || (o.dryrun && o.keepStopped) {
-		if step, err := afterLaunch(ctx, exp, o.dryrun, steps, timer); err != nil {
+	if !background {
+		if step, err := afterLaunch(ctx, exp, o.dryrun, steps, timer, rep); err != nil {
 			return abortStart(exp, o.dryrun, step, err)
 		}
 
 		if o.dryrun && o.keepStopped {
+			rep.finish()
+
 			return nil
 		}
 	} else if !o.dryrun && steps.delayed() {
@@ -922,9 +909,16 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	}
 
 	exp.Status.SetStartTime(start)
-	exp.Status.SetStarting(ifaces.StartMarker{Since: "", PID: 0, Host: ""})
+
+	var none ifaces.StartMarker
+
+	exp.Status.SetStarting(none)
 
 	timer.begin("record")
+
+	if background && !o.dryrun {
+		rep.step(startVMSteps(exp, true)-1, "record", false)
+	}
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 	c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
@@ -938,12 +932,19 @@ func Start(ctx context.Context, opts ...StartOption) error {
 
 	recorded = true
 
-	if o.errChan != nil {
-		go finishStart(ctx, exp, o.dryrun, steps, o.errChan)
+	// the store no longer holds the start marker
+	rep.stopMarking()
+
+	if background {
+		go finishStart(ctx, exp, o.dryrun, steps, o.errChan, rep)
 	}
 
 	for _, hook := range hooks["start"] {
 		hook("start", o.name)
+	}
+
+	if !background {
+		rep.finish()
 	}
 
 	return nil
@@ -997,11 +998,21 @@ const (
 )
 
 // afterLaunch runs Start's steps after the VMs launch and returns the step that failed and its error; with
-// steps.persist it updates the status's pending starts as delayed VMs start and post-start apps finish. timer, which
-// can be nil, records the time of each step.
+// steps.persist it updates the status's pending starts as delayed VMs start and post-start apps finish. timer and
+// rep, which can be nil, record the time of each step and report the post-start-apps phase.
 func afterLaunch(
 	ctx context.Context, exp *types.Experiment, dryrun bool, steps pendingSteps, timer *startTimer,
+	rep *progressReporter,
 ) (startStep, error) {
+	c2, apps := postStartSteps(exp, dryrun, steps.ccScript != "", steps.postStart)
+
+	first := firstApp(apps)
+	if c2 > 0 {
+		first = "c2-script"
+	}
+
+	rep.begin(PhasePostStartApps, c2+len(apps), first)
+
 	if !dryrun {
 		timer.begin("c2-script")
 
@@ -1020,6 +1031,10 @@ func afterLaunch(
 
 		timer.begin("delayed-vms")
 
+		if steps.delayed() {
+			rep.step(c2, "delayed-vms", false)
+		}
+
 		if err := handleDelayedVMs(ctx, exp.Spec.ExperimentName(), steps.delays, steps.c2s, c2CheckInterval, started); err != nil {
 			return stepDelayedVMs, fmt.Errorf("handling delayed VMs: %w", err)
 		}
@@ -1032,7 +1047,7 @@ func afterLaunch(
 	if steps.postStart {
 		timer.begin("post-start-apps")
 
-		if err := app.ApplyApps(ctx, exp, app.Stage(app.ActionPostStart), app.DryRun(dryrun)); err != nil {
+		if err := app.ApplyApps(ctx, exp, app.Stage(app.ActionPostStart), app.DryRun(dryrun), rep.appSteps(c2)); err != nil {
 			return stepPostStartApps, fmt.Errorf("applying apps to experiment: %w", err)
 		}
 	}
@@ -1065,7 +1080,10 @@ func abortStart(exp *types.Experiment, dryrun bool, step startStep, err error) e
 
 // Stop stops the named experiment, deleting injection snapshots by default and the experiment's own bridge in the auto
 // bridge mode (see deleteOwnBridge). When minimega cannot kill its VMs it stays running and the error wraps
-// ErrTeardownFailed, unless StopWithForce marks it stopped anyway.
+// ErrTeardownFailed, unless StopWithForce marks it stopped anyway. While it runs, the stored status holds its stop
+// marker with its progress.
+//
+//nolint:funlen // one step after the other
 func Stop(name string, opts ...StopOption) error {
 	o := newStopOptions(opts...)
 
@@ -1088,13 +1106,34 @@ func Stop(name string, opts ...StopOption) error {
 
 	dryrun := exp.DryRun()
 
+	marker := newStartMarker(time.Now())
+	plan := newProgressPlan(OperationStop, stopPhases(), stopWork(exp, dryrun, o.keepInjectionSnapshots))
+	rep := newProgressReporter(plan, o.progress, markStop(exp, marker))
+
+	// the store write that records the stop clears the marker; it stays when that write fails
+	recorded := false
+
+	defer func() {
+		if recorded {
+			return
+		}
+
+		if err := dropStopMarker(name, marker); err != nil {
+			plog.Warn(plog.TypeSystem, "clearing experiment stop marker", "exp", name, "err", err)
+		}
+	}()
+
 	var errs error
+
+	cleanup := app.PlannedApps(exp, app.Stage(app.ActionCleanup), app.DryRun(dryrun))
+	rep.begin(PhaseCleanupApps, len(cleanup), firstApp(cleanup))
 
 	err = app.ApplyApps(
 		context.Background(),
 		exp,
 		app.Stage(app.ActionCleanup),
 		app.DryRun(dryrun),
+		rep.appSteps(0),
 	)
 	if err != nil {
 		errs = multierror.Append(errs, fmt.Errorf("cleaning up app experiments: %w", err))
@@ -1103,13 +1142,21 @@ func Stop(name string, opts ...StopOption) error {
 	stopped := true
 
 	if !dryrun {
-		killed, err := stopVMsAndDeleteSnapshots(exp, o.keepInjectionSnapshots)
+		killed, err := stopVMsAndDeleteSnapshots(exp, o.keepInjectionSnapshots, rep)
+
+		// the cleanup phase deletes the snapshots, unless it keeps them, then the bridge, then records the stop
+		bridge := 1
+		if o.keepInjectionSnapshots {
+			bridge = 0
+		}
 
 		switch {
 		case killed:
 			if err != nil {
 				errs = multierror.Append(errs, err)
 			}
+
+			rep.step(bridge, "bridge", false)
 
 			if err := deleteOwnBridge(exp); err != nil {
 				errs = multierror.Append(errs, err)
@@ -1124,6 +1171,10 @@ func Stop(name string, opts ...StopOption) error {
 			stopped = false
 			errs = multierror.Append(errs, err)
 		}
+
+		rep.step(bridge+1, "record", false)
+	} else {
+		rep.begin(PhaseCleanup, stopCleanupSteps(true, o.keepInjectionSnapshots), "record")
 	}
 
 	if stopped {
@@ -1131,6 +1182,10 @@ func Stop(name string, opts ...StopOption) error {
 		exp.Status.SetDelayedStarts(nil, nil, false)
 		exp.Status.SetInterrupted("")
 	}
+
+	var none ifaces.StopMarker
+
+	exp.Status.SetStopping(none)
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 	c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
@@ -1142,6 +1197,8 @@ func Stop(name string, opts ...StopOption) error {
 
 	if err != nil {
 		errs = multierror.Append(errs, fmt.Errorf("updating experiment config: %w", err))
+	} else {
+		recorded = true
 	}
 
 	if stopped {
@@ -1153,17 +1210,30 @@ func Stop(name string, opts ...StopOption) error {
 	return errs
 }
 
-// stopVMsAndDeleteSnapshots kills the experiment's VMs, then deletes their injection snapshots unless
-// keepSnapshots; it returns false and an error wrapping ErrTeardownFailed when the VMs could not be killed.
-func stopVMsAndDeleteSnapshots(exp *types.Experiment, keepSnapshots bool) (bool, error) {
+// stopVMsAndDeleteSnapshots kills the experiment's VMs in the stop-vms phase of rep, then deletes their injection
+// snapshots, unless keepSnapshots, in the cleanup phase; it returns false and an error wrapping ErrTeardownFailed when
+// the VMs could not be killed.
+func stopVMsAndDeleteSnapshots(exp *types.Experiment, keepSnapshots bool, rep *progressReporter) (bool, error) {
+	// one step: minimega gives no count, and a read of the namespace while it is cleared can create it again
+	rep.begin(PhaseStopVMs, 1, "clear-namespace")
+
 	err := mm.ClearNamespace(exp.Spec.ExperimentName())
+
+	steps := stopCleanupSteps(false, keepSnapshots)
+
 	if err != nil {
+		rep.begin(PhaseCleanup, steps, "")
+
 		return false, fmt.Errorf("%w: %w", ErrTeardownFailed, err)
 	}
 
 	if keepSnapshots {
+		rep.begin(PhaseCleanup, steps, "bridge")
+
 		return true, nil
 	}
+
+	rep.begin(PhaseCleanup, steps, "snapshots")
 
 	err = deleteSnapshots(exp)
 	if err != nil {
