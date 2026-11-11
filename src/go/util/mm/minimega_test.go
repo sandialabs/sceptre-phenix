@@ -39,10 +39,29 @@ func TestConnectVMInterfaceCommand(t *testing.T) {
 }
 
 func TestDiskDeleteCommand(t *testing.T) {
-	got := diskDeleteCommand("vm_snapshot", 1, "/etc/old-config", "/var/tmp/stale dir")
-	want := `disk inject vm_snapshot:1 delete files "/etc/old-config","/var/tmp/stale dir"`
+	tests := []struct {
+		osType string
+		want   string
+	}{
+		{
+			osType: "linux",
+			want:   `disk inject vm_snapshot:1 delete files "/etc/old-config","/var/tmp/stale dir"`,
+		},
+		{
+			osType: "windows",
+			want: `disk inject vm_snapshot:1 options "-t lowntfs-3g -o ignore_case" ` +
+				`delete files "/etc/old-config","/var/tmp/stale dir"`,
+		},
+	}
 
-	if got != want {
-		t.Fatalf("diskDeleteCommand returned %q, want %q", got, want)
+	for _, test := range tests {
+		t.Run(test.osType, func(t *testing.T) {
+			got := diskDeleteCommand(
+				"vm_snapshot", 1, test.osType, "/etc/old-config", "/var/tmp/stale dir",
+			)
+			if got != test.want {
+				t.Fatalf("diskDeleteCommand returned %q, want %q", got, test.want)
+			}
+		})
 	}
 }

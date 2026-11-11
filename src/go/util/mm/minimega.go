@@ -483,14 +483,14 @@ func (Minimega) RedeployVM(opts ...Option) error { //nolint:funlen // complex lo
 
 				// Partition 0 disables injection, as in the deploy script.
 				if o.injectPart != 0 && len(o.injects) > 0 {
-					err = inject(old.base, o.injectPart, o.injects...)
+					err = inject(old.base, o.injectPart, o.osType, o.injects...)
 					if err != nil {
 						return err
 					}
 				}
 
 				if o.injectPart != 0 && len(o.deletions) > 0 {
-					err = deleteFromDisk(old.base, o.injectPart, o.deletions...)
+					err = deleteFromDisk(old.base, o.injectPart, o.osType, o.deletions...)
 					if err != nil {
 						return err
 					}
@@ -1691,23 +1691,24 @@ func flush(ns string) error {
 	return nil
 }
 
-func inject(disk string, part int, injects ...string) error {
-	files := strings.Join(injects, " ")
-
+func inject(disk string, part int, osType string, injects ...string) error {
 	cmd := mmcli.NewCommand()
-	cmd.Command = fmt.Sprintf("disk inject %s:%d files %s", disk, part, files)
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
-	if err != nil {
-		return fmt.Errorf("injecting files into disk %s: %w", disk, err)
+	for _, command := range InjectCommands(fmt.Sprintf("%s:%d", disk, part), osType, injects...) {
+		cmd.Command = command
+
+		err := mmcli.ErrorResponse(mmcli.Run(cmd))
+		if err != nil {
+			return fmt.Errorf("injecting files into disk %s: %w", disk, err)
+		}
 	}
 
 	return nil
 }
 
-func deleteFromDisk(disk string, part int, paths ...string) error {
+func deleteFromDisk(disk string, part int, osType string, paths ...string) error {
 	cmd := mmcli.NewCommand()
-	cmd.Command = diskDeleteCommand(disk, part, paths...)
+	cmd.Command = diskDeleteCommand(disk, part, osType, paths...)
 
 	err := mmcli.ErrorResponse(mmcli.Run(cmd))
 	if err != nil {
@@ -1717,14 +1718,14 @@ func deleteFromDisk(disk string, part int, paths ...string) error {
 	return nil
 }
 
-func diskDeleteCommand(disk string, part int, paths ...string) string {
+func diskDeleteCommand(disk string, part int, osType string, paths ...string) string {
 	files := make([]string, len(paths))
 
 	for i, path := range paths {
 		files[i] = fmt.Sprintf("%q", path)
 	}
 
-	return fmt.Sprintf("disk inject %s:%d delete files %s", disk, part, strings.Join(files, ","))
+	return DeleteCommand(fmt.Sprintf("%s:%d", disk, part), osType, strings.Join(files, ","))
 }
 
 // Ugh... replicating `file.DeleteFile` here to avoid cyclical dependency

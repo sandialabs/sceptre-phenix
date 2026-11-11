@@ -137,6 +137,12 @@ Optional values for a node in the topology configuration can include:
     [C2 Startup Script Delivery](apps.md#c2-startup-script-delivery) for the
     requirements and configuration options.
 
+!!! note
+    On Windows nodes, injection and deletion paths match existing files
+    regardless of case. The inject partition must be NTFS, and the minimega
+    host needs `lowntfs-3g`; without it, minimega silently falls back to a
+    case-sensitive mount.
+
 #### Delay Start
 
 It is possible to delay the start of a VM with the `delay` value. There are
