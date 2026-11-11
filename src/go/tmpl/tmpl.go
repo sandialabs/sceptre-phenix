@@ -120,11 +120,19 @@ func CreateFileFromTemplate(name string, data any, filename string) (err error) 
 	return GenerateFromTemplate(name, data, f)
 }
 
-// RestoreAsset restores an asset that is part of the embedded templates.
+// RestoreAsset restores an asset that is part of the embedded templates,
+// creating any subdirectories of dir that its name includes.
 func RestoreAsset(dir, name string) error {
 	content, err := templatesFS.ReadFile(path.Join("templates", name))
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, name), content, 0o600)
+
+	dst := filepath.Join(dir, name)
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
+		return fmt.Errorf("creating asset directory: %w", err)
+	}
+
+	return os.WriteFile(dst, content, 0o600)
 }
