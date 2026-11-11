@@ -368,7 +368,7 @@ func TestResumeStartRecordsAnInterruptedStart(t *testing.T) { //nolint:parallelt
 	// stopping the experiment clears it
 	useStartMM(t, &startMM{})
 
-	if err := Stop("exp", StopWithKeepInjectionSnapshots(true)); err != nil {
+	if err := Stop(t.Context(), "exp", StopWithKeepInjectionSnapshots(true)); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 

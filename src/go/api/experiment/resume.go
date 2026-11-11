@@ -150,7 +150,8 @@ func finishStart(
 		return
 	}
 
-	if err := Stop(exp.Spec.ExperimentName()); err != nil {
+	// the stop must run to its end, also after a cancel of the start
+	if err := Stop(context.Background(), exp.Spec.ExperimentName()); err != nil {
 		errChan <- fmt.Errorf("stopping experiment: %w", err)
 	}
 }

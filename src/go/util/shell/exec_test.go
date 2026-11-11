@@ -370,7 +370,7 @@ func processGone(pid int) error {
 
 // Canceling the context stops the whole process group of the command: a child
 // that holds the output pipes open does not keep ExecCommand from returning,
-// and no process of the group is left.
+// and no process of the group is left when it returns.
 func TestExecCommandCancelStopsProcessGroup(t *testing.T) {
 	testenv.RequireCommands(t, "sh", "sleep")
 
@@ -391,6 +391,12 @@ func TestExecCommandCancelStopsProcessGroup(t *testing.T) {
 		{
 			name:      "child ignores SIGTERM",
 			script:    "trap '' TERM; " + child + " wait",
+			killDelay: 200 * time.Millisecond,
+		},
+		{
+			// the command exits on SIGTERM and the pipes close, but the child is left until the SIGKILL
+			name:      "child ignores SIGTERM and closes the pipes",
+			script:    `sh -c 'trap "" TERM; echo $$; exec sleep 30 >/dev/null 2>&1' & wait`,
 			killDelay: 200 * time.Millisecond,
 		},
 	}

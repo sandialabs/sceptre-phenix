@@ -600,7 +600,7 @@ func TestStopReportsProgress(t *testing.T) { //nolint:paralleltest // replaces p
 			cleanup := app.PlannedApps(experimentNamed(t, "exp"), app.Stage(app.ActionCleanup))
 			log := new(progressLog)
 
-			if err := Stop("exp", StopWithKeepInjectionSnapshots(tc.keep), StopWithProgress(log.send)); err != nil {
+			if err := Stop(t.Context(), "exp", StopWithKeepInjectionSnapshots(tc.keep), StopWithProgress(log.send)); err != nil {
 				t.Fatalf("Stop(exp) error = %v", err)
 			}
 

@@ -1,6 +1,7 @@
 package experiment
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"phenix/app"
 	"phenix/store"
 	"phenix/store/storetest"
+	"phenix/types"
 )
 
 const stopTestStart = "2024-01-01T00:00:00Z"
@@ -74,7 +76,7 @@ func TestStopKeepsTheExperimentRunningWhenItsVMsSurvive(t *testing.T) { //nolint
 			fake := useStartMM(t, &startMM{clearErr: test.clearErr})
 			hooksRun := countStopHooks(t)
 
-			err := Stop("exp", StopWithKeepInjectionSnapshots(true), StopWithForce(test.force))
+			err := Stop(t.Context(), "exp", StopWithKeepInjectionSnapshots(true), StopWithForce(test.force))
 
 			var gotErr []string
 			if err != nil {
@@ -108,13 +110,13 @@ func TestStopCanBeRetriedAfterTheVMsSurvived(t *testing.T) { //nolint:parallelte
 	storeRunningExperiment(t)
 	fake := useStartMM(t, &startMM{clearErr: errors.New("minimega unreachable")})
 
-	if err := Stop("exp", StopWithKeepInjectionSnapshots(true)); !errors.Is(err, ErrTeardownFailed) {
+	if err := Stop(t.Context(), "exp", StopWithKeepInjectionSnapshots(true)); !errors.Is(err, ErrTeardownFailed) {
 		t.Fatalf("first Stop() error = %v, want it to wrap ErrTeardownFailed", err)
 	}
 
 	fake.clearErr = nil
 
-	if err := Stop("exp", StopWithKeepInjectionSnapshots(true)); err != nil {
+	if err := Stop(t.Context(), "exp", StopWithKeepInjectionSnapshots(true)); err != nil {
 		t.Fatalf("second Stop() once minimega answers error = %v, want nil", err)
 	}
 
@@ -162,7 +164,7 @@ func TestStopRefusesAndReports(t *testing.T) { //nolint:paralleltest // replaces
 			fake := useStartMM(t, &startMM{})
 			hooksRun := countStopHooks(t)
 
-			err := Stop(tc.exp, StopWithKeepInjectionSnapshots(true))
+			err := Stop(t.Context(), tc.exp, StopWithKeepInjectionSnapshots(true))
 
 			switch {
 			case tc.wantErr == "" && err != nil:
@@ -204,7 +206,7 @@ func TestStopRefusesAConfigThatDoesNotDecode(t *testing.T) { //nolint:parallelte
 	fake := useStartMM(t, &startMM{})
 	hooksRun := countStopHooks(t)
 
-	err := Stop("broken", StopWithKeepInjectionSnapshots(true))
+	err := Stop(t.Context(), "broken", StopWithKeepInjectionSnapshots(true))
 	if err == nil || !strings.HasPrefix(err.Error(), "decoding experiment from config: ") {
 		t.Errorf("Stop(broken) error = %v, want one that starts with %q", err, "decoding experiment from config: ")
 	}
@@ -244,7 +246,7 @@ func TestStopReportsAFailedAppCleanup(t *testing.T) { //nolint:paralleltest // r
 	fake := useStartMM(t, &startMM{})
 	hooksRun := countStopHooks(t)
 
-	err := Stop("exp", StopWithKeepInjectionSnapshots(true))
+	err := Stop(t.Context(), "exp", StopWithKeepInjectionSnapshots(true))
 
 	var gotErr []string
 	if err != nil {
@@ -274,5 +276,68 @@ func TestStopReportsAFailedAppCleanup(t *testing.T) { //nolint:paralleltest // r
 
 	if *hooksRun != 1 {
 		t.Errorf("Stop(exp) ran %d stop hooks, want 1", *hooksRun)
+	}
+}
+
+// cancelingCleanupApp is an app whose cleanup stage cancels the context of the stop and then finishes.
+type cancelingCleanupApp struct {
+	cleanupApp
+
+	cancel context.CancelFunc
+}
+
+func (a *cancelingCleanupApp) Cleanup(ctx context.Context, exp *types.Experiment) error {
+	a.cancel()
+
+	return a.cleanupApp.Cleanup(ctx, exp)
+}
+
+// A context canceled after the last cleanup app finished does not stop Stop: it kills the VMs and marks the
+// experiment stopped. TestCancelStopsTheUserApp covers a cancel while a cleanup app runs.
+func TestStopFinishesWhenCanceledAfterTheCleanupApps(t *testing.T) { //nolint:paralleltest // replaces package globals
+	// the registry keeps each name, so each run (-count) registers a new one
+	name := "test-stop-canceled-" + strings.ToLower(rand.Text())
+	cleanups := new(int)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	if err := app.RegisterUserApp(name, func() app.App {
+		return &cancelingCleanupApp{cleanupApp: cleanupApp{name: name, cleanups: cleanups}, cancel: cancel}
+	}); err != nil {
+		t.Fatalf("app.RegisterUserApp(%s) error = %v", name, err)
+	}
+
+	storetest.Use(t)
+
+	exp := hookConfig("exp", map[string]any{
+		"experimentName": "exp", "baseDir": t.TempDir(),
+		"scenario": map[string]any{"apps": []any{map[string]any{"name": name}}},
+	}, map[string]any{"startTime": stopTestStart})
+
+	if err := store.Create(exp); err != nil {
+		t.Fatalf("store.Create(experiment exp) error = %v", err)
+	}
+
+	fake := useStartMM(t, &startMM{})
+
+	if err := Stop(ctx, "exp", StopWithKeepInjectionSnapshots(true)); err != nil {
+		t.Errorf("Stop(exp) error = %v, want nil", err)
+	}
+
+	if ctx.Err() == nil {
+		t.Fatal("context not canceled after Stop(exp), want the cleanup app to cancel it")
+	}
+
+	if *cleanups != 1 {
+		t.Errorf("Stop(exp) ran the cleanup stage of %s %d times, want 1", name, *cleanups)
+	}
+
+	if diff := cmp.Diff([]string{"exp"}, fake.cleared); diff != "" {
+		t.Errorf("Stop(exp) cleared namespaces mismatch (-want +got):\n%s", diff)
+	}
+
+	if experimentNamed(t, "exp").Running() {
+		t.Error("experiment running after Stop(exp), want it stopped")
 	}
 }

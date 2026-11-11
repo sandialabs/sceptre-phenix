@@ -358,7 +358,7 @@ func TestReconfigure(t *testing.T) { //nolint:paralleltest // replaces package g
 
 			storeValidExperiment(t, name, tc.status, map[string]any{"defaultBridge": "br1"})
 
-			err := Reconfigure(tc.exp)
+			err := Reconfigure(t.Context(), tc.exp)
 			if got := gotErr(err); !strings.HasPrefix(got, tc.wantErr) || (tc.wantErr == "") != (got == "") {
 				t.Fatalf("Reconfigure(%s) error = %q, want one starting with %q", tc.exp, got, tc.wantErr)
 			}

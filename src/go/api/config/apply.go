@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -202,6 +203,13 @@ type ApplyOption func(*applyOptions)
 
 type applyOptions struct {
 	dryRun, skipCreateValidation bool
+	ctx                          context.Context
+}
+
+// ApplyWithContext gives ctx to the config hooks of a new config, as
+// [CreateWithContext] does.
+func ApplyWithContext(ctx context.Context) ApplyOption {
+	return func(o *applyOptions) { o.ctx = ctx }
 }
 
 // ApplyDryRun makes [Apply] check the config and report the action, without
@@ -223,7 +231,7 @@ func ApplySkipCreateValidation() ApplyOption {
 // with [ErrRunningExperiment], keeps the stored status and experiment name, and
 // fails with [store.ErrConflict] when the config changed after Apply read it.
 func Apply(c *store.Config, opts ...ApplyOption) (ApplyAction, error) {
-	var o applyOptions
+	o := applyOptions{ctx: context.Background()} //nolint:exhaustruct // functional options pattern
 	for _, opt := range opts {
 		opt(&o)
 	}
@@ -292,7 +300,7 @@ func applyCreate(c *store.Config, o applyOptions) (ApplyAction, error) {
 		return ApplyCreated, nil
 	}
 
-	opts := []CreateOption{CreateFromConfig(c)}
+	opts := []CreateOption{CreateFromConfig(c), CreateWithContext(o.ctx)}
 	if !o.skipCreateValidation {
 		opts = append(opts, CreateWithValidation())
 	}

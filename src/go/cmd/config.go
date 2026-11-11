@@ -18,6 +18,7 @@ import (
 	"phenix/util"
 	"phenix/util/plog"
 	"phenix/util/printer"
+	"phenix/util/sigterm"
 )
 
 const (
@@ -255,6 +256,7 @@ func newConfigCreateCmd() *cobra.Command {
 			}
 
 			skip := mustGet(cmd.Flags().GetBool, "skip-validation")
+			ctx := sigterm.CancelContext(commandContext(cmd))
 
 			for _, f := range args {
 				configs, err := configFilesAt(f)
@@ -265,6 +267,10 @@ func newConfigCreateCmd() *cobra.Command {
 				}
 
 				for _, path := range configs {
+					if err := ctx.Err(); err != nil {
+						return configCreateError(path, err)
+					}
+
 					if kind := builderFileKind(path); kind != "" {
 						// Refuse only the file named on the command line, not
 						// a file found in a directory it names.
@@ -277,7 +283,7 @@ func newConfigCreateCmd() *cobra.Command {
 						continue
 					}
 
-					opts := []config.CreateOption{config.CreateFromPath(path)}
+					opts := []config.CreateOption{config.CreateFromPath(path), config.CreateWithContext(ctx)}
 
 					if !skip {
 						opts = append(opts, config.CreateWithValidation())
@@ -423,7 +429,7 @@ func builderFileRefusal(kind, path string) error {
 // path cannot be created. A schema validation failure adds the lines from
 // [types.ExplainValidationError], each on its own indented line.
 func configCreateError(path string, err error) error {
-	h := util.HumanizeError(err, "%s", "Unable to create configuration from "+path)
+	h := util.HumanizeError(err, "%s", canceled("Unable to create configuration from "+path, err))
 
 	if !errors.Is(err, types.ErrValidationFailed) {
 		return h.Humanized()

@@ -22,6 +22,10 @@ import (
 
 const killDelay = 10 * time.Second
 
+// groupPoll is how often ExecCommand looks for processes left in the group
+// after a cancel, once the command has exited.
+const groupPoll = 50 * time.Millisecond
+
 // maxLineSize is the length, in bytes, of the longest line that ExecCommand
 // reads from the output of a command. A longer line stops the read of that
 // stream with [bufio.ErrTooLong].
@@ -122,10 +126,11 @@ func (shell) ProcessExists(pid int) bool {
 // ExecCommand runs the command that opts name in a new process group. It
 // returns the stdout and stderr of the command. When ctx is done, it sends
 // SIGTERM to the group, so that the command can stop gracefully. Then,
-// killDelay later, it sends SIGKILL to the group. A process that left the
-// group can keep the output pipes open. Thus ExecCommand stops the read of the
-// output killDelay after the command exits or after the SIGKILL, and then its
-// error wraps [exec.ErrWaitDelay].
+// killDelay later, it sends SIGKILL to the group if a process of the group is
+// left. It returns only when no process of the group is left or after that
+// SIGKILL. A process that left the group can keep the output pipes open. Thus
+// ExecCommand stops the read of the output killDelay after the command exits
+// or after the SIGKILL, and then its error wraps [exec.ErrWaitDelay].
 func (s shell) ExecCommand(ctx context.Context, opts ...Option) ([]byte, []byte, error) {
 	o := newOptions(opts...)
 
@@ -242,8 +247,9 @@ func (s shell) delay() time.Duration {
 
 // await returns after the command exits and read is closed, with the error of
 // cmd.Wait from waited. When ctx is done, it sends SIGTERM to the process group of
-// cmd, and delay later SIGKILL. If read is not closed delay after the command
-// exits or after the SIGKILL, it calls stopReads and cut is true.
+// cmd, and delay later SIGKILL; it then also waits until the group is empty or
+// the SIGKILL is sent. If read is not closed delay after the command exits or
+// after the SIGKILL, it calls stopReads and cut is true.
 func await(
 	ctx context.Context, cmd *exec.Cmd, waited <-chan error, read <-chan struct{}, delay time.Duration, stopReads func(),
 ) (bool, error) {
@@ -254,12 +260,22 @@ func await(
 		killTimer = newStoppedTimer()
 		cutTimer  = newStoppedTimer()
 		cutArmed  bool
+		poll      = time.NewTicker(groupPoll)
+		// the ticks to check the group after a cancel; nil before it and after the SIGKILL
+		group <-chan time.Time
 	)
 
+	poll.Stop()
+
+	defer poll.Stop()
 	defer killTimer.Stop()
 	defer cutTimer.Stop()
 
-	for waited != nil || read != nil {
+	for waited != nil || read != nil || group != nil {
+		if waited == nil && read == nil && errors.Is(signalGroup(cmd.Process.Pid, 0), os.ErrProcessDone) {
+			break
+		}
+
 		select {
 		case <-done:
 			done = nil
@@ -268,8 +284,14 @@ func await(
 			_ = cmd.Cancel()
 
 			killTimer.Reset(delay)
+			poll.Reset(groupPoll)
+
+			group = poll.C
+		case <-group:
 		case <-killTimer.C:
 			_ = signalGroup(cmd.Process.Pid, syscall.SIGKILL)
+
+			group = nil
 
 			// give the reads time to get what the killed processes wrote
 			cutTimer.Reset(delay)

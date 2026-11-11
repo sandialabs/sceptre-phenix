@@ -55,6 +55,7 @@ func createVMDefaultsExperiment(t *testing.T) {
 	}
 
 	err := experiment.Create(
+		t.Context(),
 		experiment.CreateWithName("exp"),
 		experiment.CreateWithTopology("settings"),
 		experiment.CreateWithSchedules(map[string]string{"server": "node1"}),
@@ -130,6 +131,7 @@ func TestUpdatesKeepTheSavedVMSettings(t *testing.T) { //nolint:paralleltest // 
 
 			// another experiment, with server on another host
 			err := experiment.Create(
+				t.Context(),
 				experiment.CreateWithName("other"),
 				experiment.CreateWithTopology("settings"),
 				experiment.CreateWithSchedules(map[string]string{"server": "node2"}),

@@ -99,7 +99,7 @@ func TestStartupHookSetsAMissingDefaultBridge(t *testing.T) { //nolint:parallelt
 
 			c := hookConfig("exp", spec, nil)
 
-			if err := experimentConfigHook("startup", c); err != nil {
+			if err := experimentConfigHook(t.Context(), "startup", c); err != nil {
 				t.Fatalf("experimentConfigHook(startup) error = %v", err)
 			}
 
@@ -120,7 +120,7 @@ func TestStartupHookKeepsAStoredUnsafeValue(t *testing.T) { //nolint:paralleltes
 	spec := map[string]any{"experimentName": "exp", "baseDir": base, "schedules": map[string]any{"vm": "$HOST"}}
 
 	c := hookConfig("exp", spec, nil)
-	if err := experimentConfigHook("startup", c); err != nil {
+	if err := experimentConfigHook(t.Context(), "startup", c); err != nil {
 		t.Fatalf("experimentConfigHook(startup) error = %v, want nil", err)
 	}
 
@@ -129,7 +129,7 @@ func TestStartupHookKeepsAStoredUnsafeValue(t *testing.T) { //nolint:paralleltes
 	}
 
 	created := hookConfig("exp", map[string]any{"experimentName": "exp", "baseDir": base, "schedules": map[string]any{"vm": "$HOST"}}, nil)
-	if err := experimentConfigHook("create", created); !errors.Is(err, mm.ErrUnsafeArg) {
+	if err := experimentConfigHook(t.Context(), "create", created); !errors.Is(err, mm.ErrUnsafeArg) {
 		t.Errorf("experimentConfigHook(create) error = %v, want %v", err, mm.ErrUnsafeArg)
 	}
 }
@@ -139,7 +139,7 @@ func TestConfigHookDecodesAndIgnoresOtherStages(t *testing.T) { //nolint:paralle
 	storetest.Use(t)
 
 	bad := hookConfig("exp", map[string]any{"topology": "not a topology"}, nil)
-	if err := experimentConfigHook("create", bad); err == nil ||
+	if err := experimentConfigHook(t.Context(), "create", bad); err == nil ||
 		!strings.HasPrefix(err.Error(), "decoding experiment from config: ") {
 		t.Errorf("experimentConfigHook(create, bad topology) error = %v, want a decoding error", err)
 	}
@@ -147,7 +147,7 @@ func TestConfigHookDecodesAndIgnoresOtherStages(t *testing.T) { //nolint:paralle
 	spec := map[string]any{"experimentName": "exp", "baseDir": "/elsewhere"}
 	c := hookConfig("new", spec, map[string]any{"startTime": stopTestStart})
 
-	if err := experimentConfigHook("rename", c); err != nil {
+	if err := experimentConfigHook(t.Context(), "rename", c); err != nil {
 		t.Errorf("experimentConfigHook(rename) error = %v, want nil", err)
 	}
 
@@ -209,7 +209,7 @@ func TestCreateAndUpdateHooksCheckTheBridge(t *testing.T) { //nolint:paralleltes
 
 				c := hookConfig(tc.expName, spec, map[string]any{})
 
-				err := experimentConfigHook(stage, c)
+				err := experimentConfigHook(t.Context(), stage, c)
 
 				var gotErr string
 				if err != nil {
@@ -267,7 +267,7 @@ func TestBridgeCheckSkipsAConfigThatDoesNotDecode(t *testing.T) { //nolint:paral
 				}, map[string]any{})
 
 				var gotErr string
-				if err := experimentConfigHook(stage, c); err != nil {
+				if err := experimentConfigHook(t.Context(), stage, c); err != nil {
 					gotErr = err.Error()
 				}
 
@@ -295,7 +295,7 @@ func TestBridgeCheckRefusesWhenTheStoreCannotList(t *testing.T) { //nolint:paral
 				"experimentName": "exp", "baseDir": t.TempDir(), "defaultBridge": "br1",
 			}, map[string]any{})
 
-			if err := experimentConfigHook(stage, c); !errors.Is(err, errList) {
+			if err := experimentConfigHook(t.Context(), stage, c); !errors.Is(err, errList) {
 				t.Errorf("experimentConfigHook(%s) error = %v, want one that wraps %v", stage, err, errList)
 			}
 		})
@@ -308,7 +308,7 @@ func TestUpdateHookRefusesARunningExperiment(t *testing.T) { //nolint:parallelte
 
 	c := hookConfig("exp", map[string]any{"experimentName": "exp"}, map[string]any{"startTime": stopTestStart})
 
-	if err := experimentConfigHook("update", c); err == nil || err.Error() != "cannot update running experiment" {
+	if err := experimentConfigHook(t.Context(), "update", c); err == nil || err.Error() != "cannot update running experiment" {
 		t.Errorf("experimentConfigHook(update, running) error = %v, want %q", err, "cannot update running experiment")
 	}
 }
@@ -332,7 +332,7 @@ func TestUpdateHookRenamesTheBaseDirectory(t *testing.T) { //nolint:paralleltest
 
 			c := hookConfig(tc.newName, map[string]any{"experimentName": tc.oldName, "baseDir": tc.baseDir}, map[string]any{})
 
-			if err := experimentConfigHook("update", c); err != nil {
+			if err := experimentConfigHook(t.Context(), "update", c); err != nil {
 				t.Fatalf("experimentConfigHook(update, %s to %s) error = %v", tc.oldName, tc.newName, err)
 			}
 
@@ -418,7 +418,7 @@ func TestDeleteHookDeletesTheExperimentFiles(t *testing.T) { //nolint:parallelte
 				"topology": map[string]any{"nodes": []any{map[string]any{"general": map[string]any{"hostname": "a"}}}},
 			}, nil)
 
-			err := experimentConfigHook("delete", c)
+			err := experimentConfigHook(t.Context(), "delete", c)
 
 			var gotErr []string
 			if err != nil {
@@ -439,7 +439,7 @@ func TestDeleteHookDeletesTheExperimentFiles(t *testing.T) { //nolint:parallelte
 			}
 
 			if _, err := os.Stat(base); !errors.Is(err, fs.ErrNotExist) {
-				t.Errorf("os.Stat(base directory) after experimentConfigHook(delete) error = %v, want it gone", err)
+				t.Errorf("os.Stat(base directory) after experimentConfigHook(t.Context(), delete) error = %v, want it gone", err)
 			}
 		})
 	}
@@ -454,13 +454,13 @@ func TestCreateHookRefusesTheReservedName(t *testing.T) { //nolint:paralleltest 
 	for _, name := range []string{"all", "ALL", "All", "minimega", "MiniMega", "__phenix__", "__PHENIX__", ".", ".."} {
 		c := hookConfig(name, map[string]any{"experimentName": name, "baseDir": t.TempDir()}, nil)
 
-		if err := experimentConfigHook("create", c); !errors.Is(err, ErrReservedName) {
+		if err := experimentConfigHook(t.Context(), "create", c); !errors.Is(err, ErrReservedName) {
 			t.Errorf("experimentConfigHook(create, %s) error = %v, want %v", name, err, ErrReservedName)
 		}
 	}
 
 	c := hookConfig("allowed", map[string]any{"experimentName": "allowed", "baseDir": t.TempDir()}, nil)
-	if err := experimentConfigHook("create", c); err != nil {
+	if err := experimentConfigHook(t.Context(), "create", c); err != nil {
 		t.Errorf("experimentConfigHook(create, allowed) error = %v, want nil", err)
 	}
 }

@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -27,7 +28,7 @@ var errDeleteHook = errors.New("injected delete hook failure")
 // for a config named hook-fails, and does nothing for other configs.
 func useFailingDeleteHook() {
 	registerFailingDeleteHook.Do(func() {
-		config.RegisterConfigHook("Topology", func(stage string, c *store.Config) error {
+		config.RegisterConfigHook("Topology", func(_ context.Context, stage string, c *store.Config) error {
 			if stage == "delete" && c.Metadata.Name == "hook-fails" {
 				return errDeleteHook
 			}

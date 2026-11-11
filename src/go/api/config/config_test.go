@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -141,7 +142,7 @@ func TestUpdateRenameRunsRenameHooks(t *testing.T) {
 		hookErr error
 	)
 
-	config.RegisterConfigHook("Scenario", func(stage string, c *store.Config) error {
+	config.RegisterConfigHook("Scenario", func(_ context.Context, stage string, c *store.Config) error {
 		stages = append(stages, stage+" "+c.Metadata.Name+" "+c.Metadata.Annotations["note"])
 
 		if stage == "update" && (c.Stored == nil || c.Stored.Metadata.Name != "old") {

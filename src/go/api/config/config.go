@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -62,8 +63,10 @@ func storeFailed(err error) error {
 // ConfigHook is called at the "startup", "create", "update", "delete" and
 // "rename" stages of a config. It may change the config, or return an error to
 // halt the stage. "rename" gets the config under its old name after the store
-// holds only the new name. No "delete" runs for the old name.
-type ConfigHook func(string, *store.Config) error
+// holds only the new name. No "delete" runs for the old name. At "create", ctx
+// is the context of [CreateWithContext]. The other stages get
+// [context.Background].
+type ConfigHook func(ctx context.Context, stage string, c *store.Config) error
 
 var hooks = make(map[string][]ConfigHook) //nolint:gochecknoglobals // global hooks
 
@@ -74,7 +77,7 @@ func RegisterConfigHook(kind string, hook ConfigHook) {
 
 func init() { //nolint:gochecknoinits // config hook
 	for _, kind := range AllKinds {
-		RegisterConfigHook(kind, func(stage string, c *store.Config) error {
+		RegisterConfigHook(kind, func(_ context.Context, stage string, c *store.Config) error {
 			if stage == "create" || stage == "update" {
 				if !NameRegex.MatchString(c.Metadata.Name) {
 					return errors.New("config name is not a valid format")
@@ -258,7 +261,7 @@ func Init() error {
 		var updated bool
 
 		for _, hook := range hooks[config.Kind] {
-			errHook := hook("startup", &config)
+			errHook := hook(context.Background(), "startup", &config)
 			if errHook != nil {
 				return fmt.Errorf("calling startup config hook: %w", errHook)
 			}
@@ -398,7 +401,7 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 	}
 
 	for _, hook := range hooks[c.Kind] {
-		hookErr := hook("create", c)
+		hookErr := hook(o.ctx, "create", c)
 		if hookErr != nil {
 			return nil, fmt.Errorf("calling config hook: %w", hookErr)
 		}
@@ -562,7 +565,7 @@ func updateHooks(c, old *store.Config) error {
 	defer func() { c.Stored = nil }()
 
 	for _, hook := range hooks[c.Kind] {
-		if err := hook("update", c); err != nil {
+		if err := hook(context.Background(), "update", c); err != nil {
 			return fmt.Errorf("calling config hook: %w", err)
 		}
 
@@ -583,7 +586,7 @@ func renamed(name string, old *store.Config) error {
 	var errs error
 
 	for _, hook := range hooks[old.Kind] {
-		hookErr := hook("rename", old)
+		hookErr := hook(context.Background(), "rename", old)
 		if hookErr != nil {
 			errs = multierror.Append(
 				errs,
@@ -634,7 +637,7 @@ func DeleteAtRevision(name string, revision uint64, opts ...DeleteOption) error 
 			}
 
 			for _, hook := range hooks[c.Kind] {
-				hookErr := hook("delete", &c)
+				hookErr := hook(context.Background(), "delete", &c)
 				if hookErr != nil {
 					errs = multierror.Append(
 						errs,
@@ -665,7 +668,7 @@ func DeleteAtRevision(name string, revision uint64, opts ...DeleteOption) error 
 	}
 
 	for _, hook := range hooks[c.Kind] {
-		hookErr := hook("delete", c)
+		hookErr := hook(context.Background(), "delete", c)
 		if hookErr != nil {
 			errs = multierror.Append(
 				errs,

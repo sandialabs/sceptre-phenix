@@ -1004,7 +1004,7 @@ func TestTopologyConfigHookLeavesOtherWrites(t *testing.T) {
 
 			c.Metadata.Annotations = maps.Clone(test.annotations)
 
-			if err := topologyConfigHook(test.stage, c); err != nil {
+			if err := topologyConfigHook(t.Context(), test.stage, c); err != nil {
 				t.Errorf("topologyConfigHook(%s) returned error: %v", test.stage, err)
 			}
 

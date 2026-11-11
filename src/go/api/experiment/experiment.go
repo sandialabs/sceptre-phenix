@@ -60,7 +60,7 @@ func init() { //nolint:gochecknoinits // config hook
 	config.RegisterServerAnnotation(VMDefaultsAnnotation)
 }
 
-func experimentConfigHook(stage string, c *store.Config) error {
+func experimentConfigHook(ctx context.Context, stage string, c *store.Config) error {
 	exp, err := types.DecodeExperimentFromConfig(*c)
 	if err != nil {
 		return fmt.Errorf("decoding experiment from config: %w", err)
@@ -70,7 +70,7 @@ func experimentConfigHook(stage string, c *store.Config) error {
 	case "startup":
 		return hookStartup(exp, c)
 	case "create":
-		return hookCreate(exp, c)
+		return hookCreate(ctx, exp, c)
 	case "update":
 		return hookUpdate(exp, c)
 	case "delete":
@@ -121,7 +121,9 @@ func bridgeCheckExperiments() ([]*types.Experiment, error) {
 	return existing, nil
 }
 
-func hookCreate(exp *types.Experiment, c *store.Config) error {
+// hookCreate checks and initializes a new experiment, and runs the configure
+// stage of its apps, which stops when ctx is done.
+func hookCreate(ctx context.Context, exp *types.Experiment, c *store.Config) error {
 	if err := CheckReservedName(c.Metadata.Name); err != nil {
 		return err
 	}
@@ -181,12 +183,12 @@ func hookCreate(exp *types.Experiment, c *store.Config) error {
 		}
 	}
 
-	err = exp.Spec.VerifyScenario(context.Background())
+	err = exp.Spec.VerifyScenario(ctx)
 	if err != nil {
 		return fmt.Errorf("verifying experiment scenario: %w", err)
 	}
 
-	err = app.ApplyApps(context.Background(), exp, app.Stage(app.ActionConfigure))
+	err = app.ApplyApps(ctx, exp, app.Stage(app.ActionConfigure))
 	if err != nil {
 		return fmt.Errorf("applying apps to experiment: %w", err)
 	}
@@ -469,9 +471,10 @@ func createTopology(name string) (ifaces.TopologySpec, error) {
 // `scenarioName` argument can be an empty string, in which case no scenario is
 // used for the experiment. The `baseDir` argument can be an empty string, in
 // which case the default value of `/phenix/experiments/{name}` is used for the
-// experiment base directory. It returns any errors encountered while creating
-// the experiment.
-func Create(opts ...CreateOption) error {
+// experiment base directory. The configure stage of the apps stops when ctx is
+// done, and then the error wraps the error of ctx. It returns any errors
+// encountered while creating the experiment.
+func Create(ctx context.Context, opts ...CreateOption) error {
 	o := newCreateOptions(opts...)
 
 	if err := validateName(o.name); err != nil {
@@ -559,6 +562,7 @@ func Create(opts ...CreateOption) error {
 	_, err = config.Create(
 		config.CreateFromConfig(c),
 		config.CreateWithValidation(),
+		config.CreateWithContext(ctx),
 	)
 	if err != nil {
 		return fmt.Errorf("creating experiment config: %w", err)
@@ -1081,10 +1085,11 @@ func abortStart(exp *types.Experiment, dryrun bool, step startStep, err error) e
 // Stop stops the named experiment, deleting injection snapshots by default and the experiment's own bridge in the auto
 // bridge mode (see deleteOwnBridge). When minimega cannot kill its VMs it stays running and the error wraps
 // ErrTeardownFailed, unless StopWithForce marks it stopped anyway. While it runs, the stored status holds its stop
-// marker with its progress.
+// marker with its progress. When ctx is done during the cleanup stage of the apps, Stop stops those apps, leaves the
+// VMs and returns an error that wraps the error of ctx. When all the cleanup apps finished, Stop does the full stop.
 //
 //nolint:funlen // one step after the other
-func Stop(name string, opts ...StopOption) error {
+func Stop(ctx context.Context, name string, opts ...StopOption) error {
 	o := newStopOptions(opts...)
 
 	var err error
@@ -1129,7 +1134,7 @@ func Stop(name string, opts ...StopOption) error {
 	rep.begin(PhaseCleanupApps, len(cleanup), firstApp(cleanup))
 
 	err = app.ApplyApps(
-		context.Background(),
+		ctx,
 		exp,
 		app.Stage(app.ActionCleanup),
 		app.DryRun(dryrun),
@@ -1137,6 +1142,14 @@ func Stop(name string, opts ...StopOption) error {
 	)
 	if err != nil {
 		errs = multierror.Append(errs, fmt.Errorf("cleaning up app experiments: %w", err))
+	}
+
+	if ctxErr := ctx.Err(); err != nil && ctxErr != nil {
+		if !errors.Is(errs, ctxErr) {
+			errs = multierror.Append(errs, ctxErr)
+		}
+
+		return fmt.Errorf("stop of experiment %s canceled, so its VMs still run: %w", name, errs)
 	}
 
 	stopped := true
@@ -1301,8 +1314,9 @@ func Save(opts ...SaveOption) error {
 // running experiment; persists the experiment via config.Update so config
 // validation and any registered config hooks run; and always applies to every
 // app, without support for filtering to specific apps. Use Trigger for manually re-running a single
-// app's (or apps') configure hook on demand, e.g. for debugging.
-func Reconfigure(name string) error {
+// app's (or apps') configure hook on demand, e.g. for debugging. The configure
+// stage stops when ctx is done, and then the error wraps the error of ctx.
+func Reconfigure(ctx context.Context, name string) error {
 	var err error
 	c, _ := store.NewConfig("experiment/" + name)
 
@@ -1320,7 +1334,7 @@ func Reconfigure(name string) error {
 		return errors.New("experiment is running")
 	}
 
-	err = app.ApplyApps(context.Background(), exp, app.Stage(app.ActionConfigure))
+	err = app.ApplyApps(ctx, exp, app.Stage(app.ActionConfigure))
 	if err != nil {
 		return fmt.Errorf("configuring apps for experiment: %w", err)
 	}

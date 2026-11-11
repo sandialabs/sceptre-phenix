@@ -264,12 +264,15 @@ func newExperimentCreateCmd() *cobra.Command {
 			var (
 				topology = mustGet(cmd.Flags().GetString, "topology")
 				scenario = mustGet(cmd.Flags().GetString, "scenario")
+
+				ctx = notes.Context(sigterm.CancelContext(commandContext(cmd)), false)
 			)
 
 			if ext := filepath.Ext(topology); ext != "" {
 				opts := []config.CreateOption{
 					config.CreateFromPath(topology),
 					config.CreateWithValidation(),
+					config.CreateWithContext(ctx),
 				}
 
 				c, err := config.Create(opts...)
@@ -292,6 +295,7 @@ func newExperimentCreateCmd() *cobra.Command {
 				opts := []config.CreateOption{
 					config.CreateFromPath(scenario),
 					config.CreateWithValidation(),
+					config.CreateWithContext(ctx),
 				}
 
 				c, err := config.Create(opts...)
@@ -348,10 +352,8 @@ func newExperimentCreateCmd() *cobra.Command {
 				experiment.CreateWithNodeAnnotations(nodeAnnotations),
 			}
 
-			ctx := notes.Context(context.Background(), false)
-
-			if err := experiment.Create(opts...); err != nil {
-				err := util.HumanizeError(err, "%s", "Unable to create the "+args[0]+" experiment")
+			if err := experiment.Create(ctx, opts...); err != nil {
+				err := util.HumanizeError(err, "%s", canceled("Unable to create the "+args[0]+" experiment", err))
 
 				return err.Humanized()
 			}
@@ -485,6 +487,7 @@ func newExperimentEditCmd() *cobra.Command {
 	return cmd
 }
 
+//nolint:funlen // command definition
 func newExperimentDeleteCmd() *cobra.Command {
 	desc := `Delete an experiment
 
@@ -513,6 +516,8 @@ func newExperimentDeleteCmd() *cobra.Command {
 				name        = args[0]
 				force       = mustGet(cmd.Flags().GetBool, "force")
 				experiments []types.Experiment
+
+				ctx = sigterm.CancelContext(commandContext(cmd))
 			)
 
 			if name == allExperiments {
@@ -550,9 +555,13 @@ func newExperimentDeleteCmd() *cobra.Command {
 						continue
 					}
 
-					if err := stopBeforeDelete(dry, exp.Metadata.Name); err != nil {
+					if err := stopBeforeDelete(ctx, dry, exp.Metadata.Name); err != nil {
 						plog.Error(plog.TypeSystem, err.Humanize())
 						failed = append(failed, err)
+
+						if ctx.Err() != nil {
+							break
+						}
 
 						continue
 					}
@@ -590,16 +599,17 @@ func newExperimentDeleteCmd() *cobra.Command {
 
 // stopBeforeDelete stops the running experiment name that experiment delete
 // --force deletes, or shows the stop in a dry run. It stops the experiment
-// even when minimega cannot kill its VMs, as docker rm -f does.
-func stopBeforeDelete(dry dryRun, name string) *util.HumanizedError {
+// even when minimega cannot kill its VMs, as docker rm -f does. The cleanup
+// stage of the apps stops when ctx is done.
+func stopBeforeDelete(ctx context.Context, dry dryRun, name string) *util.HumanizedError {
 	if dry.skip("stop", "experiment "+name) {
 		return nil
 	}
 
 	begun := time.Now()
 
-	if err := experiment.Stop(name, experiment.StopWithForce(true)); err != nil {
-		return util.HumanizeError(err, "%s", "Unable to stop the "+name+" experiment before deleting it")
+	if err := experiment.Stop(ctx, name, experiment.StopWithForce(true)); err != nil {
+		return util.HumanizeError(err, "%s", canceled("Unable to stop the "+name+" experiment before deleting it", err))
 	}
 
 	plog.Info(plog.TypeSystem, "experiment stopped", "exp", name, "duration", sinceText(begun))
@@ -658,12 +668,14 @@ func newExperimentScheduleCmd() *cobra.Command {
 				experiment.ScheduleWithAlgorithm(args[1]),
 			}
 
-			_, warnings, err := experiment.Schedule(commandContext(cmd), opts...)
+			ctx := sigterm.CancelContext(commandContext(cmd))
+
+			_, warnings, err := experiment.Schedule(ctx, opts...)
 			if err != nil {
 				err := util.HumanizeError(
 					err,
 					"%s",
-					"Unable to schedule the "+args[0]+" experiment with the "+args[1]+" algorithm",
+					canceled("Unable to schedule the "+args[0]+" experiment with the "+args[1]+" algorithm", err),
 				)
 
 				return err.Humanized()
@@ -857,9 +869,19 @@ func stopError(err error, msg string) error {
 		msg += " (it is still running: try again, or pass --force to mark it stopped anyway)"
 	}
 
-	herr := util.HumanizeError(err, "%s", msg)
+	herr := util.HumanizeError(err, "%s", canceled(msg, err))
 
 	return herr.Humanized()
+}
+
+// canceled adds to msg that a signal canceled the command, when err wraps
+// [context.Canceled].
+func canceled(msg string, err error) string {
+	if errors.Is(err, context.Canceled) {
+		return msg + ": the command was canceled"
+	}
+
+	return msg
 }
 
 // startError is the error a start of experiment name that failed with err returns: err itself for broken disk images,
@@ -892,6 +914,8 @@ func newExperimentStopCmd() *cobra.Command {
 			var (
 				name        = args[0]
 				experiments []types.Experiment
+
+				ctx = sigterm.CancelContext(commandContext(cmd))
 			)
 
 			if name == allExperiments {
@@ -928,7 +952,7 @@ func newExperimentStopCmd() *cobra.Command {
 
 				begun := time.Now()
 
-				err := experiment.Stop(exp.Metadata.Name, stopOptions(cmd)...)
+				err := experiment.Stop(ctx, exp.Metadata.Name, stopOptions(cmd)...)
 				if err != nil {
 					return stopError(err, "Problem encountered while stopping the "+exp.Metadata.Name+" experiment")
 				}
@@ -1037,7 +1061,7 @@ func newExperimentRestartCmd() *cobra.Command {
 					return fmt.Errorf("unable to restart the %s experiment, which is still running: %w", exp.Metadata.Name, err)
 				}
 
-				err = experiment.Stop(exp.Metadata.Name, stopOptions(cmd)...)
+				err = experiment.Stop(ctx, exp.Metadata.Name, stopOptions(cmd)...)
 				if err != nil {
 					return stopError(err, "Unable to stop the "+exp.Metadata.Name+" experiment")
 				}
@@ -1107,6 +1131,8 @@ func newExperimentReconfigureCmd() *cobra.Command {
 			var (
 				name        = args[0]
 				experiments []types.Experiment
+
+				ctx = sigterm.CancelContext(commandContext(cmd))
 			)
 
 			if name == allExperiments {
@@ -1145,12 +1171,12 @@ func newExperimentReconfigureCmd() *cobra.Command {
 					continue
 				}
 
-				err := experiment.Reconfigure(exp.Metadata.Name)
+				err := experiment.Reconfigure(ctx, exp.Metadata.Name)
 				if err != nil {
 					err := util.HumanizeError(
 						err,
 						"%s",
-						"Unable to reconfigure the "+exp.Metadata.Name+" experiment",
+						canceled("Unable to reconfigure the "+exp.Metadata.Name+" experiment", err),
 					)
 
 					return err.Humanized()

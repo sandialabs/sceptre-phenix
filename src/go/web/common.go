@@ -452,8 +452,9 @@ func stopExperiment(name string, force, keep bool) ([]byte, error) {
 		wg.Wait()
 	}
 
+	// the stop runs to its end, also after the client leaves
 	if err := experiment.Stop(
-		name, experiment.StopWithForce(force), experiment.StopWithKeepInjectionSnapshots(keep),
+		context.Background(), name, experiment.StopWithForce(force), experiment.StopWithKeepInjectionSnapshots(keep),
 		experiment.StopWithProgress(sink.report),
 	); err != nil {
 		sink.fail(err)

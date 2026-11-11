@@ -3,6 +3,7 @@ package web
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -730,7 +731,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if c.Kind == kindExperiment {
-		err := experiment.Reconfigure(c.Metadata.Name)
+		err := experiment.Reconfigure(context.Background(), c.Metadata.Name)
 		if err != nil {
 			audit.Failure(r, audit.ConfigUpdate, "updating config failed", updated, err)
 

@@ -73,7 +73,7 @@ func TestCreateRejectsInvalidOptions(t *testing.T) {
 			t.Parallel()
 
 			// rejected before the store is read
-			err := experiment.Create(tc.opts...)
+			err := experiment.Create(t.Context(), tc.opts...)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("Create(%s) error = %v, want one containing %s", tc.name, err, tc.want)
 			}
@@ -149,6 +149,7 @@ func TestCreateAnnotatesEveryVMAndTheExperiment(t *testing.T) { //nolint:paralle
 	}
 
 	err := experiment.Create(
+		t.Context(),
 		experiment.CreateWithName("annotated"),
 		experiment.CreateWithTopology("annotated"),
 		experiment.CreateWithAnnotations(map[string]string{"phenix.workflow/tags": "run=1"}),
@@ -229,7 +230,7 @@ func annotationsByNode(nodes []ifaces.NodeSpec) map[string]nodeAnnotations {
 func TestCreateRefusesAMissingTopology(t *testing.T) { //nolint:paralleltest // replaces package state
 	useTestStore(t)
 
-	err := experiment.Create(withName("exp")...)
+	err := experiment.Create(t.Context(), withName("exp")...)
 	if err == nil || err.Error() != "topology doesn't exist" {
 		t.Errorf("Create(topology topo) error = %v, want %q", err, "topology doesn't exist")
 	}
@@ -278,7 +279,7 @@ func TestCreateChecksTheBaseDirOnlyWithARoot(t *testing.T) { //nolint:parallelte
 				opts = append(opts, experiment.CreateWithBaseDirInside(experiment.BaseDirRoot()))
 			}
 
-			err := experiment.Create(opts...)
+			err := experiment.Create(t.Context(), opts...)
 			if tc.wantErr == nil && err != nil {
 				t.Errorf("Create(%s) error = %v, want nil", tc.name, err)
 			}
@@ -294,6 +295,7 @@ func TestCreateTakesTheLongestDefaultBridge(t *testing.T) { //nolint:paralleltes
 	useTestStore(t)
 
 	err := experiment.Create(
+		t.Context(),
 		append(withName("exp"), experiment.CreateWithDefaultBridge(strings.Repeat("b", experiment.MaxBridgeNameLength)))...)
 	if err == nil || err.Error() != "topology doesn't exist" {
 		t.Errorf("Create(bridge of %d characters) error = %v, want it to get as far as the topology", experiment.MaxBridgeNameLength, err)
@@ -332,6 +334,7 @@ func TestCreateStoresTheScenarioAndSettings(t *testing.T) { //nolint:paralleltes
 	baseDir := t.TempDir()
 
 	err := experiment.Create(
+		t.Context(),
 		experiment.CreateWithName("exp"),
 		experiment.CreateWithTopology("annotated"),
 		experiment.CreateWithScenario("scn"),
@@ -427,6 +430,7 @@ func TestCreateRefusesABadScenario(t *testing.T) { //nolint:paralleltest // repl
 			}
 
 			err := experiment.Create(
+				t.Context(),
 				experiment.CreateWithName("exp"), experiment.CreateWithTopology("annotated"), experiment.CreateWithScenario("scn"))
 			if err == nil || err.Error() != tc.want {
 				t.Errorf("Create(scenario scn) error = %v, want %q", err, tc.want)

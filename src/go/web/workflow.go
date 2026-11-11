@@ -442,7 +442,7 @@ func createFromWorkflow(
 		experiment.CreateWithBaseDirInside(experiment.BaseDirRoot()),
 	}
 
-	err = experiment.Create(opts...)
+	err = experiment.Create(context.Background(), opts...)
 	if err != nil {
 		err := weberror.NewWebError(err, "unable to create new experiment")
 
@@ -540,7 +540,7 @@ func updateFromWorkflow(
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
-	if err := experiment.Reconfigure(expName); err != nil {
+	if err := experiment.Reconfigure(context.Background(), expName); err != nil {
 		return weberror.NewWebError(err, "unable to reconfigure updated experiment %s", expName)
 	}
 

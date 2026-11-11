@@ -322,7 +322,7 @@ func TestHooksCheckTheBaseDirOfAPIConfigs(t *testing.T) { //nolint:paralleltest 
 					c.FilesRoot = BaseDirRoot()
 				}
 
-				err := experimentConfigHook(stage, c)
+				err := experimentConfigHook(t.Context(), stage, c)
 				if (err != nil) != tc.wantErr {
 					t.Errorf("experimentConfigHook(%s, baseDir %q) error = %v, want error = %t",
 						stage, tc.baseDir(w), err, tc.wantErr)
@@ -348,7 +348,7 @@ func TestUpdateHookRefusesARenameOutOfTheRoot(t *testing.T) { //nolint:parallelt
 	c := hookConfig("new", map[string]any{"experimentName": "experiments", "baseDir": w.root + "/experiments"}, nil)
 	c.FilesRoot = BaseDirRoot()
 
-	if err := experimentConfigHook("update", c); !errors.Is(err, ErrBaseDirOutside) {
+	if err := experimentConfigHook(t.Context(), "update", c); !errors.Is(err, ErrBaseDirOutside) {
 		t.Errorf("experimentConfigHook(update, rename experiments to new) error = %v, want %v", err, ErrBaseDirOutside)
 	}
 }
@@ -526,7 +526,7 @@ func TestUpdateHookKeepsAStoredBaseDirOutsideTheRoot(t *testing.T) { //nolint:pa
 			c.FilesRoot = BaseDirRoot()
 			c.Stored = hookConfig("exp", map[string]any{"experimentName": "exp", "baseDir": tc.stored(w)}, map[string]any{})
 
-			err := experimentConfigHook("update", c)
+			err := experimentConfigHook(t.Context(), "update", c)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("experimentConfigHook(update, baseDir %q, stored %q) error = %v, want error = %t",
 					tc.update(w), tc.stored(w), err, tc.wantErr)

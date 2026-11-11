@@ -621,7 +621,7 @@ func TestStopDeletesTheSnapshots(t *testing.T) { //nolint:paralleltest // replac
 			files := useDeletedFiles(t)
 			files.err = tc.err
 
-			err := Stop("exp")
+			err := Stop(t.Context(), "exp")
 			if got := gotErr(err); got != tc.wantErr {
 				t.Errorf("Stop(exp) error = %q, want %q", got, tc.wantErr)
 			}

@@ -179,7 +179,9 @@ func newBuilderPublishOps() builderPublishOps {
 			name, topology, scenario string,
 			aliases map[string]int,
 		) error {
+			// the apps run to their end, also after the client leaves
 			return experiment.Create(
+				context.Background(),
 				experiment.CreateWithName(name),
 				experiment.CreateWithTopology(topology),
 				experiment.CreateWithScenario(scenario),
@@ -199,7 +201,7 @@ func newBuilderPublishOps() builderPublishOps {
 		broadcastExperiment: builderBroadcastExperiment,
 		decodeTopology:      types.DecodeTopologyFromConfig,
 		// As the configs API, the workflow API and the CLI do after an update.
-		reconfigureExperiment: experiment.Reconfigure,
+		reconfigureExperiment: func(name string) error { return experiment.Reconfigure(context.Background(), name) },
 		annotateConfig:        store.Update,
 		deleteConfig:          deleteConfig,
 	}

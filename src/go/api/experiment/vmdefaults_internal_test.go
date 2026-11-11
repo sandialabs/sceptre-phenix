@@ -75,7 +75,7 @@ func TestUpdateHookKeepsTheStoredVMSettings(t *testing.T) { //nolint:paralleltes
 			c.Metadata.Annotations = tc.given
 			c.Stored = tc.stored
 
-			if err := experimentConfigHook("update", c); err != nil {
+			if err := experimentConfigHook(t.Context(), "update", c); err != nil {
 				t.Fatalf("experimentConfigHook(update) error = %v", err)
 			}
 

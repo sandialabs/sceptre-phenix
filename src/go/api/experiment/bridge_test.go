@@ -260,7 +260,7 @@ func TestStopDeletesTheOwnBridgeInAutoMode(t *testing.T) { //nolint:paralleltest
 			fake := useStartMM(t, &startMM{clearErr: tc.clearErr, destroyErr: tc.destroyErr})
 			hooksRun := countStopHooks(t)
 
-			err := Stop("exp", StopWithKeepInjectionSnapshots(true), StopWithForce(tc.force))
+			err := Stop(t.Context(), "exp", StopWithKeepInjectionSnapshots(true), StopWithForce(tc.force))
 
 			var gotErr []string
 			if err != nil {
@@ -319,7 +319,7 @@ func TestStopDeletesTheBridgeAfterClearingTheNamespace(t *testing.T) { //nolint:
 
 	mm.DefaultMM = fake //nolint:reassign // install test double
 
-	if err := Stop("exp", StopWithKeepInjectionSnapshots(true)); err != nil {
+	if err := Stop(t.Context(), "exp", StopWithKeepInjectionSnapshots(true)); err != nil {
 		t.Fatalf("Stop(exp) error = %v, want nil", err)
 	}
 

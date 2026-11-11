@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -203,6 +205,97 @@ func TestConfigDiff(t *testing.T) { //nolint:paralleltest // replaces the store
 
 			if diff := cmp.Diff(test.wantStdout, stdout); diff != "" {
 				t.Errorf("config diff %q stdout mismatch (-want +got):\n%s", test.args, diff)
+			}
+		})
+	}
+}
+
+// applyCancelKey is the context key of the cancel function that the cancel
+// hook calls in the create of topology/stop-here.
+type applyCancelKey struct{}
+
+var registerApplyCancelHook sync.Once //nolint:gochecknoglobals // hooks are global; register it once
+
+// A signal during the apply of a config stops config apply. The error counts
+// only the configs that it applied, and says that the command was canceled,
+// also when the canceled config is the last one.
+func TestConfigApplyCanceled(t *testing.T) { //nolint:paralleltest // replaces the store
+	registerApplyCancelHook.Do(func() {
+		config.RegisterConfigHook("Topology", func(ctx context.Context, stage string, c *store.Config) error {
+			cancel, ok := ctx.Value(applyCancelKey{}).(context.CancelFunc)
+			if !ok || stage != "create" || c.Metadata.Name != "stop-here" {
+				return nil
+			}
+
+			cancel()
+
+			return ctx.Err()
+		})
+	})
+
+	topology := func(name string) fileConfig {
+		c, err := store.NewConfigFromYAML([]byte(strings.Replace(applyCmdTopology, "name: demo", "name: "+name, 1)))
+		if err != nil {
+			t.Fatalf("decoding topology %s: %v", name, err)
+		}
+
+		return fileConfig{path: name + ".yml", name: "topology/" + name, config: c}
+	}
+
+	tests := []struct {
+		name    string
+		configs []string
+		wantErr string
+		wantOut string
+	}{
+		{
+			name:    "last",
+			configs: []string{"first", "stop-here"},
+			wantErr: "applied 1 of 2 configurations: the command was canceled: context canceled",
+			wantOut: "topology/first created\n",
+		},
+		{
+			name:    "not last",
+			configs: []string{"stop-here", "after"},
+			wantErr: "applied 0 of 2 configurations: the command was canceled: context canceled",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			storetest.UseBolt(t)
+
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			ctx = context.WithValue(ctx, applyCancelKey{}, cancel)
+
+			configs := make([]fileConfig, 0, len(tc.configs))
+			for _, name := range tc.configs {
+				configs = append(configs, topology(name))
+			}
+
+			var stdout, stderr bytes.Buffer
+
+			dry := addDryRunFlag(&cobra.Command{})
+
+			err := applyConfigs(ctx, &stdout, &stderr, configs, dry, config.ApplyWithContext(ctx))
+			if err == nil || err.Error() != tc.wantErr || !errors.Is(err, context.Canceled) {
+				t.Errorf("applyConfigs() error = %v, want %q that wraps context.Canceled", err, tc.wantErr)
+			}
+
+			if got := stdout.String(); got != tc.wantOut {
+				t.Errorf("applyConfigs() stdout = %q, want %q", got, tc.wantOut)
+			}
+
+			if want := "topology/stop-here: canceled\n"; stderr.String() != want {
+				t.Errorf("applyConfigs() stderr = %q, want %q", stderr.String(), want)
+			}
+
+			for _, name := range []string{"topology/stop-here", "topology/after"} {
+				if _, err := config.Get(name); !errors.Is(err, store.ErrNotExist) {
+					t.Errorf("config.Get(%s) error = %v, want %v", name, err, store.ErrNotExist)
+				}
 			}
 		})
 	}

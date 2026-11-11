@@ -444,7 +444,8 @@ func CreateExperiment(w http.ResponseWriter, r *http.Request) error {
 		experiment.CreateWithBaseDirInside(experiment.BaseDirRoot()),
 	}
 
-	if err := experiment.Create(opts...); err != nil {
+	// the apps run to their end, also after the client leaves
+	if err := experiment.Create(context.Background(), opts...); err != nil {
 		plog.Error(plog.TypeSystem, "creating experiment", "exp", req.GetName(), "err", err)
 		audit.Failure(r, audit.ExperimentCreate, "creating experiment failed", created, err)
 

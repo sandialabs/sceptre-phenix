@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"phenix/api/config"
 	"phenix/store"
 	"phenix/types"
+	"phenix/util/sigterm"
 )
 
 // configFileFlag names the files and directories of config apply.
@@ -189,7 +191,8 @@ func newConfigApplyCmd() *cobra.Command {
 				return errors.New("must provide at least one configuration file or directory with -f")
 			}
 
-			var opts []config.ApplyOption
+			ctx := sigterm.CancelContext(commandContext(cmd))
+			opts := []config.ApplyOption{config.ApplyWithContext(ctx)}
 
 			if dry.enabled() {
 				opts = append(opts, config.ApplyDryRun())
@@ -199,7 +202,7 @@ func newConfigApplyCmd() *cobra.Command {
 				opts = append(opts, config.ApplySkipCreateValidation())
 			}
 
-			return applyConfigs(cmd.OutOrStdout(), cmd.ErrOrStderr(), loadFileConfigs(paths), dry, opts...)
+			return applyConfigs(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), loadFileConfigs(paths), dry, opts...)
 		},
 	}
 
@@ -216,11 +219,18 @@ func newConfigApplyCmd() *cobra.Command {
 // applyConfigs applies each config in turn, writes a line for each to out, or
 // to errOut when it failed, and returns an error when one or more failed. In
 // a dry run, the line of a config that would change comes from dry. Give
-// opts the config.ApplyDryRun option in a dry run.
-func applyConfigs(out, errOut io.Writer, configs []fileConfig, dry dryRun, opts ...config.ApplyOption) error {
-	failed := 0
+// opts the config.ApplyDryRun option in a dry run. It applies no more
+// configs once ctx is done.
+func applyConfigs(
+	ctx context.Context, out, errOut io.Writer, configs []fileConfig, dry dryRun, opts ...config.ApplyOption,
+) error {
+	applied, failed := 0, 0
 
 	for _, f := range configs {
+		if err := ctx.Err(); err != nil {
+			return applyCanceled(applied, failed, len(configs), err)
+		}
+
 		if f.err != nil {
 			failed++
 
@@ -231,12 +241,20 @@ func applyConfigs(out, errOut io.Writer, configs []fileConfig, dry dryRun, opts 
 
 		action, err := config.Apply(f.config, opts...)
 		if err != nil {
+			if ctx.Err() != nil && errors.Is(err, context.Canceled) {
+				fmt.Fprintf(errOut, "%s: canceled\n", f.label())
+
+				return applyCanceled(applied, failed, len(configs), ctx.Err())
+			}
+
 			failed++
 
 			fmt.Fprintf(errOut, "%s: error: %s\n", f.label(), configFileError(f.path, err))
 
 			continue
 		}
+
+		applied++
 
 		if action != config.ApplyUnchanged && dry.skip(applyVerb(action), "configuration "+f.label()) {
 			continue
@@ -250,6 +268,18 @@ func applyConfigs(out, errOut io.Writer, configs []fileConfig, dry dryRun, opts 
 	}
 
 	return nil
+}
+
+// applyCanceled is the error of a config apply that a signal canceled after it
+// applied some of total configs and some failed.
+func applyCanceled(applied, failed, total int, err error) error {
+	msg := fmt.Sprintf("applied %d of %d configurations", applied, total)
+
+	if failed > 0 {
+		msg += fmt.Sprintf(", %d failed", failed)
+	}
+
+	return fmt.Errorf("%s: %w", canceled(msg, err), err)
 }
 
 // applyVerb is the verb of action in the line of a dry run, such as "create".

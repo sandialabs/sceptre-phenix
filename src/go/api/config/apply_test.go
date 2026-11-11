@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"strings"
@@ -28,7 +29,71 @@ var (
 
 	// errRaceHook makes the race hook skip its write.
 	errRaceHook = errors.New("race hook not armed")
+
+	registerContextHook sync.Once //nolint:gochecknoglobals // hooks are global; register it once
 )
+
+// hookStagesKey is the context key of a *[]string, to which the context hook
+// adds each stage that it runs with that context.
+type hookStagesKey struct{}
+
+// useContextHook registers a Topology hook that adds its stage to the list in
+// the hookStagesKey value of its context, when there is one.
+func useContextHook() {
+	registerContextHook.Do(func() {
+		config.RegisterConfigHook("Topology", func(ctx context.Context, stage string, _ *store.Config) error {
+			if stages, ok := ctx.Value(hookStagesKey{}).(*[]string); ok {
+				*stages = append(*stages, stage)
+			}
+
+			return nil
+		})
+	})
+}
+
+// Create and Apply give the context of their option to the "create" stage of
+// the config hooks.
+func TestCreateHooksGetTheContext(t *testing.T) {
+	useContextHook()
+
+	tests := []struct {
+		name   string
+		create func(context.Context) error
+	}{
+		{
+			name: "create",
+			create: func(ctx context.Context) error {
+				_, err := config.Create(config.CreateFromYAML([]byte(applyTopology)), config.CreateWithContext(ctx))
+
+				return err
+			},
+		},
+		{
+			name: "apply",
+			create: func(ctx context.Context) error {
+				_, err := config.Apply(decodeYAML(t, applyTopology), config.ApplyWithContext(ctx))
+
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			storetest.UseBolt(t)
+
+			var stages []string
+
+			if err := test.create(context.WithValue(t.Context(), hookStagesKey{}, &stages)); err != nil {
+				t.Fatalf("%s(topology demo) error = %v", test.name, err)
+			}
+
+			if diff := cmp.Diff([]string{"create"}, stages); diff != "" {
+				t.Errorf("%s(topology demo) hook stages with its context mismatch (-want +got):\n%s", test.name, diff)
+			}
+		})
+	}
+}
 
 // useApplyHooks registers the test's server annotation, and a Topology hook
 // that, for a config named races, writes the stored config again during an
@@ -37,7 +102,7 @@ func useApplyHooks() {
 	registerApplyHooks.Do(func() {
 		config.RegisterServerAnnotation(applyServerAnnotation)
 
-		config.RegisterConfigHook("Topology", func(stage string, c *store.Config) error {
+		config.RegisterConfigHook("Topology", func(_ context.Context, stage string, c *store.Config) error {
 			if stage != "update" || c.Metadata.Name != "races" || c.Stored == nil {
 				return nil
 			}

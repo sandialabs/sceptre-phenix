@@ -1,6 +1,10 @@
 package config
 
-import "phenix/store"
+import (
+	"context"
+
+	"phenix/store"
+)
 
 type CreateOption func(*createOptions)
 
@@ -10,16 +14,26 @@ type createOptions struct {
 	data     []byte
 	validate bool
 	check    func(*store.Config) error
+	ctx      context.Context
 }
 
 func newCreateOptions(opts ...CreateOption) createOptions {
-	var o createOptions
+	o := createOptions{ctx: context.Background()} //nolint:exhaustruct // functional options pattern
 
 	for _, opt := range opts {
 		opt(&o)
 	}
 
 	return o
+}
+
+// CreateWithContext gives ctx to the "create" stage of the config hooks. For
+// an experiment, the hook runs the configure stage of its apps, which stops
+// when ctx is done.
+func CreateWithContext(ctx context.Context) CreateOption {
+	return func(o *createOptions) {
+		o.ctx = ctx
+	}
 }
 
 func CreateFromConfig(c *store.Config) CreateOption {
