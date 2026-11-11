@@ -5,8 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -306,5 +309,217 @@ func TestExecCommandLongLines(t *testing.T) {
 				t.Errorf("ExecCommand() error = %v, want no exit error: the command exits 0", got.err)
 			}
 		})
+	}
+}
+
+// execResult is the result of an ExecCommand call.
+type execResult struct {
+	stdout []byte
+	err    error
+}
+
+// startExec runs script with sh through sh, in the background, with stdout
+// streamed. It returns the first line of stdout, a process ID, and the
+// channel that gets the result.
+func startExec(ctx context.Context, t *testing.T, sh shell.Shell, script string) (int, <-chan execResult) {
+	t.Helper()
+
+	stream := make(chan []byte, 16)
+	done := make(chan execResult, 1)
+
+	go func() {
+		stdout, _, err := sh.ExecCommand(
+			ctx, shell.Command("sh"), shell.Args("-c", script), shell.Stdin([]byte{}), shell.StreamStdout(stream),
+		)
+		done <- execResult{stdout: stdout, err: err}
+	}()
+
+	select {
+	case line := <-stream:
+		pid, err := strconv.Atoi(string(line))
+		if err != nil {
+			t.Fatalf("first streamed line = %q, want a process ID", line)
+		}
+
+		t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+
+		go func() {
+			for range stream { //nolint:revive // drains the stream so the reads do not block
+			}
+		}()
+
+		return pid, done
+	case <-time.After(10 * time.Second):
+		t.Fatal("command streamed nothing for 10s, want a process ID")
+	}
+
+	return 0, nil
+}
+
+// processGone returns an error if pid still runs 5s from now. A zombie
+// counts as running, so this also waits for the process to be reaped.
+func processGone(pid int) error {
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if !shell.ProcessExists(pid) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("process %d still runs 5s after ExecCommand returned", pid)
+}
+
+// Canceling the context stops the whole process group of the command: a child
+// that holds the output pipes open does not keep ExecCommand from returning,
+// and no process of the group is left.
+func TestExecCommandCancelStopsProcessGroup(t *testing.T) {
+	testenv.RequireCommands(t, "sh", "sleep")
+
+	// the child prints its ID once it runs, as bash can lose a signal between fork and exec
+	const child = `sh -c 'echo $$; exec sleep 30' &`
+
+	tests := []struct {
+		name      string
+		script    string
+		killDelay time.Duration
+	}{
+		{
+			// SIGTERM to the group is sufficient, so the long delay does not apply.
+			name:      "child holds the pipes",
+			script:    child + " wait",
+			killDelay: 20 * time.Second,
+		},
+		{
+			name:      "child ignores SIGTERM",
+			script:    "trap '' TERM; " + child + " wait",
+			killDelay: 200 * time.Millisecond,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			pid, done := startExec(ctx, t, shell.WithKillDelay(tt.killDelay), tt.script)
+
+			cancel()
+
+			select {
+			case got := <-done:
+				if !errors.Is(got.err, context.Canceled) {
+					t.Errorf("ExecCommand() error = %v, want one that wraps context.Canceled", got.err)
+				}
+
+				if errors.Is(got.err, exec.ErrWaitDelay) {
+					t.Errorf("ExecCommand() error = %v, want no exec.ErrWaitDelay: the pipes closed", got.err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("ExecCommand() did not return 5s after cancel, want it to stop the process group")
+			}
+
+			if err := processGone(pid); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+}
+
+// A process that leaves the process group, and so gets no signal, cannot keep
+// ExecCommand from returning: after the kill delay, ExecCommand stops the
+// read of the output and returns what it read.
+func TestExecCommandStopsReadsAfterKillDelay(t *testing.T) {
+	testenv.RequireCommands(t, "sh", "sleep", "setsid")
+
+	const (
+		killDelay = 300 * time.Millisecond
+		// the process prints its ID after it leaves the group, and stays
+		left = `setsid sh -c 'echo $$; exec sleep 30' &`
+	)
+
+	tests := []struct {
+		name      string
+		script    string
+		cancel    bool
+		wantErrIs []error
+	}{
+		{
+			name:      "canceled",
+			script:    left + " wait",
+			cancel:    true,
+			wantErrIs: []error{context.Canceled, exec.ErrWaitDelay},
+		},
+		{
+			name:      "command exits",
+			script:    left,
+			wantErrIs: []error{exec.ErrWaitDelay},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			pid, done := startExec(ctx, t, shell.WithKillDelay(killDelay), tt.script)
+
+			if tt.cancel {
+				cancel()
+			}
+
+			select {
+			case got := <-done:
+				if want := strconv.Itoa(pid); string(got.stdout) != want {
+					t.Errorf("ExecCommand() stdout = %q, want %q", got.stdout, want)
+				}
+
+				for _, want := range tt.wantErrIs {
+					if !errors.Is(got.err, want) {
+						t.Errorf("ExecCommand() error = %v, want one that wraps %v", got.err, want)
+					}
+				}
+
+				if errors.Is(got.err, os.ErrClosed) {
+					t.Errorf("ExecCommand() error = %v, want no os.ErrClosed from the stopped read", got.err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatalf("ExecCommand() did not return 5s after start, want it to stop the reads after %v", killDelay)
+			}
+
+			if !shell.ProcessExists(pid) {
+				t.Errorf("ProcessExists(%d) = false, want true: a process outside the group gets no signal", pid)
+			}
+		})
+	}
+}
+
+// Without a cancel, ExecCommand reads all the output, also what a child
+// writes after the command exits.
+func TestExecCommandReadsChildOutput(t *testing.T) {
+	testenv.RequireCommands(t, "sh", "sleep")
+
+	stream := make(chan []byte, 4)
+
+	stdout, stderr, err := shell.ExecCommand(
+		t.Context(),
+		shell.Command("sh"),
+		shell.Args("-c", "echo parent; (sleep 0.3; echo child; echo child >&2) &"),
+		shell.Stdin([]byte{}),
+		shell.StreamStdout(stream),
+	)
+	if err != nil {
+		t.Fatalf("ExecCommand() error = %v, want nil", err)
+	}
+
+	var got []string
+	for line := range stream {
+		got = append(got, string(line))
+	}
+
+	if diff := cmp.Diff([]string{"parent", "child"}, got); diff != "" {
+		t.Errorf("streamed lines mismatch (-want +got):\n%s", diff)
+	}
+
+	if string(stdout) != "parentchild" || string(stderr) != "child" {
+		t.Errorf("ExecCommand() = %q, %q, want %q, %q", stdout, stderr, "parentchild", "child")
 	}
 }
