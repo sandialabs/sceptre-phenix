@@ -22,6 +22,10 @@ func vlanCmdUseMinimega(t *testing.T, removable bool) func() []mmtest.Command {
 	vlan.Forget()
 	t.Cleanup(vlan.Forget)
 
+	// minimega's answers kept from earlier tests, such as whether it can remove a blacklisted ID
+	mm.ForgetCluster()
+	t.Cleanup(mm.ForgetCluster)
+
 	original := mm.DefaultMM
 	mm.DefaultMM = new(mm.Minimega) //nolint:reassign // the real one, against the fake minimega
 

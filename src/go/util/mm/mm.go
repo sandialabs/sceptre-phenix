@@ -30,7 +30,7 @@ type MM interface { //nolint:interfacebloat // legacy interface
 	DisconnectVMInterface(...Option) error
 
 	CreateBridge(...Option) error
-	GetBridges(...string) (map[string][]string, error)
+	GetBridges(context.Context, ...string) (map[string][]string, error)
 	DestroyBridge(string, ...string) error
 
 	CreateTunnel(...Option) error
@@ -48,8 +48,8 @@ type MM interface { //nolint:interfacebloat // legacy interface
 	GetNamespaceCaptures(...Option) ([]NamespaceCapture, error)
 	GetBridgeMirrors(...Option) ([]BridgeMirror, error)
 
-	GetClusterHosts(bool) (Hosts, error)
-	GetNamespaceHosts(string) (Hosts, error)
+	GetClusterHosts(schedOnly, diskUsage bool) (Hosts, error)
+	GetNamespaceHosts(context.Context, string) (Hosts, error)
 	Headnode() string
 	IsHeadnode(string) bool
 	GetMMArgs() (map[string]string, error)
@@ -71,5 +71,6 @@ type MM interface { //nolint:interfacebloat // legacy interface
 	TapVLAN(...TapOption) error
 	MeshShell(string, string) error
 	MeshShellResponse(context.Context, string, string) (string, error)
+	MeshShellRead(context.Context, string, string) (string, error)
 	MeshSend(string, string, string) error
 }

@@ -42,7 +42,7 @@ var (
 // watcher of phenix ui applies at once.
 //
 //nolint:gochecknoglobals // constant list
-var liveSettings = []string{"log.", "ui.logs.level", "ui.users", "experiment.disk-check"}
+var liveSettings = []string{"log.", "ui.logs.level", "ui.users", "experiment.disk-check", "minimega.read-connections"}
 
 // secretSettings are the settings whose values Redact hides.
 //

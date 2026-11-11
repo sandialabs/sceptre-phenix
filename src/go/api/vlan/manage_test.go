@@ -32,6 +32,10 @@ func useCluster(t *testing.T, c *fakeCluster) func() []mmtest.Command {
 	Forget()
 	t.Cleanup(Forget)
 
+	// minimega's answers kept from earlier tests, such as whether it can remove a blacklisted ID
+	mm.ForgetCluster()
+	t.Cleanup(mm.ForgetCluster)
+
 	original := mm.DefaultMM
 	mm.DefaultMM = new(mm.Minimega) //nolint:reassign // the real one, against the fake minimega
 

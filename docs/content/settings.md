@@ -2,8 +2,8 @@
 
 phēnix supports dynamic configuration management via the `phenix settings` command.
 A running `phenix ui` applies changes to the `log.*` settings, `ui.logs.level`,
-`experiment.disk-check` and the users file at once, without restarting. It
-reads every other setting only at startup.
+`experiment.disk-check`, `minimega.read-connections` and the users file at
+once, without restarting. It reads every other setting only at startup.
 
 ## Configuration Files
 
@@ -101,7 +101,7 @@ runs these checks:
 | `env` (one row per set variable, named after it) | `env` | a `PHENIX_*` variable is empty, a flag overrides it, phēnix reads it as a value other than the one written (such as `010` as `8`), it holds a log level phēnix ignores, or it names no setting, such as a misspelling; `PATH` has relative entries; `SUDO_USER` names no user when root runs phēnix through `sudo` | phēnix would refuse or misread a `PHENIX_*` value; `EDITOR` is not a program on `PATH` |
 | `env-overrides` | `env` | a `PHENIX_*` variable overrides a different value in the config or users file; the row names the variable, the setting and the file, never a value | never |
 | `proxy-env` | `env` | a proxy variable is set, and `NO_PROXY` or `no_proxy` does not cover a host of `phenix ui`. The proxy variables are `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy` and `https_proxy`. The hosts are `localhost`, `127.0.0.1`, `::1`, the host name and the host of `ui.listen-endpoint`. Programs that read these variables send their requests for such a host to the proxy. The row reads the forms `*`, `.domain`, `*.domain`, a CIDR range and `host:port`, as Go does. It names the variables, never their values, because a proxy URL can hold a password | never |
-| `bridge-mode`, `deploy-mode`, `experiment.disk-check`, `color`, `log.level`, `log.system.max-size`, `log.system.max-backups`, `log.system.max-age` | `settings` | `log.level` is not a level phēnix knows, so it logs at `info`; a `log.system.*` value is not a whole number, so phēnix reads `0` (100 MB for `max-size`, no limit for the others); `max-backups` or `max-age` is negative | `bridge-mode`, `deploy-mode`, `experiment.disk-check` or `color` is a mode every phēnix command refuses; `log.system.max-size` is negative, so every write to the system log fails |
+| `bridge-mode`, `deploy-mode`, `experiment.disk-check`, `color`, `log.level`, `log.system.max-size`, `log.system.max-backups`, `log.system.max-age`, `minimega.read-connections` | `settings` | `log.level` is not a level phēnix knows, so it logs at `info`; a `log.system.*` value is not a whole number, so phēnix reads `0` (100 MB for `max-size`, no limit for the others); `max-backups` or `max-age` is negative; `minimega.read-connections` is not a whole number from 3 to 64, so phēnix uses the nearest value in that range | `bridge-mode`, `deploy-mode`, `experiment.disk-check` or `color` is a mode every phēnix command refuses; `log.system.max-size` is negative, so every write to the system log fails |
 | `store.endpoint` | `files` | never | the file cannot be written, or its directory does not exist or cannot be written |
 | `store-file` (only when the store file exists) | `files` | one of its two meta pages is corrupt, so BoltDB reads the other, which may not hold the last write | the file is not a BoltDB file, has another format version or byte order, is shorter than its two meta pages, or both meta pages are corrupt |
 | `store-owner` (only when the store file exists) | `files` | another user owns the file and this user is not root; as root under `sudo phenix`, the file does not belong to the user whose store `sudo phenix` uses | never |
@@ -196,6 +196,7 @@ The following global flags are supported by all `phenix` subcommands. The
 | `--log.system.max-backups` | `int` | `3` | Maximum number of old log files to retain. |
 | `--log.system.max-size` | `int` | `100` | Maximum size in megabytes of the system log file before rotation. |
 | `--log.system.path` | `string` | `/var/log/phenix/phenix.log` | Path to persistent system log in JSON Lines format, with one JSON object per line. |
+| `--minimega.read-connections` | `int` | `16` | Maximum number of read-only commands that phēnix sends to minimega at the same time, from 3 to 64. phēnix keeps 2 of them for reads of the head node. |
 | `--mount-dir` | `string` | `<base-dir.phenix>/mounts` | Base directory for VM filesystem mounts. |
 | `--store.endpoint` | `string` | `bolt:///etc/phenix/store.bdb` | BoltDB store endpoint (`bolt://<path>`). |
 | `--unix-socket` | `string` | `/tmp/phenix.sock` | phēnix unix socket to listen on (`ui` subcommand) or connect to. |
@@ -216,6 +217,7 @@ The following global flags are supported by all `phenix` subcommands. The
 | `log.system.max-backups` | `PHENIX_LOG_SYSTEM_MAX_BACKUPS` | `3` | Number of old log files to retain. |
 | `log.system.max-age` | `PHENIX_LOG_SYSTEM_MAX_AGE` | `90` | Max age in days to retain old logs. |
 | `ui.logs.level` | `PHENIX_UI_LOGS_LEVEL` | `""` | Log level for the web UI stream (defaults to `log.level`). |
+| `minimega.read-connections` | `PHENIX_MINIMEGA_READ_CONNECTIONS` | `16` | Maximum number of read-only commands, such as `vm info`, that phēnix sends to minimega at the same time. Each command uses a connection of its own, which phēnix opens when it needs one and closes after 5 minutes without use. The value must be from 3 to 64. phēnix uses the nearest value in that range for a value outside it, and logs a warning. phēnix keeps 2 connections for reads of the head node only, and lets screenshots use at most 4 fewer than the maximum. It applies to `phenix ui` and to every CLI command. `phenix ui` applies a change in the config file at once, unless a flag or an environment variable sets the value. The Settings page of the web UI also changes it. |
 | `ui.logs.minimega-path` | `PHENIX_UI_LOGS_MINIMEGA_PATH` | `""` | Path to the minimega log file to display in the UI and offer for download on the Logs page. **(Restart Required)** |
 | `ui.features` | `PHENIX_UI_FEATURES` | `""` | Optional UI features to enable. Separate them with commas in the `--features` flag and with spaces in `PHENIX_UI_FEATURES`. Use a YAML list in the configuration file. Currently supports `vm-mount`, which enables transferring files to and from a running VM (see [Mount a VM](vms.md#mount-a-vm)). `minimega-captures` has no effect: `phenix ui` uses the capture commands with all minimega versions. phēnix accepts the name, so that existing configurations do not fail. `phenix ui` turns on `webshark`, `tunneler-download` and `file-server` itself, and refuses to start with `webshark` set but no WebShark build. **(Restart Required)** |
 | `ui.file-server-endpoint` | `PHENIX_UI_FILE_SERVER_ENDPOINT` | `0` (disabled) | Address (`port` or `host:port`) for the separate experiment file-upload server. A port-only value binds to `127.0.0.1`. Also works with the `vm-mount` feature - see [Uploading Experiment Files from the phēnix Server](vms.md#uploading-experiment-files-from-the-phenix-server). If it is set and the address cannot be listened on, `phenix ui` exits with an error. **(Restart Required)** |

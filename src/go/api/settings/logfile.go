@@ -87,7 +87,7 @@ func logLimitChanges(rs *runtimesettings.Settings, requested LoggingSettings) ([
 			return nil, fmt.Errorf("%w: %s must be 0 or more, not %d", ErrLogLimitNegative, limit.key, limit.requested)
 		}
 
-		if err := checkLogLimitSource(rs, limit.key); err != nil {
+		if err := checkSettingSource(rs, limit.key, ErrLogLimitOverridden); err != nil {
 			return nil, err
 		}
 
@@ -112,9 +112,9 @@ func logLimitChanges(rs *runtimesettings.Settings, requested LoggingSettings) ([
 	return changes, nil
 }
 
-// checkLogLimitSource returns an error that wraps ErrLogLimitOverridden when
-// a flag or a PHENIX_ variable sets the runtime setting key.
-func checkLogLimitSource(rs *runtimesettings.Settings, key string) error {
+// checkSettingSource returns an error that wraps overridden when a flag or a
+// PHENIX_ variable sets the runtime setting key.
+func checkSettingSource(rs *runtimesettings.Settings, key string, overridden error) error {
 	setting, err := rs.Get(key)
 	if errors.Is(err, runtimesettings.ErrNotFound) {
 		return nil
@@ -128,13 +128,13 @@ func checkLogLimitSource(rs *runtimesettings.Settings, key string) error {
 	case runtimesettings.SourceFlag:
 		return fmt.Errorf(
 			"%w: the --%s flag of phenix ui sets %s. Remove the flag and restart phenix ui. Then change the value here",
-			ErrLogLimitOverridden, key, key,
+			overridden, key, key,
 		)
 	case runtimesettings.SourceEnv:
 		return fmt.Errorf(
 			"%w: the %s environment variable of phenix ui sets %s. "+
 				"Remove the variable and restart phenix ui. Then change the value here",
-			ErrLogLimitOverridden, runtimesettings.EnvVar(key), key,
+			overridden, runtimesettings.EnvVar(key), key,
 		)
 	}
 

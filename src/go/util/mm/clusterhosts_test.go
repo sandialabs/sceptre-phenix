@@ -161,7 +161,7 @@ func TestGetClusterHosts(t *testing.T) { //nolint:paralleltest // shares the fak
 		mesh      fakeMesh
 		wantCmds  []string
 		wantRoles []hostRole
-		wantDisk  map[string]DiskUsage
+		wantDisk  map[string]*DiskUsage
 	}{
 		{
 			name: "single node",
@@ -169,7 +169,7 @@ func TestGetClusterHosts(t *testing.T) { //nolint:paralleltest // shares the fak
 			mesh:      fakeMesh{head: "node01", peers: "", compute: []string{"node01"}},
 			wantCmds:  []string{"minimega: host", "mesh list peers"},
 			wantRoles: []hostRole{{Name: "node01", Headnode: true, Schedulable: true}},
-			wantDisk:  map[string]DiskUsage{"node01": {Phenix: 1, Minimega: 2}},
+			wantDisk:  map[string]*DiskUsage{"node01": {Phenix: 1, Minimega: 2}},
 		},
 		{
 			name: "several nodes",
@@ -189,7 +189,7 @@ func TestGetClusterHosts(t *testing.T) { //nolint:paralleltest // shares the fak
 				{Name: "compute2", Headnode: false, Schedulable: true},
 				{Name: "head", Headnode: true, Schedulable: false},
 			},
-			wantDisk: map[string]DiskUsage{
+			wantDisk: map[string]*DiskUsage{
 				"compute1": {Phenix: 11, Minimega: 12},
 				"compute2": {Phenix: 21, Minimega: 22},
 				"head":     {Phenix: 1, Minimega: 2},
@@ -199,35 +199,31 @@ func TestGetClusterHosts(t *testing.T) { //nolint:paralleltest // shares the fak
 		t.Run(tc.name, func(t *testing.T) {
 			received := useFakeMinimega(t, tc.mesh.reply)
 
-			hosts, err := Minimega{}.GetClusterHosts(false)
+			hosts, err := Minimega{}.GetClusterHosts(false, true)
 			if err != nil {
-				t.Fatalf("GetClusterHosts(false) error = %v", err)
+				t.Fatalf("GetClusterHosts(false, true) error = %v", err)
 			}
 
 			cmds := received()
 
-			if diff := cmp.Diff(tc.wantCmds, hostCommands(cmds)); diff != "" {
-				t.Errorf("GetClusterHosts(false) sent commands mismatch (-want +got):\n%s", diff)
+			// the headnode and the mesh peers are read at once
+			if diff := cmp.Diff(tc.wantCmds, hostCommands(cmds), sortStrings); diff != "" {
+				t.Errorf("GetClusterHosts(false, true) sent commands mismatch (-want +got):\n%s", diff)
 			}
 
 			if diff := cmp.Diff(tc.wantRoles, hostRoles(hosts)); diff != "" {
-				t.Errorf("GetClusterHosts(false) mismatch (-want +got):\n%s", diff)
+				t.Errorf("GetClusterHosts(false, true) mismatch (-want +got):\n%s", diff)
 			}
 
-			disk := make(map[string]DiskUsage, len(hosts))
-			for _, host := range hosts {
-				disk[host.Name] = host.DiskUsage
-			}
-
-			if diff := cmp.Diff(tc.wantDisk, disk); diff != "" {
-				t.Errorf("GetClusterHosts(false) disk usage by host mismatch (-want +got):\n%s", diff)
+			if diff := cmp.Diff(tc.wantDisk, diskByHost(hosts)); diff != "" {
+				t.Errorf("GetClusterHosts(false, true) disk usage by host mismatch (-want +got):\n%s", diff)
 			}
 
 			if got, want := mmtest.Count(cmds, "host"), 1; got != want {
-				t.Errorf("GetClusterHosts(false) sent %d host commands, want %d", got, want)
+				t.Errorf("GetClusterHosts(false, true) sent %d host commands, want %d", got, want)
 			}
 
-			noPhenixNamespace(t, "GetClusterHosts(false)", cmds)
+			noPhenixNamespace(t, "GetClusterHosts(false, true)", cmds)
 
 			if got, want := (Minimega{}).Headnode(), tc.wantRoles[len(tc.wantRoles)-1].Name; got != want {
 				t.Errorf("Headnode() = %q, want %q", got, want)
@@ -251,23 +247,23 @@ func TestGetClusterHostsPeersUnreadable(t *testing.T) { //nolint:paralleltest //
 			received := useFakeMinimega(t, mesh.reply)
 
 			for range 2 {
-				hosts, err := Minimega{}.GetClusterHosts(false)
+				hosts, err := Minimega{}.GetClusterHosts(false, false)
 				if err == nil || len(hosts) != 0 {
-					t.Errorf("GetClusterHosts(false) = %#v, %v; want no hosts and an error", hosts, err)
+					t.Errorf("GetClusterHosts(false, false) = %#v, %v; want no hosts and an error", hosts, err)
 				}
 			}
 
 			cmds := received()
 
 			if got := mmtest.Count(cmds, "mesh list peers"); got != 2 {
-				t.Errorf("GetClusterHosts(false) twice sent %d mesh list peers, want 2", got)
+				t.Errorf("GetClusterHosts(false, false) twice sent %d mesh list peers, want 2", got)
 			}
 
 			if got := mmtest.Count(cmds, meshHostCmd); got != 0 {
-				t.Errorf("GetClusterHosts(false) sent %d %q, want 0", got, meshHostCmd)
+				t.Errorf("GetClusterHosts(false, false) sent %d %q, want 0", got, meshHostCmd)
 			}
 
-			noPhenixNamespace(t, "GetClusterHosts(false)", cmds)
+			noPhenixNamespace(t, "GetClusterHosts(false, false)", cmds)
 		})
 	}
 }
@@ -277,21 +273,22 @@ func TestGetClusterHostsSchedOnlyLeavesOutHeadnode(t *testing.T) { //nolint:para
 		head: "head", peers: "compute1", compute: []string{"compute1"},
 	}.reply)
 
-	hosts, err := Minimega{}.GetClusterHosts(true)
+	hosts, err := Minimega{}.GetClusterHosts(true, false)
 	if err != nil {
-		t.Errorf("GetClusterHosts(true) error = %v", err)
+		t.Errorf("GetClusterHosts(true, false) error = %v", err)
 	}
 
 	if diff := cmp.Diff([]string{"compute1"}, hostNames(hosts)); diff != "" {
-		t.Errorf("GetClusterHosts(true) host names mismatch (-want +got):\n%s", diff)
+		t.Errorf("GetClusterHosts(true, false) host names mismatch (-want +got):\n%s", diff)
 	}
 
 	// With no compute node answering, the schedulable hosts are unknown.
 	useFakeMinimega(t, fakeMesh{head: "head", peers: "compute1"}.reply)
 
-	hosts, err = Minimega{}.GetClusterHosts(true)
+	hosts, err = Minimega{}.GetClusterHosts(true, false)
 	if !errors.Is(err, ErrMeshUnavailable) || hosts != nil {
-		t.Errorf("GetClusterHosts(true) with no compute node = %#v, %v; want nil, %v", hosts, err, ErrMeshUnavailable)
+		t.Errorf("GetClusterHosts(true, false) with no compute node = %#v, %v; want nil, %v",
+			hosts, err, ErrMeshUnavailable)
 	}
 }
 
@@ -329,22 +326,22 @@ func TestClusterHostsMeshUnavailable(t *testing.T) { //nolint:paralleltest // sh
 				return resps
 			})
 
-			hosts, err := Minimega{}.GetSchedulableHosts(t.Context(), false)
+			hosts, err := Minimega{}.GetClusterHosts(true, false)
 			if !errors.Is(err, tc.wantErr) || (tc.wantErr == nil && err != nil) {
-				t.Fatalf("GetSchedulableHosts() error = %v, want %v", err, tc.wantErr)
+				t.Fatalf("GetClusterHosts(true, false) error = %v, want %v", err, tc.wantErr)
 			}
 
 			if diff := cmp.Diff(tc.wantSched, hostNames(hosts), cmpopts.EquateEmpty()); diff != "" {
-				t.Errorf("GetSchedulableHosts() host names mismatch (-want +got):\n%s", diff)
+				t.Errorf("GetClusterHosts(true, false) host names mismatch (-want +got):\n%s", diff)
 			}
 
-			display, err := Minimega{}.GetClusterHosts(false)
+			display, err := Minimega{}.GetClusterHosts(false, false)
 			if err != nil {
-				t.Fatalf("GetClusterHosts(false) error = %v", err)
+				t.Fatalf("GetClusterHosts(false, false) error = %v", err)
 			}
 
 			if diff := cmp.Diff(tc.wantDisplay, hostNames(display)); diff != "" {
-				t.Errorf("GetClusterHosts(false) host names mismatch (-want +got):\n%s", diff)
+				t.Errorf("GetClusterHosts(false, false) host names mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -355,64 +352,122 @@ func TestGetClusterHostsReusesRecentListForDisplay(t *testing.T) { //nolint:para
 		head: "head", peers: "compute1", compute: []string{"compute1"},
 	}.reply)
 
-	first, read, err := Minimega{}.GetClusterHostsObserved(t.Context(), false)
+	first, read, err := Minimega{}.GetClusterHostsObserved(t.Context(), false, true)
 	if err != nil || !read.Known || read.At.IsZero() {
-		t.Fatalf("GetClusterHostsObserved(false) = %+v, %v; want a known read", read, err)
+		t.Fatalf("GetClusterHostsObserved(false, true) = %+v, %v; want a known read", read, err)
 	}
 
 	sent := len(received())
 
-	second, reused, err := Minimega{}.GetClusterHostsObserved(t.Context(), false)
+	second, reused, err := Minimega{}.GetClusterHostsObserved(t.Context(), false, true)
 	if err != nil {
-		t.Fatalf("GetClusterHostsObserved(false) again error = %v", err)
+		t.Fatalf("GetClusterHostsObserved(false, true) again error = %v", err)
 	}
 
 	if got := len(received()); got != sent {
-		t.Errorf("GetClusterHostsObserved(false) again within %v sent %d more commands, want 0", clusterHostsTTL, got-sent)
+		t.Errorf("GetClusterHostsObserved(false, true) again within %v sent %d more commands, want 0",
+			clusterHostsTTL, got-sent)
 	}
 
 	if !reused.At.Equal(read.At) {
-		t.Errorf("GetClusterHostsObserved(false) again observed at %v, want the first read's %v", reused.At, read.At)
+		t.Errorf("GetClusterHostsObserved(false, true) again observed at %v, want the first read's %v", reused.At, read.At)
 	}
 
 	if diff := cmp.Diff(first, second); diff != "" {
-		t.Errorf("GetClusterHostsObserved(false) again mismatch (-first +second):\n%s", diff)
+		t.Errorf("GetClusterHostsObserved(false, true) again mismatch (-first +second):\n%s", diff)
 	}
 
-	if len(second) == 0 {
-		t.Fatal("GetClusterHostsObserved(false) again returned no hosts")
+	if len(second) == 0 || second[0].DiskUsage == nil {
+		t.Fatalf("GetClusterHostsObserved(false, true) again = %+v, want hosts with their disk usage", second)
 	}
 
 	// Callers get their own copies.
 	second[0].Load = append(second[0].Load, "changed")
 	second[0].Name = "changed"
+	second[0].DiskUsage.Phenix = 99
 
-	third, _ := Minimega{}.GetClusterHosts(false)
+	third, _ := Minimega{}.GetClusterHosts(false, true)
 	if diff := cmp.Diff(first, third); diff != "" {
-		t.Errorf("GetClusterHosts(false) after changing a returned list mismatch (-want +got):\n%s", diff)
+		t.Errorf("GetClusterHosts(false, true) after changing a returned list mismatch (-want +got):\n%s", diff)
 	}
 
 	// Scheduling always asks minimega.
-	if _, err := (Minimega{}).GetClusterHosts(true); err != nil {
-		t.Errorf("GetClusterHosts(true) error = %v", err)
+	if _, err := (Minimega{}).GetClusterHosts(true, false); err != nil {
+		t.Errorf("GetClusterHosts(true, false) error = %v", err)
 	}
 
 	if got := mmtest.Count(received(), meshHostCmd); got != 2 {
-		t.Errorf("GetClusterHosts(true) brought the %q commands to %d, want 2 (two runs)", meshHostCmd, got)
+		t.Errorf("GetClusterHosts(true, false) brought the %q commands to %d, want 2 (two runs)", meshHostCmd, got)
 	}
 
 	// Once the list is old, it is read again.
-	recentHosts.mu.Lock()
-	recentHosts.at = time.Now().Add(-clusterHostsTTL)
-	recentHosts.mu.Unlock()
+	recent := recentHostsFor(true)
+	recent.mu.Lock()
+	recent.at = time.Now().Add(-clusterHostsTTL)
+	recent.mu.Unlock()
 
-	if _, err := (Minimega{}).GetClusterHosts(false); err != nil {
-		t.Errorf("GetClusterHosts(false) after %v error = %v", clusterHostsTTL, err)
+	if _, err := (Minimega{}).GetClusterHosts(false, true); err != nil {
+		t.Errorf("GetClusterHosts(false, true) after %v error = %v", clusterHostsTTL, err)
 	}
 
 	if got := mmtest.Count(received(), meshHostCmd); got != 3 {
-		t.Errorf("GetClusterHosts(false) after %v brought the %q commands to %d, want 3 (three runs)",
+		t.Errorf("GetClusterHosts(false, true) after %v brought the %q commands to %d, want 3 (three runs)",
 			clusterHostsTTL, meshHostCmd, got)
+	}
+}
+
+// A full list without disk usage measures nothing and is never handed to a
+// caller that asks for disk usage, nor a list with it to one that does not.
+func TestGetClusterHostsKeepsDiskUsageListsApart(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	received := useFakeMinimega(t, fakeMesh{
+		head: "head", peers: "compute1", compute: []string{"compute1"},
+	}.reply)
+
+	plain, err := Minimega{}.GetClusterHosts(false, false)
+	if err != nil {
+		t.Fatalf("GetClusterHosts(false, false) error = %v", err)
+	}
+
+	if diff := cmp.Diff(map[string]*DiskUsage{"compute1": nil, "head": nil}, diskByHost(plain)); diff != "" {
+		t.Errorf("GetClusterHosts(false, false) disk usage by host mismatch (-want +got):\n%s", diff)
+	}
+
+	if got := countDiskUsage(received()); got != 0 {
+		t.Errorf("GetClusterHosts(false, false) sent %d disk usage commands, want 0", got)
+	}
+
+	withDisk, err := Minimega{}.GetClusterHosts(false, true)
+	if err != nil {
+		t.Fatalf("GetClusterHosts(false, true) after (false, false) error = %v", err)
+	}
+
+	want := map[string]*DiskUsage{"compute1": {Phenix: 1, Minimega: 2}, "head": {Phenix: 1, Minimega: 2}}
+	if diff := cmp.Diff(want, diskByHost(withDisk)); diff != "" {
+		t.Errorf("GetClusterHosts(false, true) after (false, false) disk usage by host mismatch (-want +got):\n%s", diff)
+	}
+
+	cmds := received()
+
+	if got := mmtest.Count(cmds, meshHostCmd); got != 2 {
+		t.Errorf("GetClusterHosts(false, false) then (false, true) sent %d %q, want 2 (two runs)", got, meshHostCmd)
+	}
+
+	if got := countDiskUsage(cmds); got != 2 {
+		t.Errorf("GetClusterHosts(false, true) sent %d disk usage commands, want 2", got)
+	}
+
+	// the list without disk usage is still the one kept for its callers
+	again, err := Minimega{}.GetClusterHosts(false, false)
+	if err != nil {
+		t.Fatalf("GetClusterHosts(false, false) again error = %v", err)
+	}
+
+	if diff := cmp.Diff(plain, again); diff != "" {
+		t.Errorf("GetClusterHosts(false, false) again mismatch (-want +got):\n%s", diff)
+	}
+
+	if got := len(received()); got != len(cmds) {
+		t.Errorf("GetClusterHosts(false, false) again sent %d commands, want 0", got-len(cmds))
 	}
 }
 
@@ -437,7 +492,7 @@ func TestGetClusterHostsMeasuresDiskOncePerHost(t *testing.T) { //nolint:paralle
 
 	t.Cleanup(func() { common.HostnameSuffixes = saved }) //nolint:reassign // restore
 
-	want := map[string]DiskUsage{
+	want := map[string]*DiskUsage{
 		"compute1": {Phenix: 11, Minimega: 12},
 		"compute2": {Phenix: 0, Minimega: 22},
 		"compute3": {Phenix: 0, Minimega: 0},
@@ -446,9 +501,9 @@ func TestGetClusterHostsMeasuresDiskOncePerHost(t *testing.T) { //nolint:paralle
 
 	// A schedOnly call always asks minimega for the hosts, but reuses the disk usage measured.
 	for _, schedOnly := range []bool{false, true} {
-		hosts, err := Minimega{}.GetClusterHosts(schedOnly)
+		hosts, err := Minimega{}.GetClusterHosts(schedOnly, true)
 		if err != nil {
-			t.Errorf("GetClusterHosts(%t) error = %v", schedOnly, err)
+			t.Errorf("GetClusterHosts(%t, true) error = %v", schedOnly, err)
 
 			continue
 		}
@@ -458,13 +513,8 @@ func TestGetClusterHostsMeasuresDiskOncePerHost(t *testing.T) { //nolint:paralle
 			delete(wantUsage, "head")
 		}
 
-		got := make(map[string]DiskUsage, len(hosts))
-		for _, host := range hosts {
-			got[host.Name] = host.DiskUsage
-		}
-
-		if diff := cmp.Diff(wantUsage, got); diff != "" {
-			t.Errorf("GetClusterHosts(%t) disk usage by host mismatch (-want +got):\n%s", schedOnly, diff)
+		if diff := cmp.Diff(wantUsage, diskByHost(hosts)); diff != "" {
+			t.Errorf("GetClusterHosts(%t, true) disk usage by host mismatch (-want +got):\n%s", schedOnly, diff)
 		}
 	}
 
@@ -472,7 +522,7 @@ func TestGetClusterHostsMeasuresDiskOncePerHost(t *testing.T) { //nolint:paralle
 
 	for prefix, want := range map[string]int{meshDiskCmd: 1, headDiskCmd: 1, "mesh send compute": 0} {
 		if got := mmtest.Count(cmds, prefix); got != want {
-			t.Errorf("GetClusterHosts(false) then (true) sent %d %q commands, want %d", got, prefix, want)
+			t.Errorf("GetClusterHosts(false, true) then (true, true) sent %d %q commands, want %d", got, prefix, want)
 		}
 	}
 
@@ -488,15 +538,15 @@ func TestGetClusterHostsMeasuresDiskOncePerHost(t *testing.T) { //nolint:paralle
 
 	diskUsageMu.Unlock()
 
-	if _, err := (Minimega{}).GetClusterHosts(true); err != nil {
-		t.Errorf("GetClusterHosts(true) after %v error = %v", diskUsageFailureTTL, err)
+	if _, err := (Minimega{}).GetClusterHosts(true, true); err != nil {
+		t.Errorf("GetClusterHosts(true, true) after %v error = %v", diskUsageFailureTTL, err)
 	}
 
 	cmds = received()
 
 	for prefix, want := range map[string]int{meshDiskCmd: 2, headDiskCmd: 1} {
 		if got := mmtest.Count(cmds, prefix); got != want {
-			t.Errorf("GetClusterHosts(true) after %v brought the %q commands to %d, want %d",
+			t.Errorf("GetClusterHosts(true, true) after %v brought the %q commands to %d, want %d",
 				diskUsageFailureTTL, prefix, got, want)
 		}
 	}
@@ -521,8 +571,8 @@ func TestDiskUsageKeepsNoFailureOfAnEndedCall(t *testing.T) { //nolint:parallelt
 	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
 	defer cancel()
 
-	if hosts, err := (Minimega{}).GetSchedulableHosts(ctx, true); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("GetSchedulableHosts(true) with a peer that does not answer = %v, %v; want %v",
+	if hosts, _, err := (Minimega{}).GetClusterHostsObserved(ctx, true, true); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("GetClusterHostsObserved(true, true) with a peer that does not answer = %v, %v; want %v",
 			hosts, err, context.DeadlineExceeded)
 	}
 
@@ -531,55 +581,60 @@ func TestDiskUsageKeepsNoFailureOfAnEndedCall(t *testing.T) { //nolint:parallelt
 	diskUsageMu.Unlock()
 
 	if kept {
-		t.Errorf("GetSchedulableHosts(true) kept the disk usage of compute1 after its context ended, want none")
+		t.Errorf("GetClusterHostsObserved(true, true) kept the disk usage of compute1 after its context ended, want none")
 	}
 
 	if got := mmtest.Count(received(), meshDiskCmd); got != 1 {
-		t.Errorf("GetSchedulableHosts(true) sent %d %q commands, want 1", got, meshDiskCmd)
+		t.Errorf("GetClusterHostsObserved(true, true) sent %d %q commands, want 1", got, meshDiskCmd)
 	}
 }
 
-// GetSchedulableHosts reads the schedulable hosts with no disk usage command
-// and shares no run with GetClusterHosts; diskUsage adds the disk usage
-// with one command for the mesh peers and one for the headnode.
-func TestGetSchedulableHosts(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+// A schedOnly read gives the schedulable hosts with no disk usage command
+// and shares no run with the full list; diskUsage adds the disk usage of the
+// schedulable hosts only: one command for the mesh peers, and one for the
+// headnode only when VMs are scheduled on it.
+func TestGetClusterHostsSchedOnly(t *testing.T) { //nolint:paralleltest // shares the fake minimega
 	mesh := fakeMesh{
 		head: "head", peers: "compute[1-2]", compute: []string{"compute1", "compute2"},
 		disk: map[string]string{"compute1": "0=11% 1=12%\n", "compute2": "0=21% 1=22%\n"},
 	}
 
 	for name, tc := range map[string]struct {
+		mesh      fakeMesh
 		diskUsage bool
-		wantDisk  map[string]DiskUsage
+		wantDisk  map[string]*DiskUsage
 		wantCmds  []string
 	}{
 		"without disk usage": {
-			wantDisk: map[string]DiskUsage{"compute1": {}, "compute2": {}},
+			mesh:     mesh,
+			wantDisk: map[string]*DiskUsage{"compute1": nil, "compute2": nil},
 			wantCmds: []string{"minimega: host", "mesh list peers", meshHostCmd},
 		},
 		"with disk usage": {
+			mesh:      mesh,
 			diskUsage: true,
-			wantDisk: map[string]DiskUsage{
+			wantDisk: map[string]*DiskUsage{
 				"compute1": {Phenix: 11, Minimega: 12}, "compute2": {Phenix: 21, Minimega: 22},
 			},
-			wantCmds: []string{"minimega: host", "mesh list peers", meshHostCmd, headDiskCmd, meshDiskCmd},
+			wantCmds: []string{"minimega: host", "mesh list peers", meshHostCmd, meshDiskCmd},
+		},
+		"with disk usage of a schedulable headnode": {
+			mesh:      fakeMesh{head: "head", disk: map[string]string{"head": "0=5% 1=6%\n"}},
+			diskUsage: true,
+			wantDisk:  map[string]*DiskUsage{"head": {Phenix: 5, Minimega: 6}},
+			wantCmds:  []string{"minimega: host", "mesh list peers", headDiskCmd},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			received := useFakeMinimega(t, mesh.reply)
+			received := useFakeMinimega(t, tc.mesh.reply)
 
-			hosts, err := Minimega{}.GetSchedulableHosts(t.Context(), tc.diskUsage)
+			hosts, err := Minimega{}.GetClusterHosts(true, tc.diskUsage)
 			if err != nil {
-				t.Fatalf("GetSchedulableHosts() error = %v", err)
+				t.Fatalf("GetClusterHosts(true, %t) error = %v", tc.diskUsage, err)
 			}
 
-			got := make(map[string]DiskUsage, len(hosts))
-			for _, host := range hosts {
-				got[host.Name] = host.DiskUsage
-			}
-
-			if diff := cmp.Diff(tc.wantDisk, got); diff != "" {
-				t.Errorf("GetSchedulableHosts() disk usage by host mismatch (-want +got):\n%s", diff)
+			if diff := cmp.Diff(tc.wantDisk, diskByHost(hosts)); diff != "" {
+				t.Errorf("GetClusterHosts(true, %t) disk usage by host mismatch (-want +got):\n%s", tc.diskUsage, diff)
 			}
 
 			sent := make([]string, 0, len(tc.wantCmds))
@@ -597,17 +652,20 @@ func TestGetSchedulableHosts(t *testing.T) { //nolint:paralleltest // shares the
 				sent = append(sent, base)
 			}
 
-			if diff := cmp.Diff(tc.wantCmds, sent); diff != "" {
-				t.Errorf("GetSchedulableHosts() sent commands mismatch (-want +got):\n%s", diff)
+			if diff := cmp.Diff(tc.wantCmds, sent, sortStrings); diff != "" {
+				t.Errorf("GetClusterHosts(true, %t) sent commands mismatch (-want +got):\n%s", tc.diskUsage, diff)
 			}
 
-			// nothing is kept for GetClusterHosts(false) to reuse
-			if _, err := (Minimega{}).GetClusterHosts(false); err != nil {
-				t.Errorf("GetClusterHosts(false) error = %v", err)
+			// nothing is kept for the full list to reuse
+			before := len(received())
+
+			if _, err := (Minimega{}).GetClusterHosts(false, tc.diskUsage); err != nil {
+				t.Errorf("GetClusterHosts(false, %t) error = %v", tc.diskUsage, err)
 			}
 
-			if got := mmtest.Count(received(), meshHostCmd); got != 2 {
-				t.Errorf("GetSchedulableHosts() then GetClusterHosts(false) sent %d %q, want 2", got, meshHostCmd)
+			if got := mmtest.Count(received()[before:], "host"); got != 1 {
+				t.Errorf("GetClusterHosts(true, %t) then (false, %t) sent %d more host commands, want 1",
+					tc.diskUsage, tc.diskUsage, got)
 			}
 		})
 	}
@@ -625,10 +683,38 @@ func diskPrefix(cmd mmtest.Command) (string, bool) {
 	return "", false
 }
 
-// Once the deadline of its context passes, GetSchedulableHosts gives up at
-// once with an error wrapping [context.DeadlineExceeded], also while a command
+// countDiskUsage counts the disk usage commands among cmds.
+func countDiskUsage(cmds []mmtest.Command) int {
+	var count int
+
+	for _, cmd := range cmds {
+		if isDiskUsage(cmd) {
+			count++
+		}
+	}
+
+	return count
+}
+
+// diskByHost gives the disk usage of each host by name, nil where it was not
+// measured.
+func diskByHost(hosts Hosts) map[string]*DiskUsage {
+	disk := make(map[string]*DiskUsage, len(hosts))
+
+	for _, host := range hosts {
+		disk[host.Name] = host.DiskUsage
+	}
+
+	return disk
+}
+
+// sortStrings compares string lists whose order does not matter.
+var sortStrings = cmpopts.SortSlices(func(a, b string) bool { return a < b }) //nolint:gochecknoglobals // test option
+
+// Once the deadline of its context passes, a schedOnly read gives up at once
+// with an error wrapping [context.DeadlineExceeded], also while a command
 // waits for minimega's answer.
-func TestGetSchedulableHostsDeadline(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+func TestGetClusterHostsSchedOnlyDeadline(t *testing.T) { //nolint:paralleltest // shares the fake minimega
 	mesh := fakeMesh{head: "head", peers: "compute1", compute: []string{"compute1"}}
 
 	for name, held := range map[string]func(mmtest.Command) bool{
@@ -653,14 +739,15 @@ func TestGetSchedulableHostsDeadline(t *testing.T) { //nolint:paralleltest // sh
 
 			start := time.Now()
 
-			hosts, err := Minimega{}.GetSchedulableHosts(ctx, false)
+			hosts, _, err := Minimega{}.GetClusterHostsObserved(ctx, true, false)
 			if !errors.Is(err, context.DeadlineExceeded) || hosts != nil {
-				t.Errorf("GetSchedulableHosts() with %s not answering = %v, %v; want nil, %v",
+				t.Errorf("GetClusterHostsObserved(true, false) with %s not answering = %v, %v; want nil, %v",
 					name, hosts, err, context.DeadlineExceeded)
 			}
 
 			if took := time.Since(start); took > 5*time.Second {
-				t.Errorf("GetSchedulableHosts() took %v after a 200ms deadline, want it to give up at once", took)
+				t.Errorf("GetClusterHostsObserved(true, false) took %v after a 200ms deadline, want it to give up at once",
+					took)
 			}
 		})
 	}
@@ -692,14 +779,15 @@ func TestGetClusterHostsErrorIsNotReused(t *testing.T) { //nolint:paralleltest /
 	received := useFakeMinimega(t, func(mmtest.Command) []*minicli.Response { return nil })
 
 	for range 2 {
-		hosts, err := Minimega{}.GetClusterHosts(false)
+		hosts, err := Minimega{}.GetClusterHosts(false, true)
 		if err == nil || hosts == nil || len(hosts) != 0 {
-			t.Errorf("GetClusterHosts(false) with no host answering = %#v, %v; want an empty list and an error", hosts, err)
+			t.Errorf("GetClusterHosts(false, true) with no host answering = %#v, %v; want an empty list and an error",
+				hosts, err)
 		}
 	}
 
 	if got := mmtest.Count(received(), "host"); got != 2 {
-		t.Errorf("GetClusterHosts(false) twice with no host answering sent %d host commands, want 2", got)
+		t.Errorf("GetClusterHosts(false, true) twice with no host answering sent %d host commands, want 2", got)
 	}
 }
 
@@ -708,18 +796,18 @@ func TestGetClusterHostsErrorIsNotReused(t *testing.T) { //nolint:paralleltest /
 type clusterOnlyMM struct {
 	MM
 
-	schedOnly *bool
+	asked *[2]bool // schedOnly and diskUsage
 }
 
-func (m clusterOnlyMM) GetClusterHosts(schedOnly bool) (Hosts, error) {
-	*m.schedOnly = schedOnly
+func (m clusterOnlyMM) GetClusterHosts(schedOnly, diskUsage bool) (Hosts, error) {
+	*m.asked = [2]bool{schedOnly, diskUsage}
 
 	return Hosts{{Name: "compute1", Schedulable: true}}, nil
 }
 
-// The package GetSchedulableHosts asks DefaultMM for the schedulable hosts,
-// and an MM without GetSchedulableHosts for GetClusterHosts(true).
-func TestPackageGetSchedulableHosts(t *testing.T) { //nolint:paralleltest // replaces DefaultMM and shares the fake minimega
+// The package GetClusterHostsObserved asks DefaultMM for the hosts, and an MM
+// without GetClusterHostsObserved for GetClusterHosts with the same flags.
+func TestPackageGetClusterHostsObserved(t *testing.T) { //nolint:paralleltest // replaces DefaultMM and shares the fake minimega
 	saved := DefaultMM
 	t.Cleanup(func() { DefaultMM = saved })
 
@@ -728,28 +816,74 @@ func TestPackageGetSchedulableHosts(t *testing.T) { //nolint:paralleltest // rep
 
 		useFakeMinimega(t, fakeMesh{head: "head", peers: "compute1", compute: []string{"compute1"}}.reply)
 
-		hosts, err := GetSchedulableHosts(t.Context(), false)
+		hosts, _, err := GetClusterHostsObserved(t.Context(), true, false)
 		if err != nil {
-			t.Fatalf("GetSchedulableHosts() error = %v", err)
+			t.Fatalf("GetClusterHostsObserved(true, false) error = %v", err)
 		}
 
 		if diff := cmp.Diff([]string{"compute1"}, hostNames(hosts)); diff != "" {
-			t.Errorf("GetSchedulableHosts() host names mismatch (-want +got):\n%s", diff)
+			t.Errorf("GetClusterHostsObserved(true, false) host names mismatch (-want +got):\n%s", diff)
 		}
 	})
 
 	t.Run("an MM without it", func(t *testing.T) {
-		var schedOnly bool
+		var asked [2]bool
 
-		DefaultMM = clusterOnlyMM{schedOnly: &schedOnly}
+		DefaultMM = clusterOnlyMM{asked: &asked}
 
-		hosts, err := GetSchedulableHosts(t.Context(), true)
-		if err != nil || !schedOnly {
-			t.Fatalf("GetSchedulableHosts() = %v, %v with schedOnly %t; want GetClusterHosts(true)", hosts, err, schedOnly)
+		hosts, observed, err := GetClusterHostsObserved(t.Context(), true, true)
+		if err != nil || !observed.Known || asked != [2]bool{true, true} {
+			t.Fatalf("GetClusterHostsObserved(true, true) = %v, %+v, %v asking %v; want GetClusterHosts(true, true)",
+				hosts, observed, err, asked)
 		}
 
 		if diff := cmp.Diff([]string{"compute1"}, hostNames(hosts)); diff != "" {
-			t.Errorf("GetSchedulableHosts() host names mismatch (-want +got):\n%s", diff)
+			t.Errorf("GetClusterHostsObserved(true, true) host names mismatch (-want +got):\n%s", diff)
 		}
 	})
+}
+
+// The host scan, its disk usage and a VM listing send only read-only commands, so they never wait
+// for the shared connection.
+func TestReadsDoNotWaitForTheSharedConnection(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	mesh := fakeMesh{head: "head", peers: "compute1", compute: []string{"compute1"}}
+	cluster := new(vmInfoCluster)
+	cluster.set(fakeVM{host: "compute1", name: "a", uptime: "1h0m0s", disk: "snap-a", snapshot: true})
+
+	received := holdShared(t, func(cmd mmtest.Command) []*minicli.Response {
+		if resps := mesh.reply(cmd); resps != nil {
+			return resps
+		}
+
+		return cluster.reply(cmd)
+	})
+
+	done := make(chan error, 1)
+
+	go func() {
+		if _, err := (Minimega{}).GetClusterHosts(false, true); err != nil {
+			done <- err
+
+			return
+		}
+
+		_, obs := Minimega{}.GetVMInfoObserved(NS("exp"))
+		done <- obs.Err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("GetClusterHosts(false, true) and GetVMInfoObserved(exp) error = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("GetClusterHosts(false, true) and GetVMInfoObserved(exp) waited for the shared connection (sent %v)",
+			mmtest.Bases(received()))
+	}
+
+	for prefix, want := range map[string]int{meshDiskCmd: 1, headDiskCmd: 1, vmInfoCmd: 1, "mesh send compute1 disk info": 1} {
+		if got := mmtest.Count(received(), prefix); got != want {
+			t.Errorf("GetClusterHosts(false, true) and GetVMInfoObserved(exp) sent %d %q, want %d", got, prefix, want)
+		}
+	}
 }

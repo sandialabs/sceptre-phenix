@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/mm/mmtest"
+	"phenix/util/polltest"
 	"phenix/web/cache"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -204,7 +206,7 @@ func TestGetSoHSummaryReportsMinimegaErrors(t *testing.T) {
 	useTestStore(t, sohSummaryExperiment("zeta", true, "soh"))
 	useTestMM(t, &testMM{err: errors.New("minimega unreachable")})
 
-	lastVMStates.Delete("zeta")
+	lastVMStates.forget("zeta")
 
 	_, sums := getSohSummary(t, sohSummaryRole("*"))
 	if len(sums) != 1 {
@@ -253,8 +255,8 @@ func TestGetSoHSummaryPartialMinimegaReplies(t *testing.T) {
 				return nil
 			})
 
-			lastVMStates.Delete("zeta")
-			t.Cleanup(func() { lastVMStates.Delete("zeta") })
+			lastVMStates.forget("zeta")
+			t.Cleanup(func() { lastVMStates.forget("zeta") })
 
 			_, sums := getSohSummary(t, sohSummaryRole("*"))
 			if len(sums) != 1 {
@@ -272,91 +274,171 @@ func TestGetSoHSummaryPartialMinimegaReplies(t *testing.T) {
 	}
 }
 
-func TestGetSoHSummaryReusesStatesWhileBusy(t *testing.T) {
-	useTestStore(t,
-		sohSummaryExperiment("zeta", true, "soh"),
-		sohSummaryExperiment("starting", false, "soh"),
-	)
+// useLiveReadWait shortens how long the lists wait for minimega until the test
+// ends, and waits for the reads still running then.
+func useLiveReadWait(t *testing.T, wait time.Duration) {
+	t.Helper()
 
-	fake := useTestMM(t, &testMM{states: map[string]string{"vm-a": "RUNNING", "vm-b": "RUNNING"}})
-
-	// read once while minimega is free
-	_, _ = getSohSummary(t, sohSummaryRole("*"))
-
-	if err := cache.LockExperimentForStarting("starting"); err != nil {
-		t.Fatalf("cache.LockExperimentForStarting(starting) error = %v", err)
+	set := func(d time.Duration) {
+		for _, l := range []interface{ setWait(time.Duration) }{sohStateReads, experimentVMReads} {
+			l.setWait(d)
+		}
 	}
 
-	t.Cleanup(func() { cache.UnlockExperiment("starting") })
+	set(wait)
 
+	t.Cleanup(func() {
+		set(liveReadWait)
+
+		polltest.Until(t, "the reads of minimega end", func() bool {
+			return sohStateReads.running() == 0 && experimentVMReads.running() == 0
+		})
+	})
+}
+
+// While minimega has not answered an experiment's VM states within the wait,
+// the summary gives the states last read, marked stale, with when they were
+// read; the read goes on, later summaries wait for it rather than ask again,
+// and once it ends the next summary gives its fresh states.
+func TestGetSoHSummaryGivesEarlierStatesWhileMinimegaIsSlow(t *testing.T) {
+	useTestStore(t, sohSummaryExperiment("zeta", true, "soh"))
+
+	// LIFO: the reads end before the fake goes
+	fake := useTestMM(t, &testMM{states: map[string]string{"vm-a": "RUNNING", "vm-b": "RUNNING"}})
+	useLiveReadWait(t, 50*time.Millisecond)
+
+	lastVMStates.forget("zeta")
+	t.Cleanup(func() { lastVMStates.forget("zeta") })
+
+	// read once while minimega answers
+	_, first := getSohSummary(t, sohSummaryRole("*"))
+	if len(first) != 1 || first[0].VMsStale || !first[0].VMs.Known {
+		t.Fatalf("GET /api/v1/soh with minimega answering = %+v, want fresh known VM counts", first)
+	}
+
+	gate := make(chan struct{})
+	release := sync.OnceFunc(func() { close(gate) })
+
+	t.Cleanup(release)
+
+	fake.stateGate.Store(&gate)
 	fake.stateReads.Store(0)
 
-	_, sums := getSohSummary(t, sohSummaryRole("*"))
+	for range 3 {
+		start := time.Now()
 
-	if n := fake.stateReads.Load(); n != 0 {
-		t.Errorf("GET /api/v1/soh while minimega is busy read VM states %d times, want 0", n)
-	}
+		_, sums := getSohSummary(t, sohSummaryRole("*"))
 
-	if len(sums) != 2 {
-		t.Fatalf("GET /api/v1/soh while minimega is busy = %+v, want two summaries", sums)
-	}
+		if took := time.Since(start); took > 5*time.Second {
+			t.Errorf("GET /api/v1/soh with minimega slow took %v, want about the wait", took)
+		}
 
-	if got := sums[0]; got.Name != "starting" || got.Status != "starting" {
-		t.Errorf("GET /api/v1/soh first summary = %s with status %q, want starting with status starting", got.Name, got.Status)
-	}
+		if len(sums) != 1 {
+			t.Fatalf("GET /api/v1/soh with minimega slow = %+v, want one summary", sums)
+		}
 
-	wantVMs := soh.VMCounts{Known: true, Total: 2, Running: 2, Failing: 1}
-	if diff := cmp.Diff(wantVMs, sums[1].VMs); diff != "" {
-		t.Errorf("GET /api/v1/soh while busy zeta VM counts mismatch (-want +got):\n%s", diff)
-	}
+		wantVMs := soh.VMCounts{Known: true, Total: 2, Running: 2, Failing: 1}
+		if diff := cmp.Diff(wantVMs, sums[0].VMs); diff != "" {
+			t.Errorf("GET /api/v1/soh with minimega slow VM counts mismatch (-want +got):\n%s", diff)
+		}
 
-	// they are reported as earlier states, with when they were read
-	if !sums[1].VMsStale {
-		t.Error("GET /api/v1/soh while busy zeta vms_stale = false, want true")
-	}
-
-	if sums[1].VMsObservedAt == "" {
-		t.Error("GET /api/v1/soh while busy zeta has no vms_observed_at, want when its states were read")
+		if !sums[0].VMsStale || sums[0].VMsObservedAt != first[0].VMsObservedAt {
+			t.Errorf("GET /api/v1/soh with minimega slow = stale %t at %q, want stale at the first read's %q",
+				sums[0].VMsStale, sums[0].VMsObservedAt, first[0].VMsObservedAt)
+		}
 	}
 
 	resp := do(t, http.MethodGet, serveAs(t, "alice", sohSummaryRole("*")).URL+"/api/v1/soh", "")
 	if got := resp.Header.Get("X-Phenix-Stale"); got != flagTrue {
-		t.Errorf("GET /api/v1/soh while busy X-Phenix-Stale = %q, want true", got)
+		t.Errorf("GET /api/v1/soh with minimega slow X-Phenix-Stale = %q, want true", got)
 	}
 
-	if got, want := resp.Header.Get("X-Phenix-Observed-At"), sums[1].VMsObservedAt; got != want {
-		t.Errorf("GET /api/v1/soh while busy X-Phenix-Observed-At = %q, want zeta's %q", got, want)
+	if n := fake.stateReads.Load(); n != 1 {
+		t.Errorf("4 GET /api/v1/soh with minimega slow read VM states %d times, want 1 read they all wait for", n)
+	}
+
+	release()
+
+	polltest.Until(t, "the slow read ends", func() bool { return sohStateReads.running() == 0 })
+
+	_, fresh := getSohSummary(t, sohSummaryRole("*"))
+	if len(fresh) != 1 || fresh[0].VMsStale || fresh[0].VMsObservedAt == first[0].VMsObservedAt {
+		t.Errorf("GET /api/v1/soh after the slow read = %+v, want fresh VM counts read after the first", fresh)
 	}
 }
 
-// While minimega is busy and nothing was read yet, a running experiment's VM
-// counts are unknown, not zero.
-func TestGetSoHSummaryUnknownWhileBusyWithoutStates(t *testing.T) {
-	useTestStore(t,
-		sohSummaryExperiment("zeta", true, "soh"),
-		sohSummaryExperiment("starting", false, "soh"),
-	)
-	useTestMM(t, &testMM{})
+// While minimega has not answered and nothing was read yet, a running
+// experiment's VM counts are unknown, not zero.
+func TestGetSoHSummaryUnknownWhileMinimegaIsSlowWithoutStates(t *testing.T) {
+	useTestStore(t, sohSummaryExperiment("zeta", true, "soh"))
 
-	lastVMStates.Delete("zeta")
+	// LIFO: the reads end before the fake goes
+	fake := useTestMM(t, &testMM{states: map[string]string{"vm-a": "RUNNING"}})
+	useLiveReadWait(t, 50*time.Millisecond)
 
-	if err := cache.LockExperimentForStarting("starting"); err != nil {
-		t.Fatalf("cache.LockExperimentForStarting(starting) error = %v", err)
-	}
+	gate := make(chan struct{})
+	release := sync.OnceFunc(func() { close(gate) })
 
-	t.Cleanup(func() { cache.UnlockExperiment("starting") })
+	t.Cleanup(release)
+
+	fake.stateGate.Store(&gate)
+
+	lastVMStates.forget("zeta")
+	t.Cleanup(func() { lastVMStates.forget("zeta") })
 
 	_, sums := getSohSummary(t, sohSummaryRole("*"))
-	if len(sums) != 2 {
-		t.Fatalf("GET /api/v1/soh while busy = %+v, want two summaries", sums)
+	if len(sums) != 1 {
+		t.Fatalf("GET /api/v1/soh with minimega slow = %+v, want one summary", sums)
 	}
 
-	if sums[1].VMs.Known {
-		t.Errorf("GET /api/v1/soh while busy with no states read zeta VM counts = %+v, want unknown", sums[1].VMs)
+	if sums[0].VMs.Known {
+		t.Errorf("GET /api/v1/soh with minimega slow and no states read VM counts = %+v, want unknown", sums[0].VMs)
 	}
 
-	if got := sums[1].VMsObservedAt; got != "" {
-		t.Errorf("GET /api/v1/soh while busy with no states read zeta vms_observed_at = %q, want none", got)
+	if got := sums[0].VMsObservedAt; got != "" {
+		t.Errorf("GET /api/v1/soh with minimega slow and no states read vms_observed_at = %q, want none", got)
+	}
+}
+
+// A read of VM states that started before the experiment stopped does not keep
+// its states once the stop forgot them.
+func TestSohVMStatesDropsAReadFromBeforeAStop(t *testing.T) {
+	fake := useTestMM(t, &testMM{states: map[string]string{"vm-a": "RUNNING"}})
+	useLiveReadWait(t, 10*time.Millisecond)
+
+	gate := make(chan struct{})
+	release := sync.OnceFunc(func() { close(gate) })
+
+	t.Cleanup(release)
+
+	fake.stateGate.Store(&gate)
+
+	lastVMStates.forget("zeta")
+	t.Cleanup(func() { lastVMStates.forget("zeta") })
+
+	decode := func(running bool) types.Experiment {
+		exp, err := types.DecodeExperimentFromConfig(sohSummaryExperiment("zeta", running, "soh"))
+		if err != nil {
+			t.Fatalf("types.DecodeExperimentFromConfig(zeta) error = %v", err)
+		}
+
+		return *exp
+	}
+
+	// the read waits for minimega, then the experiment stops
+	if _, obs, err := sohVMStates(t.Context(), decode(true)); obs.Known || err != nil {
+		t.Fatalf("sohVMStates(zeta) with minimega slow = %+v, %v; want unknown states", obs, err)
+	}
+
+	if _, _, err := sohVMStates(t.Context(), decode(false)); err != nil {
+		t.Fatalf("sohVMStates(stopped zeta) error = %v", err)
+	}
+
+	release()
+	polltest.Until(t, "the slow read ends", func() bool { return sohStateReads.running() == 0 })
+
+	if read, ok := lastVMStates.load("zeta"); ok {
+		t.Errorf("the VM states kept after the stop = %v, want none", read.states)
 	}
 }
 
@@ -492,7 +574,7 @@ func TestGetSoHSummaryReportsSummaryErrors(t *testing.T) {
 	useTestStore(t, sohBrokenApp("broken"), sohSummaryExperiment("fine", false))
 	useTestMM(t, &testMM{states: map[string]string{"vm-a": "RUNNING"}})
 
-	t.Cleanup(func() { lastVMStates.Delete("broken") })
+	t.Cleanup(func() { lastVMStates.forget("broken") })
 
 	code, sums := getSohSummary(t, sohSummaryRole("*"))
 	if code != http.StatusOK || len(sums) != 2 {
@@ -580,9 +662,8 @@ func TestGetSoHSummaryGivesUpWhenTheClientLeaves(t *testing.T) {
 		t.Errorf("GET /soh wrote %q (status %d) to a client that left, want nothing", rec.Body.String(), rec.Code)
 	}
 
-	got := slices.DeleteFunc(mmtest.Bases(received()), func(base string) bool { return base == "args" })
-	if diff := cmp.Diff([]string{"hold"}, got); diff != "" {
-		t.Errorf("GET /soh minimega commands mismatch (-want +got):\n%s", diff)
+	if got := besidesHolds(mmtest.Bases(received())); len(got) != 0 {
+		t.Errorf("GET /soh sent minimega %q besides the holds, want nothing", got)
 	}
 }
 
@@ -604,17 +685,16 @@ func TestSohVMStatesOfExperimentsNotRunning(t *testing.T) {
 
 			fake := useTestMM(t, &testMM{states: map[string]string{"vm-a": "RUNNING"}})
 
-			lastVMStates.Store("soh-not-running", vmStatesRead{states: map[string]string{"vm-a": "RUNNING"}, at: time.Now()})
-			t.Cleanup(func() { lastVMStates.Delete("soh-not-running") })
+			lastVMStates.store("soh-not-running", lastVMStates.generation("soh-not-running"),
+				vmStatesRead{states: map[string]string{"vm-a": "RUNNING"}, at: time.Now()})
+			t.Cleanup(func() { lastVMStates.forget("soh-not-running") })
 
-			for _, busy := range []bool{false, true} {
-				states, obs, err := sohVMStates(t.Context(), *exp, busy)
-				if states != nil || obs != freshness.Unobserved() || err != nil {
-					t.Errorf("sohVMStates(%s, busy %t) = %v, %+v, %v; want nil, unobserved, nil", name, busy, states, obs, err)
-				}
+			states, obs, err := sohVMStates(t.Context(), *exp)
+			if states != nil || obs != freshness.Unobserved() || err != nil {
+				t.Errorf("sohVMStates(%s) = %v, %+v, %v; want nil, unobserved, nil", name, states, obs, err)
 			}
 
-			if _, ok := lastVMStates.Load("soh-not-running"); ok {
+			if _, ok := lastVMStates.load("soh-not-running"); ok {
 				t.Errorf("sohVMStates(%s) kept the experiment's last VM states, want them forgotten", name)
 			}
 

@@ -54,15 +54,18 @@ var minimegaVersion = struct {
 	watching bool   // StartVersionCheck runs, so a capture call does not ask itself
 }{mu: sync.Mutex{}, forced: !CaptureVersionRequired, answered: false, answer: "", watching: false}
 
+// versionCmd is minimega's version command.
+const versionCmd = "version"
+
 // versionAsk lets one capture call at a time ask minimega for its version.
 var versionAsk sync.Mutex //nolint:gochecknoglobals // shared by all callers
 
 // askMinimegaVersion sends the version command to the head node.
 func askMinimegaVersion(ctx context.Context) (string, error) {
 	cmd := mmcli.NewCommand()
-	cmd.Command = "version"
+	cmd.Command = versionCmd
 
-	answer, err := mmcli.SingleResponse(mmcli.RunContext(ctx, cmd))
+	answer, err := mmcli.SingleResponse(mmcli.RunReadOnly(ctx, mmcli.HeadRead, cmd))
 	if err != nil {
 		return "", fmt.Errorf("asking minimega for its version: %w", err)
 	}

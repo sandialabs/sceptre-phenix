@@ -1384,7 +1384,8 @@ paths:
       description: >-
         Answers the JSON that phenix gives a user app on stdin, as `phenix util
         app-json` prints it: the stored experiment, with the schedulable
-        cluster hosts and the experiment's VMs as minimega reports them. It
+        cluster hosts (without `diskusage`) and the experiment's VMs as
+        minimega reports them. It
         holds the whole stored config, so it needs `experiments` `get` on the
         experiment, `configs` `get` on `Experiment/<experiment>`, and `vms`
         `list` on `<experiment>/*` and on `<experiment>/<vm>` for each VM of
@@ -14437,7 +14438,9 @@ paths:
         session timeout. The log file limits are those that the system log
         file uses now: the runtime settings `log.system.max-size`,
         `log.system.max-backups` and `log.system.max-age` (see Runtime
-        Settings). Needs no permission.
+        Settings). The minimega settings are the runtime setting
+        `minimega.read-connections` in use, with where its value comes from.
+        Needs no permission.
       operationId: getSettings
       responses:
         "200":
@@ -14462,9 +14465,12 @@ paths:
         `min_length` refuses, so send them all, as `GET /settings` returns
         them. Each log file limit that differs from the one in use is written
         to the config file of phenix ui, as `phenix settings set` does, so it
-        stays after a restart, and it applies at once. phenix refuses a
-        negative limit, and a limit that a flag or a PHENIX_ environment
-        variable sets: the config file cannot change it. phenix checks all of
+        stays after a restart, and it applies at once. The same applies to
+        `minimega_settings.read_connections`, the runtime setting
+        `minimega.read-connections`; 0 changes nothing. phenix refuses a
+        negative limit, a `read_connections` outside 3 to 64, and a value that
+        a flag or a PHENIX_ environment variable sets: the config file cannot
+        change it. phenix checks all of
         the body before it changes a setting, so a refused request changes
         nothing. Each change is audited as `settings-update`. Needs the
         `settings` `update` permission.
@@ -14481,8 +14487,8 @@ paths:
         "400":
           description: >-
             the body is not settings, its password minimum length is not
-            from 8 to 32, or a changed log file limit is less than 0 (no
-            setting is changed)
+            from 8 to 32, a changed log file limit is less than 0, or a changed
+            read_connections is not from 3 to 64 (no setting is changed)
           content:
             application/json:
               schema:
@@ -14504,8 +14510,8 @@ paths:
         "409":
           description: >-
             a flag or a PHENIX_ environment variable of phenix ui sets a
-            changed log file limit, or phenix ui has no YAML config file to
-            write it to (no setting is changed)
+            changed log file limit or read_connections, or phenix ui has no
+            YAML config file to write it to (no setting is changed)
           content:
             application/json:
               schema:
@@ -15136,9 +15142,10 @@ components:
           example: false
           type: boolean
           description: >-
-            minimega did not answer for every VM in `vms` (or was busy), so the
-            response lists some as configured with an empty state. The server
-            sets it only when the response lists VMs
+            minimega did not answer for every VM in `vms` (or did not answer
+            within 2 seconds, while the read goes on for later requests), so
+            the response lists some as configured with an empty state. The
+            server sets it only when the response lists VMs
         interrupted:
           title: Interrupted
           example: >-
@@ -16853,8 +16860,10 @@ components:
           title: "Disk Usage"
           type: object
           description: >-
-            percent in use of the disks holding the phenix and minimega base
-            directories
+            Percent in use of the disks that hold the phēnix and minimega base
+            directories. GET /hosts always gives it. It is absent from the hosts
+            that a user app gets on stdin, because phēnix does not measure the
+            disk usage for user apps.
           properties:
             diskphenix:
               title: "Phenix Disk Usage"
@@ -22386,8 +22395,9 @@ components:
           example: false
           type: boolean
           description: >-
-            the VM counts are the states last read, served while minimega is
-            busy starting or stopping an experiment
+            the VM counts are the states last read, served when minimega does
+            not answer within 2 seconds, as while it starts or stops an
+            experiment. The read goes on, and a later request gets its states
         hosts:
           title: Hosts
           example: 5
@@ -24006,7 +24016,9 @@ components:
           type: object
         hosts:
           title: Hosts
-          description: the schedulable cluster hosts; left out when there are none
+          description: >-
+            The schedulable cluster hosts, without diskusage. It is left out
+            when there are none.
           type: array
           items:
             $ref: "#/components/schemas/Host"
@@ -24154,6 +24166,41 @@ components:
           description: the session timeout
           allOf:
             - $ref: "#/components/schemas/TimeoutSettings"
+        minimega_settings:
+          title: Minimega Settings
+          description: the connections of phenix to minimega, from the runtime settings of phenix ui
+          allOf:
+            - $ref: "#/components/schemas/MinimegaSettings"
+    MinimegaSettings:
+      title: Minimega Settings
+      type: object
+      description: >-
+        How phenix connects to minimega. read_connections is the live runtime
+        setting `minimega.read-connections` of phenix ui. A change applies at
+        once and is written to the config file. A flag or a PHENIX_ environment
+        variable of phenix ui can set it, and then a change is refused with
+        409.
+      properties:
+        read_connections:
+          title: Read Connections
+          type: integer
+          minimum: 0
+          maximum: 64
+          description: >-
+            the most read-only commands that phenix sends to minimega at the
+            same time, from 3 to 64; 2 of them are kept for reads of the head
+            node. A change outside 3 to 64 is refused with 400. 0 in a request
+            changes nothing.
+          example: 16
+        source:
+          title: Source
+          type: string
+          enum: [flag, env, config file, default]
+          description: >-
+            where the value in use comes from. A request cannot change it; a
+            value in a request is ignored.
+          default: default
+          example: default
     PasswordSettings:
       title: Password Settings
       type: object

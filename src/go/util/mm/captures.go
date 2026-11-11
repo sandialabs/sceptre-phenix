@@ -204,7 +204,7 @@ func (Minimega) GetNamespaceCaptures(opts ...Option) ([]NamespaceCapture, error)
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = namespaceCaptureCmd
 
-	rows, err := mmcli.RunTabularCheckedContext(o.ctx, cmd, nil)
+	rows, err := mmcli.RunTabularReadOnlyChecked(o.ctx, nsLine(o.ns), cmd, nil)
 	if err != nil {
 		return nil, fmt.Errorf("listing the experiment captures of namespace %s: %w", o.ns, err)
 	}
@@ -245,7 +245,7 @@ func (Minimega) GetBridgeMirrors(opts ...Option) ([]BridgeMirror, error) {
 		cmd := mmcli.NewCommand()
 		cmd.Command = bridgeMirrorsCmd
 
-		rows, err := mmcli.RunTabularCheckedContext(o.ctx, cmd, nil)
+		rows, err := mmcli.RunTabularReadOnlyChecked(o.ctx, mmcli.HeadRead, cmd, nil)
 		if err != nil {
 			return nil, fmt.Errorf("listing the Open vSwitch mirrors of the head node: %w", err)
 		}
@@ -261,7 +261,7 @@ func (Minimega) GetBridgeMirrors(opts ...Option) ([]BridgeMirror, error) {
 		cmd := mmcli.NewCommand()
 		cmd.Command = "mesh send " + strings.Join(remote, ",") + " " + bridgeMirrorsCmd
 
-		rows, err := mmcli.RunTabularCheckedContext(o.ctx, cmd, nil)
+		rows, err := mmcli.RunTabularReadOnlyChecked(o.ctx, mmcli.MeshRead, cmd, nil)
 		if err != nil {
 			return nil, fmt.Errorf("listing the Open vSwitch mirrors of %s: %w", strings.Join(remote, ", "), err)
 		}

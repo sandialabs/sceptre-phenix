@@ -1,12 +1,14 @@
 package mm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/sandia-minimega/minimega/v2/pkg/miniclient"
+	"golang.org/x/sync/errgroup"
 
 	"phenix/util/mm/mmcli"
 )
@@ -20,31 +22,58 @@ const listBridgesCommand = "ovs-vsctl --timeout=5 list-br"
 var errNoBridgeList = errors.New("minimega returned no answer to the bridge listing")
 
 // GetBridges returns the Open vSwitch bridges of each named host, by host name, and changes nothing on a host.
-// A host that fails fails the whole listing, so a host is never reported as without a bridge.
-func (m Minimega) GetBridges(hosts ...string) (map[string][]string, error) {
-	return listBridges(hosts, m.IsHeadnode, mmcli.Run)
+// A host that fails fails the whole listing, so a host is never reported as without a bridge. Its commands give up
+// once ctx is done.
+func (m Minimega) GetBridges(ctx context.Context, hosts ...string) (map[string][]string, error) {
+	return listBridges(hosts, m.IsHeadnode, func(line mmcli.ReadLine, cmd *mmcli.Command) chan *miniclient.Response {
+		return mmcli.RunReadOnly(ctx, line, cmd)
+	})
 }
 
-// listBridges lists the bridges of each host. It sends through run the one
-// command that [bridgeListing] gives for that host. headnode reports whether a
-// host is the head node.
+// listBridges lists the bridges of each host, up to mmcli.ReadOnlyLimit()
+// hosts at once. It sends through run the one command that [bridgeListing]
+// gives for that host, in the mmcli.ReadLine of that host. headnode reports whether a host is the head node. The
+// error is that of the first host, in the order given, that failed.
 func listBridges(
 	hosts []string,
 	headnode func(string) bool,
-	run func(*mmcli.Command) chan *miniclient.Response,
+	run func(mmcli.ReadLine, *mmcli.Command) chan *miniclient.Response,
 ) (map[string][]string, error) {
+	var (
+		names = make([][]string, len(hosts))
+		errs  = make([]error, len(hosts))
+		reads errgroup.Group
+	)
+
+	reads.SetLimit(mmcli.ReadOnlyLimit())
+
+	for i, host := range hosts {
+		reads.Go(func() error {
+			head := headnode(host)
+			cmd := mmcli.NewCommand()
+			cmd.Command = bridgeListing(host, head)
+
+			line := mmcli.MeshRead
+			if head {
+				line = mmcli.HeadRead
+			}
+
+			names[i], errs[i] = bridgeNames(run(line, cmd))
+
+			return nil
+		})
+	}
+
+	_ = reads.Wait()
+
 	bridges := make(map[string][]string, len(hosts))
 
-	for _, host := range hosts {
-		cmd := mmcli.NewCommand()
-		cmd.Command = bridgeListing(host, headnode(host))
-
-		names, err := bridgeNames(run(cmd))
-		if err != nil {
-			return nil, fmt.Errorf("listing the bridges of host %s: %w", host, err)
+	for i, host := range hosts {
+		if errs[i] != nil {
+			return nil, fmt.Errorf("listing the bridges of host %s: %w", host, errs[i])
 		}
 
-		bridges[host] = names
+		bridges[host] = names[i]
 	}
 
 	return bridges, nil

@@ -318,7 +318,7 @@ func completeClusterHosts(_ *cobra.Command, _ []string, toComplete string) ([]st
 	ctx, cancel := context.WithTimeout(context.Background(), completionTimeout)
 	defer cancel()
 
-	hosts, _, err := mm.GetClusterHostsObserved(ctx, false)
+	hosts, _, err := mm.GetClusterHostsObserved(ctx, false, false)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}

@@ -11,10 +11,13 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"phenix/api/experiment"
 	"phenix/types"
 	"phenix/util/freshness"
 	"phenix/util/mm"
+	"phenix/util/mm/mmcli"
 )
 
 // minimegaTTL is how long a read of the minimega side is reused while the
@@ -146,37 +149,79 @@ func readMinimega(ctx context.Context) Minimega {
 		return fail(err)
 	}
 
-	for _, n := range namespaces {
-		aliases, err := mm.GetVLANs(mm.NS(n.Name), mm.Context(ctx))
+	// every read below is independent of the others, so they run at once
+	var (
+		reads      = make([]Namespace, len(namespaces))
+		errs       = make([]error, len(namespaces))
+		blacklist  []int
+		removable  bool
+		listErr    error
+		removalErr error
+		group      errgroup.Group
+	)
+
+	group.SetLimit(mmcli.ReadOnlyLimit())
+
+	for i, n := range namespaces {
+		group.Go(func() error {
+			reads[i], errs[i] = readNamespace(ctx, n.Name)
+
+			return nil
+		})
+	}
+
+	group.Go(func() error {
+		blacklist, listErr = mm.GetVLANBlacklist(mm.Context(ctx))
+
+		return nil
+	})
+
+	group.Go(func() error {
+		removable, removalErr = mm.VLANBlacklistRemovable(mm.Context(ctx))
+
+		return nil
+	})
+
+	_ = group.Wait()
+
+	// the first error in the order of the reads before they ran at once
+	for _, err := range append(errs, listErr, removalErr) {
 		if err != nil {
 			return fail(err)
 		}
-
-		ns := Namespace{Name: n.Name, Aliases: aliases, VMs: nil}
-
-		if len(aliases) > 0 {
-			vms, obs := mm.GetVMInfoObserved(mm.NS(n.Name), mm.Context(ctx))
-			if obs.Err != nil {
-				return fail(obs.Err)
-			}
-
-			ns.VMs = vmInterfaces(vms)
-		}
-
-		read.Namespaces[n.Name] = ns
 	}
 
-	if read.Blacklist, err = mm.GetVLANBlacklist(mm.Context(ctx)); err != nil {
-		return fail(err)
+	for _, ns := range reads {
+		read.Namespaces[ns.Name] = ns
 	}
 
-	if read.BlacklistRemoval, err = mm.VLANBlacklistRemovable(mm.Context(ctx)); err != nil {
-		return fail(err)
-	}
+	read.Blacklist, read.BlacklistRemoval = blacklist, removable
 
 	read.OK = true
 
 	return read
+}
+
+// readNamespace reads the VLAN aliases of the minimega namespace name, and the
+// VMs on them when it has any.
+func readNamespace(ctx context.Context, name string) (Namespace, error) {
+	aliases, err := mm.GetVLANs(mm.NS(name), mm.Context(ctx))
+	if err != nil {
+		return Namespace{}, err //nolint:wrapcheck // readMinimega reports it as minimega's error
+	}
+
+	ns := Namespace{Name: name, Aliases: aliases, VMs: nil}
+
+	if len(aliases) > 0 {
+		vms, obs := mm.GetVMInfoObserved(mm.NS(name), mm.Context(ctx))
+		if obs.Err != nil {
+			return Namespace{}, obs.Err
+		}
+
+		ns.VMs = vmInterfaces(vms)
+	}
+
+	return ns, nil
 }
 
 // vmInterfaces lists the interfaces of minimega's VMs that are on a VLAN.

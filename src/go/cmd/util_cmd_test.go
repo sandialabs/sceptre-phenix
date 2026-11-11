@@ -26,7 +26,7 @@ type utilCmdMM struct {
 	hostErr error
 }
 
-func (m utilCmdMM) GetClusterHosts(bool) (mm.Hosts, error) {
+func (m utilCmdMM) GetClusterHosts(bool, bool) (mm.Hosts, error) {
 	if m.hostErr != nil {
 		return nil, m.hostErr
 	}

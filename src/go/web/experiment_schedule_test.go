@@ -43,7 +43,7 @@ type experimentScheduleMM struct {
 	err   error
 }
 
-func (m experimentScheduleMM) GetClusterHosts(bool) (mm.Hosts, error) {
+func (m experimentScheduleMM) GetClusterHosts(bool, bool) (mm.Hosts, error) {
 	return slices.Clone(m.hosts), m.err
 }
 
@@ -322,7 +322,7 @@ type lockCheckingMM struct {
 	status *cache.Status
 }
 
-func (m lockCheckingMM) GetClusterHosts(bool) (mm.Hosts, error) {
+func (m lockCheckingMM) GetClusterHosts(bool, bool) (mm.Hosts, error) {
 	*m.status = cache.IsExperimentLocked("sched")
 
 	return mm.Hosts{{Name: "host-a", Schedulable: true}}, nil
@@ -364,7 +364,7 @@ type cancelingMM struct {
 	cancel context.CancelFunc
 }
 
-func (m cancelingMM) GetClusterHosts(bool) (mm.Hosts, error) {
+func (m cancelingMM) GetClusterHosts(bool, bool) (mm.Hosts, error) {
 	m.cancel()
 
 	return nil, context.Canceled
@@ -412,7 +412,7 @@ type leavingMM struct {
 	cancel context.CancelFunc
 }
 
-func (m leavingMM) GetClusterHosts(bool) (mm.Hosts, error) {
+func (m leavingMM) GetClusterHosts(bool, bool) (mm.Hosts, error) {
 	m.cancel()
 
 	return mm.Hosts{{Name: "host-a", Schedulable: true}}, nil

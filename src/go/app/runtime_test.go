@@ -32,11 +32,11 @@ type countingMM struct {
 	vmCalls   atomic.Int32
 }
 
-func (m *countingMM) GetClusterHosts(schedOnly bool) (mm.Hosts, error) {
+func (m *countingMM) GetClusterHosts(schedOnly, diskUsage bool) (mm.Hosts, error) {
 	m.hostCalls.Add(1)
 
-	if !schedOnly {
-		panic("apps are given the schedulable hosts")
+	if !schedOnly || diskUsage {
+		panic("apps are given the schedulable hosts, without their disk usage")
 	}
 
 	return mm.Hosts{{Name: "compute-0", Schedulable: true}}, nil
@@ -190,14 +190,14 @@ type runtimeMM struct {
 	hostErr error
 }
 
-func (m *runtimeMM) GetClusterHosts(schedOnly bool) (mm.Hosts, error) {
+func (m *runtimeMM) GetClusterHosts(schedOnly, diskUsage bool) (mm.Hosts, error) {
 	if m.hostErr != nil {
 		m.hostCalls.Add(1)
 
 		return nil, m.hostErr
 	}
 
-	return m.countingMM.GetClusterHosts(schedOnly)
+	return m.countingMM.GetClusterHosts(schedOnly, diskUsage)
 }
 
 // runtimeUseMM installs m as mm.DefaultMM for the test.
@@ -345,11 +345,11 @@ type observedMM struct {
 	hostErr  error
 	vmErr    error
 	unknown  bool
-	schedule []bool
+	schedule [][2]bool // schedOnly and diskUsage of each host read
 }
 
-func (m *observedMM) GetClusterHosts(schedOnly bool) (mm.Hosts, error) {
-	m.schedule = append(m.schedule, schedOnly)
+func (m *observedMM) GetClusterHosts(schedOnly, diskUsage bool) (mm.Hosts, error) {
+	m.schedule = append(m.schedule, [2]bool{schedOnly, diskUsage})
 
 	return mm.Hosts{{Name: "compute-0", Schedulable: true}}, m.hostErr
 }
@@ -413,8 +413,8 @@ func TestPopulateObservedRuntime(t *testing.T) { //nolint:paralleltest // replac
 				t.Errorf("PopulateObservedRuntime() VMs mismatch (-want +got):\n%s", diff)
 			}
 
-			if diff := cmp.Diff([]bool{true}, tc.mm.schedule); diff != "" {
-				t.Errorf("PopulateObservedRuntime() asked for hosts with schedOnly mismatch (-want +got):\n%s", diff)
+			if diff := cmp.Diff([][2]bool{{true, false}}, tc.mm.schedule); diff != "" {
+				t.Errorf("PopulateObservedRuntime() host reads [schedOnly, diskUsage] mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -456,18 +456,19 @@ func useRuntimeMinimega(t *testing.T, handle mmtest.Handler) func() []mmtest.Com
 	return received
 }
 
-// givenHost is a host as a user app is given it, by name and disk usage.
+// givenHost is a host as a user app is given it: its name, and whether it has
+// the diskusage field.
 type givenHost struct {
-	Name      string       `json:"name"`
-	DiskUsage mm.DiskUsage `json:"diskusage"`
+	Name      string `json:"name"`
+	DiskUsage any    `json:"diskusage"`
 }
 
-// An external app is given the schedulable hosts, without the headnode, with
-// their disk usage.
-func TestApplyAppsGivesHostDiskUsage(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+// An external app is given the schedulable hosts, without the headnode and
+// without their disk usage, which is not measured.
+func TestApplyAppsGivesNoHostDiskUsage(t *testing.T) { //nolint:paralleltest // shares the fake minimega
 	name := "test-runtime-disk"
 	out := installUserApps(t, name)
-	useRuntimeMinimega(t, runtimeMinimega)
+	received := useRuntimeMinimega(t, runtimeMinimega)
 	exp := runningStageExperiment(t, name)
 
 	err := app.ApplyApps(t.Context(), exp, app.Stage(app.ActionPostStart), app.FilterApp(name))
@@ -488,9 +489,15 @@ func TestApplyAppsGivesHostDiskUsage(t *testing.T) { //nolint:paralleltest // sh
 		t.Fatalf("json.Unmarshal(what %s was given) error = %v", name, err)
 	}
 
-	want := []givenHost{{Name: "compute1", DiskUsage: mm.DiskUsage{Phenix: 10, Minimega: 20}}}
+	want := []givenHost{{Name: "compute1", DiskUsage: nil}}
 	if diff := cmp.Diff(want, given.Hosts); diff != "" {
 		t.Errorf("hosts given to %s mismatch (-want +got):\n%s", name, diff)
+	}
+
+	for _, prefix := range []string{"shell ", "mesh send all shell "} {
+		if got := mmtest.Count(received(), prefix); got != 0 {
+			t.Errorf("ApplyApps(post-start, %s) sent %d %q disk usage commands, want 0", name, got, prefix)
+		}
 	}
 }
 
@@ -508,13 +515,13 @@ type contextMM struct {
 
 func (m *contextMM) GetClusterHostsObserved(
 	ctx context.Context,
-	schedOnly bool,
+	schedOnly, diskUsage bool,
 ) (mm.Hosts, freshness.Observation, error) {
 	m.mu.Lock()
 	m.runs = append(m.runs, ctx.Value(runKey{}))
 	m.mu.Unlock()
 
-	hosts, err := m.GetClusterHosts(schedOnly)
+	hosts, err := m.GetClusterHosts(schedOnly, diskUsage)
 
 	return hosts, freshness.Observed(time.Now()), err
 }

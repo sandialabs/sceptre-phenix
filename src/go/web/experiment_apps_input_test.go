@@ -27,7 +27,7 @@ type appsInputMM struct {
 	hostCalls      int
 }
 
-func (m *appsInputMM) GetClusterHosts(bool) (mm.Hosts, error) {
+func (m *appsInputMM) GetClusterHosts(bool, bool) (mm.Hosts, error) {
 	m.hostCalls++
 
 	return mm.Hosts{{Name: "compute1", Schedulable: true}}, m.hostErr

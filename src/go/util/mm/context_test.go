@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -14,11 +15,12 @@ import (
 
 	"phenix/util/mm/mmcli"
 	"phenix/util/mm/mmtest"
+	"phenix/util/polltest"
 )
 
 // holdShared answers commands with handle (nil for an empty success) while its own "hold" command
-// holds the shared connection until unhold or the test's end; received is as useFakeMinimega's.
-func holdShared(t *testing.T, handle mmtest.Handler) (func(), func() []mmtest.Command) {
+// holds the shared connection until the test's end; received is as useFakeMinimega's.
+func holdShared(t *testing.T, handle mmtest.Handler) func() []mmtest.Command {
 	t.Helper()
 
 	release := make(chan struct{})
@@ -53,13 +55,86 @@ func holdShared(t *testing.T, handle mmtest.Handler) (func(), func() []mmtest.Co
 
 	mmtest.Await(t, "hold")
 
-	return unhold, received
+	return received
+}
+
+// poolHold is the command that holds a read-only connection in these tests; phenix itself never sends it.
+const poolHold = "mesh status"
+
+// holdReadOnly is holdShared for the connections of mmcli.RunReadOnly: a poolHold command holds
+// each of them until the test's end.
+func holdReadOnly(t *testing.T) func() []mmtest.Command {
+	t.Helper()
+
+	release := make(chan struct{})
+
+	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+		if cmd.Base == poolHold {
+			<-release
+		}
+
+		return nil
+	})
+
+	held := make(chan error, mmcli.ReadOnlyLimit())
+
+	for range mmcli.ReadOnlyLimit() {
+		go func() {
+			cmd := mmcli.NewCommand()
+			cmd.Command = poolHold
+
+			held <- mmcli.ErrorResponse(mmcli.RunReadOnly(context.Background(), mmcli.HeadRead, cmd))
+		}()
+	}
+
+	// LIFO: the hold is let go before it is waited for
+	t.Cleanup(func() {
+		for range mmcli.ReadOnlyLimit() {
+			<-held
+		}
+	})
+	t.Cleanup(func() { close(release) })
+
+	polltest.Until(t, "every read-only connection is held", func() bool {
+		return mmtest.Count(received(), poolHold) == mmcli.ReadOnlyLimit()
+	})
+
+	return received
+}
+
+// MeshShellRead sends on the read-only connections and MeshShellResponse on the shared one, so each
+// still runs while all connections of the other are held.
+func TestMeshShellReadAndResponseUseTheirOwnConnections(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	t.Run("MeshShellRead while the shared connection is held", func(t *testing.T) {
+		received := holdShared(t, func(mmtest.Command) []*minicli.Response {
+			return []*minicli.Response{mmtest.Text("head", "head\n")}
+		})
+
+		if got, err := MeshShellRead(t.Context(), "", "hostname"); err != nil || got != "head" {
+			t.Errorf("MeshShellRead(hostname) = %q, %v; want %q, nil", got, err, "head")
+		}
+
+		if got := mmtest.Count(received(), "shell hostname"); got != 1 {
+			t.Errorf("MeshShellRead(hostname) sent it %d times, want 1", got)
+		}
+	})
+
+	t.Run("MeshShellResponse while the read-only connections are held", func(t *testing.T) {
+		received := holdReadOnly(t)
+
+		// the fake gives no answer, so only what minimega received counts
+		_, _ = MeshShellResponse(t.Context(), "", "hostname")
+
+		if got := mmtest.Count(received(), "shell hostname"); got != 1 {
+			t.Errorf("MeshShellResponse(hostname) sent it %d times, want 1", got)
+		}
+	})
 }
 
 // A VM listing for a caller whose context ends while its commands wait for
-// the shared connection gives up, having sent nothing.
+// a read-only connection gives up, having sent nothing.
 func TestGetVMInfoGivesUpWithItsContext(t *testing.T) { //nolint:paralleltest // shares the fake minimega
-	_, received := holdShared(t, nil)
+	received := holdReadOnly(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -80,7 +155,8 @@ func TestGetVMInfoGivesUpWithItsContext(t *testing.T) { //nolint:paralleltest //
 		t.Fatal("GetVMInfoObserved(canceled ctx) kept waiting after its context was canceled")
 	}
 
-	if diff := cmp.Diff([]string{"hold"}, mmtest.Bases(received())); diff != "" {
+	want := slices.Repeat([]string{poolHold}, mmcli.ReadOnlyLimit())
+	if diff := cmp.Diff(want, mmtest.Bases(received())); diff != "" {
 		t.Errorf("GetVMInfoObserved(canceled ctx) sent commands mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -251,14 +327,15 @@ func TestCloseTunnelGivesUpWithItsContext(t *testing.T) { //nolint:paralleltest 
 }
 
 // A cluster host list whose context ends partway gives up with its context's error, not going on
-// to the next command. TestGetClusterHostsErrorIsNotReused checks that an error is not kept.
+// to the next command. The headnode's `host` runs beside the mesh reads, so it may or may not be
+// sent first. TestGetClusterHostsErrorIsNotReused checks that an error is not kept.
 func TestClusterHostsGiveUpWithTheirContext(t *testing.T) { //nolint:paralleltest // shares the fake minimega
 	for _, tc := range []struct {
 		cancelOn string
-		want     []string
+		allowed  []string
 	}{
-		{cancelOn: "mesh list peers", want: []string{"minimega: host", "mesh list peers"}},
-		{cancelOn: meshHostCmd, want: []string{"minimega: host", "mesh list peers", meshHostCmd}},
+		{cancelOn: "mesh list peers", allowed: []string{"minimega: host", "mesh list peers"}},
+		{cancelOn: meshHostCmd, allowed: []string{"minimega: host", "mesh list peers", meshHostCmd}},
 	} {
 		t.Run(tc.cancelOn, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
@@ -278,14 +355,21 @@ func TestClusterHostsGiveUpWithTheirContext(t *testing.T) { //nolint:paralleltes
 			// run can send more commands first: check the commands without it.
 			call := fmt.Sprintf("getClusterHosts(ctx canceled at %s)", tc.cancelOn)
 
-			if _, err := (Minimega{}).getClusterHosts(ctx, func() {}); !errors.Is(err, context.Canceled) {
+			if _, err := getClusterHosts(ctx, func() {}, true); !errors.Is(err, context.Canceled) {
 				t.Errorf("%s error = %v, want %v", call, err, context.Canceled)
 			}
 
 			cmds := received()
+			sent := hostCommands(cmds)
 
-			if diff := cmp.Diff(tc.want, hostCommands(cmds)); diff != "" {
-				t.Errorf("%s sent commands mismatch (-want +got):\n%s", call, diff)
+			if !slices.Contains(sent, tc.cancelOn) {
+				t.Errorf("%s sent %q, want %q among them", call, sent, tc.cancelOn)
+			}
+
+			for _, cmd := range sent {
+				if !slices.Contains(tc.allowed, cmd) {
+					t.Errorf("%s sent %q, want only some of %q", call, cmd, tc.allowed)
+				}
 			}
 
 			for _, cmd := range cmds {

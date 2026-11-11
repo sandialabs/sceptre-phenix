@@ -14,7 +14,12 @@ vi.mock('@/store.js', modules.store);
 
 import { clearPageCache } from '@/utils/pageCache.js';
 import { pageStatus } from '@/utils/pageLoader.js';
-import Settings, { refusalMessage, timeoutErrors } from '@/views/Settings.vue';
+import Settings, {
+  overriddenBy,
+  readConnectionsError,
+  refusalMessage,
+  timeoutErrors,
+} from '@/views/Settings.vue';
 import { never } from './helpers/async.js';
 import { httpError } from './helpers/fixtures.js';
 import { buttons, mountPage, textOf, toasts } from './helpers/mount.js';
@@ -588,5 +593,157 @@ describe('timeoutErrors', () => {
         },
       ),
     );
+  });
+});
+
+// the settings of a server that sends the minimega settings
+const withMinimega = (source = 'default', read_connections = 16) => ({
+  ...settings(),
+  minimega_settings: { read_connections, source },
+});
+
+const readConnections = (page) => control(page, 'settings-read-connections');
+
+describe('the minimega section of the Settings page', () => {
+  it('is left out for a server that does not send the minimega settings', async () => {
+    const page = await open();
+    expect(page.find('#settings-minimega-help').exists()).toBe(false);
+    expect(readConnections(page).exists()).toBe(false);
+  });
+
+  it('shows the read-only connections with their help', async () => {
+    const page = await open(withMinimega());
+    expect(page.findAll('h2').map(textOf)).toEqual([
+      'Password Settings',
+      'Timeout Settings',
+      'File Logging Settings',
+      'minimega',
+    ]);
+    expect(textOf(page.find('#settings-minimega-help'))).toBe(
+      'Read-only connections caps how many read commands phēnix sends to minimega at the same time. phēnix keeps 2 of them for reads of the head node. A change applies at once, and phenix writes it to the config file.',
+    );
+    expect(textOf(page.find('#settings-read-connections'))).toBe(
+      'Read-only connections',
+    );
+    const input = readConnections(page);
+    expect(Number(input.element.value)).toBe(16);
+    expect(input.element.disabled).toBe(false);
+    expect(input.attributes('aria-describedby')).toBe(
+      'settings-read-connections-help settings-minimega-help',
+    );
+    expect(textOf(page.find('#settings-read-connections-help'))).toBe(
+      'Changes minimega.read-connections, from 3 to 64. The default is 16.',
+    );
+    expect(buttons(page)).toEqual(UNCHANGED);
+  });
+
+  it('sends an edited value with the other settings', async () => {
+    axios.post.mockResolvedValue({});
+    const page = await open(withMinimega());
+    await readConnections(page).setValue('24');
+
+    await page.find('form').trigger('submit');
+    await flushPromises();
+    expect(axios.post.mock.calls).toEqual([
+      ['settings', withMinimega('default', 24), { timeout: 0 }],
+    ]);
+    expect(toasts().map((t) => t.text)).toEqual(['Settings updated']);
+  });
+
+  it.each(['2', '65', '7.5', ''])(
+    'refuses %o before it sends anything',
+    async (value) => {
+      const page = await open(withMinimega());
+      await readConnections(page).setValue(value);
+
+      const input = readConnections(page);
+      expect(input.attributes('aria-invalid')).toBe('true');
+      expect(input.attributes('aria-describedby')).toBe(
+        'settings-read-connections-error settings-read-connections-help',
+      );
+      expect(textOf(page.find('#settings-read-connections-error'))).toBe(
+        'Enter a whole number from 3 to 64.',
+      );
+      expect(buttons(page)).toEqual(INVALID);
+
+      await page.find('form').trigger('submit');
+      expect(axios.post).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['flag', 'A flag'],
+    ['env', 'An environment variable'],
+  ])(
+    'is read-only, naming what sets it, when the source is %s',
+    async (source, setBy) => {
+      const page = await open(withMinimega(source, 20));
+      const input = readConnections(page);
+      expect(Number(input.element.value)).toBe(20);
+      expect(input.element.disabled).toBe(true);
+      expect(textOf(page.find('#settings-read-connections-source'))).toBe(
+        `${setBy} of phenix ui sets this value, so you cannot change it here.`,
+      );
+      expect(page.find('#settings-read-connections-error').exists()).toBe(
+        false,
+      );
+    },
+  );
+
+  it("shows the server's message when it refuses the value", async () => {
+    const message =
+      'error updating minimega settings: read_connections is out of range: it must be 3 to 64, not 70';
+    axios.post.mockRejectedValueOnce(
+      httpError(400, { message, code: 'invalid_request' }),
+    );
+    const page = await open(withMinimega());
+    await readConnections(page).setValue('40');
+
+    await page.find('form').trigger('submit');
+    await flushPromises();
+    expect(textOf(page.find('#settings-save-error'))).toBe(
+      `The server did not save the settings: ${message}`,
+    );
+    expect(readConnections(page).element.value).toBe('40');
+  });
+});
+
+describe('readConnectionsError', () => {
+  const WHOLE = 'Enter a whole number from 3 to 64.';
+
+  it.each([
+    [3, null],
+    [16, null],
+    [64, null],
+    ['20', null],
+    [2, WHOLE],
+    [65, WHOLE],
+    [0, WHOLE],
+    [7.5, WHOLE],
+    ['', WHOLE],
+    [null, WHOLE],
+    ['many', WHOLE],
+  ])('%o gives %o', (value, want) => {
+    expect(readConnectionsError(value)).toBe(want);
+  });
+
+  it('accepts exactly the whole numbers from 3 to 64', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: -100, max: 200 }), (n) => {
+        expect(readConnectionsError(n) === null).toBe(n >= 3 && n <= 64);
+      }),
+    );
+  });
+});
+
+describe('overriddenBy', () => {
+  it.each([
+    ['flag', 'A flag'],
+    ['env', 'An environment variable'],
+    ['config file', null],
+    ['default', null],
+    [undefined, null],
+  ])('%o gives %o', (source, want) => {
+    expect(overriddenBy(source)).toBe(want);
   });
 });

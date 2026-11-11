@@ -229,7 +229,7 @@ the JSON VNC session (`GET .../vms/{name}/vnc`) that the web UI's console uses.
   which configs/experiments are visible — commands against the wrong endpoint will report
   "no configs found" rather than an obvious connection error.
 - **Deleting `config.yaml` while phenix is running breaks the file watcher** (hot-reload of
-  `log.*`, `ui.logs.level`, `ui.users` and `experiment.disk-check` stops working). `phenix settings unset <key>` rewrites the
+  `log.*`, `ui.logs.level`, `ui.users`, `experiment.disk-check` and `minimega.read-connections` stops working). `phenix settings unset <key>` rewrites the
   file in place and leaves the watcher intact; `phenix settings unset --all` deletes the
   file outright, so it has the same effect as removing it by hand and any running phenix
   process needs a restart afterwards.
@@ -302,6 +302,8 @@ for that experiment, which is the fastest way to test an app outside phenix:
 `GET /api/v1/experiments/{name}/apps/input` answers the same JSON (needs
 `experiments` `get`, `configs` `get` on `Experiment/<exp>` and `vms` `list` on
 each VM; `502` when minimega does not answer).
+The `hosts` of a user app have no `diskusage`: phēnix does not measure the
+disk usage for apps. Only a user scheduler gets `hosts[].diskusage`.
 `phenix util scheduler-json <exp>` and
 `phenix util scorch-json <exp> <component>` print the exact stdin of a user
 scheduler and of a SCORCH user component (CLI only; see

@@ -22,6 +22,7 @@ import (
 	v1 "phenix/types/version/v1"
 	"phenix/util/freshness"
 	"phenix/util/mm"
+	"phenix/util/mm/mmcli"
 	"phenix/util/plog"
 	"phenix/util/polltest"
 	bt "phenix/web/broker/brokertypes"
@@ -554,13 +555,13 @@ func TestUnsubscribeOutlastsPendingLists(t *testing.T) {
 	}
 }
 
-// A client that leaves stops waiting on a screenshot minimega is still
-// taking.
+// A client that leaves stops waiting on the screenshots minimega is still
+// taking, and asks for no more.
 func TestScreenshotWaitEndsWithTheClient(t *testing.T) {
 	withDeps(t)
 
 	var (
-		entered = make(chan struct{}, 1)
+		entered = make(chan struct{}, mmcli.ReadOnlyLimit()+1)
 		gate    = make(chan struct{})
 	)
 
@@ -578,7 +579,14 @@ func TestScreenshotWaitEndsWithTheClient(t *testing.T) {
 	}
 
 	c := newFakeClient(newFakeConn(t))
-	setVMs(c, vmScope{exp: "exp", name: "vm1", running: true}, vmScope{exp: "exp", name: "vm2", running: true})
+
+	// one VM more than the screenshots taken at once
+	vms := make([]vmScope, 0, mmcli.ReadOnlyLimit()+1)
+	for i := range mmcli.ReadOnlyLimit() + 1 {
+		vms = append(vms, vmScope{exp: "exp", name: fmt.Sprintf("vm%d", i), running: true})
+	}
+
+	setVMs(c, vms...)
 
 	pushed := make(chan struct{})
 
@@ -588,14 +596,16 @@ func TestScreenshotWaitEndsWithTheClient(t *testing.T) {
 		c.pushScreenshots()
 	}()
 
-	polltest.Within(t, "the first screenshot", func() { <-entered })
+	for range mmcli.ReadOnlyLimit() {
+		polltest.Within(t, "the screenshots taken at once", func() { <-entered })
+	}
 
 	c.shutdown(websocket.CloseNormalClosure, "")
 
 	polltest.Within(t, "the screenshots giving up", func() { <-pushed })
 
 	if len(entered) != 0 {
-		t.Error("pushScreenshots() asked for the second screenshot after the client left, want it to stop")
+		t.Error("pushScreenshots() asked for another screenshot after the client left, want it to stop")
 	}
 }
 

@@ -27,7 +27,7 @@ type scheduleMM struct {
 	hosts mm.Hosts
 }
 
-func (m scheduleMM) GetClusterHosts(bool) (mm.Hosts, error) {
+func (m scheduleMM) GetClusterHosts(bool, bool) (mm.Hosts, error) {
 	return m.hosts, nil
 }
 
@@ -191,7 +191,7 @@ type changingMM struct {
 	change func()
 }
 
-func (m changingMM) GetClusterHosts(bool) (mm.Hosts, error) {
+func (m changingMM) GetClusterHosts(bool, bool) (mm.Hosts, error) {
 	m.change()
 
 	return mm.Hosts{{Name: "node1"}, {Name: "node2"}}, nil

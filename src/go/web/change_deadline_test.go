@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -133,7 +132,7 @@ func serveVMChange(ctx context.Context, t *testing.T, change vmChange) *httptest
 // sentBesidesHold is what minimega received other than the hold and the
 // files directory lookup.
 func sentBesidesHold(received func() []mmtest.Command) []string {
-	return slices.DeleteFunc(mmtest.Bases(received()), func(base string) bool { return base == "args" || base == "hold" })
+	return besidesHolds(mmtest.Bases(received()))
 }
 
 // A request changing a VM gives up at its deadline while minimega is stuck, answering an error rather than holding

@@ -20,7 +20,7 @@ type propertyMM struct {
 	hosts *mm.Hosts
 }
 
-func (m propertyMM) GetClusterHosts(bool) (mm.Hosts, error) {
+func (m propertyMM) GetClusterHosts(bool, bool) (mm.Hosts, error) {
 	return slices.Clone(*m.hosts), nil
 }
 

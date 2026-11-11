@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/go-multierror"
@@ -42,6 +43,9 @@ var (
 	// shared is held by the command using the shared connection, so commands
 	// take it one at a time, background ones last.
 	shared connLock //nolint:gochecknoglobals // global lock
+
+	// redials counts the connections dialed again; see Redials.
+	redials atomic.Uint64 //nolint:gochecknoglobals // process-wide count
 
 	mu     sync.Mutex       //nolint:gochecknoglobals // guards mm and mmDead
 	mm     *miniclient.Conn //nolint:gochecknoglobals // global connection
@@ -102,6 +106,11 @@ func reconstructErr(msg string) error {
 		if suffix := ": " + sentinel.Error(); strings.HasSuffix(msg, suffix) {
 			return fmt.Errorf("%s: %w", strings.TrimSuffix(msg, suffix), sentinel)
 		}
+	}
+
+	// phenix refuses this before it sends, with context on both sides
+	if before, after, ok := strings.Cut(msg, errUnknownReadLine.Error()); ok {
+		return fmt.Errorf("%s%w%s", before, errUnknownReadLine, after)
 	}
 
 	return errors.New(msg)
@@ -324,10 +333,22 @@ func conn() (*miniclient.Conn, error) {
 			return nil, fmt.Errorf("unable to dial: %w", err)
 		}
 
+		if mm != nil {
+			redials.Add(1)
+		}
+
 		mm, mmDead = c, false
 	}
 
 	return mm, nil
+}
+
+// Redials counts how often phenix dialed minimega again after its shared
+// connection, or a RunReadOnly connection, broke, or after all RunReadOnly
+// connections closed. minimega may have restarted in between, so an answer
+// kept from minimega is good only while the count stays the same.
+func Redials() uint64 {
+	return redials.Load()
 }
 
 // markDead flags the given connection for replacement on the next call, but only
@@ -359,14 +380,22 @@ func streamEnded(c *miniclient.Conn, count int) error {
 	return fmt.Errorf("running minimega command: %w", err)
 }
 
-// guard forwards responses from the shared connection, reporting a truncated or empty stream as an error. release is
-// called once the terminal error has been read (miniclient closes the channel before releasing its lock), or at once
-// when a command outlasts timeout (none if zero or less), the connection is closed and timeoutErr is reported. Callers
-// MUST drain the returned channel, or this goroutine and miniclient's reader block for the life of the process.
+// resender closes a connection that failed before it answered, sends its
+// command again on a new connection, and gives that connection and its stream.
+type resender func() (*miniclient.Conn, chan *miniclient.Response, error)
+
+// guard forwards responses from a kept connection (the shared one or a pooled one), reporting a truncated or empty
+// stream as an error. done is called once the terminal error has been read (miniclient closes the channel before
+// releasing its lock), or at once when a command outlasts timeout (none if zero or less), the connection is closed and
+// timeoutErr is reported. done gets the connection last used (nil when resend failed) and broken, true when that
+// connection must be replaced. When c fails before it answers and resend is not nil, guard calls resend one time and
+// reads its stream in place of in. Callers MUST drain the returned channel, or this goroutine and miniclient's reader
+// block for the life of the process.
 func guard(
 	c *miniclient.Conn,
 	in chan *miniclient.Response,
-	release func(),
+	done func(c *miniclient.Conn, broken bool),
+	resend resender,
 	timeout time.Duration,
 	timeoutErr error,
 ) chan *miniclient.Response {
@@ -393,11 +422,22 @@ func guard(
 				if !ok {
 					err := streamEnded(c, count)
 
-					release()
+					if count == 0 && resend != nil && c.Error() != nil {
+						next, nextIn, resendErr := resend()
+						resend = nil
+
+						if resendErr == nil {
+							c, in = next, nextIn
+
+							continue
+						}
+
+						c, err = nil, resendErr
+					}
+
+					done(c, err != nil)
 
 					if err != nil {
-						markDead(c)
-
 						out <- errResponse(err)
 					}
 
@@ -408,8 +448,6 @@ func guard(
 
 				out <- resp
 			case <-after:
-				markDead(c)
-
 				// unblocks miniclient's reader, then lets it finish
 				_ = c.Close()
 
@@ -419,7 +457,7 @@ func guard(
 					}
 				}()
 
-				release()
+				done(c, true)
 
 				out <- errResponse(timeoutErr)
 
@@ -475,26 +513,36 @@ func runShared(ctx context.Context, c *Command, started func()) chan *miniclient
 		return wrapErr(gaveUp(ctx.Err()))
 	}
 
-	release := shared.release
-
 	notify(started)
 
 	active, err := conn()
 	if err != nil {
-		release()
+		shared.release()
 
 		return wrapErr(err)
 	}
 
-	timeout, timeoutErr := DefaultCommandTimeout, ErrTimeout
-
-	if deadline, ok := ctx.Deadline(); ok {
-		timeout, timeoutErr = max(time.Until(deadline), time.Nanosecond), errDeadline
-	}
+	timeout, timeoutErr := commandTimeout(ctx)
 
 	// shared is held until guard has read the terminal error, so no other
 	// command can reach Conn.err in between
-	return guard(active, active.Run(cmdStr), release, timeout, timeoutErr)
+	return guard(active, active.Run(cmdStr), func(_ *miniclient.Conn, broken bool) {
+		if broken {
+			markDead(active)
+		}
+
+		shared.release()
+	}, nil, timeout, timeoutErr)
+}
+
+// commandTimeout is how long a sent command may run on a kept connection, and
+// the error reported past it: until ctx's deadline, else DefaultCommandTimeout.
+func commandTimeout(ctx context.Context) (time.Duration, error) {
+	if deadline, ok := ctx.Deadline(); ok {
+		return max(time.Until(deadline), time.Nanosecond), errDeadline
+	}
+
+	return DefaultCommandTimeout, ErrTimeout
 }
 
 // gaveUp is the error of a command that stopped waiting for the shared
@@ -516,7 +564,7 @@ func gaveUp(err error) error {
 // hold the shared connection, and so every other command, for their whole
 // duration. Callers MUST drain the returned channel, as with Run.
 func RunDedicated(c *Command) chan *miniclient.Response {
-	return runPrivate(common.MinimegaBase, c.String(), c.Timeout)
+	return RunDedicatedAt(common.MinimegaBase, c)
 }
 
 // RunDedicatedAt is RunDedicated against the minimega whose base directory is

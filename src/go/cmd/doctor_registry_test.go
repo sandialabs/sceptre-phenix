@@ -68,6 +68,7 @@ func fakeDoctorInput(dir string, settings map[string]string) *doctorInput {
 		"log.system.max-size":      "100",
 		"log.system.max-backups":   "3",
 		"log.system.max-age":       "90",
+		keyMinimegaReadConnections: "16",
 		"bridge-mode":              "manual",
 		"ui.jwt-signing-key":       "doctor-test-key",
 		"ui.shutdown-grace-period": "5",
@@ -231,6 +232,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 		"log.system.max-size log.system.max-size pass",
 		"log.system.max-backups log.system.max-backups pass",
 		"log.system.max-age log.system.max-age pass",
+		"minimega.read-connections minimega.read-connections pass",
 		"store.endpoint store.endpoint pass",
 		"store-root store root pass",
 		"store-fs store-fs pass",
@@ -431,6 +433,7 @@ func TestDoctorChecksFromInput(t *testing.T) {
 				"log.system.max-size log.system.max-size fail",
 				"log.system.max-backups log.system.max-backups warn",
 				"log.system.max-age log.system.max-age warn",
+				"minimega.read-connections minimega.read-connections pass",
 			),
 		},
 		"no jwt key": {
@@ -703,7 +706,7 @@ func TestParseDoctorSkip(t *testing.T) {
 			args: []string{"--skip", "settings"},
 			want: []string{
 				"bridge-mode", "color", "deploy-mode", "experiment.disk-check", "log.level", "log.system.max-age",
-				"log.system.max-backups", "log.system.max-size",
+				"log.system.max-backups", "log.system.max-size", "minimega.read-connections",
 			},
 		},
 		"comma list and repeated": {
@@ -868,7 +871,7 @@ func TestDoctorTextOutput(t *testing.T) {
 				"directory:", "/home/alice", "config:", filepath.Join(dir, "config.yaml"), "container:", "no",
 				"time:", "2026-10-30T12:00:00Z",
 				"\nSETTING", "store.endpoint", "\nCHECK", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 60 passed, 25 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
+				"\nFAIL: 1 failed, 1 warned, 61 passed, 25 skipped. Failed: minimega. Warned: ui.jwt-signing-key\n",
 				"  minimega: start minimega",
 			},
 			wantNot: []string{"hostname:", "doctor-test-host", "```", "  ui.jwt-signing-key: set"},
@@ -894,8 +897,8 @@ func TestDoctorTextOutput(t *testing.T) {
 			opts: doctorOptions{output: "text", problems: true},
 			want: []string{
 				"\nCHECK", "ui.jwt-signing-key", "WARN", "minimega", "FAIL",
-				"\nFAIL: 1 failed, 1 warned, 60 passed, 25 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
-					"85 passing or skipped checks hidden\n",
+				"\nFAIL: 1 failed, 1 warned, 61 passed, 25 skipped. Failed: minimega. Warned: ui.jwt-signing-key. " +
+					"86 passing or skipped checks hidden\n",
 			},
 			wantNot: []string{" PASS ", " SKIP "},
 		},

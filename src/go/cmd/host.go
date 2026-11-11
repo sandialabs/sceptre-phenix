@@ -46,7 +46,7 @@ func newHostListCmd() *cobra.Command {
   each node with the fields of GET /hosts.`,
 		Args: argsWithUsage(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			hosts, _, err := mm.GetClusterHostsObserved(commandContext(cmd), false)
+			hosts, _, err := mm.GetClusterHostsObserved(commandContext(cmd), false, true)
 			if err != nil {
 				return fmt.Errorf("listing cluster hosts: %w", err)
 			}

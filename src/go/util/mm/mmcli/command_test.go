@@ -1,6 +1,7 @@
 package mmcli
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -83,4 +84,60 @@ func TestCommandStringColumnsProperty(t *testing.T) {
 			t.Fatalf("Command{Columns: %q}.String() = %q, want %q", columns, got, wantCmd)
 		}
 	})
+}
+
+// safeArgCases are the table of TestSafeArg and the seeds of FuzzSafeArg.
+//
+//nolint:gochecknoglobals // shared test table
+var safeArgCases = []struct {
+	name string
+	arg  string
+	safe bool
+}{
+	{name: "plain name", arg: "vm1", safe: true},
+	{name: "empty", arg: "", safe: true},
+	{name: "path", arg: "/phenix/images/a_b-c.qc2", safe: true},
+	{name: "IPv6 address", arg: "fe80::1", safe: true},
+	{name: "host range", arg: "node[1-3]", safe: true},
+	{name: "colon in a name", arg: "exp:a", safe: true},
+	{name: "quote that ends a quoted value", arg: `a\" help x`},
+	{name: "double quote", arg: `a"b`},
+	{name: "single quote", arg: "a'b"},
+	{name: "backtick", arg: "a`id`"},
+	{name: "backslash", arg: `a\b`},
+	{name: "newline", arg: "vm1\nvm info"},
+	{name: "tab", arg: "a\tb"},
+	{name: "space", arg: "a b"},
+	{name: "no-break space", arg: "a\u00a0b"},
+	{name: "control character", arg: "a\x00b"},
+	{name: "comment leader", arg: "a#b"},
+	{name: "environment variable", arg: "$HOME"},
+	{name: "braced environment variable", arg: "/a/${HOME}"},
+	{name: "HTTP URL", arg: "http://x/y"},
+	{name: "URL in a path", arg: "/a/b://c"},
+	{name: "tar scheme", arg: "tar:/x.tar"},
+	{name: "file scheme", arg: "file:foo"},
+	{name: "scheme in capitals", arg: "FILE:foo"},
+	{name: "HTTPS scheme with no slashes", arg: "https:x"},
+	{name: "invalid UTF-8", arg: "a\xffb"},
+}
+
+// SafeArg accepts only values that minimega reads as the same literal text.
+func TestSafeArg(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range safeArgCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := SafeArg(tc.arg)
+
+			switch {
+			case tc.safe && err != nil:
+				t.Errorf("SafeArg(%q) = %v, want nil", tc.arg, err)
+			case !tc.safe && !errors.Is(err, ErrUnsafeArg):
+				t.Errorf("SafeArg(%q) = %v, want %v", tc.arg, err, ErrUnsafeArg)
+			}
+		})
+	}
 }

@@ -134,6 +134,10 @@ the root target does.
   gives up once the client leaves or the job is canceled. CLI commands,
   startup and background loops keep plain `mmcli.Run`. The `util/mm` package
   documentation lists the helpers to use.
+- `mmcli.RunReadOnly` takes only a command that changes nothing in minimega,
+  with its wait line (`HeadRead`, `MeshRead` or `ScreenshotRead`) by the rule
+  in its godoc. The pool does not check that the command only reads or that
+  the line fits it: reviewers do.
 - A long-lived web handler (websocket, terminal, streamed response) registers
   with `phenix/web/lifecycle` (`Track`, `TrackConn` or `WithStop`) and ends on
   its stop signal, a gorilla websocket with close code 1001 and

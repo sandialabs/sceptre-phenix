@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
+	"github.com/sandia-minimega/minimega/v2/pkg/miniclient"
 
 	"phenix/util/plog"
 )
@@ -73,6 +74,56 @@ func RunTabularContext(ctx context.Context, cmd *Command) []map[string]string {
 func RunTabularStartedContext(ctx context.Context, cmd *Command, started func()) []map[string]string {
 	res, err := RunTabularCheckedContext(ctx, cmd, started)
 
+	logTabularErr(ctx, cmd, err)
+
+	return res
+}
+
+// RunTabularCheckedContext is RunTabularStartedContext, also returning the response errors, joined;
+// the rows, from the responses without an error, may then be partial.
+func RunTabularCheckedContext(
+	ctx context.Context,
+	cmd *Command,
+	started func(),
+) ([]map[string]string, error) {
+	return tabular(cmd, RunStartedContext(ctx, cmd, started))
+}
+
+// RunTabularReadOnly is RunTabularContext on RunReadOnly's connections, in
+// the wait line named by line.
+func RunTabularReadOnly(ctx context.Context, line ReadLine, cmd *Command) []map[string]string {
+	return RunTabularReadOnlyStarted(ctx, line, cmd, nil)
+}
+
+// RunTabularReadOnlyStarted is RunTabularStartedContext on RunReadOnly's
+// connections, in the wait line named by line.
+func RunTabularReadOnlyStarted(
+	ctx context.Context,
+	line ReadLine,
+	cmd *Command,
+	started func(),
+) []map[string]string {
+	res, err := RunTabularReadOnlyChecked(ctx, line, cmd, started)
+
+	logTabularErr(ctx, cmd, err)
+
+	return res
+}
+
+// RunTabularReadOnlyChecked is RunTabularCheckedContext on RunReadOnly's
+// connections, in the wait line named by line.
+func RunTabularReadOnlyChecked(
+	ctx context.Context,
+	line ReadLine,
+	cmd *Command,
+	started func(),
+) ([]map[string]string, error) {
+	return tabular(cmd, readOnlyPool.run(ctx, line, cmd, started))
+}
+
+// logTabularErr logs the response errors of a tabular command, at debug level
+// once ctx is done.
+func logTabularErr(ctx context.Context, cmd *Command, err error) {
 	switch {
 	case err == nil:
 	case ctx.Err() != nil && errors.Is(err, ctx.Err()):
@@ -87,17 +138,11 @@ func RunTabularStartedContext(ctx context.Context, cmd *Command, started func())
 			err,
 		)
 	}
-
-	return res
 }
 
-// RunTabularCheckedContext is RunTabularStartedContext, also returning the response errors, joined;
-// the rows, from the responses without an error, may then be partial.
-func RunTabularCheckedContext(
-	ctx context.Context,
-	cmd *Command,
-	started func(),
-) ([]map[string]string, error) {
+// tabular drains responses, the answer to cmd, into rows, joining the
+// response errors.
+func tabular(cmd *Command, responses chan *miniclient.Response) ([]map[string]string, error) {
 	// copy all fields in header order
 	mapper := tabularToMap
 
@@ -111,7 +156,7 @@ func RunTabularCheckedContext(
 		errs []error
 	)
 
-	for resps := range RunStartedContext(ctx, cmd, started) {
+	for resps := range responses {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
 				errs = append(errs, reconstructErr(resp.Error))

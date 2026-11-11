@@ -70,7 +70,7 @@ func (Minimega) GetC2ExitCode(opts ...C2Option) (int, error) {
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = fmt.Sprintf("cc exitcode %s %s", o.commandID, target.uuid)
 
-	resp, err := mmcli.HostResponse(mmcli.RunContext(o.ctx, cmd), target.host)
+	resp, err := mmcli.HostResponse(mmcli.RunReadOnly(o.ctx, nsLine(o.ns), cmd), target.host)
 	if err != nil {
 		return 0, fmt.Errorf("%w for command %s: %w", ErrNoC2ExitCode, o.commandID, err)
 	}

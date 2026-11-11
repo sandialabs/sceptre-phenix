@@ -27,7 +27,7 @@ type clusterMM struct {
 	hosts mm.Hosts
 }
 
-func (m clusterMM) GetClusterHosts(bool) (mm.Hosts, error) {
+func (m clusterMM) GetClusterHosts(bool, bool) (mm.Hosts, error) {
 	return append(mm.Hosts(nil), m.hosts...), nil
 }
 

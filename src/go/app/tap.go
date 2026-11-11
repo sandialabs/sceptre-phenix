@@ -60,17 +60,17 @@ func (Tap) Configure(ctx context.Context, exp *types.Experiment) error {
 }
 
 func (t *Tap) PreStart(ctx context.Context, exp *types.Experiment) error {
-	return t.createTaps(exp, tapStagePreStart)
+	return t.createTaps(ctx, exp, tapStagePreStart)
 }
 
 func (t *Tap) PostStart(ctx context.Context, exp *types.Experiment) error {
-	return t.createTaps(exp, tapStagePostStart)
+	return t.createTaps(ctx, exp, tapStagePostStart)
 }
 
 // createTaps creates the configured host taps if the app's configured stage
 // matches the given stage. The stage defaults to "post-start" when unset in the
 // app metadata, preserving the original behavior.
-func (t *Tap) createTaps(exp *types.Experiment, stage string) error {
+func (t *Tap) createTaps(ctx context.Context, exp *types.Experiment, stage string) error {
 	app := exp.App(t.Name())
 	if app == nil {
 		// this should never happen...
@@ -101,7 +101,7 @@ func (t *Tap) createTaps(exp *types.Experiment, stage string) error {
 		return nil
 	}
 
-	hosts, err := mm.GetNamespaceHosts(exp.Metadata.Name)
+	hosts, err := mm.GetNamespaceHosts(ctx, exp.Metadata.Name)
 	if err != nil {
 		return fmt.Errorf("getting list of experiment hosts: %w", err)
 	}

@@ -15,6 +15,7 @@ import (
 	"phenix/store/storetest"
 	"phenix/types"
 	v2 "phenix/types/version/v2"
+	"phenix/util/mm/mmcli"
 	"phenix/util/plog"
 	"phenix/util/plog/plogtest"
 )
@@ -28,6 +29,10 @@ var defaultSettings = settings.Settings{ //nolint:gochecknoglobals // test fixtu
 		Enabled:    false,
 		TimeoutMin: settings.DefaultTimeoutMin,
 		WarningMin: settings.DefaultWarningMin,
+	},
+	MinimegaSettings: settings.MinimegaSettings{
+		ReadConnections: mmcli.DefaultReadOnlyLimit,
+		Source:          runtimesettings.SourceDefault,
 	},
 }
 
@@ -125,7 +130,7 @@ func TestGetTimeoutSettingsFromListParseErrors(t *testing.T) {
 func TestGetSettingsDefaults(t *testing.T) {
 	useSettingsStore(t)
 
-	got, err := settings.GetSettings()
+	got, err := settings.GetSettings(nil)
 	if err != nil {
 		t.Fatalf("GetSettings() error = %v", err)
 	}
@@ -149,7 +154,7 @@ func TestGetSettingsDefaults(t *testing.T) {
 func TestGetSettingsStoreError(t *testing.T) {
 	useFailingStore(t)
 
-	if _, err := settings.GetSettings(); err == nil {
+	if _, err := settings.GetSettings(nil); err == nil {
 		t.Error("GetSettings() error = nil, want an error")
 	}
 
@@ -172,7 +177,7 @@ func TestGetSettingsParseErrors(t *testing.T) {
 				t.Fatalf("Update(%s, %s) error = %v", test.category, test.name, err)
 			}
 
-			if _, err := settings.GetSettings(); err == nil {
+			if _, err := settings.GetSettings(nil); err == nil {
 				t.Errorf("GetSettings() with a bad %s.%s error = nil, want an error", test.category, test.name)
 			}
 		})
@@ -192,13 +197,21 @@ func TestUpdateAllSettings(t *testing.T) {
 		PasswordSettings: settings.PasswordSettings{MinLength: 12, UppercaseReq: true},
 		LoggingSettings:  settings.LoggingSettings{MaxFileRotations: 4, MaxFileSize: 20, MaxFileAge: 5},
 		TimeoutSettings:  settings.TimeoutSettings{Enabled: true, TimeoutMin: 45.5, WarningMin: 1},
+		MinimegaSettings: settings.MinimegaSettings{ReadConnections: 9, Source: runtimesettings.SourceDefault},
 	}
+
+	t.Cleanup(func() { mmcli.SetReadOnlyLimit(mmcli.DefaultReadOnlyLimit) })
 
 	if err := settings.UpdateAllSettings(rs, want); err != nil {
 		t.Fatalf("UpdateAllSettings() error = %v", err)
 	}
 
-	wantFile := "# kept\nlog:\n    system:\n        max-size: 20\n        max-backups: 4\n        max-age: 5\n"
+	if got := mmcli.ReadOnlyLimit(); got != 9 {
+		t.Errorf("mmcli.ReadOnlyLimit() after UpdateAllSettings() = %d, want 9", got)
+	}
+
+	wantFile := "# kept\nlog:\n    system:\n        max-size: 20\n        max-backups: 4\n        max-age: 5\n" +
+		"minimega:\n    read-connections: 9\n"
 	if got := readFile(t, path); got != wantFile {
 		t.Errorf("config file after UpdateAllSettings() = %q, want %q", got, wantFile)
 	}
@@ -208,7 +221,7 @@ func TestUpdateAllSettings(t *testing.T) {
 		t.Errorf("plog.LogFileLimits() after UpdateAllSettings() = %+v, want %+v", got, wantLimits)
 	}
 
-	got, err := settings.GetSettings()
+	got, err := settings.GetSettings(nil)
 	if err != nil {
 		t.Fatalf("GetSettings() error = %v", err)
 	}

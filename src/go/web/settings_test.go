@@ -22,6 +22,7 @@ import (
 	"phenix/api/settings"
 	"phenix/store"
 	"phenix/store/storetest"
+	"phenix/util/mm/mmcli"
 	"phenix/util/plog"
 )
 
@@ -61,8 +62,9 @@ func settingsTestStored() settings.Settings {
 		PasswordSettings: settings.PasswordSettings{
 			LowercaseReq: true, UppercaseReq: true, NumberReq: false, SymbolReq: true, MinLength: 12,
 		},
-		LoggingSettings: settings.GetLoggingSettings(),
-		TimeoutSettings: settings.TimeoutSettings{Enabled: true, TimeoutMin: 45, WarningMin: 5},
+		LoggingSettings:  settings.GetLoggingSettings(),
+		TimeoutSettings:  settings.TimeoutSettings{Enabled: true, TimeoutMin: 45, WarningMin: 5},
+		MinimegaSettings: settings.GetMinimegaSettings(nil),
 	}
 }
 
@@ -293,9 +295,9 @@ func TestSetSettings(t *testing.T) {
 
 			storetest.Use(t, db)
 
-			got, err := settings.GetSettings()
+			got, err := settings.GetSettings(nil)
 			if err != nil {
-				t.Fatalf("settings.GetSettings() error = %v", err)
+				t.Fatalf("settings.GetSettings(nil) error = %v", err)
 			}
 
 			want := settingsTestStored()
@@ -304,6 +306,7 @@ func TestSetSettings(t *testing.T) {
 					PasswordSettings: settings.PasswordSettings{MinLength: 10},
 					LoggingSettings:  want.LoggingSettings,
 					TimeoutSettings:  settings.TimeoutSettings{},
+					MinimegaSettings: want.MinimegaSettings,
 				}
 			}
 
@@ -466,6 +469,7 @@ func settingsTestRuntime(t *testing.T, args []string, env map[string]string) (*r
 	flags.Int(settings.LogMaxSizeKey, 100, "")
 	flags.Int(settings.LogMaxBackupsKey, 3, "")
 	flags.Int(settings.LogMaxAgeKey, 90, "")
+	flags.Int(settings.MinimegaReadConnectionsKey, mmcli.DefaultReadOnlyLimit, "")
 
 	if err := flags.Parse(args); err != nil {
 		t.Fatal(err)
@@ -560,9 +564,9 @@ func TestSetSettingsLogLimits(t *testing.T) {
 				t.Fatalf("SetSettings(%s) status = %d, want %d (error %v)", tc.logging, got, tc.want, err)
 			}
 
-			got, getErr := settings.GetSettings()
+			got, getErr := settings.GetSettings(nil)
 			if getErr != nil {
-				t.Fatalf("settings.GetSettings() error = %v", getErr)
+				t.Fatalf("settings.GetSettings(nil) error = %v", getErr)
 			}
 
 			config, readErr := os.ReadFile(path)
@@ -608,4 +612,124 @@ func TestSetSettingsLogLimits(t *testing.T) {
 			})
 		})
 	}
+}
+
+// POST /settings writes a changed read_connections to the config file of
+// phenix ui and applies it at once, and audits it. It refuses a value outside
+// 3 to 64 with 400, and one that a flag or a PHENIX_ variable sets with 409.
+// GET /settings names where the value in use comes from.
+func TestSetSettingsReadConnections(t *testing.T) {
+	tests := map[string]struct {
+		value      int32
+		args       []string
+		env        map[string]string
+		want       int
+		wantText   string
+		wantSource string
+	}{
+		"too few": {value: 2, want: http.StatusBadRequest, wantText: "it must be 3 to 64, not 2", wantSource: "default"},
+		"from a flag": {
+			value: 9, args: []string{"--minimega.read-connections=20"}, want: http.StatusConflict,
+			wantText: "the --minimega.read-connections flag of phenix ui", wantSource: "flag",
+		},
+		"from the environment": {
+			value: 9, env: map[string]string{"PHENIX_MINIMEGA_READ_CONNECTIONS": "12"}, want: http.StatusConflict,
+			wantText: "the PHENIX_MINIMEGA_READ_CONNECTIONS environment variable", wantSource: "env",
+		},
+		"saved": {value: 9, want: http.StatusOK, wantSource: "config file"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			useSettingsTestStore(t)
+			keepLogFileLimits(t)
+			t.Cleanup(func() { mmcli.SetReadOnlyLimit(mmcli.DefaultReadOnlyLimit) })
+
+			events := captureAudit(t)
+			rs, path := settingsTestRuntime(t, tc.args, tc.env)
+
+			requested := settingsTestStored()
+			requested.MinimegaSettings.ReadConnections = tc.value
+
+			body, _ := json.Marshal(requested)
+			req := roleRequest(http.MethodPost, "/settings", string(body), nil, testRole("settings", "update"))
+			w := httptest.NewRecorder()
+
+			err := newSettingsRoutes(rs).SetSettings(w, req)
+			if got := handlerStatus(t, w, err); got != tc.want {
+				t.Fatalf("SetSettings(read_connections %d) status = %d, want %d (error %v)", tc.value, got, tc.want, err)
+			}
+
+			config, readErr := os.ReadFile(path)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+
+			wantLimit, wantConfig := mmcli.DefaultReadOnlyLimit, "log:\n  level: info\n"
+
+			if tc.want == http.StatusOK {
+				wantLimit, wantConfig = int(tc.value), "log:\n  level: info\nminimega:\n  read-connections: 9\n"
+
+				wantAudit(t, events(), "settings-update", "success", map[string]any{
+					"phenix.settings.changed": []string{"minimega_settings.read_connections"},
+					"phenix.settings.values":  map[string]any{"minimega_settings.read_connections": "9"},
+				})
+			} else {
+				if _, werr := webErrorStatus(t, err); !strings.Contains(werr.Message, tc.wantText) {
+					t.Errorf("SetSettings(read_connections %d) message = %q, want it to hold %q", tc.value, werr.Message, tc.wantText)
+				}
+
+				wantAudit(t, events(), "settings-update", "failure", map[string]any{"event.reason": nil})
+			}
+
+			if got := mmcli.ReadOnlyLimit(); got != wantLimit {
+				t.Errorf("mmcli.ReadOnlyLimit() after SetSettings(read_connections %d) = %d, want %d", tc.value, got, wantLimit)
+			}
+
+			if string(config) != wantConfig {
+				t.Errorf("config file after SetSettings(read_connections %d) = %q, want %q", tc.value, config, wantConfig)
+			}
+
+			// GET /settings, with the config file as phenix ui's watcher reloads it
+			reloaded, _ := settingsTestRuntime(t, tc.args, tc.env)
+			if tc.want == http.StatusOK {
+				reloaded, _ = settingsTestRuntimeFile(t, path)
+			}
+
+			w = httptest.NewRecorder()
+			if err := newSettingsRoutes(reloaded).GetSettings(w, httptest.NewRequest(http.MethodGet, "/settings", nil)); err != nil {
+				t.Fatalf("GetSettings() error = %v", err)
+			}
+
+			var got settings.Settings
+			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+				t.Fatalf("decoding GET /settings %s: %v", w.Body.String(), err)
+			}
+
+			want := settings.MinimegaSettings{ReadConnections: int32(wantLimit), Source: tc.wantSource}
+			if diff := cmp.Diff(want, got.MinimegaSettings); diff != "" {
+				t.Errorf("GET /settings minimega_settings mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// settingsTestRuntimeFile is settingsTestRuntime of the config file path as
+// it is now.
+func settingsTestRuntimeFile(t *testing.T, path string) (*runtimesettings.Settings, string) {
+	t.Helper()
+
+	v := viper.New()
+	v.SetConfigFile(path)
+
+	if err := v.ReadInConfig(); err != nil {
+		t.Fatal(err)
+	}
+
+	flags := pflag.NewFlagSet("phenix", pflag.ContinueOnError)
+	flags.Int(settings.MinimegaReadConnectionsKey, mmcli.DefaultReadOnlyLimit, "")
+	_ = v.BindPFlags(flags)
+
+	return runtimesettings.New(v, runtimesettings.WithFlags(flags.Lookup),
+		runtimesettings.WithLookupEnv(func(string) (string, bool) { return "", false })), path
 }

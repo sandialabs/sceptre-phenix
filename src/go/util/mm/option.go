@@ -21,6 +21,8 @@ type Option func(*options)
 
 type options struct {
 	ctx context.Context //nolint:containedctx // carried to the commands an option set runs
+	// onShared sends the reads of the call on the shared connection, in order with its writes
+	onShared bool
 
 	ns     string
 	vm     string
@@ -58,6 +60,12 @@ type options struct {
 	srcPort int
 	dstPort int
 	dstHost string
+}
+
+// readOnShared sends the reads of a call on the shared connection, for a call
+// whose next command changes what it read.
+func readOnShared() Option {
+	return func(o *options) { o.onShared = true }
 }
 
 func NewOptions(opts ...Option) options {

@@ -24,6 +24,7 @@ import (
 	_ "phenix/api/scorch"
 	"phenix/store"
 	"phenix/util/common"
+	"phenix/util/mm/mmcli"
 	"phenix/util/plog"
 	"phenix/util/termcolor"
 	"phenix/web"
@@ -223,6 +224,7 @@ func configureRoot(v *viper.Viper) (string, plog.FileHandlerOpts, error) {
 
 	plog.NewPhenixHandler(logOutput, outputPalette(logOutput).On())
 	plog.SetLevelText(v.GetString("log.level"))
+	mmcli.SetReadOnlyLimit(v.GetInt(keyMinimegaReadConnections))
 
 	common.PhenixBase = v.GetString("base-dir.phenix") //nolint:reassign // configuration injection
 
@@ -399,6 +401,14 @@ func init() {
 		StringVar(&hostnameSuffixes, "hostname-suffixes", "-minimega,-phenix", "hostname suffixes to strip")
 	rootCmd.PersistentFlags().String("log.level", "info", "level to log messages at")
 	rootCmd.PersistentFlags().
+		Int(
+			keyMinimegaReadConnections, mmcli.DefaultReadOnlyLimit,
+			fmt.Sprintf(
+				"most read-only commands sent to minimega at once, %d to %d; 2 are kept for reads of the head node",
+				mmcli.MinReadOnlyLimit, mmcli.MaxReadOnlyLimit,
+			),
+		)
+	rootCmd.PersistentFlags().
 		String("log.console", consoleStderr, "output for console logs (text format) (stderr, stdout, or file path)")
 	rootCmd.PersistentFlags().
 		Int(keyLogMaxSize, defaultMaxLogSize, "maximum size in megabytes of the log file before it gets rotated")
@@ -469,6 +479,8 @@ func applyConfigChange(v *viper.Viper, e fsnotify.Event) {
 	if err := common.SetDiskCheck(v.GetString("experiment.disk-check")); err != nil {
 		plog.Warn(plog.TypeSystem, "keeping the current experiment.disk-check", "mode", common.CurrentDiskCheck(), "err", err)
 	}
+
+	mmcli.SetReadOnlyLimit(v.GetInt(keyMinimegaReadConnections))
 
 	// Hot-swap console logger; one that does not open logs to stderr
 	logOutput, newFile, err := consoleLogOutput(v.GetString("log.console"))

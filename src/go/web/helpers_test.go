@@ -101,6 +101,9 @@ type testMM struct {
 
 	vmListings, captureListings, stateReads, captureStops atomic.Int32
 	nsStarts, nsStops                                     atomic.Int32
+
+	// when set, a read of the VM states or of the VMs waits until the channel closes
+	stateGate, vmGate atomic.Pointer[chan struct{}]
 }
 
 func (m *testMM) IsHeadnode(string) bool { return true }
@@ -145,6 +148,10 @@ func (m *testMM) GetVMScreenshot(...mm.Option) ([]byte, error) {
 func (m *testMM) GetVMInfo(...mm.Option) mm.VMs {
 	m.vmListings.Add(1)
 
+	if gate := m.vmGate.Load(); gate != nil {
+		<-*gate
+	}
+
 	return m.vms
 }
 
@@ -172,6 +179,10 @@ func (m *testMM) StopVMCapture(...mm.Option) error {
 
 func (m *testMM) GetVMStates(...mm.Option) (map[string]string, error) {
 	m.stateReads.Add(1)
+
+	if gate := m.stateGate.Load(); gate != nil {
+		<-*gate
+	}
 
 	if m.err != nil {
 		return nil, m.err

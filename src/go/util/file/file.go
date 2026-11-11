@@ -178,6 +178,21 @@ func (MMClusterFiles) GetExperimentFilesObserved(
 	return matched, observed, nil
 }
 
+// extensionCategory is the category that the extension of name gives a file
+// of an experiment, or "" for none.
+func extensionCategory(name string) string {
+	switch filepath.Ext(name) {
+	case ".pcap", ".pcapng", ".cap":
+		return "Packet Capture"
+	case ".elf":
+		return "ELF Memory Snapshot"
+	case ".state":
+		return "VM Memory Snapshot"
+	}
+
+	return ""
+}
+
 // listExperimentFiles asks minimega for every file in the experiment's files
 // directory, on the mesh nodes and the headnode, and categorizes them. A
 // directory that does not exist lists as empty (minimega's `file list` globs
@@ -192,18 +207,25 @@ func listExperimentFiles(ctx context.Context, exp string) (Files, error) {
 		root    = listingKey(exp)
 	)
 
+	if err := mmcli.SafeArg(exp); err != nil {
+		return nil, fmt.Errorf("listing files of experiment %s: %w", exp, err)
+	}
+
 	// First get file listings from mesh, then from headnode.
-	commands := []string{
-		fmt.Sprintf("mesh send all file list %s recursive", root),
-		fmt.Sprintf("file list %s recursive", root),
+	commands := []struct {
+		line    mmcli.ReadLine
+		command string
+	}{
+		{mmcli.MeshRead, fmt.Sprintf("mesh send all file list %s recursive", root)},
+		{mmcli.HeadRead, fmt.Sprintf("file list %s recursive", root)},
 	}
 
 	cmd := mmcli.NewCommand()
 
 	for _, command := range commands {
-		cmd.Command = command
+		cmd.Command = command.command
 
-		rows, err := mmcli.RunTabularCheckedContext(ctx, cmd, nil)
+		rows, err := mmcli.RunTabularReadOnlyChecked(ctx, command.line, cmd, nil)
 		if err != nil {
 			return nil, fmt.Errorf("listing files of experiment %s: %w", exp, err)
 		}
@@ -245,13 +267,8 @@ func listExperimentFiles(ctx context.Context, exp string) (Files, error) {
 				}
 			}
 
-			switch extension := filepath.Ext(name); extension {
-			case ".pcap", ".pcapng", ".cap":
-				file.Categories = append(file.Categories, "Packet Capture")
-			case ".elf":
-				file.Categories = append(file.Categories, "ELF Memory Snapshot")
-			case ".state":
-				file.Categories = append(file.Categories, "VM Memory Snapshot")
+			if category := extensionCategory(name); category != "" {
+				file.Categories = append(file.Categories, category)
 			}
 
 			file.Size, _ = strconv.ParseInt(row["size"], 10, 64)
@@ -362,10 +379,13 @@ func (c MMClusterFiles) CopyFile(path, dest string, status CopyStatus) error {
 		return fmt.Errorf("copying file to destination: %w", err)
 	}
 
+	line := mmcli.HeadRead
+
 	if headnode {
 		cmd.Command = "file status"
 	} else {
 		cmd.Command = fmt.Sprintf(`mesh send %s file status`, dest)
+		line = mmcli.MeshRead
 	}
 
 	interval, stall := c.PollInterval, c.StallTimeout
@@ -383,7 +403,7 @@ func (c MMClusterFiles) CopyFile(path, dest string, status CopyStatus) error {
 	)
 
 	for {
-		completed, found := transferProgress(mmcli.RunTabular(cmd), path)
+		completed, found := transferProgress(mmcli.RunTabularReadOnly(context.Background(), line, cmd), path)
 
 		// If the file is done transferring, then it will not have been present in
 		// the results from `file status`.

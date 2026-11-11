@@ -1,11 +1,14 @@
 package web
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -13,7 +16,9 @@ import (
 	gproto "google.golang.org/protobuf/proto"
 	"pgregory.net/rapid"
 
+	"phenix/types"
 	"phenix/util/mm"
+	"phenix/util/polltest"
 	"phenix/web/cache"
 	"phenix/web/proto"
 	"phenix/web/rbac"
@@ -59,6 +64,7 @@ func TestExperimentEndpointsListVMs(t *testing.T) {
 		query    string
 		vms      mm.VMs // as minimega reports them
 		starting bool
+		slow     bool // minimega does not answer within the wait
 
 		wantListings int32
 		wantVMs      int
@@ -74,16 +80,32 @@ func TestExperimentEndpointsListVMs(t *testing.T) {
 		{name: "list without VMs", list: true, query: "?vms=false", vms: running, wantCount: 1},
 		// the list takes no screenshots, so one asked for changes nothing
 		{name: "list ignores screenshots", list: true, query: "?vms=false&screenshot=200", vms: running, wantCount: 1},
-		// the VM as the topology configures it, with no state from minimega
+		// a start does not keep the list from asking minimega
 		{
 			name: "list while starting", list: true, vms: running, starting: true,
-			wantVMs: 1, wantCount: 1, wantPercent: 0.25,
+			wantListings: 1, wantVMs: 1, wantState: "RUNNING", wantCount: 1, wantPercent: 0.25,
+		},
+		// the VM as the topology configures it, with no state from minimega
+		{
+			name: "list while minimega is slow", list: true, vms: running, slow: true,
+			wantListings: 1, wantVMs: 1, wantCount: 1,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			useTestExperiment(t)
 
 			fake := useTestMM(t, &testMM{vms: tt.vms})
+
+			if tt.slow {
+				useLiveReadWait(t, 50*time.Millisecond)
+
+				gate := make(chan struct{})
+				release := sync.OnceFunc(func() { close(gate) })
+
+				// LIFO: the read is let go before the reads are waited for
+				t.Cleanup(release)
+				fake.vmGate.Store(&gate)
+			}
 
 			if tt.starting {
 				if err := cache.LockExperimentForStarting("test-experiment"); err != nil {
@@ -145,6 +167,74 @@ func TestExperimentEndpointsListVMs(t *testing.T) {
 				t.Errorf("GET %s percent = %v, want %v", path, got, tt.wantPercent)
 			}
 		})
+	}
+}
+
+// The experiment list reads the VMs of its running experiments at once, not
+// one after another, and keeps the experiments' order.
+func TestExperimentVMListsReadAtOnce(t *testing.T) {
+	const count = 5
+
+	fake := useTestMM(t, &testMM{})
+
+	// longer than polltest waits, so one read at a time cannot pass
+	useLiveReadWait(t, time.Minute)
+
+	gate := make(chan struct{})
+	release := sync.OnceFunc(func() { close(gate) })
+
+	// LIFO: the reads are let go before they are waited for
+	t.Cleanup(release)
+	fake.vmGate.Store(&gate)
+
+	experiments := make([]types.Experiment, count)
+	want := make([][]string, count)
+
+	for i := range experiments {
+		name := fmt.Sprintf("list-%d", i)
+		config := namedExperiment(t, name, "2024-01-01T00:00:00Z", map[string]any{
+			"type":     "VirtualMachine",
+			"general":  map[string]any{"hostname": "vm-" + name, "do_not_boot": true},
+			"hardware": map[string]any{"os_type": "linux"},
+		})
+
+		exp, err := types.DecodeExperimentFromConfig(config)
+		if err != nil {
+			t.Fatalf("types.DecodeExperimentFromConfig(%s) error = %v", name, err)
+		}
+
+		experiments[i], want[i] = *exp, []string{"vm-" + name}
+	}
+
+	done := make(chan []experimentVMList, 1)
+
+	go func() { done <- experimentVMLists(t.Context(), experiments, true) }()
+
+	polltest.Until(t, "every experiment's read reaches minimega", func() bool { return fake.vmListings.Load() == count })
+	release()
+
+	var lists []experimentVMList
+
+	select {
+	case lists = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("experimentVMLists did not end once minimega answered")
+	}
+
+	got := make([][]string, len(lists))
+
+	for i, list := range lists {
+		if !list.obs.Known {
+			t.Errorf("experimentVMLists()[%d] observation = %+v, want known", i, list.obs)
+		}
+
+		for _, vm := range list.vms {
+			got[i] = append(got[i], vm.Name)
+		}
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("experimentVMLists() VM names mismatch (-want +got):\n%s", diff)
 	}
 }
 

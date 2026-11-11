@@ -18,13 +18,18 @@ import (
 	"phenix/util/mm"
 	"phenix/util/mm/mmcli"
 	"phenix/util/mm/mmtest"
+	"phenix/util/polltest"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/weberror"
 )
 
+// readOnlyHold holds each mmcli.RunReadOnly connection in holdForwardsMinimega; phenix itself never sends it.
+const readOnlyHold = "mesh status"
+
 // holdForwardsMinimega points the real mm package at fake minimega and holds its shared connection with a "hold"
-// command until the test ends, so every other command waits; it returns the other commands minimega received.
+// command, and each read-only connection with a readOnlyHold command, until the test ends, so every other command
+// waits; it returns the other commands minimega received.
 func holdForwardsMinimega(t *testing.T) func() []string {
 	t.Helper()
 
@@ -34,16 +39,17 @@ func holdForwardsMinimega(t *testing.T) func() []string {
 	mm.DefaultMM = new(mm.Minimega) //nolint:reassign // the real one, against the fake minimega
 
 	release := make(chan struct{})
+	unhold := sync.OnceFunc(func() { close(release) })
 
 	received := mmtest.Use(t, func(cmd mmtest.Command) []*minicli.Response {
-		if cmd.Base == "hold" {
+		if cmd.Base == "hold" || cmd.Base == readOnlyHold {
 			<-release
 		}
 
 		return nil
 	})
 
-	held := make(chan error, 1)
+	held := make(chan error, 1+mmcli.ReadOnlyLimit())
 
 	go func() {
 		cmd := mmcli.NewCommand()
@@ -52,14 +58,33 @@ func holdForwardsMinimega(t *testing.T) func() []string {
 		held <- mmcli.ErrorResponse(mmcli.Run(cmd))
 	}()
 
-	// LIFO: the hold is let go before it is waited for
-	t.Cleanup(func() { <-held })
-	t.Cleanup(sync.OnceFunc(func() { close(release) }))
+	for range mmcli.ReadOnlyLimit() {
+		go func() {
+			cmd := mmcli.NewCommand()
+			cmd.Command = readOnlyHold
 
-	mmtest.Await(t, "hold")
+			held <- mmcli.ErrorResponse(mmcli.RunReadOnly(context.Background(), mmcli.HeadRead, cmd))
+		}()
+	}
+
+	// LIFO: the holds are let go before they are waited for
+	t.Cleanup(func() {
+		for range 1 + mmcli.ReadOnlyLimit() {
+			<-held
+		}
+	})
+	t.Cleanup(unhold)
+
+	polltest.Until(t, "every minimega connection is held", func() bool {
+		cmds := received()
+
+		return mmtest.Count(cmds, "hold") == 1 && mmtest.Count(cmds, readOnlyHold) == mmcli.ReadOnlyLimit()
+	})
 
 	return func() []string {
-		return slices.DeleteFunc(mmtest.Bases(received()), func(base string) bool { return base == "hold" })
+		return slices.DeleteFunc(mmtest.Bases(received()), func(base string) bool {
+			return base == "hold" || base == readOnlyHold
+		})
 	}
 }
 

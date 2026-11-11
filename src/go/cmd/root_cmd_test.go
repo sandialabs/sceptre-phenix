@@ -23,6 +23,7 @@ import (
 	"phenix/store"
 	"phenix/store/storetest"
 	"phenix/util/common"
+	"phenix/util/mm/mmcli"
 	"phenix/util/plog"
 	"phenix/web/rbac"
 )
@@ -389,8 +390,9 @@ func TestRootCmdConfigureRootRefuses(t *testing.T) { //nolint:paralleltest // se
 }
 
 // After a config change, applyConfigChange sets the log level, the system log
-// file, the disk check and the console log file, and closes the console file
-// it replaces. A disk check it refuses keeps the current one, with a warning.
+// file, the disk check, the read-only minimega connections and the console log
+// file, and closes the console file it replaces. A disk check it refuses keeps
+// the current one, with a warning.
 func TestRootCmdApplyConfigChange(t *testing.T) { //nolint:paralleltest // sets the logger and the disk check
 	rootCmdRestoreGlobals(t)
 
@@ -416,8 +418,15 @@ func TestRootCmdApplyConfigChange(t *testing.T) { //nolint:paralleltest // sets 
 	v.Set("log.system.path", system)
 	v.Set("experiment.disk-check", "off")
 	v.Set("log.console", console)
+	v.Set(keyMinimegaReadConnections, 9)
+
+	t.Cleanup(func() { mmcli.SetReadOnlyLimit(mmcli.DefaultReadOnlyLimit) })
 
 	applyConfigChange(v, fsnotify.Event{Name: filepath.Join(dir, "config.yaml")})
+
+	if got := mmcli.ReadOnlyLimit(); got != 9 {
+		t.Errorf("after applyConfigChange(), mmcli.ReadOnlyLimit() = %d, want 9", got)
+	}
 
 	if plog.Level.Level() != slog.LevelWarn {
 		t.Errorf("after applyConfigChange(), log level = %v, want %v", plog.Level.Level(), slog.LevelWarn)

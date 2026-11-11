@@ -117,8 +117,8 @@ func CreateBridge(opts ...Option) error {
 	return DefaultMM.CreateBridge(opts...)
 }
 
-func GetBridges(hosts ...string) (map[string][]string, error) {
-	return DefaultMM.GetBridges(hosts...)
+func GetBridges(ctx context.Context, hosts ...string) (map[string][]string, error) {
+	return DefaultMM.GetBridges(ctx, hosts...)
 }
 
 func DestroyBridge(bridge string, hosts ...string) error {
@@ -181,21 +181,21 @@ func GetBridgeMirrors(opts ...Option) ([]BridgeMirror, error) {
 // clusterHostsObserver is the optional part of MM that reports when the
 // cluster hosts were read; see vmInfoObserver.
 type clusterHostsObserver interface {
-	GetClusterHostsObserved(ctx context.Context, schedOnly bool) (Hosts, freshness.Observation, error)
+	GetClusterHostsObserved(ctx context.Context, schedOnly, diskUsage bool) (Hosts, freshness.Observation, error)
 }
 
 // GetClusterHostsObserved is GetClusterHosts, also reporting when the hosts
-// were read from minimega. An MM that cannot tell is taken to have read them
-// now. Its minimega commands give up once ctx is done (see Context), where
-// the MM supports it.
-func GetClusterHostsObserved(ctx context.Context, schedOnly bool) (Hosts, freshness.Observation, error) {
+// were read from minimega; see Minimega.GetClusterHostsObserved. An MM that
+// cannot tell is taken to have read them now. Its minimega commands give up
+// once ctx is done (see Context), where the MM supports it.
+func GetClusterHostsObserved(ctx context.Context, schedOnly, diskUsage bool) (Hosts, freshness.Observation, error) {
 	if o, ok := DefaultMM.(clusterHostsObserver); ok {
-		return o.GetClusterHostsObserved(ctx, schedOnly)
+		return o.GetClusterHostsObserved(ctx, schedOnly, diskUsage)
 	}
 
 	at := time.Now()
 
-	hosts, err := DefaultMM.GetClusterHosts(schedOnly)
+	hosts, err := DefaultMM.GetClusterHosts(schedOnly, diskUsage)
 	if err != nil {
 		return hosts, freshness.Observation{}, err //nolint:wrapcheck // as GetClusterHosts
 	}
@@ -203,25 +203,10 @@ func GetClusterHostsObserved(ctx context.Context, schedOnly bool) (Hosts, freshn
 	return hosts, freshness.Observed(at), nil
 }
 
-// schedulableHostsReader is the optional part of MM that reads the hosts for
-// a scheduler; see GetSchedulableHosts.
-type schedulableHostsReader interface {
-	GetSchedulableHosts(ctx context.Context, diskUsage bool) (Hosts, error)
-}
-
-// GetSchedulableHosts returns the hosts VMs can be scheduled on, read from
-// minimega now, with their disk usage only when diskUsage is set; see
-// Minimega.GetSchedulableHosts. An MM without it gives GetClusterHosts(true).
-func GetSchedulableHosts(ctx context.Context, diskUsage bool) (Hosts, error) {
-	if r, ok := DefaultMM.(schedulableHostsReader); ok {
-		return r.GetSchedulableHosts(ctx, diskUsage) //nolint:wrapcheck // as GetClusterHosts
-	}
-
-	return DefaultMM.GetClusterHosts(true) //nolint:wrapcheck // as GetClusterHosts
-}
-
-func GetNamespaceHosts(ns string) (Hosts, error) {
-	return DefaultMM.GetNamespaceHosts(ns)
+// GetNamespaceHosts returns the hosts of the namespace ns, without their disk
+// usage; see Minimega.GetNamespaceHosts.
+func GetNamespaceHosts(ctx context.Context, ns string) (Hosts, error) {
+	return DefaultMM.GetNamespaceHosts(ctx, ns)
 }
 
 func Headnode() string {
@@ -304,6 +289,12 @@ func MeshShell(host, cmd string) error {
 // returns its output; once ctx is done, the command gives up if not yet sent.
 func MeshShellResponse(ctx context.Context, host, cmd string) (string, error) {
 	return DefaultMM.MeshShellResponse(ctx, host, cmd)
+}
+
+// MeshShellRead is MeshShellResponse for a shell command that changes
+// nothing, sent on the read-only connections of mmcli.RunReadOnly.
+func MeshShellRead(ctx context.Context, host, cmd string) (string, error) {
+	return DefaultMM.MeshShellRead(ctx, host, cmd)
 }
 
 func MeshSend(ns, host, command string) error {

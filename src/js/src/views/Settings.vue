@@ -160,6 +160,54 @@
           Changes <code>log.system.max-age</code>, in days.
         </p>
 
+        <template v-if="settings_obj.minimega_settings">
+          <h2 class="is-size-5">minimega</h2>
+          <p id="settings-minimega-help" class="setting-section-help">
+            Read-only connections caps how many read commands phēnix sends to
+            minimega at the same time. phēnix keeps 2 of them for reads of the
+            head node. A change applies at once, and phenix writes it to the
+            config file.
+          </p>
+          <b-field
+            class="setting-number"
+            :addons="false"
+            :type="readConnectionsError ? 'is-danger' : null">
+            <b-numberinput
+              aria-labelledby="settings-read-connections"
+              :aria-invalid="readConnectionsError ? 'true' : null"
+              :aria-describedby="
+                readConnectionsError
+                  ? 'settings-read-connections-error settings-read-connections-help'
+                  : 'settings-read-connections-help settings-minimega-help'
+              "
+              v-model="settings_obj.minimega_settings.read_connections"
+              :controls="false"
+              :disabled="readConnectionsSetBy !== null"
+              step="1"
+              :min="READ_CONNECTIONS_MIN"
+              :max="READ_CONNECTIONS_MAX">
+            </b-numberinput>
+            <span id="settings-read-connections">Read-only connections</span>
+          </b-field>
+          <p id="settings-read-connections-help" class="help setting-help">
+            Changes <code>minimega.read-connections</code>, from
+            {{ READ_CONNECTIONS_MIN }} to {{ READ_CONNECTIONS_MAX }}. The
+            default is {{ READ_CONNECTIONS_DEFAULT }}.
+            <span
+              v-if="readConnectionsSetBy"
+              id="settings-read-connections-source">
+              {{ readConnectionsSetBy }} of phenix ui sets this value, so you
+              cannot change it here.
+            </span>
+          </p>
+          <p
+            v-if="readConnectionsError"
+            id="settings-read-connections-error"
+            class="help is-danger setting-error">
+            {{ readConnectionsError }}
+          </p>
+        </template>
+
         <hr />
         <p
           v-if="saveError"
@@ -174,7 +222,7 @@
           >
           <b-button
             native-type="submit"
-            :disabled="!changed || !timeoutValid"
+            :disabled="!changed || !timeoutValid || !!readConnectionsError"
             :loading="saving">
             Save Changes
           </b-button>
@@ -205,6 +253,45 @@
     if (!REFUSED.includes(response?.status)) return null;
     const message = errorBody(response.data)?.message;
     return typeof message === 'string' && message !== '' ? message : null;
+  }
+
+  // the range and default of minimega.read-connections, as phenix sets them
+  export const READ_CONNECTIONS_MIN = 3;
+  export const READ_CONNECTIONS_MAX = 64;
+  export const READ_CONNECTIONS_DEFAULT = 16;
+
+  /**
+   * Why the read-only connections value is not valid, or null when it is: a
+   * whole number from READ_CONNECTIONS_MIN to READ_CONNECTIONS_MAX.
+   */
+  export function readConnectionsError(value) {
+    const n = Number(value);
+    if (
+      value === '' ||
+      value === null ||
+      !Number.isInteger(n) ||
+      n < READ_CONNECTIONS_MIN ||
+      n > READ_CONNECTIONS_MAX
+    ) {
+      return `Enter a whole number from ${READ_CONNECTIONS_MIN} to ${READ_CONNECTIONS_MAX}.`;
+    }
+    return null;
+  }
+
+  /**
+   * What sets the read-only connections value outside the config file, from
+   * its source: "A flag", "An environment variable", or null when the config
+   * file or the default sets it, so the page can change it.
+   */
+  export function overriddenBy(source) {
+    switch (source) {
+      case 'flag':
+        return 'A flag';
+      case 'env':
+        return 'An environment variable';
+      default:
+        return null;
+    }
   }
 
   /**
@@ -268,6 +355,14 @@
       timeoutValid() {
         return !this.timeoutError && !this.warningError;
       },
+      readConnectionsSetBy() {
+        return overriddenBy(this.settings_obj?.minimega_settings?.source);
+      },
+      readConnectionsError() {
+        const minimega = this.settings_obj?.minimega_settings;
+        if (!minimega || this.readConnectionsSetBy) return null;
+        return readConnectionsError(minimega.read_connections);
+      },
     },
 
     methods: {
@@ -281,7 +376,13 @@
 
       sendSettingsToServer() {
         // Enter submits the form too
-        if (this.saving || !this.changed || !this.timeoutValid) return;
+        if (
+          this.saving ||
+          !this.changed ||
+          !this.timeoutValid ||
+          this.readConnectionsError
+        )
+          return;
         const sent = copy(this.settings_obj);
         this.saving = true;
         this.saveError = null;
@@ -310,6 +411,9 @@
     },
     data() {
       return {
+        READ_CONNECTIONS_MIN,
+        READ_CONNECTIONS_MAX,
+        READ_CONNECTIONS_DEFAULT,
         loaded: false,
         saving: false,
         saveError: null,

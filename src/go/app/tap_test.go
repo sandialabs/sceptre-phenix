@@ -106,7 +106,7 @@ type namespaceHostsMM struct {
 	hosts mm.Hosts
 }
 
-func (m namespaceHostsMM) GetNamespaceHosts(string) (mm.Hosts, error) {
+func (m namespaceHostsMM) GetNamespaceHosts(context.Context, string) (mm.Hosts, error) {
 	return m.hosts, nil
 }
 

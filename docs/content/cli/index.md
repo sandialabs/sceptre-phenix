@@ -32,6 +32,7 @@ phenix [flags]
       --log.system.max-backups int          maximum number of old log files to retain (default 3)
       --log.system.max-size int             maximum size in megabytes of the log file before it gets rotated (default 100)
       --log.system.path string              path to system log (JSON format) (default: /var/log/phenix/phenix.log as root, $HOME/phenix_logs/phenix.log otherwise)
+      --minimega.read-connections int       most read-only commands sent to minimega at once, 3 to 64; 2 are kept for reads of the head node (default 16)
       --mount-dir string                    base directory for VM filesystem mounts (default: <base-dir.phenix>/mounts)
       --store.endpoint string               BoltDB store endpoint (bolt://<path>) (default: bolt:///etc/phenix/store.bdb as root, bolt://$HOME/.phenix.bdb otherwise)
       --unix-socket string                  phēnix unix socket to listen on (ui subcommand) or connect to (default "/tmp/phenix.sock")

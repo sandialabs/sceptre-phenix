@@ -223,7 +223,10 @@ lack it). Points that are easy to miss:
   `log.system.max-size`, `log.system.max-backups` and `log.system.max-age`:
   a change applies at once and is written to the config file. A limit that a
   flag or a `PHENIX_` variable sets, or no YAML config file, is `409`, and
-  nothing changes.
+  nothing changes. `minimega_settings.read_connections` is the runtime setting
+  `minimega.read-connections` in the same way. Its range is 3 to 64. A value
+  outside the range is `400`, and `0` changes nothing. `minimega_settings.source`
+  names the source of the value in use: `flag`, `env`, `config file` or `default`.
 - `GET /permissions` lists every resource phenix checks and its verbs, as
   `phenix util role-table` does (`roles` `list`).
 - `POST .../vms/{name}/start` of a VM with `general.do_not_boot` that minimega
@@ -297,7 +300,8 @@ lack it). Points that are easy to miss:
 - An experiment that Builder published has `builder` (`draft`, `document`) from
   its `builder-experiment` annotation; other experiments send `null`.
 - `GET /experiments/{name}/apps/input` answers the JSON a user app gets on
-  stdin, as `phenix util app-json` prints it (with `hosts` and `vms`). It needs
+  stdin, as `phenix util app-json` prints it (with `hosts` and `vms`). The
+  `hosts` have no `diskusage`. It needs
   `experiments` `get`, `configs` `get` on `Experiment/<exp>` and `vms` `list`
   on `<exp>/*` (else `403` before any read) and on each `<exp>/<vm>`; `404`
   for an unknown experiment, `502` when minimega does not report every host
@@ -441,7 +445,8 @@ reply's before its minimega read), from one strictly increasing sequence per
 seq of S or less; keep the highest seq applied per item, ignore lower, and
 reset on websocket reconnect. Runtime reads add `X-Phenix-Observed-At` (when
 minimega was read; compare with `Date`) and `X-Phenix-Stale: true` (earlier
-data while minimega is busy). A minimega failure is never an empty success:
+data when minimega does not answer within 2 s; the read goes on, and a later
+request waits for that same read). A minimega failure is never an empty success:
 VM lists set `runtime_unknown` (`vms_unknown` per experiment) and list
 unreported VMs as configured, `/soh` has `vms.known`/`vms_stale`, file listings
 answer `502`, and `GET /experiments` answers `500` when the store is

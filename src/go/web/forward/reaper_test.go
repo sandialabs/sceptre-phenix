@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -32,11 +33,11 @@ type tunnelsMM struct {
 	mm.MM
 
 	tunnels []map[string]string
-	calls   int
+	calls   atomic.Int32 // the reaper lists the tunnels of several VMs at once
 }
 
 func (m *tunnelsMM) GetTunnels(...mm.Option) []map[string]string {
-	m.calls++
+	m.calls.Add(1)
 
 	return m.tunnels
 }
@@ -220,7 +221,7 @@ func TestReapingAsksMinimegaOnlyWhenNeeded(t *testing.T) {
 	}
 
 	for _, step := range steps {
-		before := fake.calls
+		before := fake.calls.Load()
 
 		got := step.reap()
 
@@ -235,7 +236,7 @@ func TestReapingAsksMinimegaOnlyWhenNeeded(t *testing.T) {
 			t.Errorf("%s: forwards mismatch (-want +got):\n%s", step.name, diff)
 		}
 
-		if n := fake.calls - before; n != step.listings {
+		if n := int(fake.calls.Load() - before); n != step.listings {
 			t.Errorf("%s: minimega listed tunnels %d times, want %d", step.name, n, step.listings)
 		}
 	}

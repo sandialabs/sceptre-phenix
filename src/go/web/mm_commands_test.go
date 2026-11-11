@@ -68,7 +68,7 @@ func (c *routeCluster) reply(cmd mmtest.Command) []*minicli.Response {
 	base := cmd.Base
 
 	switch {
-	case base == "hold":
+	case base == "hold" || base == readOnlyHold:
 		<-c.release
 	case base == "vm info":
 		vms := c.vms[cmd.Namespace]
@@ -566,6 +566,9 @@ func TestConcurrentVMListingsShareOneRun(t *testing.T) {
 
 	mmtest.Await(t, "hold")
 
+	// and every read-only connection, which the listings use
+	holdReadOnly(t, received, cluster.unhold)
+
 	for range listings {
 		go func() { results <- getVMCount(t.Context(), url, count) }()
 	}
@@ -586,6 +589,7 @@ func TestConcurrentVMListingsShareOneRun(t *testing.T) {
 
 	want := vmInfoRun(name)
 	want["hold"] = 1
+	want[readOnlyHold] = mmcli.ReadOnlyLimit()
 
 	counter.wantCommands(t, fmt.Sprintf("%d concurrent GET %s", listings, url), want)
 }

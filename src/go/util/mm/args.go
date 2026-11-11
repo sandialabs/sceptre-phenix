@@ -1,7 +1,6 @@
 package mm
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -9,11 +8,14 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"phenix/util/mm/mmcli"
 )
 
 // ErrUnsafeArg is returned for a value minimega would not take as the one
-// literal argument phenix writes it into a command as.
-var ErrUnsafeArg = errors.New("minimega cannot take this value as one argument")
+// literal argument phenix writes it into a command as. It is
+// mmcli.ErrUnsafeArg, so [errors.Is] matches the errors of both packages.
+var ErrUnsafeArg = mmcli.ErrUnsafeArg
 
 // ValidateArg returns an error wrapping ErrUnsafeArg unless minimega takes s, written bare, as one literal
 // argument: s is not empty, has no white space, quote, backslash or "#", and passes ValidateQuotedArg.

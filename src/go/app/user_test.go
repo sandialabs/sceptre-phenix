@@ -16,7 +16,7 @@ type runtimeMM struct {
 	vms   mm.VMs
 }
 
-func (m runtimeMM) GetClusterHosts(bool) (mm.Hosts, error) {
+func (m runtimeMM) GetClusterHosts(bool, bool) (mm.Hosts, error) {
 	return m.hosts, nil
 }
 

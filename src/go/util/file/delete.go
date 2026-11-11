@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path"
@@ -78,6 +79,10 @@ func deleteExistingInDir(dir string, names []string) error {
 	pattern, ok := listingPattern(dir, names)
 	if !ok {
 		return deleteEverywhere(names)
+	}
+
+	if err := mmcli.SafeArg(pattern); err != nil {
+		return fmt.Errorf("listing the files to delete in %s: %w", dir, err)
 	}
 
 	remote, err := listFileNames("mesh send all file list " + pattern)
@@ -221,12 +226,17 @@ func listFileNames(command string) (map[string]map[string]bool, error) {
 
 	local := !strings.HasPrefix(command, "mesh send ")
 
+	line := mmcli.MeshRead
+	if local {
+		line = mmcli.HeadRead
+	}
+
 	var (
 		listed = make(map[string]map[string]bool)
 		errs   error
 	)
 
-	for resps := range mmcli.Run(cmd) {
+	for resps := range mmcli.RunReadOnly(context.Background(), line, cmd) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
 				errs = multierror.Append(errs, fmt.Errorf("%s: %s", resp.Host, resp.Error))

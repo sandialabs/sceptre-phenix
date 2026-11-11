@@ -33,8 +33,8 @@ func newSettingsRoutes(rs *runtimesettings.Settings) settingsRoutes {
 }
 
 // GetSettings - GET /settings.
-func (settingsRoutes) GetSettings(w http.ResponseWriter, r *http.Request) error {
-	settings, err := settings.GetSettings()
+func (sr settingsRoutes) GetSettings(w http.ResponseWriter, r *http.Request) error {
+	settings, err := settings.GetSettings(sr.runtime)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "getting proto settings", "err:", err)
 
@@ -83,7 +83,13 @@ func (sr settingsRoutes) SetSettings(w http.ResponseWriter, r *http.Request) err
 
 	changed := audit.Fields{}
 
-	if current, err := settings.GetSettings(); err == nil {
+	if current, err := settings.GetSettings(sr.runtime); err == nil {
+		// the source of a value is not a setting, and 0 leaves read_connections as it is
+		s.MinimegaSettings.Source = current.MinimegaSettings.Source
+
+		if s.MinimegaSettings.ReadConnections == 0 {
+			s.MinimegaSettings.ReadConnections = current.MinimegaSettings.ReadConnections
+		}
 		changed.Extra = settingChanges(*current, *s)
 	}
 
@@ -94,9 +100,10 @@ func (sr settingsRoutes) SetSettings(w http.ResponseWriter, r *http.Request) err
 
 	switch {
 	case err == nil:
-	case errors.Is(err, settings.ErrPasswordMinLength), errors.Is(err, settings.ErrLogLimitNegative):
+	case errors.Is(err, settings.ErrPasswordMinLength), errors.Is(err, settings.ErrLogLimitNegative),
+		errors.Is(err, settings.ErrReadConnectionsRange):
 		return weberror.New(http.StatusBadRequest, err.Error())
-	case errors.Is(err, settings.ErrLogLimitOverridden),
+	case errors.Is(err, settings.ErrLogLimitOverridden), errors.Is(err, settings.ErrReadConnectionsOverridden),
 		errors.Is(err, runtimesettings.ErrNoConfigFile),
 		errors.Is(err, runtimesettings.ErrNotYAML):
 		return weberror.New(http.StatusConflict, err.Error())
@@ -118,7 +125,7 @@ func settingChanges(current, requested settings.Settings) []any {
 	flatten := func(s settings.Settings) map[string]string {
 		var categories map[string]map[string]any
 
-		// a Settings holds only bools and numbers, so this cannot fail
+		// a Settings holds only bools, numbers and strings, so this cannot fail
 		body, _ := json.Marshal(s)
 		_ = json.Unmarshal(body, &categories)
 

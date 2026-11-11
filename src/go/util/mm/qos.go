@@ -86,7 +86,7 @@ func GetVMQoS(ctx context.Context, ns, vm string) ([]InterfaceQoS, error) {
 	cmd.Columns = []string{"name", "vlan", "qos"}
 	cmd.Filters = []string{"name=" + vm}
 
-	rows, err := mmcli.RunTabularCheckedContext(ctx, cmd, nil)
+	rows, err := mmcli.RunTabularReadOnlyChecked(ctx, nsLine(ns), cmd, nil)
 	if len(rows) == 0 {
 		if err != nil {
 			return nil, fmt.Errorf("reading the link quality of VM %s: %w", vm, err)

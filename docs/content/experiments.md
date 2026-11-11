@@ -269,7 +269,8 @@ phenix experiment schedule <experiment name> <algorithm>
 ```
 
 A user scheduler (`phenix-scheduler-<name>`) gets a JSON object on STDIN: the
-experiment spec (`spec`) and the schedulable cluster hosts (`hosts`). To see
+experiment spec (`spec`) and the schedulable cluster hosts with their disk
+usage (`hosts`). To see
 this JSON, run the following command. The command stores nothing.
 
 ```bash

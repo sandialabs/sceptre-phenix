@@ -11,12 +11,14 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"golang.org/x/sync/errgroup"
 
 	"phenix/api/experiment"
 	"phenix/api/soh"
 	"phenix/types"
 	"phenix/util/freshness"
 	"phenix/util/mm"
+	"phenix/util/mm/mmcli"
 	"phenix/util/plog"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -92,10 +94,68 @@ func GetExperimentSoH(w http.ResponseWriter, r *http.Request) error {
 const maxSummaryProblems = 50
 
 // lastVMStates keeps the VM states last read from minimega for each running
-// experiment (a vmStatesRead), for summaries asked for while minimega is busy
-// starting or stopping an experiment (see anyExperimentLocked). The summary
+// experiment, for summaries asked for while minimega answers slowly, such as
+// while it starts or stops an experiment (see sohStateReads). The summary
 // reports their age and marks them stale.
-var lastVMStates sync.Map //nolint:gochecknoglobals // process-wide cache
+var lastVMStates = vmStatesCache{ //nolint:gochecknoglobals // process-wide cache
+	mu: sync.Mutex{}, reads: map[string]vmStatesRead{}, gens: map[string]uint64{},
+}
+
+// vmStatesCache holds the last vmStatesRead of each experiment. forget bumps
+// the experiment's generation, so a read that started before it stores
+// nothing.
+type vmStatesCache struct {
+	mu    sync.Mutex
+	reads map[string]vmStatesRead
+	gens  map[string]uint64
+}
+
+func (c *vmStatesCache) load(name string) (vmStatesRead, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	read, ok := c.reads[name]
+
+	return read, ok
+}
+
+// generation is the generation of name, for a read that starts now.
+func (c *vmStatesCache) generation(name string) uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.gens[name]
+}
+
+// store keeps read for name if name is still at generation gen.
+func (c *vmStatesCache) store(name string, gen uint64, read vmStatesRead) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.gens[name] == gen {
+		c.reads[name] = read
+	}
+}
+
+// forget removes the states of name and bumps its generation.
+func (c *vmStatesCache) forget(name string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	delete(c.reads, name)
+	c.gens[name]++
+}
+
+// sohStateReads runs one read of the VM states of each experiment at a time,
+// for the summaries (see liveReads).
+var sohStateReads = newLiveReads[vmStatesResult]() //nolint:gochecknoglobals // shared by every summary
+
+// vmStatesResult is one read of an experiment's VM states, with its error.
+type vmStatesResult struct {
+	vmStatesRead
+
+	err error
+}
 
 // vmStatesRead is one read of an experiment's VM states, and when it started.
 type vmStatesRead struct {
@@ -130,20 +190,43 @@ func GetSoHSummary(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	var (
-		busy      = anyExperimentLocked(experiments)
 		summaries = make([]soh.Summary, 0, len(experiments))
 		observed  = freshness.Unobserved()
 	)
 
-	for _, exp := range experiments {
+	// the experiments get check of the experiment's own soh endpoint
+	experiments = slices.DeleteFunc(experiments, func(exp types.Experiment) bool {
+		return !role.Allowed("experiments", "get", exp.Metadata.Name)
+	})
+
+	// the VM states of the experiments, read at once
+	type stateRead struct {
+		states map[string]string
+		obs    freshness.Observation
+		err    error
+	}
+
+	var (
+		reads = make([]stateRead, len(experiments))
+		group errgroup.Group
+	)
+
+	group.SetLimit(mmcli.ReadOnlyLimit())
+
+	for i, exp := range experiments {
+		group.Go(func() error {
+			reads[i].states, reads[i].obs, reads[i].err = sohVMStates(ctx, exp)
+
+			return nil
+		})
+	}
+
+	_ = group.Wait()
+
+	for i, exp := range experiments {
 		name := exp.Metadata.Name
 
-		// the experiments get check of the experiment's own soh endpoint
-		if !role.Allowed("experiments", "get", name) {
-			continue
-		}
-
-		states, obs, vmErr := sohVMStates(ctx, exp, busy)
+		states, obs, vmErr := reads[i].states, reads[i].obs, reads[i].err
 		if requestCanceled(r, vmErr) {
 			return nil
 		}
@@ -189,44 +272,53 @@ func GetSoHSummary(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// sohVMStates returns minimega's VM states for a running experiment, or nil
-// when there are none to read, and when they were read. While minimega is busy
-// starting or stopping an experiment it returns the states it last read,
-// marked stale, rather than wait; with none read yet, they are unknown.
-// Its minimega command gives up once ctx is done (see mm.Context).
-func sohVMStates(ctx context.Context, exp types.Experiment, busy bool) (map[string]string, freshness.Observation, error) {
+// sohVMStates reads the VM states of exp for a summary, waiting for minimega
+// at most liveReadWait. Past it, it gives the states last read, marked stale,
+// or unknown states, while the read goes on and keeps its states for later
+// summaries (see sohStateReads). It asks nothing about an experiment that is
+// stopped or a dry run.
+func sohVMStates(ctx context.Context, exp types.Experiment) (map[string]string, freshness.Observation, error) {
 	name := exp.Metadata.Name
 
 	// asking minimega about a stopped experiment would recreate its namespace
 	if !exp.Running() || exp.DryRun() {
-		lastVMStates.Delete(name)
+		lastVMStates.forget(name)
 
 		return nil, freshness.Unobserved(), nil
 	}
 
-	if busy {
-		if last, ok := lastVMStates.Load(name); ok {
-			read, _ := last.(vmStatesRead)
+	read, ok, panicErr := sohStateReads.get(ctx, name, func(ctx context.Context) vmStatesResult {
+		at, gen := time.Now(), lastVMStates.generation(name)
 
-			obs := freshness.Observed(read.at)
-			obs.Stale = true
-
-			return read.states, obs, nil
+		states, err := mm.GetVMStates(mm.NS(name), mm.Context(ctx))
+		if err == nil {
+			lastVMStates.store(name, gen, vmStatesRead{states: states, at: at})
 		}
 
-		// unknown until minimega is free
-		return nil, freshness.Observation{At: time.Time{}, Stale: true, Known: false, Err: nil}, nil
+		return vmStatesResult{vmStatesRead: vmStatesRead{states: states, at: at}, err: err}
+	})
+	if panicErr != nil {
+		read.err = panicErr
 	}
 
-	at := time.Now()
-
-	states, err := mm.GetVMStates(mm.NS(name), mm.Context(ctx))
-	if err != nil {
-		return nil, freshness.Observation{At: at, Stale: false, Known: false, Err: err},
-			fmt.Errorf("getting VM states: %w", err)
+	switch {
+	case ok && read.err != nil:
+		return nil, freshness.Observation{At: read.at, Stale: false, Known: false, Err: read.err},
+			fmt.Errorf("getting VM states: %w", read.err)
+	case ok:
+		return read.states, freshness.Observed(read.at), nil
+	case ctx.Err() != nil:
+		return nil, freshness.Observation{At: time.Time{}, Stale: false, Known: false, Err: ctx.Err()},
+			fmt.Errorf("getting VM states: %w", ctx.Err())
 	}
 
-	lastVMStates.Store(name, vmStatesRead{states: states, at: at})
+	if earlier, found := lastVMStates.load(name); found {
+		obs := freshness.Observed(earlier.at)
+		obs.Stale = true
 
-	return states, freshness.Observed(at), nil
+		return earlier.states, obs, nil
+	}
+
+	// unknown until minimega answers
+	return nil, freshness.Observation{At: time.Time{}, Stale: true, Known: false, Err: nil}, nil
 }

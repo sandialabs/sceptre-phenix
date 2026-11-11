@@ -23,6 +23,7 @@ import (
 	"phenix/api/runtimesettings"
 	"phenix/util/common"
 	"phenix/util/editor"
+	"phenix/util/mm/mmcli"
 	"phenix/util/termcolor"
 	"phenix/web"
 )
@@ -207,6 +208,8 @@ func settingValueCheck(env doctorEnv, key, value string) (doctorCheck, bool) {
 		return logMaxSizeCheck(value), true
 	case "log.system.max-backups", "log.system.max-age":
 		return logRetentionCheck(value), true
+	case keyMinimegaReadConnections:
+		return readConnectionsCheck(value), true
 	case "hostname-suffixes":
 		return suffixesCheck(value), true
 	case "bridge-mode":
@@ -435,6 +438,23 @@ func logRetentionCheck(value string) doctorCheck {
 		return warnCheck(fmt.Sprintf("%d is negative, which phenix treats as 0 (no limit)", n))
 	case n == 0:
 		return passCheck("0 (no limit)")
+	}
+
+	return check
+}
+
+// readConnectionsCheck warns about a minimega.read-connections value that
+// phenix changes to the nearest value from mmcli.MinReadOnlyLimit to
+// mmcli.MaxReadOnlyLimit.
+func readConnectionsCheck(value string) doctorCheck {
+	n, check := intVarCheck(value)
+	if check.Status == doctorFail {
+		return warnCheck(fmt.Sprintf("%s, so phenix uses %d", check.Detail, mmcli.MinReadOnlyLimit))
+	}
+
+	if used := min(max(n, mmcli.MinReadOnlyLimit), mmcli.MaxReadOnlyLimit); used != n {
+		return warnCheck(fmt.Sprintf("%d is outside %d to %d, so phenix uses %d",
+			n, mmcli.MinReadOnlyLimit, mmcli.MaxReadOnlyLimit, used))
 	}
 
 	return check

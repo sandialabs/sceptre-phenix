@@ -397,7 +397,8 @@ func TestGetImagesThroughMinimega(t *testing.T) {
 		"disk info " + outside + "/o.img recursive",
 	}
 
-	if diff := cmp.Diff(wantSent, sent); diff != "" {
+	// the folders of a level and the images are read at once, in any order
+	if diff := cmp.Diff(wantSent, sent, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
 		t.Errorf("GetImages(%q) minimega commands mismatch (-want +got):\n%s", "", diff)
 	}
 }

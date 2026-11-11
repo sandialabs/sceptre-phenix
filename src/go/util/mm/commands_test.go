@@ -1,6 +1,7 @@
 package mm
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"strconv"
@@ -11,7 +12,6 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
 
-	"phenix/util/common"
 	"phenix/util/mm/mmtest"
 )
 
@@ -373,6 +373,22 @@ func TestOneCommandFunctions(t *testing.T) { //nolint:paralleltest // shares the
 			want:    "",
 			wantMsg: "error running MeshShellResponse()",
 		},
+		"MeshShellRead on another node": {
+			call: func() (any, error) { return MeshShellRead(t.Context(), "compute1", "hostname") },
+			answers: map[string][]*minicli.Response{
+				"mesh send compute1 shell hostname": {mmtest.Text("compute1", "  compute1\n")},
+			},
+			sent: []string{bare("mesh send compute1 shell hostname")},
+			want: "compute1",
+		},
+		"MeshShellRead on the headnode": {
+			call: func() (any, error) { return MeshShellRead(t.Context(), "", "hostname") },
+			answers: map[string][]*minicli.Response{
+				"shell hostname": {mmtest.Text("head", "head\n")},
+			},
+			sent: []string{bare("shell hostname")},
+			want: "head",
+		},
 		"LaunchVMs starts every VM": {
 			call: errOnly(func() error { return LaunchVMs("exp") }),
 			sent: []string{inExp(vmLaunchCmd), inExp("vm start all")},
@@ -540,31 +556,23 @@ func TestGetVMScreenshot(t *testing.T) { //nolint:paralleltest // shares the fak
 	}
 }
 
-// GetNamespaceHosts reads every field of each host and measures its disks
-// with one command for all mesh peers.
+// GetNamespaceHosts reads every field of each host with one `host` in the
+// namespace, and measures no disk usage.
 func TestGetNamespaceHosts(t *testing.T) { //nolint:paralleltest // shares the fake minimega
 	header := []string{
 		"name", "cpus", "cpucommit", "load", "memused", "memtotal", "memcommit", "vms", "tx", "rx", "netcommit", "uptime",
 	}
 
-	var disk string
-
 	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
-		switch {
-		case cmd.Base == "host" && cmd.Namespace == "exp":
+		if cmd.Base == "host" && cmd.Namespace == "exp" {
 			return []*minicli.Response{mmtest.Tabular("compute1", header,
 				[]string{"compute1", "16", "4", "0.1 0.2 0.3", "1024", "4096", "2048", "2", "1.5", "2.5", "3", "1m30s"})}
-		case cmd.Base == disk:
-			return []*minicli.Response{mmtest.Text("compute1", "0=10% 1=20%\n")}
 		}
 
 		return answering(nil)(cmd)
 	})
 
-	// the fake minimega sets common.MinimegaBase when it first starts
-	disk = "mesh send all shell " + diskUsageCommand(common.PhenixBase, common.MinimegaBase)
-
-	hosts, err := GetNamespaceHosts("exp")
+	hosts, err := GetNamespaceHosts(t.Context(), "exp")
 	if err != nil {
 		t.Fatalf("GetNamespaceHosts(exp) error = %v", err)
 	}
@@ -572,7 +580,7 @@ func TestGetNamespaceHosts(t *testing.T) { //nolint:paralleltest // shares the f
 	want := Hosts{{
 		Name: "compute1", CPUs: 16, CPUCommit: 4, Load: []string{"0.1", "0.2", "0.3"},
 		MemUsed: 1024, MemTotal: 4096, MemCommit: 2048, Tx: 1.5, Rx: 2.5, Bandwidth: "rx: 2.5 / tx: 1.5",
-		DiskUsage: DiskUsage{Phenix: 10, Minimega: 20}, NetCommit: 3, VMs: 2, Uptime: 90,
+		DiskUsage: nil, NetCommit: 3, VMs: 2, Uptime: 90,
 		Schedulable: false, Headnode: false,
 	}}
 
@@ -580,8 +588,16 @@ func TestGetNamespaceHosts(t *testing.T) { //nolint:paralleltest // shares the f
 		t.Errorf("GetNamespaceHosts(exp) mismatch (-want +got):\n%s", diff)
 	}
 
-	if diff := cmp.Diff([]string{inExp("host"), bare(disk)}, sentRaw(received())); diff != "" {
+	if diff := cmp.Diff([]string{inExp("host")}, sentRaw(received())); diff != "" {
 		t.Errorf("GetNamespaceHosts(exp) sent commands mismatch (-want +got):\n%s", diff)
+	}
+
+	// once its context is done, it gives up and says why
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if hosts, err := GetNamespaceHosts(ctx, "exp"); !errors.Is(err, context.Canceled) || hosts != nil {
+		t.Errorf("GetNamespaceHosts(canceled ctx, exp) = %v, %v; want nil, %v", hosts, err, context.Canceled)
 	}
 }
 

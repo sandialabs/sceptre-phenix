@@ -25,7 +25,7 @@ func GetClusterHosts(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	hosts, observed, err := mm.GetClusterHostsObserved(ctx, false)
+	hosts, observed, err := mm.GetClusterHostsObserved(ctx, false, true)
 	if requestCanceled(r, err) {
 		return nil
 	}

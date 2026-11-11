@@ -114,11 +114,20 @@ func captureChecker(ctx context.Context, name string) func(clean string) error {
 			listed = true
 
 			if Running(name) {
-				captures, vmErr = mm.GetExperimentCapturesChecked(mm.NS(name), mm.Context(ctx))
+				// the two listings do not depend on each other
+				vmRead := make(chan struct{})
+
+				go func() {
+					defer close(vmRead)
+
+					captures, vmErr = mm.GetExperimentCapturesChecked(mm.NS(name), mm.Context(ctx))
+				}()
 
 				if mm.CaptureFeatures() {
 					expCaptures, listErr = mm.GetNamespaceCaptures(mm.NS(name), mm.Context(ctx))
 				}
+
+				<-vmRead
 			}
 		}
 

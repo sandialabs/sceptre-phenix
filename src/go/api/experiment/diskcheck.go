@@ -279,7 +279,7 @@ func mmCheckEnv() checkEnv {
 			return mm.IsHeadnode(host), nil
 		},
 		hosts: func(ctx context.Context) (mm.Hosts, error) {
-			hosts, _, err := mm.GetClusterHostsObserved(ctx, false)
+			hosts, _, err := mm.GetClusterHostsObserved(ctx, false, false)
 
 			return hosts, err //nolint:wrapcheck // the caller says what it was for
 		},

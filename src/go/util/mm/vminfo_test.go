@@ -1,6 +1,9 @@
 package mm
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -244,6 +247,90 @@ func TestGetVMInfoNamesTheImageBehindASnapshot(t *testing.T) { //nolint:parallel
 	}
 }
 
+// GetVMInfo asks about the snapshot disks of its VMs at once, at most mmcli.ReadOnlyLimit() at a
+// time, keeps the VMs in the order of the `vm info` rows, and still asks about each launch once.
+func TestGetVMInfoReadsSnapshotDisksAtOnce(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	cluster := new(vmInfoCluster)
+
+	var (
+		vms   = make([]fakeVM, 0, 2*mmcli.ReadOnlyLimit())
+		names = make([]string, 0, 2*mmcli.ReadOnlyLimit())
+	)
+
+	for i := range 2 * mmcli.ReadOnlyLimit() {
+		name := fmt.Sprintf("vm%d", i)
+		vms = append(vms, fakeVM{host: "head", name: name, uptime: "1h0m0s", disk: "snap-" + name, snapshot: true})
+		names = append(names, name)
+	}
+
+	cluster.set(vms...)
+
+	var (
+		mu       sync.Mutex
+		now      int
+		most     int
+		overlaps = make(chan struct{})
+		overlap  = sync.OnceFunc(func() { close(overlaps) })
+	)
+
+	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+		if strings.HasPrefix(cmd.Base, "disk info ") {
+			mu.Lock()
+			now++
+			most = max(most, now)
+
+			if now > 1 {
+				overlap()
+			}
+			mu.Unlock()
+
+			// hold the answer until another disk info arrives, or give up on that
+			select {
+			case <-overlaps:
+			case <-time.After(2 * time.Second):
+			}
+
+			mu.Lock()
+			now--
+			mu.Unlock()
+		}
+
+		return cluster.reply(cmd)
+	})
+
+	got := Minimega{}.GetVMInfo(NS("exp"))
+
+	if diff := cmp.Diff(names, vmNames(got)); diff != "" {
+		t.Errorf("GetVMInfo(exp) VM order mismatch (-want +got):\n%s", diff)
+	}
+
+	for _, vm := range got {
+		if want := "/base/snap-" + vm.Name; vm.Disk != want {
+			t.Errorf("GetVMInfo(exp) disk of %s = %q, want %q", vm.Name, vm.Disk, want)
+		}
+	}
+
+	mu.Lock()
+	inFlight := most
+	mu.Unlock()
+
+	if inFlight < 2 || inFlight > mmcli.ReadOnlyLimit() {
+		t.Errorf("GetVMInfo(exp) had %d disk info commands in flight at most, want 2 to %d",
+			inFlight, mmcli.ReadOnlyLimit())
+	}
+
+	sent := mmtest.Count(received(), "disk info")
+	if sent != len(vms) {
+		t.Errorf("GetVMInfo(exp) sent %d disk info commands, want %d", sent, len(vms))
+	}
+
+	_ = Minimega{}.GetVMInfo(NS("exp"))
+
+	if again := mmtest.Count(received(), "disk info"); again != sent {
+		t.Errorf("GetVMInfo(exp) again sent %d more disk info commands, want 0", again-sent)
+	}
+}
+
 func TestGetVMInfoMergesConcurrentCalls(t *testing.T) { //nolint:paralleltest // shares the fake minimega
 	const callers = 4
 
@@ -255,7 +342,7 @@ func TestGetVMInfoMergesConcurrentCalls(t *testing.T) { //nolint:paralleltest //
 	cluster.set(fakeVM{host: "head", name: "a", uptime: "1m0s", disk: "plain", snapshot: false})
 
 	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
-		if cmd.Base == "hold" {
+		if cmd.Base == poolHold {
 			<-release
 		}
 
@@ -265,11 +352,11 @@ func TestGetVMInfoMergesConcurrentCalls(t *testing.T) { //nolint:paralleltest //
 	var (
 		wg      sync.WaitGroup
 		results = make([]VMs, callers)
-		held    = make(chan error, 1)
+		held    = make(chan error, mmcli.ReadOnlyLimit())
 	)
 
-	// Free the shared connection even if the test fails before it would, so
-	// every caller finishes.
+	// Free the read-only connections even if the test fails before it would,
+	// so every caller finishes.
 	unhold := sync.OnceFunc(func() { close(release) })
 
 	t.Cleanup(func() {
@@ -277,15 +364,19 @@ func TestGetVMInfoMergesConcurrentCalls(t *testing.T) { //nolint:paralleltest //
 		wg.Wait()
 	})
 
-	// Hold the shared connection so the callers below queue up behind it.
-	go func() {
-		cmd := mmcli.NewCommand()
-		cmd.Command = "hold"
+	// Hold every read-only connection so the callers below queue up behind them.
+	for range mmcli.ReadOnlyLimit() {
+		go func() {
+			cmd := mmcli.NewCommand()
+			cmd.Command = poolHold
 
-		held <- mmcli.ErrorResponse(mmcli.Run(cmd))
-	}()
+			held <- mmcli.ErrorResponse(mmcli.RunReadOnly(context.Background(), mmcli.HeadRead, cmd))
+		}()
+	}
 
-	mmtest.Await(t, "hold")
+	polltest.Until(t, "every read-only connection is held", func() bool {
+		return mmtest.Count(received(), poolHold) == mmcli.ReadOnlyLimit()
+	})
 
 	for i := range callers {
 		wg.Add(1)
@@ -302,8 +393,10 @@ func TestGetVMInfoMergesConcurrentCalls(t *testing.T) { //nolint:paralleltest //
 	unhold()
 	wg.Wait()
 
-	if err := <-held; err != nil {
-		t.Errorf("holding command error = %v", err)
+	for range mmcli.ReadOnlyLimit() {
+		if err := <-held; err != nil {
+			t.Errorf("holding command error = %v", err)
+		}
 	}
 
 	if got := mmtest.Count(received(), vmInfoCmd); got != 1 {
@@ -530,12 +623,18 @@ func TestVMLaunchSameAs(t *testing.T) {
 func TestDiskUsageCommandAndParse(t *testing.T) {
 	t.Parallel()
 
-	cmd := diskUsageCommand("/phenix", "/tmp/minimega")
+	cmd, err := diskUsageCommand("/phenix", "/tmp/minimega")
 	want := `bash -c "echo 0=$(df /phenix | awk '{print $(NF-1)}' | tail -1) ` +
 		`1=$(df /tmp/minimega | awk '{print $(NF-1)}' | tail -1)"`
 
-	if cmd != want {
-		t.Errorf("diskUsageCommand(/phenix, /tmp/minimega) =\n%s\nwant\n%s", cmd, want)
+	if err != nil || cmd != want {
+		t.Errorf("diskUsageCommand(/phenix, /tmp/minimega) =\n%s, %v\nwant\n%s, nil", cmd, err, want)
+	}
+
+	for _, path := range []string{`/phenix" x`, "/$HOME", "/a`id`", "/a b", "/a\nb"} {
+		if cmd, err := diskUsageCommand("/phenix", path); !errors.Is(err, mmcli.ErrUnsafeArg) {
+			t.Errorf("diskUsageCommand(/phenix, %q) = %q, %v; want %v", path, cmd, err, mmcli.ErrUnsafeArg)
+		}
 	}
 
 	for resp, want := range map[string]map[int]float64{

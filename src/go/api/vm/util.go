@@ -141,7 +141,7 @@ func getImageSnapshots(ctx context.Context, path string) ([]string, error) {
 func getImageBackingChain(ctx context.Context, path string) ([]qemuBackingChain, error) {
 	cmd := fmt.Sprintf("qemu-img info --backing-chain %s --output json", path)
 
-	resp, err := mm.MeshShellResponse(ctx, "", cmd)
+	resp, err := mm.MeshShellRead(ctx, "", cmd)
 	if err != nil {
 		return nil, fmt.Errorf("getting image info for %s: %w", path, err)
 	}

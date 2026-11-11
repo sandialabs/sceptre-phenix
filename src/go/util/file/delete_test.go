@@ -154,6 +154,10 @@ func TestDeleteExistingFiles(t *testing.T) { //nolint:paralleltest // shares the
 			want:    []string{"mesh send all file list /snap*", "file list /snap*", "mesh send n1 file delete snap1"},
 			wantErr: `(?s)^deleting file snap1 from cluster nodes: .*read-only`,
 		},
+		"refuses a name that minimega would expand, and sends nothing": {
+			names:   []string{"exp/$HOME"},
+			wantErr: `^listing the files to delete in exp: minimega cannot take this value`,
+		},
 		"reports a failed delete everywhere and stops": {
 			answers: map[string][]*minicli.Response{
 				"mesh send all file delete ex p/a": {{Host: "n1", Error: "read-only"}},

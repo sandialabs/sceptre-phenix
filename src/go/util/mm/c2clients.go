@@ -43,10 +43,21 @@ func (m Minimega) ActiveC2Clients(ns string, refs []C2ClientRef) map[C2ClientRef
 		return active
 	}
 
+	// the two reads do not depend on each other
 	var (
-		identities = getVMIdentities(context.Background(), ns, "")
-		clients    = c2ClientRows(ns)
+		identities VMs
+		read       = make(chan struct{})
 	)
+
+	go func() {
+		defer close(read)
+
+		identities = getVMIdentities(context.Background(), ns, "")
+	}()
+
+	clients := c2ClientRows(ns)
+
+	<-read
 
 	for _, ref := range batched {
 		// What `.filter name=<vm>` would have kept, in the same order.
@@ -107,7 +118,7 @@ func c2ClientRows(ns string) []map[string]string {
 
 	// No .columns: mmcli maps any requested column containing "host" to the
 	// responding node, so `hostname` would be lost. The full header is small.
-	return mmcli.RunTabular(cmd)
+	return mmcli.RunTabularReadOnly(context.Background(), nsLine(ns), cmd)
 }
 
 // filterSafe reports whether `.filter <column>=<value>` parses in minicli as a

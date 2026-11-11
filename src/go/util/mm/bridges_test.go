@@ -4,6 +4,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -88,13 +89,19 @@ func TestBridgeNames(t *testing.T) {
 }
 
 // The head node runs ovs-vsctl through minimega's shell, other hosts get it over the
-// mesh, and nothing else is sent, so listing bridges changes no host.
+// mesh, and nothing else is sent, so listing bridges changes no host. The hosts are
+// listed at once.
 func TestListBridgesSendsOnlyTheListing(t *testing.T) {
-	var sent []string
+	var (
+		mu   sync.Mutex
+		sent = map[string]mmcli.ReadLine{}
+	)
 
-	run := func(cmd *mmcli.Command) chan *miniclient.Response {
+	run := func(line mmcli.ReadLine, cmd *mmcli.Command) chan *miniclient.Response {
 		// What minimega receives, with any namespace, filter or column.
-		sent = append(sent, cmd.String())
+		mu.Lock()
+		sent[cmd.String()] = line
+		mu.Unlock()
 
 		if strings.HasPrefix(cmd.Command, "mesh send h2 ") {
 			return bridgeResponses(bridgeOutput("h2", "lab", "phenix"))
@@ -108,9 +115,9 @@ func TestListBridgesSendsOnlyTheListing(t *testing.T) {
 		t.Fatalf("listBridges(head, h2) returned error: %v", err)
 	}
 
-	wantSent := []string{
-		".record false shell ovs-vsctl --timeout=5 list-br",
-		".record false mesh send h2 shell ovs-vsctl --timeout=5 list-br",
+	wantSent := map[string]mmcli.ReadLine{
+		".record false shell ovs-vsctl --timeout=5 list-br":              mmcli.HeadRead,
+		".record false mesh send h2 shell ovs-vsctl --timeout=5 list-br": mmcli.MeshRead,
 	}
 	if diff := cmp.Diff(wantSent, sent); diff != "" {
 		t.Errorf("listBridges(head, h2) sent mismatch (-want +got):\n%s", diff)
@@ -122,13 +129,18 @@ func TestListBridgesSendsOnlyTheListing(t *testing.T) {
 	}
 }
 
-// A host that answers with an error fails the listing, and no host after it
-// is asked.
+// A host that answers with an error fails the listing, with the error of the
+// first host that failed in the order given.
 func TestListBridgesFailsOnAnyHost(t *testing.T) {
-	var sent []string
+	var (
+		mu   sync.Mutex
+		sent []string
+	)
 
-	run := func(cmd *mmcli.Command) chan *miniclient.Response {
+	run := func(_ mmcli.ReadLine, cmd *mmcli.Command) chan *miniclient.Response {
+		mu.Lock()
 		sent = append(sent, cmd.String())
+		mu.Unlock()
 
 		return bridgeResponses(&minicli.Response{Host: "h1", Error: "h1 not found in mesh"})
 	}
@@ -138,15 +150,21 @@ func TestListBridgesFailsOnAnyHost(t *testing.T) {
 		t.Errorf("listBridges(h1, h2) error = %v, want one containing %q", err, want)
 	}
 
-	if want := []string{".record false mesh send h1 shell ovs-vsctl --timeout=5 list-br"}; !slices.Equal(sent, want) {
-		t.Errorf("listBridges(h1, h2) sent %q, want only %q", sent, want)
+	slices.Sort(sent)
+
+	want := []string{
+		".record false mesh send h1 shell ovs-vsctl --timeout=5 list-br",
+		".record false mesh send h2 shell ovs-vsctl --timeout=5 list-br",
+	}
+	if !slices.Equal(sent, want) {
+		t.Errorf("listBridges(h1, h2) sent %q, want %q", sent, want)
 	}
 }
 
 // TestGetBridges asserts GetBridges of no host lists nothing and sends no
 // command. [listBridges] tests check the listing of hosts.
 func TestGetBridges(t *testing.T) {
-	bridges, err := (Minimega{}).GetBridges()
+	bridges, err := (Minimega{}).GetBridges(t.Context())
 	if err != nil {
 		t.Fatalf("GetBridges() error = %v, want nil", err)
 	}

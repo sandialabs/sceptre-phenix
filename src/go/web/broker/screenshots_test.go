@@ -143,8 +143,13 @@ func TestScreenshotsAreEncodedOnce(t *testing.T) {
 		t.Fatalf("messages sent = %d and %d, want 2 and 1", len(firstGot), len(secondGot))
 	}
 
-	// vm1 sorts first, so it is the first client's first message
-	if &firstGot[0].data[0] != &secondGot[0].data[0] {
+	// the screenshots are taken at once, so vm1's message is either of the first client's
+	vm1 := firstGot[0]
+	if vm1.pub.Resource.Name != secondGot[0].pub.Resource.Name {
+		vm1 = firstGot[1]
+	}
+
+	if &vm1.data[0] != &secondGot[0].data[0] {
 		t.Error("clients showing vm1 at one width were sent separately encoded messages, want one shared message")
 	}
 
@@ -380,8 +385,9 @@ func TestPushFramesSkips(t *testing.T) {
 			wantSent: map[string]string{"exp/vm2": "data:image/png;base64,dHdv"},
 			wantLogs: []string{"ERROR getting screenshot for WebSocket client err=boom"},
 		},
+		// vm2's screenshot, taken beside vm1's, may be asked for and then ends with ctx
 		"ctx ended during a screenshot": {
-			vm1Err: context.Canceled, cancel: true, wantAsked: []string{"vm1"}, wantSent: map[string]string{},
+			vm1Err: context.Canceled, cancel: true, wantAsked: []string{"vm1", "vm2"}, wantSent: map[string]string{},
 		},
 	}
 
@@ -399,10 +405,16 @@ func TestPushFramesSkips(t *testing.T) {
 				asked []string
 			)
 
-			deps.screenshot = func(_ context.Context, _, vm, _ string) ([]byte, error) {
+			deps.screenshot = func(shotCtx context.Context, _, vm, _ string) ([]byte, error) {
 				mu.Lock()
 				asked = append(asked, vm)
 				mu.Unlock()
+
+				if vm == "vm2" && tc.cancel {
+					<-shotCtx.Done()
+
+					return nil, shotCtx.Err()
+				}
 
 				if vm == "vm1" && tc.vm1Err != nil {
 					if tc.cancel {
@@ -427,6 +439,14 @@ func TestPushFramesSkips(t *testing.T) {
 			}
 
 			pushFrames(ctx, wanted)
+
+			// the screenshots are taken at once, in any order
+			slices.Sort(asked)
+
+			// once ctx ended, vm2 may not be asked
+			if tc.cancel && slices.Equal(asked, []string{"vm1"}) {
+				asked = append(asked, "vm2")
+			}
 
 			if diff := cmp.Diff(tc.wantAsked, asked); diff != "" {
 				t.Errorf("screenshots asked for mismatch (-want +got):\n%s", diff)

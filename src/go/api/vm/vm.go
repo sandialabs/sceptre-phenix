@@ -97,13 +97,19 @@ func ListForObserved(ctx context.Context, exp *types.Experiment) ([]mm.VM, fresh
 
 	vms, obs := mm.GetVMInfoObserved(mm.NS(exp.Metadata.Name), mm.Context(ctx))
 
+	return ListFromObserved(*exp, vms, obs), obs
+}
+
+// ListFromObserved lists the experiment's VMs from its topology and vms,
+// minimega's details of its VMs as read with obs (see ListForObserved).
+func ListFromObserved(exp types.Experiment, vms mm.VMs, obs freshness.Observation) []mm.VM {
 	running := make(map[string]mm.VM, len(vms))
 
 	for _, vm := range vms {
 		running[vm.Name] = vm
 	}
 
-	return listVMs(*exp, running, obs.Known), obs
+	return listVMs(exp, running, obs.Known)
 }
 
 // ListConfigured lists the experiment's VMs as its topology configures them,
@@ -1193,7 +1199,7 @@ func awaitSave(expName, vmName string, cb func(string), timing saveTiming) (err 
 	for {
 		time.Sleep(timing.poll)
 
-		rows, qerr := mmcli.RunTabularCheckedContext(context.Background(), cmd, nil)
+		rows, qerr := mmcli.RunTabularReadOnlyChecked(context.Background(), mmcli.MeshRead, cmd, nil)
 
 		switch {
 		case qerr != nil:

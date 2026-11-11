@@ -21,6 +21,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/sandia-minimega/minimega/v2/pkg/miniclient"
 	"github.com/sandia-minimega/minimega/v2/pkg/ranges"
+	"golang.org/x/sync/errgroup"
 
 	"phenix/util/common"
 	"phenix/util/freshness"
@@ -104,6 +105,8 @@ var headnode struct { //nolint:gochecknoglobals // process-wide cache
 	mu   sync.Mutex
 	name string
 	at   time.Time
+	// held during a lookup, so concurrent callers share it
+	lookup sync.Mutex
 }
 
 // responseRegex matches the line minimega writes before each C2 response file,
@@ -125,6 +128,26 @@ func (o options) run(cmd *mmcli.Command) chan *miniclient.Response {
 // tabular is mmcli.RunTabular for o's context (see Context).
 func (o options) tabular(cmd *mmcli.Command) []map[string]string {
 	return mmcli.RunTabularContext(o.ctx, cmd)
+}
+
+// readTabular is tabular for a command that only reads, on the connections of
+// mmcli.RunReadOnly in line.
+func (o options) readTabular(line mmcli.ReadLine, cmd *mmcli.Command) []map[string]string {
+	if o.onShared {
+		return o.tabular(cmd)
+	}
+
+	return mmcli.RunTabularReadOnly(o.ctx, line, cmd)
+}
+
+// nsLine is the mmcli.ReadLine of a read in namespace ns: mmcli.MeshRead, as
+// minimega sends it to the peers of the namespace, or mmcli.HeadRead for "".
+func nsLine(ns string) mmcli.ReadLine {
+	if ns != "" {
+		return mmcli.MeshRead
+	}
+
+	return mmcli.HeadRead
 }
 
 // ended returns, once ctx is done, an error wrapping ctx's error, so an answer
@@ -309,7 +332,7 @@ func vmsInErrorState(ns string, names []string) []string {
 
 	errored := make(map[string]bool)
 
-	for _, row := range mmcli.RunTabular(cmd) {
+	for _, row := range mmcli.RunTabularReadOnly(context.Background(), nsLine(ns), cmd) {
 		if strings.EqualFold(row[stateColumn], "ERROR") {
 			errored[row["name"]] = true
 		}
@@ -335,7 +358,7 @@ func (Minimega) GetLaunchProgress(ns string, expected int) (float64, error) {
 	cmd := mmcli.NewNamespacedCommand(ns)
 	cmd.Command = nsQueueCmd
 
-	for resps := range mmcli.Run(cmd) {
+	for resps := range mmcli.RunReadOnly(context.Background(), nsLine(ns), cmd) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
 				continue
@@ -344,7 +367,7 @@ func (Minimega) GetLaunchProgress(ns string, expected int) (float64, error) {
 			for _, m := range queuedCountRegex.FindAllStringSubmatch(resp.Response, -1) {
 				count, err := strconv.Atoi(m[1])
 				if err != nil {
-					// Keep draining the responses; see mmcli.Run.
+					// Keep draining the responses; see mmcli.RunReadOnly.
 					parseErr = fmt.Errorf("parsing queued VM count %q: %w", m[1], err)
 
 					continue
@@ -367,7 +390,7 @@ func (Minimega) GetLaunchProgress(ns string, expected int) (float64, error) {
 		cmd.Command = vmInfoSummaryCmd
 		cmd.Columns = []string{stateColumn}
 
-		status := mmcli.RunTabular(cmd)
+		status := mmcli.RunTabularReadOnly(context.Background(), nsLine(ns), cmd)
 
 		if len(status) == 0 {
 			return 0.0, nil
@@ -430,99 +453,67 @@ func (m Minimega) GetVMInfoObserved(opts ...Option) (VMs, freshness.Observation)
 
 // getVMInfo does GetVMInfo's work, calling started just before its first
 // minimega command is sent. The VMs are those minimega reported even when it
-// also reported an error.
+// also reported an error. Its reads run at once on RunReadOnly's connections:
+// `cc client` beside `vm info`, then the capture listing and the `disk info`
+// of the snapshot disks.
 func (m Minimega) getVMInfo(o options, started func()) (VMs, error) {
+	var startOnce sync.Once
+
+	start := func() {
+		if started != nil {
+			startOnce.Do(started)
+		}
+	}
+
 	// don't rely on `cc_active` column in `vm info` table
-	activeC2 := getActiveC2(o.ctx, o.ns, started)
+	var activeC2 map[string]bool
 
-	cmd := mmcli.NewNamespacedCommand(o.ns)
-	cmd.Command = vmInfoCmd
-	cmd.Columns = []string{
-		"uuid",
-		hostColumn,
-		"name",
-		stateColumn,
-		"uptime",
-		"vlan",
-		"tap",
-		"ip",
-		"memory",
-		"vcpus",
-		"disks",
-		"snapshot",
-		"cdrom",
-		"tags",
-	}
+	c2Read := make(chan struct{})
 
-	if o.vm != "" {
-		cmd.Filters = []string{"name=" + o.vm}
-	}
+	go func() {
+		defer close(c2Read)
 
-	status, statusErr := mmcli.RunTabularCheckedContext(o.ctx, cmd, nil)
+		activeC2 = getActiveC2(o.ctx, o.ns, start)
+	}()
+
+	status, statusErr := mmcli.RunTabularReadOnlyChecked(o.ctx, nsLine(o.ns), vmInfoCommand(o), start)
 	received := time.Now()
 	vms := make(VMs, 0, len(status))
 
-	var captures map[string][]Capture
+	var (
+		reads    errgroup.Group
+		captures map[string][]Capture
+		// by index in vms, set by the reads
+		backingDisks = make(map[int]*string)
+	)
+
+	reads.SetLimit(mmcli.ReadOnlyLimit())
 
 	// One `capture` listing for the namespace, rather than one per VM.
 	if len(status) > 0 {
-		captures = GroupCapturesByVM(m.GetExperimentCaptures(NS(o.ns), Context(o.ctx)))
+		reads.Go(func() error {
+			captures = GroupCapturesByVM(m.GetExperimentCaptures(NS(o.ns), Context(o.ctx)))
+
+			return nil
+		})
 	}
 
 	for _, row := range status {
-		vm := VM{ //nolint:exhaustruct // partial initialization
-			UUID:     row["uuid"],
-			Host:     row[hostColumn],
-			Name:     row["name"],
-			State:    row[stateColumn],
-			Running:  row[stateColumn] == stateRunning,
-			CCActive: activeC2[row["uuid"]],
-			CdRom:    row["cdrom"],
-			Networks: parseList(row["vlan"]),
-			Taps:     parseList(row["tap"]),
-			IPv4:     parseList(row["ip"]),
-			Captures: captures[row["name"]],
-		}
+		vm, uptime, uptimeErr := vmFromRow(row)
 
-		var tags map[string]string
-
-		_ = json.Unmarshal([]byte(row["tags"]), &tags)
-		vm.Tags = tags
-
-		uptime, uptimeErr := time.ParseDuration(row["uptime"])
-		if uptimeErr == nil {
-			vm.Uptime = uptime.Seconds()
-		}
-
-		vm.RAM, _ = strconv.Atoi(row["memory"])
-		vm.CPUs, _ = strconv.Atoi(row["vcpus"])
-
-		var disk string
-		// Multiple disks are space-separated (minimega DiskConfigs.String).
-		if fields := strings.Fields(row["disks"]); len(fields) > 0 {
-			// Each diskspec is comma-separated (path,interface,cache); path is first.
-			disk = strings.Split(fields[0], ",")[0]
-		}
-
+		disk := firstDisk(row["disks"])
 		snapshot, _ := strconv.ParseBool(row["snapshot"])
 
 		if snapshot && disk != "" {
-			launch := vmLaunch{ //nolint:exhaustruct // at is only known with an uptime
-				ns:   o.ns,
-				name: vm.Name,
-				uuid: vm.UUID,
-				host: vm.Host,
-				disk: disk,
-			}
+			launch := snapshotLaunch(o.ns, vm, disk, received, uptime, uptimeErr)
+			backing := new(string)
+			backingDisks[len(vms)] = backing
 
-			// The disk's backing file can only change while its VM's process is
-			// gone, so a result is only reused for the same launch of a VM whose
-			// process is still up.
-			if uptimeErr == nil && (vm.State == stateRunning || vm.State == "PAUSED") {
-				launch.at = received.Add(-uptime)
-			}
+			reads.Go(func() error {
+				*backing = snapshotBackingDisk(o.ctx, launch)
 
-			vm.Disk = snapshotBackingDisk(o.ctx, launch)
+				return nil
+			})
 		} else if disk != "" {
 			// Attempting to get disk info when not using a snapshot will cause a
 			// locked file error.
@@ -530,6 +521,19 @@ func (m Minimega) getVMInfo(o options, started func()) (VMs, error) {
 		}
 
 		vms = append(vms, vm)
+	}
+
+	_ = reads.Wait()
+
+	<-c2Read
+
+	for i := range vms {
+		vms[i].CCActive = activeC2[vms[i].UUID]
+		vms[i].Captures = captures[vms[i].Name]
+
+		if backing, ok := backingDisks[i]; ok {
+			vms[i].Disk = *backing
+		}
 	}
 
 	if statusErr != nil {
@@ -544,6 +548,86 @@ func (m Minimega) getVMInfo(o options, started func()) (VMs, error) {
 	return vms, nil
 }
 
+// vmInfoCommand is the `vm info` that getVMInfo sends for o.
+func vmInfoCommand(o options) *mmcli.Command {
+	cmd := mmcli.NewNamespacedCommand(o.ns)
+	cmd.Command = vmInfoCmd
+	cmd.Columns = []string{
+		"uuid", hostColumn, "name", stateColumn, "uptime", "vlan", "tap", "ip", "memory", "vcpus", "disks",
+		"snapshot", "cdrom", "tags",
+	}
+
+	if o.vm != "" {
+		cmd.Filters = []string{"name=" + o.vm}
+	}
+
+	return cmd
+}
+
+// firstDisk is the path of the first disk in the disks column of `vm info`, "" for none.
+func firstDisk(disks string) string {
+	// Multiple disks are space-separated (minimega DiskConfigs.String).
+	fields := strings.Fields(disks)
+	if len(fields) == 0 {
+		return ""
+	}
+
+	// Each diskspec is comma-separated (path,interface,cache); path is first.
+	return strings.Split(fields[0], ",")[0]
+}
+
+// snapshotLaunch identifies the launch of vm, whose first disk is the snapshot
+// disk, from its uptime as read when its `vm info` was received.
+func snapshotLaunch(ns string, vm VM, disk string, received time.Time, uptime time.Duration, uptimeErr error) vmLaunch {
+	launch := vmLaunch{ //nolint:exhaustruct // at is only known with an uptime
+		ns:   ns,
+		name: vm.Name,
+		uuid: vm.UUID,
+		host: vm.Host,
+		disk: disk,
+	}
+
+	// The disk's backing file can only change while its VM's process is
+	// gone, so a result is only reused for the same launch of a VM whose
+	// process is still up.
+	if uptimeErr == nil && (vm.State == stateRunning || vm.State == "PAUSED") {
+		launch.at = received.Add(-uptime)
+	}
+
+	return launch
+}
+
+// vmFromRow reads a VM from its row of getVMInfo's `vm info`, leaving out its
+// disk, C2 state and captures, and returns its uptime as parsed.
+func vmFromRow(row map[string]string) (VM, time.Duration, error) {
+	vm := VM{ //nolint:exhaustruct // partial initialization
+		UUID:     row["uuid"],
+		Host:     row[hostColumn],
+		Name:     row["name"],
+		State:    row[stateColumn],
+		Running:  row[stateColumn] == stateRunning,
+		CdRom:    row["cdrom"],
+		Networks: parseList(row["vlan"]),
+		Taps:     parseList(row["tap"]),
+		IPv4:     parseList(row["ip"]),
+	}
+
+	var tags map[string]string
+
+	_ = json.Unmarshal([]byte(row["tags"]), &tags)
+	vm.Tags = tags
+
+	uptime, err := time.ParseDuration(row["uptime"])
+	if err == nil {
+		vm.Uptime = uptime.Seconds()
+	}
+
+	vm.RAM, _ = strconv.Atoi(row["memory"])
+	vm.CPUs, _ = strconv.Atoi(row["vcpus"])
+
+	return vm, uptime, err //nolint:wrapcheck // only tells whether the uptime is known
+}
+
 // snapshotBackingDisk returns the image a VM's snapshot disk is based on (or
 // the snapshot itself if minimega can't say), asking minimega at most once per
 // launch of the VM.
@@ -554,12 +638,14 @@ func snapshotBackingDisk(ctx context.Context, launch vmLaunch) string {
 
 	cmd := mmcli.NewCommand()
 	cmd.Command = "disk info " + launch.disk
+	line := mmcli.HeadRead
 
 	if !IsHeadnode(launch.host) {
 		cmd.Command = fmt.Sprintf("mesh send %s %s", launch.host, cmd.Command)
+		line = mmcli.MeshRead
 	}
 
-	resp := mmcli.RunTabularContext(ctx, cmd)
+	resp := mmcli.RunTabularReadOnly(ctx, line, cmd)
 
 	if len(resp) == 0 {
 		return launch.disk
@@ -591,7 +677,6 @@ func (Minimega) GetVMScreenshot(opts ...Option) ([]byte, error) {
 
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = fmt.Sprintf("vm screenshot %s file /dev/null %s", o.vm, o.screenshotSize)
-	cmd.Background = true
 
 	var (
 		screenshot []byte
@@ -599,7 +684,7 @@ func (Minimega) GetVMScreenshot(opts ...Option) ([]byte, error) {
 	)
 
 	// Drain the full response channel
-	for resps := range o.run(cmd) {
+	for resps := range mmcli.RunReadOnly(o.ctx, mmcli.ScreenshotRead, cmd) {
 		for _, resp := range resps.Resp {
 			if screenshot != nil {
 				continue
@@ -680,7 +765,7 @@ func (Minimega) GetVNCInfo(opts ...Option) (VNCInfo, error) {
 	cmd.Columns = []string{hostColumn, vncPortColumn, vgaColumn, copyPasteColumn}
 	cmd.Filters = []string{"type=kvm", "name=" + o.vm}
 
-	rows, err := mmcli.RunTabularCheckedContext(o.ctx, cmd, nil)
+	rows, err := mmcli.RunTabularReadOnlyChecked(o.ctx, nsLine(o.ns), cmd, nil)
 
 	switch {
 	case err != nil && strings.Contains(err.Error(), "no such column"):
@@ -913,7 +998,7 @@ func (Minimega) GetVMHost(opts ...Option) (string, error) {
 	cmd.Columns = []string{hostColumn, "name"}
 	cmd.Filters = []string{"name=" + o.vm}
 
-	status := o.tabular(cmd)
+	status := o.readTabular(nsLine(o.ns), cmd)
 
 	if err := ended(o.ctx); len(status) == 0 && err != nil {
 		return "", err
@@ -941,7 +1026,7 @@ func (Minimega) GetVMHosts(opts ...Option) map[string]string {
 
 	hosts := make(map[string]string)
 
-	for _, row := range o.tabular(cmd) {
+	for _, row := range mmcli.RunTabularReadOnly(o.ctx, nsLine(o.ns), cmd) {
 		hosts[row["name"]] = row[hostColumn]
 	}
 
@@ -958,7 +1043,7 @@ func (Minimega) GetVMIPv4(opts ...Option) ([]string, error) {
 	cmd.Columns = []string{"ip"}
 	cmd.Filters = []string{"name=" + o.vm}
 
-	rows := o.tabular(cmd)
+	rows := o.readTabular(nsLine(o.ns), cmd)
 	if err := ended(o.ctx); len(rows) == 0 && err != nil {
 		return nil, err
 	}
@@ -982,7 +1067,7 @@ func getVMIdentities(ctx context.Context, ns, name string) VMs {
 		cmd.Filters = []string{"name=" + name}
 	}
 
-	rows := mmcli.RunTabularContext(ctx, cmd)
+	rows := mmcli.RunTabularReadOnly(ctx, nsLine(ns), cmd)
 	vms := make(VMs, 0, len(rows))
 
 	for _, row := range rows {
@@ -1028,7 +1113,7 @@ func getVMStates(o options, started func()) (map[string]string, error) {
 		errs   []string
 	)
 
-	for resps := range mmcli.RunStartedContext(o.ctx, cmd, started) {
+	for resps := range mmcli.RunReadOnlyStarted(o.ctx, nsLine(o.ns), cmd, started) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
 				errs = append(errs, resp.Error)
@@ -1068,7 +1153,7 @@ func (Minimega) GetVMState(opts ...Option) (string, error) {
 	cmd.Columns = []string{stateColumn}
 	cmd.Filters = []string{"name=" + o.vm}
 
-	status := o.tabular(cmd)
+	status := o.readTabular(nsLine(o.ns), cmd)
 
 	if err := ended(o.ctx); len(status) == 0 && err != nil {
 		return "", err
@@ -1239,6 +1324,11 @@ func (Minimega) CreateTunnel(opts ...Option) error {
 func (Minimega) GetTunnels(opts ...Option) []map[string]string {
 	o := NewOptions(opts...)
 
+	return o.readTabular(nsLine(o.ns), tunnelListing(o))
+}
+
+// tunnelListing is the `cc tunnel list` command that GetTunnels sends for o.
+func tunnelListing(o options) *mmcli.Command {
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "cc tunnel list all"
 
@@ -1260,18 +1350,19 @@ func (Minimega) GetTunnels(opts ...Option) []map[string]string {
 		cmd.Filters = append(cmd.Filters, fmt.Sprintf("'src port'=%d", o.srcPort))
 	}
 
-	return o.tabular(cmd)
+	return cmd
 }
 
 func (Minimega) CloseTunnel(opts ...Option) error {
-	tunnels := GetTunnels(opts...)
+	o := NewOptions(opts...)
+
+	// on the shared connection, in order with the closes that follow
+	tunnels := GetTunnels(append(slices.Clone(opts), readOnShared())...)
 
 	host, err := GetVMHost(opts...)
 	if err != nil {
 		return fmt.Errorf("unable to determine what host the VM is scheduled on: %w", err)
 	}
-
-	o := NewOptions(opts...)
 
 	var (
 		cmdPrefix string
@@ -1472,7 +1563,7 @@ func (Minimega) GetExperimentCapturesChecked(opts ...Option) ([]Capture, error) 
 		cmd.Columns = []string{"interface", "path"}
 	}
 
-	rows, err := mmcli.RunTabularCheckedContext(o.ctx, cmd, nil)
+	rows, err := mmcli.RunTabularReadOnlyChecked(o.ctx, nsLine(o.ns), cmd, nil)
 	if err != nil {
 		err = fmt.Errorf("listing the VM captures of namespace %s: %w", o.ns, err)
 	}
@@ -1535,39 +1626,63 @@ func (m Minimega) GetVMCaptures(opts ...Option) []Capture {
 	return keep
 }
 
-// GetClusterHosts returns the cluster's hosts, or only those VMs can be scheduled on. A schedOnly call always asks
-// minimega, since VM placement depends on current counts; the full list, shown only to people, is reused for up to
-// clusterHostsTTL. Concurrent calls share one set of commands (see flight.Group), and each caller gets its own copy.
-// The schedulers use GetSchedulableHosts, which skips the disk usage and shares nothing.
-func (m Minimega) GetClusterHosts(schedOnly bool) (Hosts, error) {
-	hosts, _, err := m.GetClusterHostsObserved(context.Background(), schedOnly)
+// GetClusterHosts returns the cluster's hosts, or only those VMs can be scheduled on, with their disk usage only when
+// diskUsage is set; see GetClusterHostsObserved.
+func (m Minimega) GetClusterHosts(schedOnly, diskUsage bool) (Hosts, error) {
+	hosts, _, err := m.GetClusterHostsObserved(context.Background(), schedOnly, diskUsage)
 
 	return hosts, err
 }
 
-// GetClusterHostsObserved is GetClusterHosts, also reporting when the hosts
-// were read from minimega, which for a reused list is up to clusterHostsTTL
-// ago. The list's minimega commands give up once ctx, and that of every other
-// caller waiting for the same list, is done (see Context), and the call then
-// returns an error wrapping ctx's error. When the mesh peers cannot be read
-// (see ErrMeshUnavailable), a schedOnly call fails, and the full list has the
+// GetClusterHostsObserved returns the cluster's hosts, also reporting when they were read from minimega. The headnode
+// is always last. diskUsage measures the disk usage (see fillDiskUsage) of the hosts returned, and only of them; without
+// it, each DiskUsage is nil.
+//
+// The full list, shown only to people, is reused for up to clusterHostsTTL, and concurrent calls for it share one set
+// of commands (see flight.Group); a list with disk usage and one without are read and kept apart. Its commands give up
+// once ctx, and that of every other caller waiting for the same list, is done (see Context), and the call then returns
+// an error wrapping ctx's error. When the mesh peers cannot be read (see ErrMeshUnavailable), the full list has the
 // headnode and the peers that answered.
-func (m Minimega) GetClusterHostsObserved(ctx context.Context, schedOnly bool) (Hosts, freshness.Observation, error) {
-	if !schedOnly {
-		if hosts, at, ok := recentHosts.get(); ok {
-			return cloneHosts(hosts), freshness.Observed(at), nil
-		}
-	}
-
-	res, err := clusterHostsFlights.Do(ctx, "", func(ctx context.Context, seal func()) (clusterHosts, error) {
+//
+// A schedOnly call, for VM placement or an app, gives only the hosts VMs can be scheduled on, nil when there are none.
+// It always reads minimega and shares no commands with other callers, so ctx's deadline bounds each of its commands.
+// When the cluster has mesh peers and none of them answers, or the mesh command fails, it returns an error wrapping
+// ErrMeshUnavailable.
+func (m Minimega) GetClusterHostsObserved(
+	ctx context.Context,
+	schedOnly, diskUsage bool,
+) (Hosts, freshness.Observation, error) {
+	if schedOnly {
 		at := time.Now()
 
-		scan, err := m.getClusterHosts(ctx, seal)
-		if err == nil {
-			recentHosts.put(scan.hosts, at)
+		hosts, err := schedulableClusterHosts(ctx, diskUsage)
+		if err != nil {
+			return nil, freshness.Observation{}, err
 		}
 
-		return clusterHosts{hosts: scan.hosts, at: at, err: err, peerErr: scan.peerErr}, nil
+		return hosts, freshness.Observed(at), nil
+	}
+
+	recent := recentHostsFor(diskUsage)
+
+	if hosts, at, ok := recent.get(); ok {
+		return cloneHosts(hosts), freshness.Observed(at), nil
+	}
+
+	key := ""
+	if diskUsage {
+		key = "diskusage"
+	}
+
+	res, err := clusterHostsFlights.Do(ctx, key, func(ctx context.Context, seal func()) (clusterHosts, error) {
+		at := time.Now()
+
+		hosts, err := getClusterHosts(ctx, seal, diskUsage)
+		if err == nil {
+			recent.put(hosts, at)
+		}
+
+		return clusterHosts{hosts: hosts, at: at, err: err}, nil
 	})
 	if err != nil {
 		return nil, freshness.Observation{}, fmt.Errorf("getting cluster hosts: %w", err)
@@ -1577,47 +1692,34 @@ func (m Minimega) GetClusterHostsObserved(ctx context.Context, schedOnly bool) (
 		return cloneHosts(res.hosts), freshness.Observation{}, res.err
 	}
 
-	if schedOnly {
-		if res.peerErr != nil {
-			return nil, freshness.Observation{}, res.peerErr
-		}
-
-		return schedulableHosts(res.hosts), freshness.Observed(res.at), nil
-	}
-
 	return cloneHosts(res.hosts), freshness.Observed(res.at), nil
 }
 
-// getClusterHosts does GetClusterHosts' work for the full list, calling
-// started just before its first minimega command is sent. The headnode is
-// always last. Once ctx is done, it gives up with an error wrapping ctx's
+// getClusterHosts does GetClusterHostsObserved's work for the full list, calling started just before its first
+// minimega command is sent. The headnode is always last. Once ctx is done, it gives up with an error wrapping ctx's
 // error rather than return a list some commands gave up on.
-func (Minimega) getClusterHosts(ctx context.Context, started func()) (clusterScan, error) {
+func getClusterHosts(ctx context.Context, started func(), diskUsage bool) (Hosts, error) {
 	scan, err := scanClusterHosts(ctx, started)
 	if err != nil {
-		return scan, err
+		return scan.hosts, err
 	}
 
 	hosts := scan.hosts
 
-	fillDiskUsage(ctx, hosts, func(name string) bool { return name == hosts[len(hosts)-1].Name })
-
-	if err := ended(ctx); err != nil {
-		return clusterScan{}, err
+	if diskUsage {
+		fillDiskUsage(ctx, hosts, func(name string) bool { return name == hosts[len(hosts)-1].Name })
 	}
 
-	return scan, nil
+	if err := ended(ctx); err != nil {
+		return nil, err
+	}
+
+	return hosts, nil
 }
 
-// GetSchedulableHosts returns the hosts VMs can be scheduled on, read from
-// minimega now, for a scheduler; nil when there are none. It shares no
-// commands with other callers, so ctx's deadline bounds each of its commands,
-// and it returns an error wrapping ctx's error once ctx is done. It measures
-// the disk usage of the hosts, as GetClusterHosts does, only when diskUsage
-// is set; else DiskUsage stays zero. When the cluster has mesh peers and none
-// of them answers, or the mesh command fails, it returns an error wrapping
-// ErrMeshUnavailable.
-func (Minimega) GetSchedulableHosts(ctx context.Context, diskUsage bool) (Hosts, error) {
+// schedulableClusterHosts does GetClusterHostsObserved's work for a schedOnly call. It measures the disk usage of the
+// schedulable hosts only, so not that of a headnode VMs are not scheduled on.
+func schedulableClusterHosts(ctx context.Context, diskUsage bool) (Hosts, error) {
 	scan, err := scanClusterHosts(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -1627,17 +1729,18 @@ func (Minimega) GetSchedulableHosts(ctx context.Context, diskUsage bool) (Hosts,
 		return nil, scan.peerErr
 	}
 
-	hosts := scan.hosts
+	head := scan.hosts[len(scan.hosts)-1].Name
+	hosts := schedulableHosts(scan.hosts)
 
-	if diskUsage {
-		fillDiskUsage(ctx, hosts, func(name string) bool { return name == hosts[len(hosts)-1].Name })
+	if diskUsage && len(hosts) > 0 {
+		fillDiskUsage(ctx, hosts, func(name string) bool { return name == head })
 
 		if err := ended(ctx); err != nil {
 			return nil, err
 		}
 	}
 
-	return schedulableHosts(hosts), nil
+	return hosts, nil
 }
 
 // clusterScan is the cluster's hosts as scanClusterHosts reads them. peerErr,
@@ -1648,11 +1751,33 @@ type clusterScan struct {
 	peerErr error
 }
 
-// scanClusterHosts reads the cluster's hosts without their disk usage, as
-// getClusterHosts gives them.
+// peerScan is what scanPeers reads of the mesh peers.
+type peerScan struct {
+	compute Hosts
+	none    bool // the cluster has no mesh peers
+	peerErr error
+	err     error
+}
+
+// scanClusterHosts reads the cluster's hosts without their disk usage, the
+// headnode last. It reads the headnode and the mesh peers at once, calling
+// started just before the first command is sent.
 func scanClusterHosts(ctx context.Context, started func()) (clusterScan, error) {
+	var startOnce sync.Once
+
+	start := func() {
+		if started != nil {
+			startOnce.Do(started)
+		}
+	}
+
+	peersRead := make(chan peerScan, 1)
+
+	go func() { peersRead <- scanPeers(ctx, start) }()
+
 	// Get headnode details. The default namespace only ever spans this node.
-	hosts := processNamespaceHosts(ctx, "minimega", started)
+	hosts := processNamespaceHosts(ctx, "minimega", start)
+	peers := <-peersRead
 
 	if err := ended(ctx); err != nil {
 		return clusterScan{}, err
@@ -1668,48 +1793,17 @@ func scanClusterHosts(ctx context.Context, started func()) (clusterScan, error) 
 
 	rememberHeadnode(head.Name)
 
-	var cluster []Host
-
-	// The compute nodes are the mesh peers. A node with no peers runs the VMs
-	// itself, as minimega then puts it in every new namespace.
-	peers, err := hostList(ctx, mmcli.NewCommand(), "mesh list peers")
-	if endErr := ended(ctx); endErr != nil {
-		return clusterScan{}, endErr
+	if peers.err != nil {
+		return clusterScan{}, peers.err
 	}
 
-	if err != nil {
-		return clusterScan{}, fmt.Errorf("getting compute nodes: %w", err)
-	}
+	// A node with no peers runs the VMs itself, as minimega then puts it in
+	// every new namespace.
+	head.Schedulable = peers.none
 
-	var (
-		compute Hosts
-		peerErr error
-	)
+	cluster := make(Hosts, 0, len(peers.compute)+1)
 
-	if len(peers) == 0 {
-		head.Schedulable = true
-	} else {
-		cmd := mmcli.NewCommand()
-		cmd.Command = "mesh send all " + hostColumn
-		rows, err := mmcli.RunTabularCheckedContext(ctx, cmd, nil)
-		compute = parseHosts(rows)
-
-		switch {
-		case err != nil && ended(ctx) == nil:
-			plog.Error(plog.TypeSystem, "error running mm cmd", "cmd", cmd.Command, "error", err)
-
-			peerErr = fmt.Errorf("%w: reading the compute nodes with %q: %w", ErrMeshUnavailable, cmd.Command, err)
-		case err == nil && len(compute) == 0:
-			peerErr = fmt.Errorf("%w: none of the mesh peers %s answered %q",
-				ErrMeshUnavailable, strings.Join(peers, ", "), cmd.Command)
-		}
-	}
-
-	if err := ended(ctx); err != nil {
-		return clusterScan{}, err
-	}
-
-	for _, host := range compute {
+	for _, host := range peers.compute {
 		host.Name = common.TrimHostnameSuffixes(host.Name)
 		host.Schedulable = true
 
@@ -1720,15 +1814,50 @@ func scanClusterHosts(ctx context.Context, started func()) (clusterScan, error) 
 
 	cluster = append(cluster, head)
 
-	return clusterScan{hosts: cluster, peerErr: peerErr}, nil
+	return clusterScan{hosts: cluster, peerErr: peers.peerErr}, nil
 }
 
-// hostList runs a command answering with a minimega host list such as
-// `node[1-3],head` and expands it.
-func hostList(ctx context.Context, cmd *mmcli.Command, command string) ([]string, error) {
+// scanPeers reads the compute nodes, which are the mesh peers, calling started
+// just before its first command is sent.
+func scanPeers(ctx context.Context, started func()) peerScan {
+	peers, err := hostList(ctx, mmcli.NewCommand(), "mesh list peers", started)
+	if endErr := ended(ctx); endErr != nil {
+		return peerScan{err: endErr} //nolint:exhaustruct // an ended scan
+	}
+
+	if err != nil {
+		return peerScan{err: fmt.Errorf("getting compute nodes: %w", err)} //nolint:exhaustruct // a failed scan
+	}
+
+	if len(peers) == 0 {
+		return peerScan{none: true} //nolint:exhaustruct // no peers to read
+	}
+
+	cmd := mmcli.NewCommand()
+	cmd.Command = "mesh send all " + hostColumn
+	rows, err := mmcli.RunTabularReadOnlyChecked(ctx, mmcli.MeshRead, cmd, nil)
+	scan := peerScan{compute: parseHosts(rows)} //nolint:exhaustruct // errors set below
+
+	switch {
+	case err != nil && ended(ctx) == nil:
+		plog.Error(plog.TypeSystem, "error running mm cmd", "cmd", cmd.Command, "error", err)
+
+		scan.peerErr = fmt.Errorf("%w: reading the compute nodes with %q: %w", ErrMeshUnavailable, cmd.Command, err)
+	case err == nil && len(scan.compute) == 0:
+		scan.peerErr = fmt.Errorf("%w: none of the mesh peers %s answered %q",
+			ErrMeshUnavailable, strings.Join(peers, ", "), cmd.Command)
+	}
+
+	return scan
+}
+
+// hostList runs a command of the head node answering with a minimega host
+// list such as `node[1-3],head` and expands it, calling started just before
+// it is sent.
+func hostList(ctx context.Context, cmd *mmcli.Command, command string, started func()) ([]string, error) {
 	cmd.Command = command
 
-	resp, err := mmcli.SingleResponse(mmcli.RunContext(ctx, cmd))
+	resp, err := mmcli.SingleResponse(mmcli.RunReadOnlyStarted(ctx, mmcli.HeadRead, cmd, started))
 	if err != nil {
 		return nil, fmt.Errorf("running %s: %w", command, err)
 	}
@@ -1755,15 +1884,19 @@ func schedulableHosts(hosts Hosts) Hosts {
 	return cloneHosts(hosts)
 }
 
-func (Minimega) GetNamespaceHosts(ns string) (Hosts, error) {
-	// Get namespace nodes details
-	hosts := processNamespaceHosts(context.Background(), ns, nil)
+// GetNamespaceHosts returns the hosts of the namespace ns, from one `host` in
+// it, without their disk usage. Its command gives up once ctx is done, and
+// the call then returns an error wrapping ctx's error.
+func (Minimega) GetNamespaceHosts(ctx context.Context, ns string) (Hosts, error) {
+	hosts := processNamespaceHosts(ctx, ns, nil)
+
+	if err := ended(ctx); err != nil {
+		return nil, err
+	}
 
 	for i := range hosts {
 		hosts[i].Name = common.TrimHostnameSuffixes(hosts[i].Name)
 	}
-
-	fillDiskUsage(context.Background(), hosts, IsHeadnode)
 
 	return hosts, nil
 }
@@ -1776,6 +1909,18 @@ func (Minimega) Headnode() string {
 	name, at := headnode.name, headnode.at
 	headnode.mu.Unlock()
 
+	if name != "" && time.Since(at) < headnodeTTL {
+		return name
+	}
+
+	headnode.lookup.Lock()
+	defer headnode.lookup.Unlock()
+
+	headnode.mu.Lock()
+	name, at = headnode.name, headnode.at
+	headnode.mu.Unlock()
+
+	// another caller looked it up while this one waited
 	if name != "" && time.Since(at) < headnodeTTL {
 		return name
 	}
@@ -1828,12 +1973,21 @@ func (m Minimega) IsHeadnode(node string) bool {
 }
 
 func (m Minimega) GetMMArgs() (map[string]string, error) {
+	return mmArgs(context.Background())
+}
+
+// mmArgs is GetMMArgs, its command giving up once ctx is done.
+func mmArgs(ctx context.Context) (map[string]string, error) {
 	cmd := mmcli.NewCommand()
 	cmd.Command = argsCmd
 
-	rows := mmcli.RunTabular(cmd)
-	if len(rows) == 1 {
+	rows, err := mmcli.RunTabularReadOnlyChecked(ctx, mmcli.HeadRead, cmd, nil)
+
+	switch {
+	case len(rows) == 1:
 		return rows[0], nil
+	case err != nil:
+		return nil, fmt.Errorf("reading minimega's args: %w", err)
 	}
 
 	return nil, errors.New("no args returned")
@@ -1847,7 +2001,7 @@ func (Minimega) GetVLANs(opts ...Option) (map[string]int, error) {
 
 	vlans := make(map[string]int)
 
-	status, err := mmcli.RunTabularCheckedContext(o.ctx, cmd, nil)
+	status, err := mmcli.RunTabularReadOnlyChecked(o.ctx, nsLine(o.ns), cmd, nil)
 	if err != nil {
 		return nil, fmt.Errorf("listing VLAN aliases: %w", err)
 	}
@@ -1932,7 +2086,7 @@ func (Minimega) c2Client(o c2Options) (c2Target, error) {
 		case <-after:
 			return c2Target{}, ErrC2ClientNotActive
 		default:
-			for _, row := range mmcli.RunTabularContext(o.ctx, cmd) {
+			for _, row := range mmcli.RunTabularReadOnly(o.ctx, nsLine(o.ns), cmd) {
 				// Unless told to trust the UUID alone, also wait for the guest to
 				// report the topology name as its hostname (the startup app sets
 				// it), so Windows VMs are not ready until they have rebooted.
@@ -2230,7 +2384,7 @@ func (Minimega) GetC2Response(opts ...C2Option) (string, error) {
 	cmd := mmcli.NewNamespacedCommand(o.ns)
 	cmd.Command = "cc response " + o.commandID
 
-	resp, err := mmcli.HostResponse(mmcli.RunContext(o.ctx, cmd), target.host)
+	resp, err := mmcli.HostResponse(mmcli.RunReadOnly(o.ctx, nsLine(o.ns), cmd), target.host)
 	if err != nil {
 		return "", fmt.Errorf("getting response for command %s: %w", o.commandID, err)
 	}
@@ -2509,14 +2663,34 @@ func (Minimega) MeshShell(host, command string) error {
 	return nil
 }
 
+// MeshShellResponse runs the shell command on host and returns its output.
+// It sends the command on the shared connection.
 func (Minimega) MeshShellResponse(ctx context.Context, host, command string) (string, error) {
-	return meshShellResponse(ctx, host, command)
+	return meshShellResponse(ctx, runShared, host, command)
 }
 
-// meshShellResponse is MeshShellResponse, its command giving up once ctx is
-// done (see Context).
-func meshShellResponse(ctx context.Context, host, command string) (string, error) {
+// MeshShellRead is MeshShellResponse for a shell command that changes nothing,
+// such as a qemu-img info. It sends the command with mmcli.RunReadOnly:
+// mmcli.HeadRead on the head node, else mmcli.MeshRead.
+func (Minimega) MeshShellRead(ctx context.Context, host, command string) (string, error) {
+	return meshShellResponse(ctx, mmcli.RunReadOnly, host, command)
+}
+
+// runShared is mmcli.RunContext with the signature of mmcli.RunReadOnly; it
+// ignores line.
+func runShared(ctx context.Context, _ mmcli.ReadLine, cmd *mmcli.Command) chan *miniclient.Response {
+	return mmcli.RunContext(ctx, cmd)
+}
+
+// meshShellResponse is MeshShellResponse, its command sent with run in the
+// line of host and giving up once ctx is done (see Context).
+func meshShellResponse(
+	ctx context.Context,
+	run func(context.Context, mmcli.ReadLine, *mmcli.Command) chan *miniclient.Response,
+	host, command string,
+) (string, error) {
 	cmd := mmcli.NewCommand()
+	line := mmcli.HeadRead
 
 	// "" is the headnode, which runs the minimega phenix talks to, so it needs no
 	// lookup, shared with other callers, that ctx would not bound
@@ -2524,6 +2698,7 @@ func meshShellResponse(ctx context.Context, host, command string) (string, error
 		cmd.Command = "shell " + command
 	} else {
 		cmd.Command = fmt.Sprintf("mesh send %s shell %s", host, command)
+		line = mmcli.MeshRead
 	}
 
 	var (
@@ -2531,8 +2706,8 @@ func meshShellResponse(ctx context.Context, host, command string) (string, error
 		found bool
 	)
 
-	// Drain the full response channel -- returning early would abandon it and wedge the shared minimega connection.
-	for resps := range mmcli.RunContext(ctx, cmd) {
+	// Drain the full response channel -- returning early would abandon it and wedge its minimega connection.
+	for resps := range run(ctx, line, cmd) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
 				plog.Warn(plog.TypeSystem, "error running shell command", "cmd", cmd.Command, "error", resp.Error)
@@ -2599,7 +2774,7 @@ func getActiveC2(ctx context.Context, ns string, started func()) map[string]bool
 	cmd := mmcli.NewNamespacedCommand(ns)
 	cmd.Command = ccClientCmd
 
-	for _, row := range mmcli.RunTabularStartedContext(ctx, cmd, started) {
+	for _, row := range mmcli.RunTabularReadOnlyStarted(ctx, nsLine(ns), cmd, started) {
 		active[row["uuid"]] = true
 	}
 
@@ -2611,7 +2786,7 @@ func getResponse(ctx context.Context, ns, host, id string) (string, error) {
 	cmd := mmcli.NewNamespacedCommand(ns)
 	cmd.Command = fmt.Sprintf("cc response %s raw", id)
 
-	resp, err := mmcli.HostResponse(mmcli.RunContext(ctx, cmd), host)
+	resp, err := mmcli.HostResponse(mmcli.RunReadOnly(ctx, nsLine(ns), cmd), host)
 	if err != nil {
 		return "", fmt.Errorf("getting response for command %s: %w", id, err)
 	}
@@ -2695,13 +2870,13 @@ func processNamespaceHosts(ctx context.Context, namespace string, started func()
 	cmd := mmcli.NewNamespacedCommand(namespace)
 	cmd.Command = hostColumn
 
-	return processHosts(ctx, cmd, started)
+	return processHosts(ctx, nsLine(namespace), cmd, started)
 }
 
 // processHosts runs cmd, `host` or a command that forwards it to other nodes,
-// and reads one Host from each row of its answer.
-func processHosts(ctx context.Context, cmd *mmcli.Command, started func()) Hosts {
-	return parseHosts(mmcli.RunTabularStartedContext(ctx, cmd, started))
+// in line, and reads one Host from each row of its answer.
+func processHosts(ctx context.Context, line mmcli.ReadLine, cmd *mmcli.Command, started func()) Hosts {
+	return parseHosts(mmcli.RunTabularReadOnlyStarted(ctx, line, cmd, started))
 }
 
 // parseHosts reads one Host from each row of a `host` answer.
@@ -2761,60 +2936,99 @@ var (
 	diskUsageCache = map[string]diskUsageEntry{} //nolint:gochecknoglobals // cache shared across requests
 )
 
-// fillDiskUsage sets the DiskUsage of each of hosts: the percent of the disks
-// holding phenix's and minimega's base directories that is in use. It reuses
-// a measurement for diskUsageTTL, and a failed one for diskUsageFailureTTL.
-// It measures all stale mesh peers with one `mesh send all` command, and the
-// headnode, which isHead names, with one `shell` command. A failure while ctx
-// is done is not kept.
-func fillDiskUsage(ctx context.Context, hosts Hosts, isHead func(string) bool) {
-	paths := []string{common.PhenixBase, common.MinimegaBase}
-	stale := make(map[int]bool) // index in hosts: true for the headnode
+// fillCachedDiskUsage sets the DiskUsage of each of hosts that has a cached
+// measurement of paths, and gives the index of each other host, as false.
+func fillCachedDiskUsage(hosts Hosts, paths []string) map[int]bool {
+	stale := make(map[int]bool) // index in hosts: true for the headnode, set later
 
 	diskUsageMu.Lock()
+	defer diskUsageMu.Unlock()
 
 	now := time.Now()
 
 	for i, host := range hosts {
-		usage, ok := cachedDiskUsage(host.Name, paths, now)
-		if ok {
-			hosts[i].DiskUsage = usage
+		if usage, ok := cachedDiskUsage(host.Name, paths, now); ok {
+			hosts[i].DiskUsage = &usage
 		} else {
 			stale[i] = false
 		}
 	}
 
-	diskUsageMu.Unlock()
+	return stale
+}
 
+// fillDiskUsage sets the DiskUsage of each of hosts: the percent of the disks
+// holding phenix's and minimega's base directories that is in use. It reuses
+// a measurement for diskUsageTTL, and a failed one for diskUsageFailureTTL.
+// It measures all stale mesh peers with one `mesh send all` command, and the
+// headnode, which isHead names, with one `shell` command, at once. A failure
+// while ctx is done is not kept.
+func fillDiskUsage(ctx context.Context, hosts Hosts, isHead func(string) bool) {
+	paths := []string{common.PhenixBase, common.MinimegaBase}
+
+	stale := fillCachedDiskUsage(hosts, paths)
 	if len(stale) == 0 {
 		return
 	}
 
-	measured := make(map[string]map[int]float64)
-	meshStale := false
+	command, err := diskUsageCommand(paths...)
+	if err != nil {
+		plog.Warn(plog.TypeSystem, "phenix cannot measure the disk usage of these base directories", "error", err)
+
+		return
+	}
+
+	var (
+		measured   = make(map[string]map[int]float64)
+		measuredMu sync.Mutex
+		mesh       map[string]map[int]float64
+		reads      errgroup.Group
+		meshStale  bool
+	)
+
+	reads.SetLimit(mmcli.ReadOnlyLimit())
 
 	for i := range stale {
-		if isHead(hosts[i].Name) {
-			stale[i] = true
-
-			if resp, err := meshShellResponse(ctx, "", diskUsageCommand(paths...)); err == nil {
-				measured[hosts[i].Name] = parseDiskUsage(resp, len(paths))
-			}
-		} else {
+		if !isHead(hosts[i].Name) {
 			meshStale = true
+
+			continue
 		}
+
+		stale[i] = true
+		name := hosts[i].Name
+
+		reads.Go(func() error {
+			resp, err := meshShellResponse(ctx, mmcli.RunReadOnly, "", command)
+			if err == nil {
+				measuredMu.Lock()
+				measured[name] = parseDiskUsage(resp, len(paths))
+				measuredMu.Unlock()
+			}
+
+			return nil
+		})
 	}
 
 	if meshStale {
-		maps.Copy(measured, measureMeshDiskUsage(ctx, paths))
+		reads.Go(func() error {
+			mesh = measureMeshDiskUsage(ctx, command, len(paths))
+
+			return nil
+		})
 	}
 
-	keepFailures := ctx.Err() == nil
+	_ = reads.Wait()
+
+	maps.Copy(measured, mesh)
+
+	// a command's own timer, set from ctx's deadline, can fire before ctx's
+	keepFailures := ended(ctx) == nil
 
 	diskUsageMu.Lock()
 	defer diskUsageMu.Unlock()
 
-	now = time.Now()
+	now := time.Now()
 
 	for name, values := range measured {
 		for idx, path := range paths {
@@ -2837,7 +3051,7 @@ func fillDiskUsage(ctx context.Context, hosts Hosts, isHead func(string) bool) {
 			}
 		}
 
-		hosts[i].DiskUsage = DiskUsage{Phenix: usage[0], Minimega: usage[1]}
+		hosts[i].DiskUsage = &DiskUsage{Phenix: usage[0], Minimega: usage[1]}
 	}
 }
 
@@ -2858,17 +3072,17 @@ func cachedDiskUsage(host string, paths []string, now time.Time) (DiskUsage, boo
 	return DiskUsage{Phenix: usage[0], Minimega: usage[1]}, true
 }
 
-// measureMeshDiskUsage runs diskUsageCommand for paths on every mesh peer
-// with one `mesh send all` command. It returns the usage of each peer that
-// answered without an error, by host name without its suffixes.
-func measureMeshDiskUsage(ctx context.Context, paths []string) map[string]map[int]float64 {
+// measureMeshDiskUsage runs command, a diskUsageCommand for count paths, on
+// every mesh peer with one `mesh send all` command. It returns the usage of
+// each peer that answered without an error, by host name without its suffixes.
+func measureMeshDiskUsage(ctx context.Context, command string, count int) map[string]map[int]float64 {
 	cmd := mmcli.NewCommand()
-	cmd.Command = "mesh send all shell " + diskUsageCommand(paths...)
+	cmd.Command = "mesh send all shell " + command
 
 	usage := make(map[string]map[int]float64)
 
-	// Drain the full response channel -- returning early would abandon it and wedge the shared minimega connection.
-	for resps := range mmcli.RunContext(ctx, cmd) {
+	// Drain the full response channel -- returning early would abandon it and wedge its minimega connection.
+	for resps := range mmcli.RunReadOnly(ctx, mmcli.MeshRead, cmd) {
 		for _, resp := range resps.Resp {
 			if resp.Error != "" {
 				if ctx.Err() == nil {
@@ -2878,7 +3092,7 @@ func measureMeshDiskUsage(ctx context.Context, paths []string) map[string]map[in
 				continue
 			}
 
-			usage[common.TrimHostnameSuffixes(resp.Host)] = parseDiskUsage(resp.Response, len(paths))
+			usage[common.TrimHostnameSuffixes(resp.Host)] = parseDiskUsage(resp.Response, count)
 		}
 	}
 
@@ -2887,15 +3101,21 @@ func measureMeshDiskUsage(ctx context.Context, paths []string) map[string]map[in
 
 // diskUsageCommand builds a shell command printing `<index>=<use%>` for each
 // path, e.g. `0=42% 1=17%`. The index tags each value, so a path df fails for
-// (printing nothing) can't be mistaken for another.
-func diskUsageCommand(paths ...string) string {
+// (printing nothing) can't be mistaken for another. It returns an error that
+// wraps mmcli.ErrUnsafeArg for a path that fails mmcli.SafeArg, as the path
+// goes into a quoted bash script in a minimega command.
+func diskUsageCommand(paths ...string) (string, error) {
 	parts := make([]string, len(paths))
 
 	for i, path := range paths {
+		if err := mmcli.SafeArg(path); err != nil {
+			return "", fmt.Errorf("disk usage path: %w", err)
+		}
+
 		parts[i] = fmt.Sprintf(`%d=$(df %s | awk '{print $(NF-1)}' | tail -1)`, i, path)
 	}
 
-	return fmt.Sprintf(`bash -c "echo %s"`, strings.Join(parts, " "))
+	return fmt.Sprintf(`bash -c "echo %s"`, strings.Join(parts, " ")), nil
 }
 
 // parseDiskUsage parses diskUsageCommand's output for `count` paths.

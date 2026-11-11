@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"golang.org/x/sync/errgroup"
 
 	"phenix/api/config"
 	"phenix/api/experiment"
@@ -23,6 +24,7 @@ import (
 	"phenix/util/common"
 	"phenix/util/freshness"
 	"phenix/util/mm"
+	"phenix/util/mm/mmcli"
 	"phenix/util/notes"
 	"phenix/util/plog"
 	"phenix/web/audit"
@@ -179,9 +181,6 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	// whether minimega is busy depends on every experiment, not just those listed
-	busy := anyExperimentLocked(experiments)
-
 	experiments = slices.DeleteFunc(experiments, func(exp types.Experiment) bool {
 		return !role.Allowed("experiments", "list", exp.Metadata.Name)
 	})
@@ -196,7 +195,9 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 	// some experiments could not be read, so the list is incomplete
 	observed.Stale = err != nil
 
-	for _, exp := range experiments {
+	lists := experimentVMLists(ctx, experiments, !noVMs)
+
+	for i, exp := range experiments {
 		status, percent := experimentStatus(exp)
 
 		var pb *proto.Experiment
@@ -205,7 +206,7 @@ func GetExperiments(w http.ResponseWriter, r *http.Request) error {
 			pb = util.ExperimentSummaryToProtobuf(exp, status)
 		} else {
 			// TODO: limit per-experiment VMs based on RBAC
-			vms, obs := listExperimentVMs(ctx, exp, busy)
+			vms, obs := lists[i].vms, lists[i].obs
 			observed = observed.Older(obs)
 
 			pb = util.ExperimentToProtobuf(exp, status, vms)
@@ -262,35 +263,83 @@ func addVMScreenshots(ctx context.Context, expName string, vms []mm.VM, size str
 	}
 }
 
-// anyExperimentLocked reports whether a handler holds the lock of any of the
-// experiments, as while one starts or stops, or another process starts one.
-// Starting or stopping keeps minimega busy for as long as it takes, so asking
-// it about VMs meanwhile would stall the experiment list until it finishes.
-func anyExperimentLocked(experiments []types.Experiment) bool {
-	for _, exp := range experiments {
-		if cache.IsExperimentLocked(exp.Metadata.Name) != "" || experiment.StartingElsewhere(exp.Status) {
-			return true
-		}
-	}
-
-	return false
+// experimentVMList is the VMs of one experiment in a list, and how minimega
+// was read for them.
+type experimentVMList struct {
+	vms []mm.VM
+	obs freshness.Observation
 }
 
-// listExperimentVMs lists the experiment's VMs, from its topology alone when
-// minimega is busy, and how minimega was read for them. A running
-// experiment's VMs listed from the topology are unknown, and stale.
-func listExperimentVMs(ctx context.Context, exp types.Experiment, busy bool) ([]mm.VM, freshness.Observation) {
-	if busy {
-		obs := freshness.Unobserved()
+// experimentVMLists lists the VMs of each experiment with listExperimentVMs,
+// in the order of experiments, up to mmcli.ReadOnlyLimit() at once, so each
+// slow experiment does not add its wait to the list. It lists none unless
+// withVMs.
+func experimentVMLists(ctx context.Context, experiments []types.Experiment, withVMs bool) []experimentVMList {
+	lists := make([]experimentVMList, len(experiments))
 
-		if exp.Running() {
-			obs.Known, obs.Stale = false, true
-		}
-
-		return vm.ListConfigured(exp), obs
+	if !withVMs {
+		return lists
 	}
 
-	return vm.ListForObserved(ctx, &exp)
+	var group errgroup.Group
+
+	group.SetLimit(mmcli.ReadOnlyLimit())
+
+	for i, exp := range experiments {
+		group.Go(func() error {
+			lists[i].vms, lists[i].obs = listExperimentVMs(ctx, exp)
+
+			return nil
+		})
+	}
+
+	_ = group.Wait()
+
+	return lists
+}
+
+// experimentVMReads runs one read of the VMs of each experiment at a time,
+// for the experiment list (see liveReads).
+var experimentVMReads = newLiveReads[observedVMs]() //nolint:gochecknoglobals // shared by every list
+
+// observedVMs is one read of an experiment's VMs from minimega, and how it was
+// read.
+type observedVMs struct {
+	vms mm.VMs
+	obs freshness.Observation
+}
+
+// listExperimentVMs lists the experiment's VMs, waiting for minimega at most
+// liveReadWait. Past it, it lists them from the topology alone, unknown and
+// stale, while the read goes on (see experimentVMReads). It asks nothing
+// about an experiment that is not running.
+func listExperimentVMs(ctx context.Context, exp types.Experiment) ([]mm.VM, freshness.Observation) {
+	if !exp.Running() {
+		return vm.ListForObserved(ctx, &exp)
+	}
+
+	name := exp.Metadata.Name
+
+	read, ok, panicErr := experimentVMReads.get(ctx, name, func(ctx context.Context) observedVMs {
+		vms, obs := mm.GetVMInfoObserved(mm.NS(name), mm.Context(ctx))
+
+		return observedVMs{vms: vms, obs: obs}
+	})
+	if ok && panicErr == nil {
+		return vm.ListFromObserved(exp, read.vms, read.obs), read.obs
+	}
+
+	obs := freshness.Unobserved()
+	obs.Known, obs.Stale = false, true
+
+	switch {
+	case panicErr != nil:
+		obs.Err = panicErr
+	case ctx.Err() != nil:
+		obs.Err = ctx.Err()
+	}
+
+	return vm.ListConfigured(exp), obs
 }
 
 // CreateExperiment - POST /experiments.

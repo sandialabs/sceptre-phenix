@@ -28,16 +28,20 @@ Adding a new setting:
 4. Update Settings.vue for UI visibility
 
 The logging settings are not in the store: they are the runtime settings
-log.system.max-size, max-backups and max-age (see logfile.go).
+log.system.max-size, max-backups and max-age (see logfile.go). The minimega
+settings are the runtime setting minimega.read-connections (see minimega.go).
 */
 
 type Settings struct {
 	PasswordSettings PasswordSettings `json:"password_settings"`
 	LoggingSettings  LoggingSettings  `json:"logging_settings"`
 	TimeoutSettings  TimeoutSettings  `json:"timeout_settings"`
+	MinimegaSettings MinimegaSettings `json:"minimega_settings"`
 }
 
-func GetSettings() (*Settings, error) {
+// GetSettings returns the settings, with the minimega settings' source in rs
+// (nil reads it as the default).
+func GetSettings(rs *runtimesettings.Settings) (*Settings, error) {
 	settings := &Settings{} //nolint:exhaustruct // partial initialization
 
 	var err error
@@ -53,6 +57,7 @@ func GetSettings() (*Settings, error) {
 	}
 
 	settings.LoggingSettings = GetLoggingSettings()
+	settings.MinimegaSettings = GetMinimegaSettings(rs)
 
 	settings.TimeoutSettings, err = GetTimeoutSettingsFromList(settingList)
 	if err != nil {
@@ -63,13 +68,18 @@ func GetSettings() (*Settings, error) {
 }
 
 // UpdateAllSettings changes the settings to newSettings. It writes each
-// changed logging setting to the config file of rs and applies it at once. It
-// checks the logging and password settings before it changes a setting, so a
-// refused request changes nothing.
+// changed logging and minimega setting to the config file of rs and applies it
+// at once. It checks the logging, minimega and password settings before it
+// changes a setting, so a refused request changes nothing.
 func UpdateAllSettings(rs *runtimesettings.Settings, newSettings Settings) error {
 	logChanges, err := logLimitChanges(rs, newSettings.LoggingSettings)
 	if err != nil {
 		return fmt.Errorf("error updating logging settings: %w", err)
+	}
+
+	minimegaChanged, err := minimegaChange(rs, newSettings.MinimegaSettings)
+	if err != nil {
+		return fmt.Errorf("error updating minimega settings: %w", err)
 	}
 
 	err = UpdatePasswordSettings(newSettings.PasswordSettings)
@@ -83,6 +93,12 @@ func UpdateAllSettings(rs *runtimesettings.Settings, newSettings Settings) error
 
 	if err := applyLogLimitChanges(rs, logChanges); err != nil {
 		return fmt.Errorf("error updating logging settings: %w", err)
+	}
+
+	if minimegaChanged {
+		if err := applyMinimegaChange(rs, newSettings.MinimegaSettings); err != nil {
+			return fmt.Errorf("error updating minimega settings: %w", err)
+		}
 	}
 
 	return nil

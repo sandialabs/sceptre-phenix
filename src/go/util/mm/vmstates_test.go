@@ -1,6 +1,7 @@
 package mm
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"testing"
@@ -94,7 +95,7 @@ func TestGetVMStatesMergesConcurrentCalls(t *testing.T) { //nolint:paralleltest 
 
 	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
 		switch cmd.Base {
-		case "hold":
+		case poolHold:
 			<-release
 		case vmInfoSummaryCmd:
 			return []*minicli.Response{mmtest.Tabular("head", []string{"name", "state"}, []string{"a", "RUNNING"})}
@@ -107,10 +108,10 @@ func TestGetVMStatesMergesConcurrentCalls(t *testing.T) { //nolint:paralleltest 
 		wg      sync.WaitGroup
 		results = make([]map[string]string, callers)
 		errs    = make([]error, callers)
-		held    = make(chan error, 1)
+		held    = make(chan error, mmcli.ReadOnlyLimit())
 	)
 
-	// free the shared connection even if the test fails first, so every caller finishes
+	// free the read-only connections even if the test fails first, so every caller finishes
 	unhold := sync.OnceFunc(func() { close(release) })
 
 	t.Cleanup(func() {
@@ -118,15 +119,19 @@ func TestGetVMStatesMergesConcurrentCalls(t *testing.T) { //nolint:paralleltest 
 		wg.Wait()
 	})
 
-	// hold the shared connection so the callers below queue up behind it
-	go func() {
-		cmd := mmcli.NewCommand()
-		cmd.Command = "hold"
+	// hold every read-only connection so the callers below queue up behind them
+	for range mmcli.ReadOnlyLimit() {
+		go func() {
+			cmd := mmcli.NewCommand()
+			cmd.Command = poolHold
 
-		held <- mmcli.ErrorResponse(mmcli.Run(cmd))
-	}()
+			held <- mmcli.ErrorResponse(mmcli.RunReadOnly(context.Background(), mmcli.HeadRead, cmd))
+		}()
+	}
 
-	mmtest.Await(t, "hold")
+	polltest.Until(t, "every read-only connection is held", func() bool {
+		return mmtest.Count(received(), poolHold) == mmcli.ReadOnlyLimit()
+	})
 
 	for i := range callers {
 		wg.Add(1)
@@ -143,8 +148,10 @@ func TestGetVMStatesMergesConcurrentCalls(t *testing.T) { //nolint:paralleltest 
 	unhold()
 	wg.Wait()
 
-	if err := <-held; err != nil {
-		t.Errorf("holding command error = %v", err)
+	for range mmcli.ReadOnlyLimit() {
+		if err := <-held; err != nil {
+			t.Errorf("holding command error = %v", err)
+		}
 	}
 
 	if got := mmtest.Count(received(), vmInfoSummaryCmd); got != 1 {

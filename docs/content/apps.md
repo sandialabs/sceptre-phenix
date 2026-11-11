@@ -769,6 +769,11 @@ string over `STDIN`.
     You can run `phenix util app-json <exp name>` to see an example of what the
     JSON that's passed to a user app looks like.
 
+!!! note
+    The runtime `hosts` that a user app gets have no `diskusage` field.
+    phēnix does not measure the disk usage of the hosts for user apps. A user
+    scheduler gets the disk usage of the schedulable hosts.
+
 The user app can modify the experiment at will, then return the updated
 JSON over `STDOUT` and exit with a `0` status. If the user app encounters an
 error, it should print error messages to `STDERR` and exit with a non-zero

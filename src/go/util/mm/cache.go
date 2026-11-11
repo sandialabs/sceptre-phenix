@@ -17,7 +17,7 @@ import (
 const launchTolerance = 10 * time.Second
 
 // clusterHostsTTL is how long the full list of cluster hosts is reused for
-// callers that only show it (see GetClusterHosts).
+// callers that only show it (see GetClusterHostsObserved).
 const clusterHostsTTL = 5 * time.Second
 
 var (
@@ -25,7 +25,8 @@ var (
 	vmStatesFlights     flight.Group[vmStates]     //nolint:gochecknoglobals // shared by concurrent callers
 	clusterHostsFlights flight.Group[clusterHosts] //nolint:gochecknoglobals // shared by concurrent callers
 	snapshotDisks       snapshotDiskCache          //nolint:gochecknoglobals // process-lifetime cache
-	recentHosts         recentClusterHosts         //nolint:gochecknoglobals // shared by all callers
+	// The latest full lists of cluster hosts: [1] with their disk usage, [0] without.
+	recentHosts [2]recentClusterHosts //nolint:gochecknoglobals // shared by all callers
 )
 
 // vmInfoResult is one GetVMInfo run, as shared between its callers: the VMs
@@ -43,17 +44,16 @@ type vmStates struct {
 	err    error
 }
 
-// clusterHosts is one GetClusterHosts result, as shared between the callers of
-// one run, with when the run started. peerErr tells that the compute nodes
-// could not be read (see clusterScan); only a schedOnly caller gets it.
+// clusterHosts is one full list of cluster hosts, as shared between the
+// callers of one run, with when the run started.
 type clusterHosts struct {
-	hosts   Hosts
-	at      time.Time
-	err     error
-	peerErr error
+	hosts Hosts
+	at    time.Time
+	err   error
 }
 
-// recentClusterHosts holds the latest full list of cluster hosts.
+// recentClusterHosts holds the latest full list of cluster hosts of one kind:
+// with their disk usage or without.
 type recentClusterHosts struct {
 	mu    sync.Mutex
 	hosts Hosts
@@ -95,6 +95,17 @@ func (c *recentClusterHosts) get() (Hosts, time.Time, bool) {
 	}
 
 	return c.hosts, c.at, true
+}
+
+// recentHostsFor returns where the full list of cluster hosts is kept, with
+// their disk usage or without, so neither kind is handed to a caller of the
+// other.
+func recentHostsFor(diskUsage bool) *recentClusterHosts {
+	if diskUsage {
+		return &recentHosts[1]
+	}
+
+	return &recentHosts[0]
 }
 
 // put stores a list read by a run started at `at`, unless a later run's list
@@ -248,6 +259,11 @@ func cloneHosts(hosts Hosts) Hosts {
 
 	for i, host := range hosts {
 		host.Load = slices.Clone(host.Load)
+
+		if host.DiskUsage != nil {
+			usage := *host.DiskUsage
+			host.DiskUsage = &usage
+		}
 
 		clone[i] = host
 	}

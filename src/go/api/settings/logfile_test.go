@@ -19,6 +19,7 @@ import (
 	"phenix/api/settings"
 	"phenix/store"
 	v2 "phenix/types/version/v2"
+	"phenix/util/mm/mmcli"
 	"phenix/util/plog"
 )
 
@@ -37,6 +38,7 @@ func newRuntime(t *testing.T, data string, args []string, env map[string]string)
 	flags.Int(settings.LogMaxSizeKey, 100, "")
 	flags.Int(settings.LogMaxBackupsKey, 3, "")
 	flags.Int(settings.LogMaxAgeKey, 90, "")
+	flags.Int(settings.MinimegaReadConnectionsKey, mmcli.DefaultReadOnlyLimit, "")
 
 	if err := flags.Parse(args); err != nil {
 		t.Fatalf("parsing flags %v: %v", args, err)
@@ -186,7 +188,7 @@ func TestUpdateAllSettingsLogLimitRefusals(t *testing.T) {
 				t.Errorf("UpdateAllSettings(%+v) error = %q, want it to name %q", tt.logging, err, tt.wantText)
 			}
 
-			got, err := settings.GetSettings()
+			got, err := settings.GetSettings(nil)
 			if err != nil {
 				t.Fatalf("GetSettings() error = %v", err)
 			}

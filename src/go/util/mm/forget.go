@@ -4,9 +4,11 @@ import "time"
 
 // ForgetCluster drops what is reused from minimega's earlier answers (the
 // headnode's name, the cluster hosts, their disk usage, the images behind
-// snapshot disks and minimega's version), so the next calls ask minimega again.
+// snapshot disks, minimega's version and whether it can remove a blacklisted
+// VLAN), so the next calls ask minimega again.
 func ForgetCluster() {
 	forgetVersion()
+	forgetBlacklistRemoval()
 
 	headnode.mu.Lock()
 	headnode.name = ""
@@ -20,9 +22,11 @@ func ForgetCluster() {
 	snapshotDisks.entries = nil
 	snapshotDisks.mu.Unlock()
 
-	recentHosts.mu.Lock()
-	recentHosts.hosts, recentHosts.at = nil, time.Time{}
-	recentHosts.mu.Unlock()
+	for i := range recentHosts {
+		recentHosts[i].mu.Lock()
+		recentHosts[i].hosts, recentHosts[i].at = nil, time.Time{}
+		recentHosts[i].mu.Unlock()
+	}
 }
 
 // VMInfoWaiting returns how many callers wait for the namespace's GetVMInfo

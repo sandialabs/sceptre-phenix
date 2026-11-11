@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/sync/errgroup"
+
 	"phenix/api/experiment"
 	"phenix/types"
 	"phenix/util"
@@ -149,13 +151,14 @@ func (MMDiskFiles) GetImages(expName string) ([]Details, error) {
 			return nil, err
 		}
 	} else {
-		// Add all the files from the minimega files directory
-		getAllFiles(details)
+		// the files of the minimega files directory, then those the experiment topologies name
+		paths := minimegaImageFiles()
 
-		// Add all files defined in the experiment topologies
 		for _, exp := range experiments {
-			getTopologyFiles(exp, details)
+			paths = append(paths, topologyFiles(exp)...)
 		}
+
+		addAllResolved(details, paths)
 	}
 
 	addExperimentUses(experiments, details)
@@ -263,31 +266,61 @@ func getImagesLocal(experiments []types.Experiment, details map[string]Details) 
 	return nil
 }
 
-// getAllFiles adds the images in the minimega files directory down to maxDepth, with one non-recursive `file list` per
-// folder because minimega stops a recursive listing at its first unreadable entry. Like imageFiles, it does not follow
-// symlinked folders and leaves out what is not a regular file (see minimegaMayInspect).
-func getAllFiles(details map[string]Details) {
-	for folders := []string{""}; len(folders) > 0; folders = folders[1:] {
-		cmd := mmcli.NewCommand()
-		cmd.Command = strings.TrimSpace("file list " + folders[0])
+// diskReadsAtOnce is how many `file list` or `disk info` reads the disk list
+// sends to minimega at once, without a local qemu-img.
+const diskReadsAtOnce = 4
 
-		for _, row := range mmcli.RunTabular(cmd) {
-			name := row["name"]
+// minimegaImageFiles lists the images in the minimega files directory down to maxDepth, in the order a breadth-first
+// walk finds them, with one non-recursive `file list` per folder because minimega stops a recursive listing at its
+// first unreadable entry. It lists the folders of one level at once. Like imageFiles, it does not follow symlinked
+// folders and leaves out what is not a regular file (see minimegaMayInspect).
+func minimegaImageFiles() []string {
+	var images []string
 
-			switch {
-			case name == "" || skipped(name):
-				continue
-			case row["dir"] != "":
-				if listable(name) && !tooDeep(mm.GetMMFullPath(""), name) {
-					folders = append(folders, name)
-				}
-			case knownImage(name):
-				if path := mm.GetMMFullPath(name); minimegaMayInspect(path) {
-					addResolved(details, path)
+	for level := []string{""}; len(level) > 0; {
+		rows := make([][]map[string]string, len(level))
+
+		var reads errgroup.Group
+
+		reads.SetLimit(diskReadsAtOnce)
+
+		for i, folder := range level {
+			reads.Go(func() error {
+				cmd := mmcli.NewCommand()
+				cmd.Command = strings.TrimSpace("file list " + folder)
+				rows[i] = mmcli.RunTabularReadOnly(context.Background(), mmcli.HeadRead, cmd)
+
+				return nil
+			})
+		}
+
+		_ = reads.Wait()
+
+		var next []string
+
+		for _, listed := range rows {
+			for _, row := range listed {
+				name := row["name"]
+
+				switch {
+				case name == "" || skipped(name):
+					continue
+				case row["dir"] != "":
+					if listable(name) && !tooDeep(mm.GetMMFullPath(""), name) {
+						next = append(next, name)
+					}
+				case knownImage(name):
+					if path := mm.GetMMFullPath(name); minimegaMayInspect(path) {
+						images = append(images, path)
+					}
 				}
 			}
 		}
+
+		level = next
 	}
+
+	return images
 }
 
 // listable reports whether folder, relative to the minimega files directory,
@@ -305,9 +338,11 @@ func listable(folder string) bool {
 	return true
 }
 
-// getTopologyFiles adds the images the experiment's topology names, of any
+// topologyFiles lists the images the experiment's topology names, of any
 // extension, that phenix can read (see usableImage).
-func getTopologyFiles(exp types.Experiment, details map[string]Details) {
+func topologyFiles(exp types.Experiment) []string {
+	var paths []string
+
 	for _, node := range exp.Spec.Topology().Nodes() {
 		for _, drive := range node.Hardware().Drives() {
 			if len(drive.Image()) == 0 {
@@ -315,30 +350,58 @@ func getTopologyFiles(exp types.Experiment, details map[string]Details) {
 			}
 
 			if path := mm.GetMMFullPath(drive.Image()); usableImage(path) {
-				addResolved(details, path)
+				paths = append(paths, path)
 			}
 		}
 	}
+
+	return paths
 }
 
-// addResolved adds the image at path and the images backing it, as minimega
-// inspects them, unless path is listed already; an image listed already is
-// kept.
-func addResolved(details map[string]Details, path string) {
-	if _, ok := details[path]; ok {
-		return
-	}
+// addAllResolved adds, in order, the image at each of paths and the images backing it, as minimega inspects them,
+// unless the path is listed already; an image listed already is kept. It inspects up to diskReadsAtOnce images at
+// once, so it can also inspect an image that an earlier one turns out to back; that image keeps its first details.
+func addAllResolved(details map[string]Details, paths []string) {
+	var pending []string
 
-	images := resolveImage(path)
-	if len(images) == 0 {
-		if image, ok := refusedImage(path, nil); ok {
-			images = []Details{image}
+	for _, path := range util.Unique(paths) {
+		if _, ok := details[path]; !ok {
+			pending = append(pending, path)
 		}
 	}
 
-	for _, image := range images {
-		if _, ok := details[image.FullPath]; !ok {
-			details[image.FullPath] = image
+	resolved := make([][]Details, len(pending))
+
+	var reads errgroup.Group
+
+	reads.SetLimit(diskReadsAtOnce)
+
+	for i, path := range pending {
+		reads.Go(func() error {
+			resolved[i] = resolveImage(path)
+
+			return nil
+		})
+	}
+
+	_ = reads.Wait()
+
+	for i, path := range pending {
+		if _, ok := details[path]; ok {
+			continue
+		}
+
+		images := resolved[i]
+		if len(images) == 0 {
+			if image, ok := refusedImage(path, nil); ok {
+				images = []Details{image}
+			}
+		}
+
+		for _, image := range images {
+			if _, ok := details[image.FullPath]; !ok {
+				details[image.FullPath] = image
+			}
 		}
 	}
 }
@@ -354,7 +417,7 @@ func resolveImage(path string) []Details {
 
 	cmd := mmcli.NewCommand()
 	cmd.Command = fmt.Sprintf("disk info %v recursive", path)
-	images := mmcli.RunTabular(cmd)
+	images := mmcli.RunTabularReadOnly(context.Background(), mmcli.HeadRead, cmd)
 
 	// minimega reports a backing file as its overlay's directory joined with
 	// the stored name, so it can hold ".." segments

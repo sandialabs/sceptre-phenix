@@ -243,7 +243,7 @@ func TestKnownSettings(t *testing.T) {
 
 	for key, want := range map[string]bool{
 		"log.level": true, "log.system.max-size": true, "ui.logs.level": true, "ui.users": true,
-		"experiment.disk-check": true, "ui.listen-endpoint": false, "logs": false, "ui.logs.minimega-path": false,
+		"experiment.disk-check": true, "minimega.read-connections": true, "ui.listen-endpoint": false, "logs": false, "ui.logs.minimega-path": false,
 	} {
 		if got := runtimesettings.Live(key); got != want {
 			t.Errorf("Live(%s) = %t, want %t", key, got, want)

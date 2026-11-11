@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
 
+	"phenix/util/mm/mmcli"
 	"phenix/util/mm/mmtest"
 )
 
@@ -305,5 +306,21 @@ func TestPackageFunctionsPassThrough(t *testing.T) {
 				t.Errorf("ClusterFiles calls mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// listExperimentFiles refuses an experiment name that minimega would read
+// differently, and sends nothing.
+func TestListExperimentFilesRefusesUnsafeName(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	received := mmtest.Use(t, func(mmtest.Command) []*minicli.Response { return nil })
+
+	for _, exp := range []string{"$HOME", "a b", `a" help x`, "http://x/y", "tar:/x.tar"} {
+		if _, err := listExperimentFiles(t.Context(), exp); !errors.Is(err, mmcli.ErrUnsafeArg) {
+			t.Errorf("listExperimentFiles(%q) error = %v, want %v", exp, err, mmcli.ErrUnsafeArg)
+		}
+	}
+
+	if got := received(); len(got) != 0 {
+		t.Errorf("listExperimentFiles(unsafe names) sent %v, want nothing", mmtest.Bases(got))
 	}
 }

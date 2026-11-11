@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -154,7 +155,11 @@ func TestRuntimeSettingsRoutes(t *testing.T) {
 					"success",
 					map[string]any{"phenix.setting.key": strings.TrimPrefix(tt.path, "/runtimeSettings/")},
 				)
-				if strings.Contains(fmt.Sprint(e), "200") || strings.Contains(fmt.Sprint(e), ":3090") {
+				// the timestamp can hold "200" by chance
+				attrs := maps.Clone(e)
+				delete(attrs, "time")
+
+				if strings.Contains(fmt.Sprint(attrs), "200") || strings.Contains(fmt.Sprint(attrs), ":3090") {
 					t.Errorf("%s %s audit = %v, want no value in it", tt.method, tt.path, e)
 				}
 			}

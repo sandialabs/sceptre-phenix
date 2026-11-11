@@ -8,13 +8,13 @@
 //
 //	name                    where                                  bound                  invalidated by                          reported as
 //	----------------------  -------------------------------------  ---------------------  --------------------------------------  -------------------------------
-//	cluster hosts           util/mm recentClusterHosts             5 s (clusterHostsTTL)  a newer read; schedulers always read    X-Phenix-Observed-At (GET /hosts)
+//	cluster hosts           util/mm recentClusterHosts (2 kinds)   5 s (clusterHostsTTL)  a newer read; schedOnly always reads    X-Phenix-Observed-At (GET /hosts)
 //	minimega VLAN side      api/vlan recent                        5 s (minimegaTTL)      a start or stop; phenix's VLAN changes  X-Phenix-Observed-At, minimega.read (GET /vlans)
 //	host disk usage         util/mm diskUsageCache                 1 min (diskUsageTTL)   expiry                                  not reported (part of a host)
 //	failed host disk usage  util/mm diskUsageCache                 15 s (diskUsageFailureTTL) expiry                              not reported (reads as 0)
 //	headnode name           util/mm headnode                       5 min (headnodeTTL)    expiry                                  not data
 //	experiment file lists   util/file experimentListings           5 s (listingTTL)       phenix's own file writes and deletes    X-Phenix-Observed-At (GET files)
-//	SoH VM states           web lastVMStates                       while minimega is busy the next read                           vms_observed_at, vms_stale, X-Phenix-Stale
+//	SoH VM states           web lastVMStates                       while minimega is slow the next read; a stop                   vms_observed_at, vms_stale, X-Phenix-Stale
 //	VM screenshots          web/util screenshot cache              14 s                   expiry                                  implicit (the image)
 //	screenshot frames       web/broker frameCache                  screenshots in view    a changed image; leaving every view     implicit (the image)
 //	topology search index   api/vm topologySearchKey               30 s, memory only      the experiment's store revision         exact
@@ -29,11 +29,14 @@
 //	idempotent job starts   web/idempotency Store                  1 h, 1000, 16 MiB      expiry; the oldest dropped when full    Idempotent-Replayed: true
 //	app runtime details     app stageRuntime                       one ApplyApps run      the next run                            not data (app input)
 //	minimega version        util/mm minimegaVersion                the process            a restart                               not reported (run info, captures)
+//	VLAN blacklist removal  util/mm blacklistRemoval               until a redial         mmcli.Redials changes; ForgetCluster    not reported (a stale true fails the removal)
 //
 // The experiment file lists also hold the capture format of each headnode file, read from its first bytes once for
 // each listing.
 //
 // Concurrent identical minimega reads (VM info, SoH VM states, cluster hosts) share one run
-// (util/flight Group) only if it has not started, so a shared answer is never older than the call. The schedulers'
-// reads of the cluster hosts (mm.GetSchedulableHosts) share nothing, so their own deadlines bound them.
+// (util/flight Group) only if it has not started, so a shared answer is never older than the call. The full lists of
+// cluster hosts with and without disk usage are read and kept apart. The schedOnly reads of the cluster hosts
+// (mm.GetClusterHostsObserved, for the schedulers, apps and Builder preflight) share nothing, so their own deadlines
+// bound them.
 package freshness

@@ -249,7 +249,7 @@ func commandRows(ns string, ids []string) ([]map[string]string, bool) {
 		cmd.Filters = []string{"id=" + ids[0]}
 	}
 
-	rows, err := mmcli.RunTabularCheckedContext(context.Background(), cmd, nil)
+	rows, err := mmcli.RunTabularReadOnlyChecked(context.Background(), nsLine(ns), cmd, nil)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "error running mm cmd", "cmd", cmd.Command, "error", err)
 	}
@@ -264,7 +264,7 @@ func clientUUIDs(ns string) map[string]bool {
 	cmd.Command = ccClientCmd
 	cmd.Columns = []string{"uuid"}
 
-	rows, err := mmcli.RunTabularCheckedContext(context.Background(), cmd, nil)
+	rows, err := mmcli.RunTabularReadOnlyChecked(context.Background(), nsLine(ns), cmd, nil)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "error running mm cmd", "cmd", cmd.Command, "error", err)
 

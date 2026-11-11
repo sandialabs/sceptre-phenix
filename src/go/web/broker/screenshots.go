@@ -12,7 +12,10 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"golang.org/x/sync/errgroup"
+
 	"phenix/util/mm"
+	"phenix/util/mm/mmcli"
 	"phenix/util/plog"
 	bt "phenix/web/broker/brokertypes"
 	"phenix/web/util"
@@ -169,15 +172,20 @@ func wantedShots(viewers []*Client) map[shotKey][]*Client {
 }
 
 // pushFrames sends each wanted screenshot, taken and encoded once, to the clients showing it
-// until ctx is done, skipping a client already sent that frame for that VM.
+// until ctx is done, skipping a client already sent that frame for that VM. It takes the
+// screenshots at once, as many as mmcli lets screenshots run at once (see mmcli.SetReadOnlyLimit).
 func pushFrames(ctx context.Context, wanted map[shotKey][]*Client) {
 	keys := slices.SortedFunc(maps.Keys(wanted), func(a, b shotKey) int {
 		return cmp.Or(cmp.Compare(a.exp, b.exp), cmp.Compare(a.vm, b.vm), cmp.Compare(a.width, b.width))
 	})
 
+	var shots errgroup.Group
+
+	shots.SetLimit(mmcli.ReadOnlyLimit())
+
 	for _, key := range keys {
 		if ctx.Err() != nil {
-			return
+			break
 		}
 
 		live := slices.DeleteFunc(wanted[key], func(c *Client) bool { return isClosed(c.done) })
@@ -185,22 +193,34 @@ func pushFrames(ctx context.Context, wanted map[shotKey][]*Client) {
 			continue
 		}
 
-		f, err := frames.get(ctx, key)
-		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
+		shots.Go(func() error {
+			pushFrame(ctx, key, live)
 
-			if !errors.Is(err, mm.ErrVMNotFound) && !errors.Is(err, mm.ErrScreenshotNotFound) {
-				plog.Error(plog.TypeSystem, "getting screenshot for WebSocket client", "err", err)
-			}
+			return nil
+		})
+	}
 
-			continue
+	_ = shots.Wait()
+}
+
+// pushFrame sends key's screenshot to the live clients showing it, unless ctx
+// is done first.
+func pushFrame(ctx context.Context, key shotKey, live []*Client) {
+	if ctx.Err() != nil {
+		return
+	}
+
+	f, err := frames.get(ctx, key)
+	if err != nil {
+		if ctx.Err() == nil && !errors.Is(err, mm.ErrVMNotFound) && !errors.Is(err, mm.ErrScreenshotNotFound) {
+			plog.Error(plog.TypeSystem, "getting screenshot for WebSocket client", "err", err)
 		}
 
-		for _, c := range live {
-			c.sendFrame(key, f)
-		}
+		return
+	}
+
+	for _, c := range live {
+		c.sendFrame(key, f)
 	}
 }
 

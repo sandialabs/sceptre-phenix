@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"phenix/util/mm/mmcli"
 )
@@ -30,7 +31,7 @@ func (Minimega) GetNamespaces(opts ...Option) ([]Namespace, error) {
 	cmd := mmcli.NewCommand()
 	cmd.Command = "namespace"
 
-	rows, err := mmcli.RunTabularCheckedContext(o.ctx, cmd, nil)
+	rows, err := mmcli.RunTabularReadOnlyChecked(o.ctx, mmcli.HeadRead, cmd, nil)
 	if err != nil {
 		return nil, fmt.Errorf("listing minimega namespaces: %w", err)
 	}
@@ -67,7 +68,7 @@ func (Minimega) GetVLANBlacklist(opts ...Option) ([]int, error) {
 	cmd := mmcli.NewCommand()
 	cmd.Command = "vlans blacklist"
 
-	rows, err := mmcli.RunTabularCheckedContext(o.ctx, cmd, nil)
+	rows, err := mmcli.RunTabularReadOnlyChecked(o.ctx, mmcli.HeadRead, cmd, nil)
 	if err != nil {
 		return nil, fmt.Errorf("listing the minimega VLAN blacklist: %w", err)
 	}
@@ -122,20 +123,53 @@ func (Minimega) UnblacklistVLAN(id int, opts ...Option) error {
 	return fmt.Errorf("removing VLAN %d from the blacklist: %w", id, err)
 }
 
+// blacklistRemoval keeps the answer of VLANBlacklistRemovable until phenix
+// dials minimega again (see mmcli.Redials), as minimega may then be another
+// build.
+var blacklistRemoval struct { //nolint:gochecknoglobals // process-wide cache
+	mu        sync.Mutex
+	known     bool
+	removable bool
+	redials   uint64 // mmcli.Redials before the answer was asked for
+}
+
 // VLANBlacklistRemovable reports whether minimega has the command
 // `clear vlans blacklist <vlan>`, from its usage lines in `help clear vlans`.
+// It keeps an answer until phenix dials minimega again, and keeps no failure.
 func (Minimega) VLANBlacklistRemovable(opts ...Option) (bool, error) {
 	o := NewOptions(opts...)
+	redials := mmcli.Redials()
+
+	blacklistRemoval.mu.Lock()
+	known, removable := blacklistRemoval.known && blacklistRemoval.redials == redials, blacklistRemoval.removable
+	blacklistRemoval.mu.Unlock()
+
+	if known {
+		return removable, nil
+	}
 
 	cmd := mmcli.NewCommand()
 	cmd.Command = "help clear vlans"
 
-	help, err := mmcli.SingleResponse(o.run(cmd))
+	help, err := mmcli.SingleResponse(mmcli.RunReadOnly(o.ctx, mmcli.HeadRead, cmd))
 	if err != nil {
 		return false, fmt.Errorf("reading minimega help for clear vlans: %w", err)
 	}
 
-	return usageHasBlacklistRemoval(help), nil
+	removable = usageHasBlacklistRemoval(help)
+
+	blacklistRemoval.mu.Lock()
+	blacklistRemoval.known, blacklistRemoval.removable, blacklistRemoval.redials = true, removable, redials
+	blacklistRemoval.mu.Unlock()
+
+	return removable, nil
+}
+
+// forgetBlacklistRemoval drops the answer VLANBlacklistRemovable keeps.
+func forgetBlacklistRemoval() {
+	blacklistRemoval.mu.Lock()
+	blacklistRemoval.known = false
+	blacklistRemoval.mu.Unlock()
 }
 
 // usageHasBlacklistRemoval reports whether a usage line of minimega help text

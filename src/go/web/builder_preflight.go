@@ -47,7 +47,7 @@ type builderPreflightRequest struct {
 // so no test needs minimega.
 type builderPreflightSources struct {
 	clusterHosts func(ctx context.Context) (mm.Hosts, error)
-	bridges      func(hosts ...string) (map[string][]string, error)
+	bridges      func(ctx context.Context, hosts ...string) (map[string][]string, error)
 	// defaultApps are the apps that every experiment runs. apps are the
 	// others that the server can run, built in or on its PATH.
 	defaultApps func() []string
@@ -60,11 +60,15 @@ type builderPreflightSources struct {
 // apps as GET /applications does.
 func defaultBuilderPreflightSources() builderPreflightSources {
 	return builderPreflightSources{
-		clusterHosts: func(ctx context.Context) (mm.Hosts, error) { return mm.GetSchedulableHosts(ctx, false) },
-		bridges:      mm.GetBridges,
-		defaultApps:  app.DefaultApps,
-		apps:         app.List,
-		timeout:      bapi.PreflightTimeout,
+		clusterHosts: func(ctx context.Context) (mm.Hosts, error) {
+			hosts, _, err := mm.GetClusterHostsObserved(ctx, true, false)
+
+			return hosts, err //nolint:wrapcheck // as GetClusterHostsObserved
+		},
+		bridges:     mm.GetBridges,
+		defaultApps: app.DefaultApps,
+		apps:        app.List,
+		timeout:     bapi.PreflightTimeout,
 	}
 }
 
@@ -188,7 +192,7 @@ func (e *builderPreflightEnvironment) ClusterHosts(context.Context) ([]bapi.Pref
 // Bridges returns the bridges of each schedulable host the caller may list.
 // Bridges are a facility of the hosts, so listing them takes what listing
 // the hosts takes.
-func (e *builderPreflightEnvironment) Bridges(context.Context) (map[string][]string, error) {
+func (e *builderPreflightEnvironment) Bridges(ctx context.Context) (map[string][]string, error) {
 	hosts, err := e.schedulableHosts()
 	if err != nil {
 		return nil, err
@@ -203,7 +207,7 @@ func (e *builderPreflightEnvironment) Bridges(context.Context) (map[string][]str
 		names = append(names, host.Name)
 	}
 
-	return e.api.preflight.bridges(names...)
+	return e.api.preflight.bridges(ctx, names...)
 }
 
 // schedulableHosts returns the hosts that VMs can be scheduled on and that

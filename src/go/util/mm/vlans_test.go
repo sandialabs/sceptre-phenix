@@ -1,10 +1,12 @@
 package mm
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
 
+	"phenix/util/mm/mmcli"
 	"phenix/util/mm/mmtest"
 )
 
@@ -135,6 +137,77 @@ func TestVLANCommands(t *testing.T) { //nolint:paralleltest // shares the fake m
 		},
 	} {
 		t.Run(name, tc.run)
+	}
+}
+
+// VLANBlacklistRemovable keeps its answer until phenix dials minimega again, and keeps no failure.
+func TestVLANBlacklistRemovableCache(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	var (
+		mu     sync.Mutex
+		answer = []*minicli.Response{mmtest.Error("head", "down")}
+	)
+
+	answerWith := func(resps ...*minicli.Response) {
+		mu.Lock()
+		answer = resps
+		mu.Unlock()
+	}
+
+	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+		switch cmd.Base {
+		case "help clear vlans":
+			mu.Lock()
+			defer mu.Unlock()
+
+			return answer
+		case "break":
+			return mmtest.Disconnect()
+		}
+
+		return nil
+	})
+
+	asked := func() int { return mmtest.Count(received(), "help clear vlans") }
+
+	if _, err := (Minimega{}).VLANBlacklistRemovable(); err == nil {
+		t.Fatal("VLANBlacklistRemovable() with minimega failing error = nil, want its error")
+	}
+
+	answerWith(mmtest.Text("head", helpClearVLANsNew))
+
+	for range 2 {
+		if got, err := (Minimega{}).VLANBlacklistRemovable(); err != nil || !got {
+			t.Errorf("VLANBlacklistRemovable() = %t, %v; want true", got, err)
+		}
+	}
+
+	if got := asked(); got != 2 {
+		t.Errorf("VLANBlacklistRemovable() after a failure, then twice, asked minimega %d times, want 2", got)
+	}
+
+	// a lost shared connection, dialed again by the next command
+	breaking := mmcli.NewCommand()
+	breaking.Command = "break"
+	_ = mmcli.ErrorResponse(mmcli.Run(breaking))
+
+	before := mmcli.Redials()
+
+	if err := mmcli.ErrorResponse(mmcli.Run(mmcli.NewCommand())); err != nil {
+		t.Fatalf("Run() after a lost connection error = %v", err)
+	}
+
+	if mmcli.Redials() == before {
+		t.Fatal("mmcli.Redials() did not change after a lost connection was dialed again")
+	}
+
+	answerWith(mmtest.Text("head", helpClearVLANsOld))
+
+	if got, err := (Minimega{}).VLANBlacklistRemovable(); err != nil || got {
+		t.Errorf("VLANBlacklistRemovable() after a redial = %t, %v; want false", got, err)
+	}
+
+	if got := asked(); got != 3 {
+		t.Errorf("VLANBlacklistRemovable() after a redial asked minimega %d times in all, want 3", got)
 	}
 }
 

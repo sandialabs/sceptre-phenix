@@ -175,7 +175,7 @@ func prepareSpec(spec ifaces.ExperimentSpec) {
 // with their disk usage only when diskUsage is set. The hosts are sorted by
 // name, so hosts that tie in a scheduler's order are taken by name.
 func schedulableHosts(ctx context.Context, diskUsage bool) (mm.Hosts, error) {
-	hosts, err := mm.GetSchedulableHosts(ctx, diskUsage)
+	hosts, _, err := mm.GetClusterHostsObserved(ctx, true, diskUsage)
 	if err != nil {
 		return nil, fmt.Errorf("getting cluster hosts: %w", err)
 	}

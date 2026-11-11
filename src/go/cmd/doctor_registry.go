@@ -23,6 +23,7 @@ import (
 	"phenix/api/runtimesettings"
 	"phenix/store"
 	"phenix/util/mm"
+	"phenix/util/mm/mmcli"
 	"phenix/web"
 	"phenix/web/health"
 )
@@ -443,6 +444,8 @@ func doctorChecks() []doctorCheckDef {
 		settingDef(keyLogMaxSize, "set log.system.max-size to a whole number of megabytes, or 0 for 100"),
 		settingDef("log.system.max-backups", "set log.system.max-backups to a whole number, or 0 to keep every old log"),
 		settingDef("log.system.max-age", "set log.system.max-age to a whole number of days, or 0 for no limit"),
+		settingDef(keyMinimegaReadConnections, fmt.Sprintf("set minimega.read-connections to a whole number from %d to %d",
+			mmcli.MinReadOnlyLimit, mmcli.MaxReadOnlyLimit)),
 		{
 			id: "store.endpoint", group: doctorGroupFiles, name: "store.endpoint",
 			hint: hintText("create the directory, or set store.endpoint to a bolt:// path this user can write"),

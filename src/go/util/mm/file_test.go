@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -286,7 +287,7 @@ func TestMinimegaFilesDirectory(t *testing.T) { //nolint:paralleltest // shares 
 		"relative filepath":   {answer: []*minicli.Response{mmtest.Tabular("head", header, []string{"/b", "files"})}, wantErr: "minimega's args have no absolute filepath"},
 		"empty filepath":      {answer: []*minicli.Response{mmtest.Tabular("head", header, []string{"/b", ""})}, wantErr: "minimega's args have no absolute filepath"},
 		"no filepath column":  {answer: []*minicli.Response{mmtest.Tabular("head", []string{"base"}, []string{"/b"})}, wantErr: "minimega's args have no absolute filepath"},
-		"no answer":           {answer: []*minicli.Response{mmtest.Error("head", "boom")}, wantErr: "no args returned"},
+		"no answer":           {answer: []*minicli.Response{mmtest.Error("head", "boom")}, wantErr: "reading minimega's args: boom"},
 		"an answer from each node": {
 			answer: []*minicli.Response{
 				mmtest.Tabular("head", header, []string{"/b", "/srv/files"}),
@@ -298,7 +299,7 @@ func TestMinimegaFilesDirectory(t *testing.T) { //nolint:paralleltest // shares 
 		t.Run(name, func(t *testing.T) {
 			received := useFakeMinimega(t, fileArgs(tc.answer...))
 
-			got, err := minimegaFilesDirectory()
+			got, err := minimegaFilesDirectory(filesDirArgsTimeout)
 
 			if errText := fmt.Sprint(err); (err != nil || tc.wantErr != "") && errText != tc.wantErr {
 				t.Errorf("minimegaFilesDirectory() error = %v, want %q", err, tc.wantErr)
@@ -416,5 +417,70 @@ func TestFilesDirectoryWaiterGetsFallbackOnFailure(t *testing.T) { //nolint:para
 
 	if got := mmtest.Count(received(), argsCmd); got != 1 {
 		t.Errorf("two GetMMFullPath callers sent %d args commands, want 1", got)
+	}
+}
+
+// An `args` that minimega does not answer within the time limit gives the
+// fallback, to the caller that asked and to one that waited for it, and is
+// asked again only after filesDirRetry.
+func TestFilesDirectoryGivesUpOnAHeldArgs(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	release := make(chan struct{})
+	t.Cleanup(sync.OnceFunc(func() { close(release) }))
+
+	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+		if cmd.Base == argsCmd {
+			<-release
+		}
+
+		return nil
+	})
+
+	forgetFilesDirectory(t)
+
+	fallback := fileUseBase(t)
+
+	const limit = 200 * time.Millisecond
+
+	filesDir.mu.Lock()
+	filesDir.timeout = limit
+	filesDir.mu.Unlock()
+
+	t.Cleanup(func() {
+		filesDir.mu.Lock()
+		filesDir.timeout = filesDirArgsTimeout
+		filesDir.mu.Unlock()
+	})
+
+	start := time.Now()
+	results := make(chan string, 2)
+
+	go func() { results <- GetMMFullPath("a.qc2") }()
+
+	mmtest.Await(t, argsCmd)
+
+	// a second caller waits for the first one's ask
+	go func() { results <- GetMMFullPath("b.qc2") }()
+
+	got := []string{<-results, <-results}
+	slices.Sort(got)
+
+	if diff := cmp.Diff([]string{fallback + "/a.qc2", fallback + "/b.qc2"}, got); diff != "" {
+		t.Errorf("GetMMFullPath with minimega holding args mismatch (-want +got):\n%s", diff)
+	}
+
+	if took := time.Since(start); took > limit+5*time.Second {
+		t.Errorf("GetMMFullPath with minimega holding args took %v, want about %v", took, limit)
+	}
+
+	if got := mmtest.Count(received(), argsCmd); got != 1 {
+		t.Errorf("GetMMFullPath twice with minimega holding args sent %d args commands, want 1", got)
+	}
+
+	filesDir.mu.Lock()
+	askedAt := filesDir.askedAt
+	filesDir.mu.Unlock()
+
+	if askedAt.IsZero() {
+		t.Error("a held args left no time of the failed ask, so phenix would ask again at once")
 	}
 }

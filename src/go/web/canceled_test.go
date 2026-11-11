@@ -30,8 +30,48 @@ import (
 	"phenix/web/weberror"
 )
 
-// holdMinimega points the real mm package at fake minimega and holds the shared connection with a "hold" command
-// until the test ends, so every other command waits; it returns the commands minimega received.
+// readOnlyHold is the command that holds each mmcli.RunReadOnly connection; phenix itself never sends it.
+const readOnlyHold = "mesh status"
+
+// holdReadOnly holds every mmcli.RunReadOnly connection with a readOnlyHold command until the test ends. The fake
+// minimega must hold that command until unhold, which may be called more than once, is called.
+func holdReadOnly(t *testing.T, received func() []mmtest.Command, unhold func()) {
+	t.Helper()
+
+	held := make(chan error, mmcli.ReadOnlyLimit())
+
+	for range mmcli.ReadOnlyLimit() {
+		go func() {
+			cmd := mmcli.NewCommand()
+			cmd.Command = readOnlyHold
+
+			held <- mmcli.ErrorResponse(mmcli.RunReadOnly(context.Background(), mmcli.HeadRead, cmd))
+		}()
+	}
+
+	t.Cleanup(func() {
+		unhold()
+
+		for range mmcli.ReadOnlyLimit() {
+			<-held
+		}
+	})
+
+	polltest.Until(t, "every read-only minimega connection is held", func() bool {
+		return mmtest.Count(received(), readOnlyHold) == mmcli.ReadOnlyLimit()
+	})
+}
+
+// besidesHolds leaves out of bases the commands that hold minimega's connections, and the files directory lookup.
+func besidesHolds(bases []string) []string {
+	return slices.DeleteFunc(bases, func(base string) bool {
+		return base == "args" || base == "hold" || base == readOnlyHold
+	})
+}
+
+// holdMinimega points the real mm package at fake minimega and holds the shared connection with a "hold" command,
+// and every read-only connection (see holdReadOnly), until the test ends, so every other command waits; it returns
+// the commands minimega received.
 func holdMinimega(t *testing.T) func() []mmtest.Command {
 	t.Helper()
 
@@ -40,10 +80,17 @@ func holdMinimega(t *testing.T) func() []mmtest.Command {
 
 	mm.DefaultMM = new(mm.Minimega) //nolint:reassign // the real one, against the fake minimega
 
+	// LIFO: after the holds are let go, the reads a request left running end before the test does
+	t.Cleanup(func() {
+		polltest.Until(t, "the reads of minimega end", func() bool {
+			return sohStateReads.running() == 0 && experimentVMReads.running() == 0
+		})
+	})
+
 	release := make(chan struct{})
 
 	received := mmtest.Use(t, func(cmd mmtest.Command) []*minicli.Response {
-		if cmd.Base == "hold" {
+		if cmd.Base == "hold" || cmd.Base == readOnlyHold {
 			<-release
 		}
 
@@ -63,11 +110,15 @@ func holdMinimega(t *testing.T) func() []mmtest.Command {
 		held <- mmcli.ErrorResponse(mmcli.Run(cmd))
 	}()
 
+	unhold := sync.OnceFunc(func() { close(release) })
+
 	// LIFO: the hold is let go before it is waited for
 	t.Cleanup(func() { <-held })
-	t.Cleanup(sync.OnceFunc(func() { close(release) }))
+	t.Cleanup(unhold)
 
 	mmtest.Await(t, "hold")
+
+	holdReadOnly(t, received, unhold)
 
 	return received
 }
@@ -136,10 +187,9 @@ func TestReadsGiveUpWhenTheClientLeaves(t *testing.T) {
 				t.Errorf("GET %s wrote %q (status %d) to a client that left, want nothing", tc.path, rec.Body.String(), rec.Code)
 			}
 
-			// leaving out the files directory lookup, if this test made it
-			got := slices.DeleteFunc(mmtest.Bases(received()), func(base string) bool { return base == "args" })
-			if diff := cmp.Diff([]string{"hold"}, got); diff != "" {
-				t.Errorf("GET %s minimega commands mismatch (-want +got):\n%s", tc.path, diff)
+			// leaving out the holds and the files directory lookup, if this test made it
+			if got := besidesHolds(mmtest.Bases(received())); len(got) != 0 {
+				t.Errorf("GET %s sent minimega %q besides the holds, want nothing", tc.path, got)
 			}
 		})
 	}

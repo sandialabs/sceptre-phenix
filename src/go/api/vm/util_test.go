@@ -127,7 +127,7 @@ type utilShellMM struct {
 	commands []string
 }
 
-func (m *utilShellMM) MeshShellResponse(_ context.Context, host, cmd string) (string, error) {
+func (m *utilShellMM) MeshShellRead(_ context.Context, host, cmd string) (string, error) {
 	m.commands = append(m.commands, host+": "+cmd)
 
 	return m.resp, m.err

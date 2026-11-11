@@ -45,7 +45,7 @@ var ErrRuntimeUnknown = errors.New("minimega did not report every VM")
 // commands give up once ctx is done, and a VM list that minimega did not
 // report in full is an error that wraps ErrRuntimeUnknown, not a partial list.
 func PopulateObservedRuntime(ctx context.Context, exp *types.Experiment) error {
-	hosts, _, err := mm.GetClusterHostsObserved(ctx, true)
+	hosts, _, err := mm.GetClusterHostsObserved(ctx, true, false)
 	if err != nil {
 		return fmt.Errorf("getting cluster hosts: %w", err)
 	}
@@ -93,10 +93,10 @@ func populateStageRuntime(ctx context.Context, exp *types.Experiment) error {
 	return nil
 }
 
-// readRuntime reads the schedulable hosts, with their disk usage, and the
+// readRuntime reads the schedulable hosts, without their disk usage, and the
 // experiment's VMs. The host read gives up once ctx is done.
 func readRuntime(ctx context.Context, exp *types.Experiment) (mm.Hosts, mm.VMs, error) {
-	cluster, _, err := mm.GetClusterHostsObserved(ctx, true)
+	cluster, _, err := mm.GetClusterHostsObserved(ctx, true, false)
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting cluster hosts: %w", err)
 	}

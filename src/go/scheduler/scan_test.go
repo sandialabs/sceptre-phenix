@@ -15,6 +15,7 @@ import (
 
 	"phenix/store"
 	"phenix/types"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/mm/mmtest"
 	"phenix/util/testenv"
@@ -143,7 +144,7 @@ func TestSchedulersWhenThePeersDoNotAnswer(t *testing.T) { //nolint:paralleltest
 }
 
 // A user scheduler gets the hosts with their disk usage, measured with one
-// command for the mesh peers and one for the headnode.
+// command for the mesh peers, and none for the headnode, which gets no VMs.
 func TestUserSchedulerReadsDiskUsage(t *testing.T) { //nolint:paralleltest // shares the fake minimega and sets PATH
 	received := useScanMinimega(t, scanMesh{})
 
@@ -184,7 +185,7 @@ func TestUserSchedulerReadsDiskUsage(t *testing.T) { //nolint:paralleltest // sh
 
 	cmds := received()
 
-	for prefix, want := range map[string]int{scanMeshDisk: 1, scanHeadDisk: 1, "mesh send compute": 0} {
+	for prefix, want := range map[string]int{scanMeshDisk: 1, scanHeadDisk: 0, "mesh send compute": 0} {
 		if got := mmtest.Count(cmds, prefix); got != want {
 			t.Errorf("Schedule(disk) sent %d %q commands, want %d", got, prefix, want)
 		}
@@ -235,10 +236,11 @@ type deadlineMM struct {
 	deadline *time.Time
 }
 
-func (m deadlineMM) GetSchedulableHosts(ctx context.Context, _ bool) (mm.Hosts, error) { //nolint:unparam // mm's signature
+//nolint:unparam // mm's signature
+func (m deadlineMM) GetClusterHostsObserved(ctx context.Context, _, _ bool) (mm.Hosts, freshness.Observation, error) {
 	*m.deadline, _ = ctx.Deadline()
 
-	return mm.Hosts{{Name: "h1", MemTotal: 4096, CPUs: 4}}, nil
+	return mm.Hosts{{Name: "h1", MemTotal: 4096, CPUs: 4}}, freshness.Observed(time.Now()), nil
 }
 
 // Schedule gives each run its limit: the read of the hosts and a user

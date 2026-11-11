@@ -3,11 +3,15 @@ package forward
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
+	"golang.org/x/sync/errgroup"
+
 	"phenix/api/experiment"
 	"phenix/util/mm"
+	"phenix/util/mm/mmcli"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
 	ft "phenix/web/forward/forwardtypes"
@@ -113,13 +117,15 @@ func reap(match func(ft.Listener) bool) {
 }
 
 // closedForwards returns the forwards of running experiments whose tunnels
-// minimega no longer lists.
+// minimega no longer lists. It lists the tunnels of up to
+// mmcli.ReadOnlyLimit() VMs at once.
 func closedForwards(ls []ft.Listener) []ft.Listener {
 	var (
-		// Forwards through the same VM share one tunnel listing.
-		tunnels = make(map[string][]map[string]string)
 		running = make(map[string]bool)
-		closed  []ft.Listener
+		live    []ft.Listener
+		// Forwards through the same VM share one tunnel listing.
+		keys    []tunnelKey
+		tunnels = make(map[tunnelKey][]map[string]string)
 	)
 
 	for _, l := range ls {
@@ -136,18 +142,41 @@ func closedForwards(ls []ft.Listener) []ft.Listener {
 			continue
 		}
 
+		live = append(live, l)
+
+		if key := (tunnelKey{exp: l.Exp, vm: l.VM}); !l.QEMU && !slices.Contains(keys, key) {
+			keys = append(keys, key)
+		}
+	}
+
+	var (
+		listed = make([][]map[string]string, len(keys))
+		group  errgroup.Group
+	)
+
+	group.SetLimit(mmcli.ReadOnlyLimit())
+
+	for i, key := range keys {
+		group.Go(func() error {
+			listed[i] = mm.GetTunnels(mm.NS(key.exp), mm.VMName(key.vm))
+
+			return nil
+		})
+	}
+
+	_ = group.Wait()
+
+	for i, key := range keys {
+		tunnels[key] = listed[i]
+	}
+
+	var closed []ft.Listener
+
+	for _, l := range live {
 		var vmTunnels []map[string]string
 
 		if !l.QEMU {
-			key := l.Exp + "\x00" + l.VM
-
-			listed, ok := tunnels[key]
-			if !ok {
-				listed = mm.GetTunnels(mm.NS(l.Exp), mm.VMName(l.VM))
-				tunnels[key] = listed
-			}
-
-			vmTunnels = listed
+			vmTunnels = tunnels[tunnelKey{exp: l.Exp, vm: l.VM}]
 		}
 
 		if !forwardExists(l, vmTunnels) {
@@ -156,4 +185,9 @@ func closedForwards(ls []ft.Listener) []ft.Listener {
 	}
 
 	return closed
+}
+
+// tunnelKey names the VM whose tunnels one listing gives.
+type tunnelKey struct {
+	exp, vm string
 }

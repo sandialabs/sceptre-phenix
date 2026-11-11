@@ -1206,7 +1206,7 @@ func (m *diskcheckMM) Headnode() string { return m.headnode }
 
 func (m *diskcheckMM) IsHeadnode(host string) bool { return host == m.headnode }
 
-func (m *diskcheckMM) GetClusterHosts(bool) (mm.Hosts, error) { return m.hosts, m.err }
+func (m *diskcheckMM) GetClusterHosts(bool, bool) (mm.Hosts, error) { return m.hosts, m.err }
 
 // The check's environment asks minimega which host is the head node and which hosts the cluster has.
 func TestMMCheckEnv(t *testing.T) { //nolint:paralleltest // replaces mm.DefaultMM

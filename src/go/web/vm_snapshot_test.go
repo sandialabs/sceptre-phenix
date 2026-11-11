@@ -283,8 +283,8 @@ func (m *vmSnapshotMM) MeshShell(host, cmd string) error {
 	return nil
 }
 
-// MeshShellResponse fails, as qemu-img does for a disk that is not there.
-func (m *vmSnapshotMM) MeshShellResponse(_ context.Context, host, cmd string) (string, error) {
+// MeshShellRead fails, as qemu-img does for a disk that is not there.
+func (m *vmSnapshotMM) MeshShellRead(_ context.Context, host, cmd string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

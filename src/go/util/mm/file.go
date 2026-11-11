@@ -1,6 +1,7 @@
 package mm
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -16,6 +17,11 @@ import (
 // files directory, before asking again.
 const filesDirRetry = time.Minute
 
+// filesDirArgsTimeout is how long phenix waits for minimega's answer to the
+// `args` that gives its files directory, so the callers waiting for it wait no
+// longer; past it phenix uses the fallback.
+const filesDirArgsTimeout = 10 * time.Second
+
 //nolint:gochecknoglobals // the process's view of minimega's files directory
 var filesDir = struct {
 	mu      sync.Mutex
@@ -23,7 +29,11 @@ var filesDir = struct {
 	askedAt time.Time     // when minimega last could not give it
 	given   chan struct{} // closed once minimega gave it
 	asking  chan struct{} // while minimega is asked, closed once it answers or fails
-}{mu: sync.Mutex{}, dir: "", askedAt: time.Time{}, given: make(chan struct{}), asking: nil}
+	timeout time.Duration // how long an ask may take, filesDirArgsTimeout
+}{
+	mu: sync.Mutex{}, dir: "", askedAt: time.Time{}, given: make(chan struct{}), asking: nil,
+	timeout: filesDirArgsTimeout,
+}
 
 // GetMMFullPath returns path cleaned when it is absolute, and otherwise
 // joined onto the minimega files directory: minimega's -filepath, or
@@ -108,9 +118,10 @@ func filesDirectory() string {
 
 	asking := make(chan struct{})
 	filesDir.asking = asking
+	timeout := filesDir.timeout
 	filesDir.mu.Unlock()
 
-	dir, err := minimegaFilesDirectory()
+	dir, err := minimegaFilesDirectory(timeout)
 
 	filesDir.mu.Lock()
 	defer filesDir.mu.Unlock()
@@ -133,9 +144,12 @@ func filesDirectory() string {
 }
 
 // minimegaFilesDirectory asks minimega itself, whatever DefaultMM is, for its
-// -filepath.
-func minimegaFilesDirectory() (string, error) {
-	args, err := Minimega{}.GetMMArgs()
+// -filepath, giving up after timeout.
+func minimegaFilesDirectory(timeout time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	args, err := mmArgs(ctx)
 	if err != nil {
 		return "", err
 	}

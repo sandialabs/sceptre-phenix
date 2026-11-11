@@ -88,7 +88,7 @@ type failingClusterMM struct {
 	mm.MM
 }
 
-func (failingClusterMM) GetClusterHosts(bool) (mm.Hosts, error) {
+func (failingClusterMM) GetClusterHosts(bool, bool) (mm.Hosts, error) {
 	return nil, errors.New("minimega is not running")
 }
 
