@@ -167,12 +167,8 @@ if ($host_name -ceq "{{ .Node.General.Hostname }}") {
     Set-ItemProperty -Path $path -Name DefaultPassword -Value "{{ index .Metadata "auto_logon" "password" }}"
         {{ if index .Metadata "auto_logon" "local" }}
     Set-ItemProperty -Path $path -Name DefaultDomainName -Value "."
-    Add-LocalGroupMember -Group "Administrators" -Member "{{ index .Metadata "auto_logon" "username" }}"
-
         {{ else }}
     Set-ItemProperty -Path $path -Name DefaultDomainName -Value $domain
-    Add-LocalGroupMember -Group "Administrators" -Member "{{ index .Metadata "auto_logon" "username" }}"
-
         {{ end }}
     Set-ItemProperty -Path $path -Name AutoAdminLogon -Value 1
     {{ end }}
@@ -193,7 +189,6 @@ if ($host_name -ceq "{{ .Node.General.Hostname }}") {
     Set-ItemProperty -Path $path -Name DefaultPassword -Value "{{ index .Metadata "auto_logon" "password" }}"
     Set-ItemProperty -Path $path -Name DefaultDomainName -Value "."
     Set-ItemProperty -Path $path -Name AutoAdminLogon -Value 1
-    Add-LocalGroupMember -Group "Administrators" -Member "{{ index .Metadata "auto_logon" "username" }}"
 
     Phenix-SetStartupStatus('auto-logon')
     Restart-Computer -Force
