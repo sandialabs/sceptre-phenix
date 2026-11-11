@@ -34,6 +34,7 @@ import { CONSOLE_CHANNEL } from '@/vnc/openConsole.js';
 import { disk, httpError, vm, wsMsg } from './helpers/fixtures.js';
 import {
   buttons,
+  confirmDialog,
   dialogs,
   mountPage,
   textOf,
@@ -512,6 +513,41 @@ describe('what the top bar does', () => {
     expect(wrapper.find('[aria-label="Resume"]').exists()).toBe(true);
   });
 
+  it.each([
+    [
+      'Shut down',
+      'shutdown',
+      'Shut Down the VM',
+      'This will shut down the web VM.',
+    ],
+    ['Restart', 'restart', 'Restart the VM', 'This will restart the web VM.'],
+  ])(
+    'asks before %s, and runs nothing when the user cancels',
+    async (label, action, title, message) => {
+      jobs.done = { id: 'j1', status: 'succeeded', items: [] };
+      axios.post.mockResolvedValue({ data: { id: 'j1', status: 'running' } });
+      const wrapper = await connected('/vnc?vm=demo/web');
+      await wrapper.find(`[aria-label="${label}"]`).trigger('click');
+      await flushPromises();
+      expect(dialogs()).toHaveLength(1);
+      expect(textOf(dialogs()[0])).toContain(title);
+      expect(textOf(dialogs()[0])).toContain(message);
+      expect(axios.post).not.toHaveBeenCalled();
+
+      dialogs()[0].querySelector('footer .button:first-child').click();
+      await flushPromises();
+      expect(axios.post).not.toHaveBeenCalled();
+
+      await wrapper.find(`[aria-label="${label}"]`).trigger('click');
+      await flushPromises();
+      await confirmDialog();
+      expect(axios.post).toHaveBeenCalledExactlyOnceWith(
+        'experiments/demo/vms/actions',
+        { action, vms: ['web'] },
+      );
+    },
+  );
+
   it('leaves fullscreen before it asks to confirm a snapshot', async () => {
     const wrapper = await connected('/vnc?vm=demo/web');
     const exit = vi.fn(async () => {
@@ -921,6 +957,40 @@ describe('what the top bar does', () => {
     });
     expect(rfbs).toHaveLength(3);
     expect(rfbs.map((rfb) => rfb.disconnected)).toEqual([false, true, false]);
+  });
+
+  it.each([
+    ['two columns', '/vnc?vm=demo/kali&vm=demo/web'],
+    ['the grid', '/vnc?vm=demo/kali&vm=demo/web&layout=grid'],
+  ])(
+    'shows the last VM left in one pane when a pane of %s closes',
+    async (_, route) => {
+      const wrapper = await openPage(route);
+      await wrapper.findAll('.vnc-pane-menu-button')[0].trigger('click');
+      await button(wrapper, 'Close').trigger('click');
+      await flushPromises();
+      expect(query(wrapper)).toEqual({ vm: ['demo/web'] });
+      expect(wrapper.find('.vnc-panes').classes()).toContain(
+        'vnc-layout--single',
+      );
+      expect(wrapper.find('.vnc-empty-pane').exists()).toBe(false);
+      // single view: the top bar names the VM, and the pane has no header
+      expect(textOf(wrapper.find('.vnc-target'))).toBe('demo / web');
+      expect(wrapper.find('.vnc-pane-header').exists()).toBe(false);
+    },
+  );
+
+  it('keeps the layout when more than one VM is left', async () => {
+    const wrapper = await openPage(
+      '/vnc?vm=demo/kali&vm=demo/web&vm=demo/db&layout=grid',
+    );
+    await wrapper.findAll('.vnc-pane-menu-button')[0].trigger('click');
+    await button(wrapper, 'Close').trigger('click');
+    await flushPromises();
+    expect(query(wrapper)).toEqual({
+      vm: ['demo/web', 'demo/db'],
+      layout: 'grid',
+    });
   });
 });
 

@@ -82,6 +82,27 @@
               @click="$emit('action', action.name, vm)">
               <b-icon :icon="action.icon" size="is-small" />
             </button>
+            <button
+              v-for="tool in toolsOf(vm)"
+              :key="tool.name"
+              type="button"
+              :class="[
+                'button',
+                'is-small',
+                `vnc-tile-${tool.name}`,
+                { 'is-loading': tool.pending },
+              ]"
+              :aria-label="toolLabel(tool, vm)"
+              :title="tool.reason || tool.description"
+              :aria-disabled="
+                tool.disabled || tool.pending ? 'true' : undefined
+              "
+              :aria-busy="tool.pending ? 'true' : undefined"
+              @click="
+                tool.disabled || tool.pending || $emit('action', tool.name, vm)
+              ">
+              <b-icon :icon="tool.icon" size="is-small" />
+            </button>
           </template>
         </VncTile>
         <button
@@ -107,6 +128,7 @@
   import { roleAllowed } from '@/utils/rbac.js';
   import { onWsReconnect, sendWsMsg } from '@/utils/websocket';
   import { MAX_PANES, consoleHref } from '@/vnc/consoleUrl.js';
+  import { sharedLiveTilePool } from '@/vnc/liveTilePool.js';
   import { handleConsoleLinkClick } from '@/vnc/openConsole.js';
   import VncTile from '@/vnc/VncTile.vue';
   import VncTileToolbar from '@/vnc/VncTileToolbar.vue';
@@ -114,14 +136,19 @@
   import { POWER_ACTIONS, vmButtonStates } from './vmActions.js';
   import { consoleLinkAlt, screenshotAlt, vmScreenshot } from './vmScreens.js';
 
+  // the tools of a tile's hover bar, after its power actions
+  const TILE_TOOLS = ['screenshot', 'snapshot'];
+
   // The running experiment's VNC tab: a live, view-only tile per VM with a
   // console, at the zoom the slider picks. A tile opens the console page, and
-  // its hover bar offers the details and the power actions.
+  // its hover bar offers the details, the power actions and, in Live mode, a
+  // screenshot and a snapshot. The bar also shows while focus is in the tile.
   export default {
     name: 'VncTiles',
     components: { BSlider, BSliderTick, VncTile, VncTileToolbar },
     setup() {
       return {
+        liveMode: sharedLiveTilePool().liveMode,
         loadingText,
         consoleLinkAlt,
         screenshotAlt,
@@ -141,6 +168,8 @@
       screenshotsDue: { type: Boolean, default: false },
       // the names of the VMs selected in the VM table
       selected: { type: Array, default: () => [] },
+      // the actions running in the background for each VM, by its name
+      actionPending: { type: Object, default: () => ({}) },
     },
     emits: ['info', 'action', 'update:zoom'],
 
@@ -228,11 +257,30 @@
 
       // the power actions the role may run on the VM now
       powerOf(vm) {
-        const can = (resource, verb) =>
-          roleAllowed(resource, verb, this.keyOf(vm));
-        return vmButtonStates(POWER_ACTIONS, vm, { can }).filter(
-          (action) => action.permitted && !action.disabled,
-        );
+        return vmButtonStates(POWER_ACTIONS, vm, {
+          can: this.canOn(vm),
+        }).filter((action) => action.permitted && !action.disabled);
+      },
+
+      // in Live mode, the tools the role may use on the VM, greyed out with
+      // the reason when the VM's state rules them out
+      toolsOf(vm) {
+        if (!this.liveMode) return [];
+        const pending = this.actionPending[vm.name] ?? [];
+        return vmButtonStates(TILE_TOOLS, vm, { can: this.canOn(vm) })
+          .filter((tool) => tool.permitted)
+          .map((tool) => ({ ...tool, pending: pending.includes(tool.name) }));
+      },
+
+      // a tool's accessible name, with the reason when it is greyed out
+      toolLabel(tool, vm) {
+        const label = `${tool.label} VM ${vm.name}`;
+        return tool.disabled ? `${label}: ${tool.reason}` : label;
+      },
+
+      // answers RBAC for the VM
+      canOn(vm) {
+        return (resource, verb) => roleAllowed(resource, verb, this.keyOf(vm));
       },
 
       setLive(name, on) {

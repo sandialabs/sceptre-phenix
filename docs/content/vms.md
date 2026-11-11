@@ -78,7 +78,8 @@ memory snapshot stops after one hour if QEMU does not complete it.
 
 Click on a running VM in a started experiment to open its details card, then
 click `Snapshot` in `More actions` and confirm. The button is disabled when
-the VM is not running or does not have snapshots enabled.
+the VM is not running or does not have snapshots enabled. In Live mode, the bar
+of a tile in the VNC tab also has `Snapshot` (see [Live Tiles](#live-tiles)).
 
 ### From the Command Line Binary
 
@@ -95,6 +96,7 @@ screen in the experiment files, in the `screenshots` folder. The file name is
 `<vm>-<YYYYMMDD-HHMMSS>.png`, with the UTC time. phēnix does not replace a
 file: when the name is in use, it adds `-1`, `-2` and so on. A message shows
 the name of the file. The button is disabled when the VM is not running.
+In Live mode, the bar of a tile in the VNC tab also has `Screenshot`.
 
 The role must have the `create` verb on the `vms/screenshot` resource (see
 [User Administration](user-administration.md)).
@@ -183,7 +185,8 @@ Each pane shows the banners of its VM and a header with the VM name, the VM
 state, an information button, the pane number and a menu. The information
 button opens the details card of the VM on the experiment page. The menu has `Swap with pane N`, `Open
 alone`, `Full screen` and `Close`. Click a pane to give it keyboard input.
-That pane shows a blue ring and the `Keyboard` tag.
+That pane shows a blue ring and the `Keyboard` tag. When you close a pane and
+only one VM stays, the page shows that VM in one pane.
 
 To open many VMs in one console page, select one to four running VMs in the
 VMs tab. Then click `Open selected in split` in the VNC tab.
@@ -233,7 +236,9 @@ The VNC tab of a running experiment and the VM Tiles page show a live,
 view-only tile for each running or paused VM. A tile sends no keys and no
 pointer events to the VM. A paused VM keeps a still tile with the `PAUSED`
 tag. Click a tile to open its console page. Move the pointer over a tile to
-show its bar, with `Open console`, `Details` and the VM actions.
+show its bar, with `Open console`, `Details` and the VM power actions. In Live
+mode, the bar also has `Screenshot` and `Snapshot`. The bar also shows when a control of the tile has
+keyboard focus. A disabled button tells why in its tooltip.
 
 ![The VNC tab with the Live and Snapshots switch, the Live tile limit, and live tiles for two running VMs, one paused VM and one VM that is not running](images/vnc_tiles.png)
 
@@ -563,8 +568,9 @@ phenix vm reset-disk <experiment name> [vm name] [--label <label>]
 ### From the Web-UI
 
 Click on the name of a running VM in a started experiment to open its details
-card, then click `Restart` in the `Power` section. The button is disabled
-when the VM is not running.
+card, then click `Restart` in the `Power` section and confirm. The button is
+disabled when the VM is not running. The `Actions` column of the VM table, the
+bar of a live tile and the console page also ask you to confirm a restart.
 
 ### From the Command Line Binary
 
@@ -598,8 +604,9 @@ phenix vm resume <experiment name> [vm name] [--label <label>]
 ### From the Web-UI
 
 Click on the name of a running VM in a started experiment to open its details
-card, then click `Shut down` in the `Power` section. `Shut down` is also in the
-VM table's `Actions` column.
+card, then click `Shut down` in the `Power` section and confirm. `Shut down` is
+also in the VM table's `Actions` column, the bar of a live tile and the top
+bar of the console page. Each one asks you to confirm.
 
 ### From the Command Line Binary
 

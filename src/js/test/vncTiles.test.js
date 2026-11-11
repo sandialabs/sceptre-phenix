@@ -145,6 +145,8 @@ describe('the hover bar', () => {
       'Restart VM web',
       'Shut down VM web',
       'Kill VM web',
+      'Screenshot VM web',
+      'Snapshot VM web',
     ]);
 
     await tileBar
@@ -165,7 +167,87 @@ describe('the hover bar', () => {
     expect(buttons(bar(wrapper, 'web'))).toEqual([
       'Details of VM web',
       'Resume VM web',
+      'Screenshot VM web: Cannot save a screenshot: the VM is not running (disabled)',
+      'Snapshot VM web: Cannot snapshot: the VM is not running (disabled)',
     ]);
+  });
+
+  it('offers Screenshot and Snapshot only in Live mode', async () => {
+    const wrapper = await render({ vms: [vm()] });
+    const tools = () =>
+      bar(wrapper, 'web').findAll('.vnc-tile-screenshot, .vnc-tile-snapshot');
+    expect(tools()).toHaveLength(2);
+
+    sharedLiveTilePool().setLiveMode(false);
+    await flushPromises();
+    expect(tools()).toHaveLength(0);
+    expect(buttons(bar(wrapper, 'web'))).toContain('Shut down VM web');
+
+    sharedLiveTilePool().setLiveMode(true);
+    await flushPromises();
+    expect(tools()).toHaveLength(2);
+  });
+
+  it('saves a screenshot or a snapshot of the VM', async () => {
+    const wrapper = await render({ vms: [vm()] });
+    const tileBar = bar(wrapper, 'web');
+    const screenshot = tileBar.get('.vnc-tile-screenshot');
+    expect(screenshot.attributes('title')).toBe(
+      "Save a full-size PNG of the VM's screen in the experiment files, in the screenshots folder",
+    );
+    await screenshot.trigger('click');
+    await tileBar.get('.vnc-tile-snapshot').trigger('click');
+    expect(wrapper.emitted('action')).toEqual([
+      ['screenshot', vm()],
+      ['snapshot', vm()],
+    ]);
+  });
+
+  it('greys out Snapshot with the reason when the VM has no snapshots', async () => {
+    const row = vm({ snapshot: false });
+    const wrapper = await render({ vms: [row] });
+    const snapshot = bar(wrapper, 'web').get('.vnc-tile-snapshot');
+    const reason = 'Cannot snapshot: the VM does not have snapshots enabled';
+    expect(snapshot.attributes('title')).toBe(reason);
+    expect(snapshot.attributes('aria-label')).toBe(
+      `Snapshot VM web: ${reason}`,
+    );
+    expect(snapshot.attributes('aria-disabled')).toBe('true');
+    await snapshot.trigger('click');
+    expect(wrapper.emitted('action')).toBeUndefined();
+  });
+
+  it('spins a tool while it runs, and does not run it again', async () => {
+    const wrapper = await render({
+      vms: [vm()],
+      actionPending: { web: ['screenshot'] },
+    });
+    const screenshot = bar(wrapper, 'web').get('.vnc-tile-screenshot');
+    expect(screenshot.classes()).toContain('is-loading');
+    expect(screenshot.attributes('aria-busy')).toBe('true');
+    await screenshot.trigger('click');
+    expect(wrapper.emitted('action')).toBeUndefined();
+  });
+
+  it.each([
+    ['vms/screenshot', 'create', ['Snapshot VM web']],
+    ['vms/snapshots', 'create', ['Screenshot VM web']],
+  ])('leaves out a tool without %s %s', async (resource, verb, shown) => {
+    rbac.allowed = denyOnly([resource, verb]);
+    const wrapper = await render({ vms: [vm()] });
+    const tools = bar(wrapper, 'web')
+      .findAll('.vnc-tile-screenshot, .vnc-tile-snapshot')
+      .map((b) => b.attributes('aria-label'));
+    expect(tools).toEqual(shown);
+  });
+
+  it('keeps the bar shown while focus is in the tile', () => {
+    expect(
+      componentDeclarations(
+        'src/vnc/VncTile.vue',
+        '.vnc-tile:focus-within .vnc-tile-bar',
+      ),
+    ).toMatchObject({ opacity: '1', 'pointer-events': 'auto' });
   });
 
   it.each([

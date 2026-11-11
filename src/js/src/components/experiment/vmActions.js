@@ -1,9 +1,11 @@
 import { isInterfaceCapturing } from '@/utils/captures.js';
+import { escapeHTML } from '@/utils/escapeHTML.js';
 import {
   actionState,
   partitionForAction,
   skippedText,
 } from '@/utils/operations.js';
+import { namedList, pluralWord } from '@/utils/plural.js';
 
 // What the running experiment page shows for a VM's state, and which VM
 // actions a role may take on a VM in its current state. The details modal, the
@@ -244,6 +246,24 @@ export const VM_ACTIONS = {
     blocked: (vm) =>
       (vm.captures ?? []).length ? null : 'no packet capture is running',
   },
+};
+
+// The confirm dialog (see confirmOperation) of the power actions that ask
+// first wherever a user takes them on one VM, for the VM names given. The
+// message is HTML.
+export const POWER_CONFIRMS = {
+  restart: (vms) => ({
+    title: `Restart the ${pluralWord(vms.length, 'VM')}`,
+    message: escapeHTML(`This will restart ${namedList(vms, 'VM')}.`),
+    confirmText: 'Restart',
+    type: 'is-success',
+  }),
+  shutdown: (vms) => ({
+    title: `Shut Down the ${pluralWord(vms.length, 'VM')}`,
+    message: escapeHTML(`This will shut down ${namedList(vms, 'VM')}.`),
+    confirmText: 'Shut Down',
+    type: 'is-danger',
+  }),
 };
 
 // the pending keys of a VLAN change on an interface and a snapshot restore,

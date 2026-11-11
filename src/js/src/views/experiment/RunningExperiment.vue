@@ -368,6 +368,7 @@
             :width="vncWidth"
             :screenshots-due="screenshotsDue"
             :selected="vmSelectedArray"
+            :action-pending="vmActionPending"
             @info="getInfo"
             @action="onVmAction" />
         </b-tab-item>
@@ -446,6 +447,7 @@
   import VmTable from '@/components/experiment/VmTable.vue';
   import VncTiles from '@/components/experiment/VncTiles.vue';
   import {
+    POWER_CONFIRMS,
     partitionVMsForAction,
     restorePendingKey,
     skippedVMsText,
@@ -1789,15 +1791,19 @@
           });
       },
 
-      // runs a VM action from the details modal or the table's Actions
-      // column; power actions but kill run without asking, unlike the toolbar's
+      // runs a VM action from the details modal, the table's Actions column
+      // or a VNC tile; start and pause run without asking, unlike the toolbar's
       onVmAction(action, vm) {
         switch (action) {
           case 'start':
           case 'pause':
-          case 'restart':
-          case 'shutdown':
             this.runVmAction(action, vm.name);
+            break;
+          case 'restart':
+            this.restartVm(vm.name);
+            break;
+          case 'shutdown':
+            this.shutdownVm(vm.name);
             break;
           case 'kill':
             this.killVm(vm.name);
@@ -1887,21 +1893,11 @@
       },
 
       restartVm(names) {
-        this.confirmVmAction('restart', names, (vms) => ({
-          title: `Restart the ${pluralWord(vms.length, 'VM')}`,
-          message: `This will restart ${namedList(vms, 'VM')}.`,
-          confirmText: 'Restart',
-          type: 'is-success',
-        }));
+        this.confirmVmAction('restart', names, POWER_CONFIRMS.restart);
       },
 
       shutdownVm(names) {
-        this.confirmVmAction('shutdown', names, (vms) => ({
-          title: `Shut Down the ${pluralWord(vms.length, 'VM')}`,
-          message: `This will shut down ${namedList(vms, 'VM')}.`,
-          confirmText: 'Shut Down',
-          type: 'is-danger',
-        }));
+        this.confirmVmAction('shutdown', names, POWER_CONFIRMS.shutdown);
       },
 
       redeploy(names) {

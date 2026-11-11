@@ -148,11 +148,13 @@ async function act(page, label, names) {
 }
 
 // the power actions a VM's row and details take at once, without asking
-const UNASKED = ['start', 'pause', 'restart', 'shutdown'];
+const UNASKED = ['start', 'pause'];
 
 // the page's handler for each other VM action, and whether it takes the VM
 // itself rather than its name
 const handlers = [
+  ['restart', 'restartVm'],
+  ['shutdown', 'shutdownVm'],
   ['kill', 'killVm'],
   ['redeploy', 'redeploy'],
   ['resetDisk', 'resetVmState'],
@@ -1083,10 +1085,6 @@ describe('actions on VMs', () => {
   it.each([
     ['start', 'off', 'details'],
     ['pause', 'web', 'details'],
-    ['restart', 'web', 'details'],
-    ['shutdown', 'web', 'details'],
-    ['restart', 'web', 'row'],
-    ['shutdown', 'web', 'row'],
   ])(
     'runs %s on the %s VM from its %s without asking',
     async (action, name, from) => {
@@ -1108,6 +1106,48 @@ describe('actions on VMs', () => {
       expect(dialogs()).toEqual([]);
       expect(axios.post.mock.calls).toEqual([
         ['experiments/demo/vms/actions', { action, vms: [name] }],
+      ]);
+      expect(page.vm.expModal.active).toBe(true);
+    },
+  );
+
+  it.each([
+    ['restart', 'Restart the VM', 'This will restart the web VM.', 'details'],
+    [
+      'shutdown',
+      'Shut Down the VM',
+      'This will shut down the web VM.',
+      'details',
+    ],
+    ['restart', 'Restart the VM', 'This will restart the web VM.', 'row'],
+    ['shutdown', 'Shut Down the VM', 'This will shut down the web VM.', 'row'],
+  ])(
+    'asks before it runs %s on the web VM from its %s',
+    async (action, title, message, from) => {
+      const vm = vms.find((v) => v.name === 'web');
+      const page = await open({
+        experiment: { name: 'demo', vms },
+        expModal: { active: true, vm },
+      });
+      answerJob();
+      const button = () =>
+        from === 'row'
+          ? vmRows(page)
+              .find((cells) => nodeOf(cells) === 'web')
+              .Actions.find(`.vm-row-${action}`)
+          : page.findComponent(VmDetailsCard).find(`.vm-action-${action}`);
+
+      await button().trigger('click');
+      await flushPromises();
+      expect(asked(questions()[0])).toMatchObject({
+        title,
+        message: `<p>${message}</p>`,
+      });
+      expect(axios.post).not.toHaveBeenCalled();
+
+      await confirmDialog();
+      expect(axios.post.mock.calls).toEqual([
+        ['experiments/demo/vms/actions', { action, vms: ['web'] }],
       ]);
       expect(page.vm.expModal.active).toBe(true);
     },
@@ -1302,6 +1342,7 @@ describe('actions on VMs', () => {
     let finish = runningJob();
     await card().find('.vm-action-shutdown').trigger('click');
     await flushPromises();
+    await confirmDialog();
     expect(page.vm.expModal.active).toBe(true);
     expect(waiting(page)).toBe(false);
     expect(card().find('.vm-action-shutdown').classes()).toContain(

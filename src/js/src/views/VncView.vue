@@ -20,6 +20,7 @@
 
   import { createVmSnapshot, startVmActionsJob } from '@/api/vms.js';
   import { minuteStamp } from '@/components/experiment/timestamp.js';
+  import { POWER_CONFIRMS } from '@/components/experiment/vmActions.js';
   import { saveScreenshot } from '@/components/experiment/vmTools.js';
   import { usePhenixStore } from '@/store.js';
   import { useErrorNotification } from '@/utils/errorNotif';
@@ -358,11 +359,26 @@
     vmModals.value?.open(name, controller);
   }
 
+  // asks before a power action of POWER_CONFIRMS; resolves true for the others
+  async function confirmPower(name, controller) {
+    const ask = POWER_CONFIRMS[name];
+    if (!ask) return true;
+    // a confirm dialog takes the keyboard from the fullscreen console
+    await exitFullscreen().catch(() => {});
+    return confirmOperation(buefy, { ...ask([controller.vm]), noun: 'VM' });
+  }
+
   async function runAction(name, controller = active.value) {
     if (!controller || controller.pending) return;
     if (name === 'snapshot') return snapshot(controller);
     if (name === 'screenshot') return screenshot(controller);
     if (DIALOG_ACTIONS.includes(name)) return openDialog(name, controller);
+    if (await confirmPower(name, controller)) return runJob(name, controller);
+  }
+
+  // takes a power action in a background job; a retry does not ask again
+  async function runJob(name, controller) {
+    if (controller.pending) return;
     controller.pending = name;
     try {
       const job = await startVmActionsJob(controller.experiment, name, [
@@ -377,7 +393,7 @@
         verbPast: VM_ACTION_DONE[name],
         noun: 'VM',
         items: outcomeFromJob(done),
-        onRetry: () => runAction(name, controller),
+        onRetry: () => runJob(name, controller),
       });
     } catch (err) {
       useErrorNotification(err);
@@ -437,8 +453,10 @@
     show(keys);
   }
 
+  // the last pane left fills the page
   function close(key) {
-    show(vms.value.filter((vm) => vm !== key));
+    const keys = vms.value.filter((vm) => vm !== key);
+    show(keys, keys.length === 1 ? 'single' : layout.value);
   }
 
   function openAlone(key) {
