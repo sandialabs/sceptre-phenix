@@ -201,7 +201,8 @@ Display a table of disk images
   Lists the images in the minimega files directory, and the images that the
   experiments' topologies use. With --experiment, the topology images are
   only those of that experiment. -o json and -o yaml print each image with
-  the fields of GET /disks.
+  the fields of GET /disks. When the file of an image is a symlink, the
+  Path column also shows its target: link.qc2 -> win/win10.qc2.
 ```
 
 ```text

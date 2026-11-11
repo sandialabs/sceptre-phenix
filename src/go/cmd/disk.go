@@ -103,7 +103,8 @@ func newDiskListCmd() *cobra.Command {
   Lists the images in the minimega files directory, and the images that the
   experiments' topologies use. With --experiment, the topology images are
   only those of that experiment. -o json and -o yaml print each image with
-  the fields of GET /disks.`,
+  the fields of GET /disks. When the file of an image is a symlink, the
+  Path column also shows its target: link.qc2 -> win/win10.qc2.`,
 		Example: `
   # Every VM and ISO image
   phenix disk list --type vm,iso
@@ -175,11 +176,6 @@ func printDiskTable(w io.Writer, disks []disk.Details) {
 	table.SetHeader([]string{"Name", "Kind", "Path", "Format", "Size", "Virtual Size", "Backing Image", "Experiments", "Notes"})
 
 	for _, d := range disks {
-		path := d.RelativePath
-		if path == "" {
-			path = d.FullPath
-		}
-
 		backing := ""
 		if len(d.BackingImages) > 0 {
 			backing = d.BackingImages[0]
@@ -191,11 +187,22 @@ func printDiskTable(w io.Writer, disks []disk.Details) {
 		}
 
 		table.Append([]string{
-			d.Name, d.Kind.String(), path, d.Format, d.Size, d.VirtualSize, backing, strings.Join(exps, ", "), diskNotes(d),
+			d.Name, d.Kind.String(), diskTablePath(d), d.Format, d.Size, d.VirtualSize, backing, strings.Join(exps, ", "), diskNotes(d),
 		})
 	}
 
 	table.Render()
+}
+
+// diskTablePath gives the path of a disk image for the table, relative to the minimega files directory when it is in
+// it, and what the file points to when it is a symlink: "link.qc2 -> win/win10.qc2".
+func diskTablePath(d disk.Details) string {
+	path := cmp.Or(d.RelativePath, d.FullPath)
+	if d.LinkTarget != "" {
+		path += " -> " + d.LinkTarget
+	}
+
+	return path
 }
 
 // diskNotes says what needs care about a disk image, in a few words.

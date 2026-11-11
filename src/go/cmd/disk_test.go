@@ -7,9 +7,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"pgregory.net/rapid"
 
 	"phenix/api/disk"
@@ -188,6 +190,87 @@ func TestDiskListAndChecksum(t *testing.T) {
 
 	if _, err := runDiskCmd(t, "checksum", "../outside.qc2"); !errors.Is(err, disk.ErrNotManaged) {
 		t.Errorf("disk checksum ../outside.qc2 error = %v, want %v", err, disk.ErrNotManaged)
+	}
+}
+
+func TestDiskTablePath(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		d    disk.Details
+		want string
+	}{
+		"regular file":     {d: disk.Details{RelativePath: "base.qc2", FullPath: "/files/base.qc2"}, want: "base.qc2"},
+		"outside the dir":  {d: disk.Details{FullPath: "/other/base.qc2"}, want: "/other/base.qc2"},
+		"relative symlink": {d: disk.Details{RelativePath: "link.qc2", LinkTarget: "win/win10.qc2"}, want: "link.qc2 -> win/win10.qc2"},
+		"absolute symlink": {
+			d:    disk.Details{FullPath: "/other/link.qc2", LinkTarget: "/files/base.qc2"},
+			want: "/other/link.qc2 -> /files/base.qc2",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := diskTablePath(tt.d); got != tt.want {
+				t.Errorf("diskTablePath(%+v) = %q, want %q", tt.d, got, tt.want)
+			}
+		})
+	}
+}
+
+// diskTableColumn reads the table of disk list into the value of one column for each image name.
+func diskTableColumn(t *testing.T, table, column string) map[string]string {
+	t.Helper()
+
+	var (
+		header []string
+		got    = map[string]string{}
+	)
+
+	for line := range strings.Lines(table) {
+		if !strings.HasPrefix(line, "|") {
+			continue
+		}
+
+		cells := strings.Split(strings.Trim(strings.TrimSpace(line), "|"), "|")
+		for i := range cells {
+			cells[i] = strings.TrimSpace(cells[i])
+		}
+
+		if header == nil {
+			header = cells
+
+			continue
+		}
+
+		if i := slices.Index(header, column); i >= 0 && i < len(cells) {
+			got[cells[0]] = cells[i]
+		}
+	}
+
+	return got
+}
+
+// The Path column of disk list shows what an image that is a symlink points to, and only the path of a regular file.
+func TestDiskListSymlink(t *testing.T) {
+	dir := useDiskCmdFiles(t)
+
+	writeDiskFile(t, dir+"/base.qc2", "base")
+
+	if err := os.Symlink("base.qc2", dir+"/link.qc2"); err != nil {
+		t.Fatalf("making the symlink: %v", err)
+	}
+
+	out, err := runDiskCmd(t, "list")
+	if err != nil {
+		t.Fatalf("disk list error = %v", err)
+	}
+
+	want := map[string]string{"base.qc2": "base.qc2", "link.qc2": "link.qc2 -> base.qc2"}
+	if diff := cmp.Diff(want, diskTableColumn(t, out, "PATH")); diff != "" {
+		t.Errorf("disk list Path column mismatch (-want +got):\n%s", diff)
 	}
 }
 

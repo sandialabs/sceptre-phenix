@@ -516,8 +516,9 @@ phenix version [-o text|json|yaml]  # one line; JSON/YAML have the keys of GET /
 ```
 
 `disk` paths are relative to the minimega files directory, or absolute inside
-it. `disk delete` refuses an image that other images or experiments use unless
-`--force`. `disk rebase --unsafe` changes only the backing name, and
+it. The `disk list` table shows a symlink image as `path -> target` in the
+Path column. `disk delete` refuses an image that other images or experiments
+use unless `--force`. `disk rebase --unsafe` changes only the backing name, and
 `--independent` (in place of a backing image) removes the backing image.
 `admin user create|update` read a password from the terminal, or from stdin
 with `--password-stdin` (`update --password` asks for the current password
