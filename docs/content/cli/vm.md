@@ -1059,11 +1059,11 @@ phenix vm redeploy <experiment name> [vm name] [flags]
 ### Options
 
 ```text
-  -c, --cpu int             Number of VM CPUs (1-8 is valid; 0 keeps the current value)
+  -c, --cpu int             Number of VM CPUs (1-16 is valid; 0 keeps the current value)
   -d, --disk string         New first disk: <path>[,<interface>][,<cache>]
   -h, --help                help for redeploy
   -l, --label stringArray   Label to filter VMs (supports glob patterns); use 'all' to select every VM
-  -m, --mem int             Amount of memory in megabytes (a multiple of 512 from 512 to 16384; 0 keeps the current value)
+  -m, --mem int             Amount of memory in megabytes (a multiple of 512 from 512 to 131072; 0 keeps the current value)
   -p, --partition int       Partition of the new disk to inject files into (used only with --disk and --replicate-injects) (default 1)
   -r, --replicate-injects   Recreate disk snapshot and VM injections
 ```
@@ -1226,7 +1226,7 @@ phenix vm set <experiment name> --label role=server --label-changes tier=web --a
 ```text
       --annotation stringArray      VM annotation in key=value form (may be repeated; replaces all of the annotations of the VM)
       --append-labels               Append the provided labels to the VM's existing labels instead of replacing the labels
-  -c, --cpu int                     Number of VM CPUs (1-8 is valid)
+  -c, --cpu int                     Number of VM CPUs (1-16 is valid)
   -d, --disk string                 VM backing disk image file
       --do-not-boot                 Set the do-not-boot flag for the VM
   -h, --help                        help for set
@@ -1234,7 +1234,7 @@ phenix vm set <experiment name> --label role=server --label-changes tier=web --a
       --interface string            Connect an interface to a VLAN alias or ID as <index>=<vlan>, or disconnect it as <index>= (running experiments only)
   -l, --label stringArray           Label to filter VMs (supports glob patterns); use 'all' to select every VM
   -L, --label-changes stringArray   VM label(s) to add or edit in key=value form (may be repeated)
-  -m, --mem int                     Amount of memory in megabytes (a multiple of 512 from 512 to 16384)
+  -m, --mem int                     Amount of memory in megabytes (a multiple of 512 from 512 to 131072)
   -p, --partition int               Partition of the first disk to inject files into (0 turns off disk injection)
       --snapshot                    Set the snapshot (non-persistent) flag for the VM
 ```

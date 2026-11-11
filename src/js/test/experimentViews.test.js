@@ -534,13 +534,24 @@ describe('StoppedExperiment', () => {
     });
 
     it('offers a CPU or memory value outside its usual choices that the VM has', async () => {
-      const page = await stopped([web({ cpus: 8, ram: 6144 })]);
+      const page = await stopped([web({ cpus: 24, ram: 6144 })]);
       const options = (label) =>
         byLabel(page, label)
           .findAll('option')
           .map((o) => textOf(o));
-      expect(options('CPUs for VM web')).toEqual(['1', '2', '3', '4', '8']);
+      expect(options('CPUs for VM web')).toEqual([
+        ...Array.from({ length: 16 }, (_, i) => String(i + 1)),
+        '24',
+      ]);
       expect(options('Memory for VM web')).toContain('6 GiB');
+      expect(options('Memory for VM web').slice(-6)).toEqual([
+        '24 GiB',
+        '32 GiB',
+        '48 GiB',
+        '64 GiB',
+        '96 GiB',
+        '128 GiB',
+      ]);
     });
 
     it.each([

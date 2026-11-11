@@ -513,15 +513,19 @@ func TestVMCmdRedeploy(t *testing.T) { //nolint:paralleltest // replaces the phe
 				relaunch("db", "vm config vcpus 4", "vm config mem 2048"),
 			),
 		},
-		{name: "too many CPUs", args: []string{"exp", "web", "-c", "9"}, wantErr: "cpus can only be 1-8"},
-		{name: "negative CPUs", args: []string{"exp", "web", "-c", "-1"}, wantErr: "cpus can only be 1-8"},
+		{
+			name: "most CPUs and memory", args: []string{"exp", "web", "-c", "16", "-m", "131072"},
+			want: relaunch("web", "vm config vcpus 16", "vm config mem 131072"),
+		},
+		{name: "too many CPUs", args: []string{"exp", "web", "-c", "17"}, wantErr: "cpus can only be 1-16"},
+		{name: "negative CPUs", args: []string{"exp", "web", "-c", "-1"}, wantErr: "cpus can only be 1-16"},
 		{
 			name: "memory not a multiple of 512", args: []string{"exp", "web", "-m", "1000"},
-			wantErr: "memory must be a multiple of 512 from 512 to 16384",
+			wantErr: "memory must be a multiple of 512 from 512 to 131072",
 		},
 		{
-			name: "too much memory", args: []string{"exp", "web", "-m", "16896"},
-			wantErr: "memory must be a multiple of 512 from 512 to 16384",
+			name: "too much memory", args: []string{"exp", "web", "-m", "131584"},
+			wantErr: "memory must be a multiple of 512 from 512 to 131072",
 		},
 		{name: "no VM name", args: []string{"exp"}, wantErr: "must provide an experiment and VM name (or use --label)"},
 		{name: "VM minimega lacks", args: []string{"exp", "gone"}, humanized: "Unable to redeploy the gone VM"},
@@ -705,10 +709,10 @@ func TestVMCmdSetErrors(t *testing.T) { //nolint:paralleltest // replaces the ph
 		humanized string
 	}{
 		{name: "nothing to set", args: []string{"exp", "web"}, wantErr: "no configuration values provided to set"},
-		{name: "too many CPUs", args: []string{"exp", "web", "-c", "0"}, wantErr: "cpus can only be 1-8"},
+		{name: "too many CPUs", args: []string{"exp", "web", "-c", "0"}, wantErr: "cpus can only be 1-16"},
 		{
 			name: "memory too small", args: []string{"exp", "web", "-m", "256"},
-			wantErr: "memory must be a multiple of 512 from 512 to 16384",
+			wantErr: "memory must be a multiple of 512 from 512 to 131072",
 		},
 		{name: "label without a value", args: []string{"exp", "web", "-L", "tier"}, wantErr: `invalid label "tier" (expected key=value)`},
 		{name: "label without a key", args: []string{"exp", "web", "-L", "=front"}, wantErr: `invalid label "=front" (expected key=value)`},

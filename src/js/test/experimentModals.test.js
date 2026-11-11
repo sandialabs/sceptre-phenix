@@ -109,11 +109,14 @@ describe('the redeploy dialog', () => {
     expect(title(wrapper)).toBe('Redeploy the VMs');
     expect(byLabel(wrapper, 'CPUs for VM db').element.value).toBe('2');
     expect(
+      byLabel(wrapper, 'CPUs for VM db').findAll('option').map(textOf),
+    ).toEqual(Array.from({ length: 16 }, (_, i) => String(i + 1)));
+    expect(
       byLabel(wrapper, 'Memory for VM web')
         .findAll('option')
         .map((o) => [o.element.value, textOf(o)])
         .at(-1),
-    ).toEqual(['16384', '16 GB']);
+    ).toEqual(['131072', '128 GiB']);
 
     await byLabel(wrapper, 'CPUs for VM db').setValue('4');
     await byLabel(wrapper, 'Memory for VM web').setValue('2048');
@@ -125,6 +128,18 @@ describe('the redeploy dialog', () => {
       [0, 'ram', '2048'],
       [1, 'inject', 'true'],
     ]);
+  });
+
+  it('offers a CPU or memory value outside its choices that the VM has', async () => {
+    const wrapper = await open(RedeployModal, {
+      vms: [{ ...vm('web'), cpus: 24, ram: 6144 }],
+      disks,
+    });
+    expect(byLabel(wrapper, 'CPUs for VM web').element.value).toBe('24');
+    expect(byLabel(wrapper, 'Memory for VM web').element.value).toBe('6144');
+    expect(
+      byLabel(wrapper, 'Memory for VM web').findAll('option').map(textOf),
+    ).toContain('6 GiB');
   });
 
   it('asks the page to redeploy, or closes on cancel', async () => {

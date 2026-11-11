@@ -657,8 +657,8 @@ flag is omitted is left unchanged. The following flags are supported:
 
 | Flag                  | Description                                                                                                       |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `-c, --cpu`           | Number of VM CPUs (1-8 is valid).                                                                                 |
-| `-m, --mem`           | Amount of memory in megabytes (a multiple of 512 from 512 to 16384).                                              |
+| `-c, --cpu`           | Number of VM CPUs (1-16 is valid).                                                                                |
+| `-m, --mem`           | Amount of memory in megabytes (a multiple of 512 from 512 to 131072).                                             |
 | `-d, --disk`          | VM backing disk image.                                                                                            |
 | `-p, --partition`     | Partition of disk to inject files into.                                                                           |
 | `--do-not-boot`       | Set the do-not-boot flag for the VM.                                                                              |

@@ -26,7 +26,10 @@
                   :model-value="vmI.cpus"
                   @update:model-value="(v) => $emit('edit', index, 'cpus', v)"
                   expanded>
-                  <option v-for="n in 8" :key="n" :value="String(n)">
+                  <option
+                    v-for="n in choicesWith(CPU_CHOICES, vmI.cpus)"
+                    :key="n"
+                    :value="String(n)">
                     {{ n }}
                   </option>
                 </b-select>
@@ -39,10 +42,10 @@
                   @update:model-value="(v) => $emit('edit', index, 'ram', v)"
                   expanded>
                   <option
-                    v-for="[value, label] in MEMORY"
-                    :key="value"
-                    :value="value">
-                    {{ label }}
+                    v-for="n in choicesWith(RAM_CHOICES, vmI.ram)"
+                    :key="n"
+                    :value="String(n)">
+                    {{ settingText('ram', n) }}
                   </option>
                 </b-select>
               </b-tooltip>
@@ -84,18 +87,12 @@
 <script>
   import { pluralWord } from '@/utils/plural.js';
   import DiskSelect from './DiskSelect.vue';
-
-  // the memory a VM can be redeployed with: MB, and its label
-  const MEMORY = [
-    ['512', '512 MB'],
-    ['1024', '1 GB'],
-    ['2048', '2 GB'],
-    ['3072', '3 GB'],
-    ['4096', '4 GB'],
-    ['8192', '8 GB'],
-    ['12288', '12 GB'],
-    ['16384', '16 GB'],
-  ];
+  import {
+    CPU_CHOICES,
+    RAM_CHOICES,
+    choicesWith,
+    settingText,
+  } from './vmSettings.js';
 
   // The dialog that redeploys VMs with the CPUs, memory and disk picked for
   // each, and whether to replicate their injections. The page sends the
@@ -104,7 +101,7 @@
     name: 'RedeployModal',
     components: { DiskSelect },
     setup() {
-      return { pluralWord, MEMORY };
+      return { pluralWord, CPU_CHOICES, RAM_CHOICES, choicesWith, settingText };
     },
     props: {
       active: { type: Boolean, default: false },

@@ -28,8 +28,12 @@ import (
 	"phenix/util/printer"
 )
 
-// memRangeMsg is the error for a VM memory value that the CLI refuses.
-const memRangeMsg = "memory must be a multiple of 512 from 512 to 16384"
+// memRangeMsg and cpuRangeMsg are the errors for VM memory and CPU values
+// that the CLI refuses. The UI offers choices in the same ranges.
+const (
+	memRangeMsg = "memory must be a multiple of 512 from 512 to 131072"
+	cpuRangeMsg = "cpus can only be 1-16"
+)
 
 const (
 	infoArgs               = 2
@@ -804,11 +808,11 @@ func newVMRedeployCmd() *cobra.Command {
 				inject = mustGet(cmd.Flags().GetBool, "replicate-injects")
 			)
 
-			if cpu != 0 && (cpu < 1 || cpu > 8) {
-				return errors.New("cpus can only be 1-8")
+			if cpu != 0 && (cpu < 1 || cpu > 16) {
+				return errors.New(cpuRangeMsg)
 			}
 
-			if mem != 0 && (mem < 512 || mem > 16384 || mem%512 != 0) {
+			if mem != 0 && (mem < 512 || mem > 131072 || mem%512 != 0) {
 				return errors.New(memRangeMsg)
 			}
 
@@ -835,9 +839,9 @@ func newVMRedeployCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().IntVarP(&cpu, "cpu", "c", 0, "Number of VM CPUs (1-8 is valid; 0 keeps the current value)")
+	cmd.Flags().IntVarP(&cpu, "cpu", "c", 0, "Number of VM CPUs (1-16 is valid; 0 keeps the current value)")
 	cmd.Flags().
-		IntVarP(&mem, "mem", "m", 0, "Amount of memory in megabytes (a multiple of 512 from 512 to 16384; 0 keeps the current value)")
+		IntVarP(&mem, "mem", "m", 0, "Amount of memory in megabytes (a multiple of 512 from 512 to 131072; 0 keeps the current value)")
 	cmd.Flags().StringP("disk", "d", "", "New first disk: <path>[,<interface>][,<cache>]")
 	_ = cmd.RegisterFlagCompletionFunc("disk", completeDisks)
 	cmd.Flags().BoolP("replicate-injects", "r", false, "Recreate disk snapshot and VM injections")
@@ -1048,11 +1052,11 @@ func parseVMSetFlags(cmd *cobra.Command) (vmSetFlags, error) {
 		err error
 	)
 
-	if f.cpu != nil && (*f.cpu < 1 || *f.cpu > 8) {
-		return f, errors.New("cpus can only be 1-8")
+	if f.cpu != nil && (*f.cpu < 1 || *f.cpu > 16) {
+		return f, errors.New(cpuRangeMsg)
 	}
 
-	if f.mem != nil && (*f.mem < 512 || *f.mem > 16384 || *f.mem%512 != 0) {
+	if f.mem != nil && (*f.mem < 512 || *f.mem > 131072 || *f.mem%512 != 0) {
 		return f, errors.New(memRangeMsg)
 	}
 
@@ -1158,8 +1162,8 @@ func newVMSetCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().IntP("cpu", "c", 0, "Number of VM CPUs (1-8 is valid)")
-	cmd.Flags().IntP("mem", "m", 0, "Amount of memory in megabytes (a multiple of 512 from 512 to 16384)")
+	cmd.Flags().IntP("cpu", "c", 0, "Number of VM CPUs (1-16 is valid)")
+	cmd.Flags().IntP("mem", "m", 0, "Amount of memory in megabytes (a multiple of 512 from 512 to 131072)")
 	cmd.Flags().StringP("disk", "d", "", "VM backing disk image file")
 	cmd.Flags().IntP("partition", "p", 0, "Partition of the first disk to inject files into (0 turns off disk injection)")
 	cmd.Flags().Bool("do-not-boot", false, "Set the do-not-boot flag for the VM")

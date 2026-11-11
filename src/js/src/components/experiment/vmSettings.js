@@ -15,9 +15,14 @@ export const SETTING_FIELDS = Object.freeze([
   'dnb',
 ]);
 
-export const CPU_CHOICES = Object.freeze([1, 2, 3, 4]);
+// CPU and memory (MiB) choices for stopped VMs and the redeploy dialog; the
+// CLI takes 1 to 16 CPUs and memory up to the largest choice.
+export const CPU_CHOICES = Object.freeze(
+  Array.from({ length: 16 }, (_, i) => i + 1),
+);
 export const RAM_CHOICES = Object.freeze([
-  512, 1024, 2048, 3072, 4096, 8192, 12288, 16384,
+  512, 1024, 2048, 3072, 4096, 8192, 12288, 16384, 24576, 32768, 49152, 65536,
+  98304, 131072,
 ]);
 export const PARTITION_CHOICES = Object.freeze([1, 2, 3, 4]);
 

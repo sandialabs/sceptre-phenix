@@ -19,6 +19,8 @@ import VmPickFilter from '@/components/experiment/VmPickFilter.vue';
 import VmSettingControl from '@/components/experiment/VmSettingControl.vue';
 import { useColumnVisibility } from '@/components/experiment/useColumnVisibility.js';
 import {
+  CPU_CHOICES,
+  RAM_CHOICES,
   SETTING_FIELDS,
   atDefaults,
   batchOutcome,
@@ -130,6 +132,28 @@ describe('a setting as text', () => {
 });
 
 describe('the choices of a numeric setting', () => {
+  it('offer 1 to 16 CPUs and 512 MiB to 128 GiB of memory', () => {
+    expect(CPU_CHOICES).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+    ]);
+    expect(RAM_CHOICES.map((mib) => settingText('ram', mib))).toEqual([
+      '512 MiB',
+      '1 GiB',
+      '2 GiB',
+      '3 GiB',
+      '4 GiB',
+      '8 GiB',
+      '12 GiB',
+      '16 GiB',
+      '24 GiB',
+      '32 GiB',
+      '48 GiB',
+      '64 GiB',
+      '96 GiB',
+      '128 GiB',
+    ]);
+  });
+
   it('add a value outside them, in order', () => {
     expect(choicesWith([1, 2, 4], 3)).toEqual([1, 2, 3, 4]);
     expect(choicesWith([1, 2, 4], '8')).toEqual([1, 2, 4, 8]);
