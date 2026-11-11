@@ -188,12 +188,7 @@
         <template v-slot="{ item }">
           <div class="columns row">
             <div class="log-column level-column">
-              <span
-                class="tag level-tag"
-                :class="levelBadge(item.level).cls"
-                :title="item.level">
-                {{ levelBadge(item.level).label }}
-              </span>
+              <log-level-tag :level="item.level" />
             </div>
 
             <div class="log-column ts-column">{{ item.timestamp }}</div>
@@ -205,23 +200,27 @@
             </div>
 
             <div class="log-column msg-column column is-rest">
-              <!-- Bug: if at the top of the list, tooltip won't be visible. Changing position to bottom causes overlaps -->
-              <b-tooltip
-                :triggers="['click']"
-                :label="item.msg"
-                position="is-top"
-                type="is-light"
-                multilined>
-                <!-- A button, so the keyboard can show the full message too. -->
-                <button type="button" class="log-message">
-                  <span class="truncate">{{ item.msg }}</span>
-                </button>
-              </b-tooltip>
+              <!-- A button, so the keyboard can open the details too. -->
+              <button
+                type="button"
+                class="log-message"
+                aria-haspopup="dialog"
+                @click="openDetails(item, $event)">
+                <span class="truncate">{{ item.msg }}</span>
+              </button>
             </div>
           </div>
         </template>
       </RecycleScroller>
     </div>
+    <!-- one dialog for the page, outside the scroller, so no row covers it -->
+    <log-details-modal
+      :entry="selected"
+      :index="selectedIndex"
+      :total="filteredLogs.length"
+      @close="closeDetails"
+      @previous="stepDetails(-1)"
+      @next="stepDetails(1)" />
   </div>
 </template>
 
@@ -233,9 +232,10 @@
   import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
 
   import * as logsApi from '@/api/logs.js';
+  import LogDetailsModal from '@/components/LogDetailsModal.vue';
+  import LogLevelTag from '@/components/LogLevelTag.vue';
   import StatStrip from '@/components/StatStrip.vue';
   import { usePhenixStore } from '@/store.js';
-  import { levelBadge } from '@/utils/logLevels.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import {
     addWsHandler,
@@ -295,6 +295,8 @@
   export default {
     components: {
       BDatetimepicker,
+      LogDetailsModal,
+      LogLevelTag,
       RecycleScroller,
       StatStrip,
     },
@@ -336,10 +338,7 @@
         apply: (logs) => {
           this.logs = markRaw(logs);
           this.loaded = true;
-          this.$nextTick(() => {
-            // the scroller is gone if the user left the page mid-request
-            this.$refs.logScroller?.scrollToPosition(Number.MAX_SAFE_INTEGER);
-          });
+          this.$nextTick(() => this.scrollToNewest());
         },
       });
       this.loader.start();
@@ -376,6 +375,11 @@
       searchInput(value) {
         this.applySearch(value);
       },
+      // the scroller keeps its offset when its list changes; show the
+      // newest entries the filters select, as a load does
+      filterKey() {
+        this.$nextTick(() => this.scrollToNewest());
+      },
     },
 
     computed: {
@@ -386,11 +390,7 @@
       filteredLogs: function () {
         void this.logsVersion; // dependency: bumped when logs change
         const logs = this.logs;
-        const key = [
-          this.levelFilter,
-          this.searchFilter.toLowerCase(),
-          this.typeFilter.join(','),
-        ].join('\n');
+        const key = this.filterKey;
         const cache = this.filterCache;
         if (cache.logs !== logs || cache.key !== key) {
           cache.logs = logs;
@@ -417,6 +417,20 @@
           cache.result = cache.result.concat(matches);
         }
         return cache.result;
+      },
+      // the level, search and types that select the logs shown
+      filterKey() {
+        return [
+          this.levelFilter,
+          this.searchFilter.toLowerCase(),
+          this.typeFilter.join(','),
+        ].join('\n');
+      },
+      // where the details dialog's entry is in the filtered list, or -1
+      selectedIndex() {
+        if (!this.selected) return -1;
+        const id = this.selected.id;
+        return this.filteredLogs.findLastIndex((log) => log.id === id);
       },
       // every loaded log, and those the filters leave out
       totalLogs() {
@@ -487,7 +501,6 @@
 
     methods: {
       loadingText,
-      levelBadge,
 
       // asks which log files the server can send, for the download buttons
       async loadLogFiles() {
@@ -539,6 +552,28 @@
         }
         this.$refs.dateDropdown.isActive = false;
       },
+      // the scroller is gone if the user left the page mid-request
+      scrollToNewest() {
+        this.$refs.logScroller?.scrollToPosition(Number.MAX_SAFE_INTEGER);
+      },
+      // opens the details dialog on an entry; focus returns to its button
+      openDetails(item, event) {
+        this.detailsOpener = event.currentTarget;
+        this.selected = item;
+      },
+      closeDetails() {
+        this.selected = null;
+        const opener = this.detailsOpener;
+        this.detailsOpener = null;
+        this.$nextTick(() => {
+          if (opener?.isConnected) opener.focus();
+        });
+      },
+      // shows the entry before (-1) or after (1) in the filtered list
+      stepDetails(step) {
+        const next = this.filteredLogs[this.selectedIndex + step];
+        if (this.selectedIndex >= 0 && next) this.selected = next;
+      },
       subscribeLogs(action) {
         sendWsMsg({ resource: { type: 'log', name: 'phenix', action } });
       },
@@ -566,16 +601,30 @@
         logFiles: [], // GET /logs/files: the log files to download
         logFilesLoading: true,
         logFilesError: null, // why the log files could not be listed
+        selected: null, // the entry the details dialog shows
       };
     },
   };
 </script>
 
 <style scoped>
-  .control :deep(.icon) {
+  /* the input's own icons only: this moved the clear button's icon up */
+  .control > :deep(.icon) {
     height: 1.5em !important;
     top: 50%;
     transform: translateY(-50%);
+  }
+
+  /* the clear button: a square as high as the box, its icon in the middle */
+  .button.input-button {
+    width: 2.5em;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0;
+  }
+
+  .button.input-button .icon:only-child {
+    margin: 0;
   }
 
   a.dropdown-item.is-active {
@@ -630,12 +679,6 @@
   :deep(.vue-recycle-scroller__item-view.hover) {
     background: #575757 !important;
   }
-  :deep(.msg-column .b-tooltip .tooltip-content) {
-    width: 102% !important;
-    text-align: left;
-    padding-left: 4px;
-    padding-right: 4px;
-  }
 
   .log-column {
     display: flex;
@@ -663,33 +706,9 @@
     justify-content: center;
   }
 
-  /* each level's badge; text on fill is at least 7:1 */
-  .level-tag {
+  /* the badge fills its column (LogLevelTag.vue colors it) */
+  .level-column .level-tag {
     width: 100%;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
-  }
-
-  .level-tag.level-debug {
-    background-color: #2b2b2b;
-    color: #e0e0e0;
-    box-shadow: inset 0 0 0 1px #8a8a8a;
-  }
-
-  .level-tag.level-info {
-    background-color: hsl(207, 61%, 33%);
-    color: #fff;
-  }
-
-  .level-tag.level-warn {
-    background-color: #ffe08a;
-    color: #363636;
-  }
-
-  .level-tag.level-error {
-    background-color: #a91f3d;
-    color: #fff;
   }
 
   /* the filters drop below the count when both do not fit on one row */

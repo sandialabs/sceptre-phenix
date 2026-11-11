@@ -1,6 +1,7 @@
 // The Logs page: it subscribes to log lines while open, filters them by type,
-// finds AUDIT events by the ECS fields in their message, shows each level as
-// a short badge, counts the lines shown, and links to the log files.
+// level and search in any order, finds AUDIT events by the ECS fields in
+// their message, shows each level as a short badge, counts the lines shown,
+// and links to the log files.
 import fc from 'fast-check';
 import { flushPromises } from '@vue/test-utils';
 import { h } from 'vue';
@@ -22,7 +23,7 @@ vi.mock('@/utils/pageLoader.js', capturing);
 import Logs from '@/views/Logs.vue';
 import { never } from './helpers/async.js';
 import { wsMsg } from './helpers/fixtures.js';
-import { mountPage, textOf } from './helpers/mount.js';
+import { byLabel, mountPage, textOf } from './helpers/mount.js';
 import { componentDeclarations } from './helpers/css.js';
 import { allowOnly, denyAll } from './helpers/permissions.js';
 
@@ -41,10 +42,17 @@ const LOGS = [
   { level: 'WARN', type: 'SECURITY', msg: 'capture grant revoked' },
 ].map((log, id) => ({ id, ...log }));
 
+// where the page scrolled the list to, latest last
+const scrolls = [];
+
 // draws every item, as happy-dom gives the virtual scroller no height
 const RecycleScroller = {
   props: ['items'],
-  methods: { scrollToPosition() {} },
+  methods: {
+    scrollToPosition(px) {
+      scrolls.push(px);
+    },
+  },
   render() {
     return h(
       'div',
@@ -106,7 +114,10 @@ const actions = () =>
     .filter((msg) => msg.resource.type === 'log')
     .map((msg) => msg.resource.action);
 
-beforeEach(() => resetMocks());
+beforeEach(() => {
+  resetMocks();
+  scrolls.length = 0;
+});
 afterEach(() => vi.useRealTimers());
 
 // the server sends log lines only to websocket clients that subscribed
@@ -149,6 +160,108 @@ it.each([
   await vi.waitFor(() =>
     expect(shown(page)).toEqual(want.map((i) => LOGS[i].msg)),
   );
+});
+
+// lines with "duration" at both levels, and lines without it
+const TIMED = [
+  { level: 'DEBUG', type: 'HTTP', msg: 'GET /api/v1/vms phenix.duration=2ms' },
+  {
+    level: 'INFO',
+    type: 'AUDIT',
+    msg: 'experiment started phenix.duration=1m',
+  },
+  { level: 'INFO', type: 'SYSTEM', msg: 'scheduler ready' },
+  { level: 'DEBUG', type: 'SYSTEM', msg: 'cache hit' },
+].map((log, id) => ({ id, ...log }));
+
+const setLevel = (page, level) => levelItem(page, level).trigger('click');
+async function setSearch(page, text) {
+  await searchBox(page).setValue(text);
+  vi.advanceTimersByTime(200);
+}
+
+it.each([
+  [
+    'search, then level',
+    [
+      [setSearch, 'duration'],
+      [setLevel, 'DEBUG'],
+    ],
+    [0, 1],
+  ],
+  [
+    'level, then search',
+    [
+      [setLevel, 'DEBUG'],
+      [setSearch, 'duration'],
+    ],
+    [0, 1],
+  ],
+  [
+    'search, level, then the search cleared',
+    [
+      [setSearch, 'duration'],
+      [setLevel, 'DEBUG'],
+      [setSearch, ''],
+    ],
+    [0, 1, 2, 3],
+  ],
+  [
+    'level down and up again with a search',
+    [
+      [setSearch, 'duration'],
+      [setLevel, 'DEBUG'],
+      [setLevel, 'INFO'],
+    ],
+    [1],
+  ],
+])(
+  'shows what every filter selects after a %s, scrolled to the newest',
+  async (_, steps, want) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const page = await open();
+    loaderSpy.options.apply([...TIMED]);
+    await flushPromises();
+    for (const [step, value] of steps) {
+      scrolls.length = 0;
+      await step(page, value);
+      await flushPromises();
+      // the list kept its old offset, which showed old rows or none at all
+      expect(scrolls).toEqual([Number.MAX_SAFE_INTEGER]);
+    }
+    expect(shown(page)).toEqual(want.map((i) => TIMED[i].msg));
+  },
+);
+
+// happy-dom lays nothing out, so this reads the rules and the classes that
+// place the clear button's icon
+it('centers the clear button and its icon in the search box', async () => {
+  const style = (selector) =>
+    componentDeclarations('src/views/Logs.vue', selector);
+  // the rule that lifted the icon only reaches the input's own icons
+  expect(style('.control :deep(.icon)')).toEqual({});
+  expect(style('.control > :deep(.icon)')).toMatchObject({
+    transform: 'translateY(-50%)',
+  });
+  expect(style('.button.input-button')).toMatchObject({
+    width: '2.5em',
+    'min-width': '24px',
+    'min-height': '24px',
+    padding: '0',
+  });
+  expect(style('.button.input-button .icon:only-child')).toEqual({
+    margin: '0',
+  });
+
+  const page = await open();
+  await searchBox(page).setValue('dmz');
+  const clear = byLabel(page, 'Clear log search');
+  expect(clear.element.tagName).toBe('BUTTON');
+  expect(clear.classes()).toEqual(['button', 'input-button']);
+  const lifted = page.findAll('.control > .icon').map((icon) => icon.element);
+  expect(lifted).toHaveLength(1);
+  expect(lifted[0].classList.contains('is-left')).toBe(true);
+  expect(lifted).not.toContain(clear.find('.icon').element);
 });
 
 const LEVELS = ['DEBUG', 'INFO', 'WARN', 'ERROR'];

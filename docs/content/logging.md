@@ -170,6 +170,13 @@ The log types are `AUDIT`, `SECURITY`, `SOH`, `SCORCH`, `PHENIX-APP`, `ACTION`,
 
 To view detailed HTTP request logs (method, path, status, duration), start the UI with the `--log-requests` flag.
 
+### Logs Page
+
+On the Logs page, select a log message to open its details. The details show
+the level, the time, the type, the message text, and each `key=value` field in
+a list. Use **Copy** to copy the full message. Use **Previous** and **Next** to
+go to the adjacent messages in the filtered list.
+
 ## Audit Events
 
 The web API logs an audit event, a record of type `AUDIT`, for each
