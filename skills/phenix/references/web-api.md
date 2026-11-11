@@ -308,6 +308,24 @@ lack it). Points that are easy to miss:
   on `<exp>/*` (else `403` before any read) and on each `<exp>/<vm>`; `404`
   for an unknown experiment, `502` when minimega does not report every host
   and VM.
+- `GET /experiments/{name}/schedule/input` answers the JSON a user scheduler
+  gets on stdin, as `phenix util scheduler-json` prints it (`spec`, and
+  `hosts` with `diskusage`). It needs `experiments` `get`, `configs` `get` on
+  `Experiment/<exp>` and `hosts` `list` (else `403` before any read), and
+  `hosts` `list` on each host; `404` for an unknown experiment, `502` when
+  minimega does not report the hosts, `503` when the mesh peers do not
+  answer, `504` at the time limit of a user scheduler.
+- `GET /experiments/{name}/scorch/components/{cmp}/input` answers the JSON a
+  SCORCH user component gets on stdin, as `phenix util scorch-json` prints
+  it. The query parameters `run`, `loop`, `stage`, `count`, `replace`
+  (`KEY=VALUE`, once for each value) and `runtime=true` are the flags of the
+  command. It needs `experiments` `get` and `configs` `get` on
+  `Experiment/<exp>`; with `runtime`, also `vms` `list` on `<exp>/*` and on
+  each VM. It answers `400` for a bad query value, a built-in component, a
+  place that does not run the component or an unknown replacement, `404` for
+  an unknown experiment, scorch app or component, and `502` when minimega
+  does not report every host and VM. The body is only the stdin: the program,
+  arguments, `PHENIX_*` variables and warnings stay CLI only.
 - `GET /schemas/{version}` returns the whole schema file (`v0` Workflow, `v1`
   Topology/Experiment/Image/User/Role, `v2` Scenario).
   `GET /schemas/{kind}/{version}` returns one kind, only at the version it is

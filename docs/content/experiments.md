@@ -281,6 +281,9 @@ this JSON, run the following command. The command stores nothing.
 phenix util scheduler-json <experiment name>
 ```
 
+The REST API gives the same JSON at
+`GET /api/v1/experiments/<experiment name>/schedule/input`.
+
 ### Scheduling Limits
 
 * A built-in scheduler must finish in 45 seconds. A user scheduler

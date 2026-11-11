@@ -465,6 +465,10 @@ func newRouter(assets http.FileSystem, builderOpts ...builderOption) (*mux.Route
 	api.Handle("/experiments/{name}/apps", weberror.ErrorHandler(GetExperimentApps)).
 		Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}/apps/input", weberror.ErrorHandler(GetExperimentAppsInput)).Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{name}/schedule/input", weberror.ErrorHandler(GetExperimentSchedulerInput)).
+		Methods("GET", "OPTIONS")
+	api.Handle("/experiments/{name}/scorch/components/{cmp}/input", weberror.ErrorHandler(GetExperimentScorchComponentInput)).
+		Methods("GET", "OPTIONS")
 	api.Handle("/experiments/{name}/start", weberror.ErrorHandler(StartExperiment)).
 		Methods("POST", "OPTIONS")
 	api.Handle("/experiments/{name}/stop", weberror.ErrorHandler(StopExperiment)).

@@ -473,8 +473,8 @@ func TestUtilCmdScorchJSONErrors(t *testing.T) { //nolint:paralleltest // replac
 		{args: []string{"probe", "--loop", "2"}, wantErr: scorch.ErrComponentNotRun},
 		{args: []string{"probe", "--count", "1"}, wantErr: scorch.ErrComponentNotRun},
 		{args: []string{"probe", "--replace", "{{Y}}=1"}, wantErr: scorch.ErrUnknownReplacement},
-		{args: []string{"probe", "--replace", "{{Y}}"}, wantErr: errBadReplace},
-		{args: []string{"probe", "--stage", "done"}, wantErr: errUnknownScorchStage},
+		{args: []string{"probe", "--replace", "{{Y}}"}, wantErr: scorch.ErrBadReplacement},
+		{args: []string{"probe", "--stage", "done"}, wantErr: scorch.ErrUnknownStage},
 	}
 
 	for _, tt := range tests {

@@ -22,23 +22,6 @@ import (
 // scorchJSONArgs is the number of arguments of phenix util scorch-json.
 const scorchJSONArgs = 2
 
-var (
-	// errBadReplace is the error for a --replace value that is not KEY=VALUE.
-	errBadReplace = errors.New("a --replace value must be KEY=VALUE")
-
-	// errUnknownScorchStage is the error for a --stage value that is not a
-	// stage that runs a component.
-	errUnknownScorchStage = errors.New("unknown SCORCH stage")
-)
-
-// scorchStages are the SCORCH stages that run the program of a component.
-func scorchStages() []string {
-	return []string{
-		string(scorch.ActionConfigure), string(scorch.ActionStart),
-		string(scorch.ActionStop), string(scorch.ActionCleanup),
-	}
-}
-
 // rawJSONViews returns the output views of data, a JSON document: JSON is
 // data as it is, with a newline at the end, and YAML has the keys of data
 // in their order.
@@ -182,13 +165,13 @@ func newUtilScorchJSONCmd() *cobra.Command {
 
 	cmd.Flags().Int("run", 0, "Index of the SCORCH run (default: the first run that runs the component)")
 	cmd.Flags().Int("loop", 0, "Depth of the loop, 0 for the run (default: the first loop that runs the component)")
-	cmd.Flags().String("stage", "", "Stage: "+strings.Join(scorchStages(), ", ")+
+	cmd.Flags().String("stage", "", "Stage: "+strings.Join(scorch.InputStages(), ", ")+
 		" (default: the first stage that runs the component)")
 	cmd.Flags().Int("count", 0, "Pass of the loop, from 0")
 	cmd.Flags().StringArray("replace", nil, "Value of a replacement as KEY=VALUE, read as JSON when it is valid JSON")
 	cmd.Flags().Bool("runtime", false, "Add the cluster hosts and the VMs of the experiment")
 
-	_ = cmd.RegisterFlagCompletionFunc("stage", completeValues(scorchStages()...))
+	_ = cmd.RegisterFlagCompletionFunc("stage", completeValues(scorch.InputStages()...))
 
 	out = addOutputFlag(cmd, FormatJSON, []string{FormatJSON, FormatYAML})
 
@@ -216,30 +199,18 @@ func scorchInputOptions(cmd *cobra.Command) (scorch.InputOptions, error) {
 	}
 
 	if stage := mustGet(cmd.Flags().GetString, "stage"); stage != "" {
-		if !slices.Contains(scorchStages(), stage) {
-			return opts, fmt.Errorf("%w %q: use one of %s", errUnknownScorchStage, stage, strings.Join(scorchStages(), ", "))
+		var err error
+		if opts.Stage, err = scorch.ParseInputStage(stage); err != nil {
+			return opts, err
 		}
-
-		opts.Stage = scorch.Action(stage)
 	}
 
-	for _, item := range mustGet(cmd.Flags().GetStringArray, "replace") {
-		key, text, ok := strings.Cut(item, "=")
-		if !ok || key == "" {
-			return opts, fmt.Errorf("%w: %q", errBadReplace, item)
-		}
-
-		var value any
-		if err := json.Unmarshal([]byte(text), &value); err != nil {
-			value = text
-		}
-
-		if opts.Replace == nil {
-			opts.Replace = scorchmd.ResolvedReplacements{}
-		}
-
-		opts.Replace[key] = value
+	replace, err := scorch.ParseReplacements(mustGet(cmd.Flags().GetStringArray, "replace"))
+	if err != nil {
+		return opts, err
 	}
+
+	opts.Replace = replace
 
 	return opts, nil
 }

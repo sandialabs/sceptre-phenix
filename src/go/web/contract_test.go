@@ -447,6 +447,28 @@ func contractRoutes() []contractRoute {
 			},
 		},
 
+		// a user scheduler's and a SCORCH component's input; the experiment has no scorch app
+		{
+			method: "GET", path: exp + "/schedule/input", want: []int{http.StatusBadGateway},
+			need: []rbac.Role{
+				testRole("experiments", "get", contractExp), testRole("configs", "get", "Experiment/"+contractExp),
+				testRole("hosts", "list", "*"),
+			},
+		},
+		{
+			method: "GET", path: exp + "/scorch/components/probe/input", want: []int{http.StatusNotFound},
+			need: []rbac.Role{
+				testRole("experiments", "get", contractExp), testRole("configs", "get", "Experiment/"+contractExp),
+			},
+		},
+		{
+			method: "GET", path: exp + "/scorch/components/probe/input?runtime=true", want: []int{http.StatusNotFound},
+			need: []rbac.Role{
+				testRole("experiments", "get", contractExp), testRole("configs", "get", "Experiment/"+contractExp),
+				testRole("vms", "list", contractExp+"/*"),
+			},
+		},
+
 		// state of health
 		{method: "GET", path: "/api/v1/soh", need: []rbac.Role{testRole("experiments", "list"), testRole("vms", "list")}},
 
@@ -1236,6 +1258,21 @@ func configAndRouteErrorCases() map[string]contractErrorCase {
 		"clean up run the experiment lacks": {
 			method: "POST", path: exp + "/scorch/pipelines/0/cleanup", want: http.StatusNotFound,
 		},
+		"component input of an experiment without SCORCH": {
+			method: "GET", path: exp + "/scorch/components/probe/input", want: http.StatusNotFound,
+		},
+		"component input with a run that is not a number": {
+			method: "GET", path: exp + "/scorch/components/probe/input?run=x", want: http.StatusBadRequest,
+		},
+		"component input with an unknown stage": {
+			method: "GET", path: exp + "/scorch/components/probe/input?stage=done", want: http.StatusBadRequest,
+		},
+		"component input with a replacement that is not KEY=VALUE": {
+			method: "GET", path: exp + "/scorch/components/probe/input?replace=x", want: http.StatusBadRequest,
+		},
+		"component input with runtime that is not a boolean": {
+			method: "GET", path: exp + "/scorch/components/probe/input?runtime=maybe", want: http.StatusBadRequest,
+		},
 		"user with unknown role": {
 			method: "POST", path: "/api/v1/users", body: createUserBody("carol", "No Such Role"), want: http.StatusBadRequest,
 		},
@@ -1363,6 +1400,12 @@ func vlanErrorCases() map[string]contractErrorCase {
 		},
 		"VLANs of unknown experiment":     {method: "GET", path: other + "/vlans", want: http.StatusNotFound},
 		"app input of unknown experiment": {method: "GET", path: other + "/apps/input", want: http.StatusNotFound},
+		"scheduler input of unknown experiment": {
+			method: "GET", path: other + "/schedule/input", want: http.StatusNotFound,
+		},
+		"component input of unknown experiment": {
+			method: "GET", path: other + "/scorch/components/probe/input", want: http.StatusNotFound,
+		},
 		"pin of running experiment": {
 			method: "PUT", path: exp + "/vlans/aliases/EXP_1", body: `{"id":105}`, want: http.StatusConflict,
 		},

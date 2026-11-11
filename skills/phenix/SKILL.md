@@ -306,8 +306,11 @@ The `hosts` of a user app have no `diskusage`: phēnix does not measure the
 disk usage for apps. Only a user scheduler gets `hosts[].diskusage`.
 `phenix util scheduler-json <exp>` and
 `phenix util scorch-json <exp> <component>` print the exact stdin of a user
-scheduler and of a SCORCH user component (CLI only; see
-[`references/cli.md`](references/cli.md)). Runnable Go and
+scheduler and of a SCORCH user component (see
+[`references/cli.md`](references/cli.md)). Over REST,
+`GET /api/v1/experiments/{name}/schedule/input` and
+`GET /api/v1/experiments/{name}/scorch/components/{cmp}/input` answer the
+same JSON (see [`references/web-api.md`](references/web-api.md)). Runnable Go and
 Python reference apps live in the repository's `examples/` directory
 (`examples/go/main.go`, `examples/python/app.py`, with `examples/TUTORIAL.md`).
 

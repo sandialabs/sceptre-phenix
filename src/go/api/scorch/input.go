@@ -2,6 +2,7 @@ package scorch
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -32,7 +33,58 @@ var (
 	// ErrUnknownReplacement is the error for a replacement value whose key
 	// is in none of the replace blocks that apply to the component.
 	ErrUnknownReplacement = errors.New("unknown SCORCH replacement")
+
+	// ErrBadReplacement is the error for a replacement value that is not
+	// KEY=VALUE.
+	ErrBadReplacement = errors.New("a replacement value must be KEY=VALUE")
+
+	// ErrUnknownStage is the error for a stage that does not run the program
+	// of a component.
+	ErrUnknownStage = errors.New("unknown SCORCH stage")
 )
+
+// InputStages are the SCORCH stages that run the program of a component.
+func InputStages() []string {
+	return []string{string(ActionConfigure), string(ActionStart), string(ActionStop), string(ActionCleanup)}
+}
+
+// ParseInputStage returns the stage name for InputOptions.Stage. A name that
+// is not in InputStages wraps ErrUnknownStage.
+func ParseInputStage(name string) (Action, error) {
+	if !slices.Contains(InputStages(), name) {
+		return "", fmt.Errorf("%w %q: use one of %s", ErrUnknownStage, name, strings.Join(InputStages(), ", "))
+	}
+
+	return Action(name), nil
+}
+
+// ParseReplacements returns the replacement values of items, each KEY=VALUE,
+// for InputOptions.Replace. It reads VALUE as JSON when it is valid JSON, and
+// as text when it is not. An item that is not KEY=VALUE wraps
+// ErrBadReplacement. It returns nil when items is empty.
+func ParseReplacements(items []string) (scorchmd.ResolvedReplacements, error) {
+	var replace scorchmd.ResolvedReplacements
+
+	for _, item := range items {
+		key, text, ok := strings.Cut(item, "=")
+		if !ok || key == "" {
+			return nil, fmt.Errorf("%w: %q", ErrBadReplacement, item)
+		}
+
+		var value any
+		if err := json.Unmarshal([]byte(text), &value); err != nil {
+			value = text
+		}
+
+		if replace == nil {
+			replace = scorchmd.ResolvedReplacements{}
+		}
+
+		replace[key] = value
+	}
+
+	return replace, nil
+}
 
 // InputOptions selects the point of a SCORCH run for UserComponentInput.
 type InputOptions struct {

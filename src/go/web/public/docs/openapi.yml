@@ -1842,6 +1842,77 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  "/experiments/{name}/schedule/input":
+    get:
+      tags:
+        - Experiments
+      summary: Get the input that a user scheduler gets
+      description: >-
+        Answers the JSON that phenix gives a user scheduler
+        (`phenix-scheduler-<name>`) on stdin when it schedules the stored
+        experiment, as `phenix util scheduler-json` prints it: the experiment
+        spec and the schedulable cluster hosts with their disk usage. It
+        stores nothing. It reads the hosts from minimega within the time limit
+        of a user scheduler. The spec holds the whole stored config, so it
+        needs `experiments` `get` on the experiment, `configs` `get` on
+        `Experiment/<experiment>`, and `hosts` `list`, also on each host that
+        it answers.
+      operationId: getExperimentsNameScheduleInput
+      parameters:
+        - name: name
+          in: path
+          description: name of phenix experiment
+          required: true
+          example: exp1
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SchedulerInput"
+        "403":
+          description: >-
+            the role may not get the experiment or its config, or may not list
+            each of the cluster hosts (checked again after the read)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: the experiment does not exist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: the experiment could not be read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: >-
+            minimega did not report the cluster hosts. The system log holds
+            minimega's error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: the mesh peers did not answer, so the list of hosts would be incomplete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "504":
+          description: minimega did not report the cluster hosts within the time limit of a user scheduler
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/experiments/{name}/captures":
     get:
       tags:
@@ -3738,6 +3809,130 @@ paths:
                 $ref: "#/components/schemas/Error"
         "500":
           description: the experiment could not be read from the store, or the output could not be encoded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  "/experiments/{name}/scorch/components/{cmp}/input":
+    get:
+      tags:
+        - Scorch
+      summary: Get the input that a SCORCH user component gets
+      description: >-
+        Answers the JSON that the program of a SCORCH user component
+        (`phenix-scorch-component-<type>`) gets on stdin in a SCORCH run of
+        the stored experiment, as `phenix util scorch-json` prints it. It
+        stores nothing. The query parameters select where the run starts the
+        component. Without them, it uses the first place that runs the
+        component. A run picks a random value for each replacement at each
+        pass of a loop; this route picks the values in the same way, except
+        the values that `replace` sets. The input holds the whole stored
+        config, so it needs `experiments` `get` on the experiment and
+        `configs` `get` on `Experiment/<experiment>`. With `runtime`, it also
+        needs `vms` `list` on `<experiment>/*` and on `<experiment>/<vm>` for
+        each VM of the topology and each VM minimega reports.
+      operationId: getExperimentsNameScorchComponentsCmpInput
+      parameters:
+        - $ref: "#/components/parameters/ScorchExp"
+        - $ref: "#/components/parameters/ScorchComponent"
+        - name: run
+          in: query
+          description: index of the SCORCH run (default is the first run that runs the component)
+          required: false
+          example: 0
+          schema:
+            type: integer
+        - name: loop
+          in: query
+          description: depth of the loop, 0 for the run (default is the first loop that runs the component)
+          required: false
+          example: 0
+          schema:
+            type: integer
+        - name: stage
+          in: query
+          description: the stage (default is the first stage that runs the component)
+          required: false
+          example: start
+          schema:
+            type: string
+            enum:
+              - configure
+              - start
+              - stop
+              - cleanup
+        - name: count
+          in: query
+          description: pass of the loop, from 0
+          required: false
+          example: 0
+          schema:
+            type: integer
+            default: 0
+        - name: replace
+          in: query
+          description: >-
+            value of a replacement as `KEY=VALUE`; give it again for each
+            replacement. VALUE is read as JSON when it is valid JSON, and as
+            text when it is not
+          required: false
+          example: ["{{DURATION}}=30"]
+          schema:
+            type: array
+            items:
+              type: string
+        - name: runtime
+          in: query
+          description: >-
+            set to true to add the cluster hosts and the VMs of the experiment
+            (`hosts` and `vms`), which a component gets when an external app
+            ran before the scorch app in the same app stage
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScorchComponentInput"
+        "400":
+          description: >-
+            a query value is not valid, the component has a built-in type that
+            runs no program, no SCORCH run runs the component at the place that
+            the query selects, or a `replace` key is not a replacement of that
+            place
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: >-
+            the role may not get the experiment or its config, or with
+            `runtime`, may not list each of its VMs (checked again after the
+            read)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: the experiment, its scorch app, or the component does not exist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: the experiment or its scorch app metadata could not be read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: >-
+            with `runtime`, minimega did not report the cluster hosts or every
+            VM of the experiment. The system log holds minimega's error
           content:
             application/json:
               schema:
@@ -24113,6 +24308,65 @@ components:
           description: >-
             the experiment's VMs as minimega reports them (vm info); left out
             when there are none
+          type: array
+          items:
+            title: Runtime VM
+            description: one VM of the experiment, with its minimega state and details
+            type: object
+    SchedulerInput:
+      title: Scheduler Input
+      description: >-
+        What phenix gives a user scheduler on stdin: the spec of the stored
+        Experiment config, and the schedulable cluster hosts.
+      type: object
+      properties:
+        spec:
+          title: Spec
+          description: >-
+            the experiment's spec, as the Experiment config schema defines it,
+            with the changes that phenix makes before it schedules
+          type: object
+        hosts:
+          title: Hosts
+          description: the schedulable cluster hosts with their disk usage, sorted by name
+          type: array
+          items:
+            $ref: "#/components/schemas/Host"
+    ScorchComponentInput:
+      title: SCORCH Component Input
+      description: >-
+        The experiment as phenix gives it to the program of a SCORCH user
+        component on stdin. The metadata, spec and status are those of the
+        stored Experiment config. In the metadata of the scorch app, the
+        metadata of the component has the replacement values in it. The
+        status shows the scorch app as running, with the run as its run ID.
+      type: object
+      properties:
+        metadata:
+          title: Metadata
+          description: the experiment config's metadata, such as its name
+          type: object
+        spec:
+          title: Spec
+          description: the experiment's spec, as the Experiment config schema defines it
+          type: object
+        status:
+          title: Status
+          description: the experiment's status, as the Experiment config schema defines it
+          type: object
+        hosts:
+          title: Hosts
+          description: >-
+            With runtime, the schedulable cluster hosts, without diskusage. It
+            is left out when there are none.
+          type: array
+          items:
+            $ref: "#/components/schemas/Host"
+        vms:
+          title: VMs
+          description: >-
+            with runtime, the experiment's VMs as minimega reports them (vm
+            info); left out when there are none
           type: array
           items:
             title: Runtime VM
