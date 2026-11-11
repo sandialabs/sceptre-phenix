@@ -11,10 +11,12 @@ import (
 
 var ErrHostNotFound = errors.New("host not found")
 
+// Hosts is a list of cluster hosts. Its Sort methods are stable: hosts that
+// tie keep their order.
 type Hosts []Host
 
 func (h Hosts) SortByUnallocatedCPU(asc bool) {
-	sort.Slice(h, func(i, j int) bool {
+	sort.SliceStable(h, func(i, j int) bool {
 		ui := h[i].CPUs - h[i].CPUCommit
 		uj := h[j].CPUs - h[j].CPUCommit
 
@@ -27,7 +29,7 @@ func (h Hosts) SortByUnallocatedCPU(asc bool) {
 }
 
 func (h Hosts) SortByCommittedCPU(asc bool) {
-	sort.Slice(h, func(i, j int) bool {
+	sort.SliceStable(h, func(i, j int) bool {
 		if asc {
 			return h[i].CPUCommit < h[j].CPUCommit
 		}
@@ -37,7 +39,7 @@ func (h Hosts) SortByCommittedCPU(asc bool) {
 }
 
 func (h Hosts) SortByUnallocatedMem(asc bool) {
-	sort.Slice(h, func(i, j int) bool {
+	sort.SliceStable(h, func(i, j int) bool {
 		ui := h[i].MemTotal - h[i].MemCommit
 		uj := h[j].MemTotal - h[j].MemCommit
 
@@ -50,7 +52,7 @@ func (h Hosts) SortByUnallocatedMem(asc bool) {
 }
 
 func (h Hosts) SortByCommittedMem(asc bool) {
-	sort.Slice(h, func(i, j int) bool {
+	sort.SliceStable(h, func(i, j int) bool {
 		if asc {
 			return h[i].MemCommit < h[j].MemCommit
 		}
@@ -60,7 +62,7 @@ func (h Hosts) SortByCommittedMem(asc bool) {
 }
 
 func (h Hosts) SortByVMs(asc bool) {
-	sort.Slice(h, func(i, j int) bool {
+	sort.SliceStable(h, func(i, j int) bool {
 		if asc {
 			return h[i].VMs < h[j].VMs
 		}

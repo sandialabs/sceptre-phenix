@@ -142,7 +142,7 @@ func (u UserApp) shellOut(ctx context.Context, action Action, exp *types.Experim
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == ExitSchedule {
 			sched := strings.TrimSpace(string(stdOut))
 
-			err := scheduler.Schedule(sched, exp.Spec)
+			err := scheduler.Schedule(ctx, sched, exp.Spec)
 			if err != nil {
 				return fmt.Errorf("scheduling experiment with %s: %w", sched, err)
 			}

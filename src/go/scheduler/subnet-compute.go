@@ -1,8 +1,11 @@
 package scheduler
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	ifaces "phenix/types/interfaces"
 	"phenix/util/mm"
@@ -22,24 +25,27 @@ func (subnetCompute) Name() string {
 	return "subnet-compute"
 }
 
-func (subnetCompute) Schedule(spec ifaces.ExperimentSpec) error {
+func (subnetCompute) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) error {
 	if len(spec.Topology().Nodes()) == 0 {
 		return errors.New("no VMs defined for experiment")
 	}
 
-	cluster, err := mm.GetClusterHosts(true)
+	cluster, err := schedulableHosts(ctx, false)
 	if err != nil {
-		return fmt.Errorf("getting cluster hosts: %w", err)
+		return err
 	}
 
 	// map VLAN aliases (key) to one (or more) cluster hosts
 	vlans := make(map[string][]string)
 
 	// Update VLAN alias map and cluster host VM count to account for VMs manually
-	// scheduled before sorting hosts by VM count below.
-	for node, host := range spec.Schedules() {
+	// scheduled before sorting hosts by VM count below, in VM name order so the
+	// hosts of a VLAN are always tried in the same order.
+	for _, node := range slices.Sorted(maps.Keys(spec.Schedules())) {
+		host := spec.Schedules()[node]
+
 		if h := cluster.FindHostByName(host); h != nil {
-			if n := spec.Topology().FindNodeByName(node); n != nil {
+			if n := spec.Topology().FindNodeByName(node); n != nil && !n.External() {
 				if len(n.Network().Interfaces()) == 0 {
 					return fmt.Errorf(
 						"node %s doesn't have any network interfaces",
@@ -85,7 +91,7 @@ func (subnetCompute) Schedule(spec ifaces.ExperimentSpec) error {
 		if hosts, ok := vlans[vlan]; ok {
 			for _, name := range hosts {
 				if host := cluster.FindHostByName(name); host != nil {
-					if (host.MemCommit + node.Hardware().Memory()) < host.MemTotal {
+					if host.MemCommit+node.Hardware().Memory() <= host.MemTotal {
 						scheduled = host
 
 						break

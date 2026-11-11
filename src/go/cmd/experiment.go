@@ -658,7 +658,7 @@ func newExperimentScheduleCmd() *cobra.Command {
 				experiment.ScheduleWithAlgorithm(args[1]),
 			}
 
-			err := experiment.Schedule(opts...)
+			_, err := experiment.Schedule(commandContext(cmd), opts...)
 			if err != nil {
 				err := util.HumanizeError(
 					err,

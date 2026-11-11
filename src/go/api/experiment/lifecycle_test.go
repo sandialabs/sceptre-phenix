@@ -15,6 +15,7 @@ import (
 	"phenix/app"
 	"phenix/store"
 	"phenix/store/storetest"
+	"phenix/types"
 	"phenix/util/common"
 	"phenix/util/mm"
 )
@@ -125,7 +126,7 @@ func TestSchedule(t *testing.T) { //nolint:paralleltest // replaces package glob
 
 			s.updateErr = tc.updateErr
 
-			err := Schedule(ScheduleForName(tc.exp), ScheduleWithAlgorithm("round-robin"))
+			scheduled, err := Schedule(t.Context(), ScheduleForName(tc.exp), ScheduleWithAlgorithm("round-robin"))
 			if got := gotErr(err); !strings.HasPrefix(got, tc.wantErr) || (tc.wantErr == "") != (got == "") {
 				t.Fatalf("Schedule(%s) error = %q, want one starting with %q", tc.exp, got, tc.wantErr)
 			}
@@ -138,8 +139,119 @@ func TestSchedule(t *testing.T) { //nolint:paralleltest // replaces package glob
 				return
 			}
 
-			if diff := cmp.Diff(tc.wantSched, experimentNamed(t, "exp").Spec.Schedules()); diff != "" {
+			stored := experimentNamed(t, "exp")
+
+			if diff := cmp.Diff(tc.wantSched, stored.Spec.Schedules()); diff != "" {
 				t.Errorf("stored schedules after Schedule(%s) mismatch (-want +got):\n%s", tc.exp, diff)
+			}
+
+			if diff := cmp.Diff(tc.wantSched, scheduled.Spec.Schedules()); diff != "" {
+				t.Errorf("Schedule(%s) returned schedules mismatch (-want +got):\n%s", tc.exp, diff)
+			}
+
+			if scheduled.Metadata.Revision != stored.Metadata.Revision {
+				t.Errorf("Schedule(%s) returned revision %d, want the stored %d", tc.exp, scheduled.Metadata.Revision,
+					stored.Metadata.Revision)
+			}
+		})
+	}
+}
+
+// changingMM gives the cluster hosts after it runs change, as a VM edit or a
+// start made while the scheduler reads the hosts.
+type changingMM struct {
+	mm.MM
+
+	change func()
+}
+
+func (m changingMM) GetClusterHosts(bool) (mm.Hosts, error) {
+	m.change()
+
+	return mm.Hosts{{Name: "node1"}, {Name: "node2"}}, nil
+}
+
+// Schedule stores nothing over a change or a start made while it schedules: it fails with store.ErrConflict and the
+// stored experiment keeps that change. It refuses an experiment that a live process starts before it reads the hosts.
+func TestScheduleRevisionConflict(t *testing.T) { //nolint:paralleltest // replaces package globals
+	host, _ := os.Hostname()
+	live := map[string]any{"starting": map[string]any{"since": "2026-01-02T03:04:05Z", "pid": os.Getpid(), "host": host}}
+
+	tests := []struct {
+		name    string
+		status  map[string]any
+		change  func(t *testing.T)
+		wantErr error
+		check   func(t *testing.T, exp *types.Experiment)
+	}{
+		{
+			name: "a VM edit while scheduling",
+			change: func(t *testing.T) {
+				t.Helper()
+
+				c, _ := store.NewConfig("experiment/exp")
+				if err := store.Get(c); err != nil {
+					t.Fatalf("store.Get(experiment/exp) error = %v", err)
+				}
+
+				c.Spec["schedules"] = map[string]any{"vm1": "edited"}
+
+				if err := store.Update(c); err != nil {
+					t.Fatalf("store.Update(experiment/exp) error = %v", err)
+				}
+			},
+			wantErr: store.ErrConflict,
+			check: func(t *testing.T, exp *types.Experiment) {
+				t.Helper()
+
+				if diff := cmp.Diff(map[string]string{"vm1": "edited"}, exp.Spec.Schedules()); diff != "" {
+					t.Errorf("stored schedules after a conflict mismatch (-edit +stored):\n%s", diff)
+				}
+			},
+		},
+		{
+			name: "a start while scheduling",
+			change: func(t *testing.T) {
+				t.Helper()
+
+				if _, _, _, err := claimStart("exp"); err != nil {
+					t.Fatalf("claimStart(exp) error = %v", err)
+				}
+			},
+			wantErr: store.ErrConflict,
+			check: func(t *testing.T, exp *types.Experiment) {
+				t.Helper()
+
+				if exp.Status.Starting().IsZero() {
+					t.Error("stored start marker after a conflict is gone, want the start's marker kept")
+				}
+
+				if diff := cmp.Diff(map[string]string{}, exp.Spec.Schedules(), cmpopts.EquateEmpty()); diff != "" {
+					t.Errorf("stored schedules after a conflict mismatch (-want +got):\n%s", diff)
+				}
+			},
+		},
+		{
+			name:    "a live start before scheduling",
+			status:  live,
+			change:  func(t *testing.T) { t.Helper(); t.Error("Schedule read the cluster hosts of a starting experiment") },
+			wantErr: ErrExperimentStarting,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			useRecoverStore(t)
+			useMM(t, changingMM{change: func() { tc.change(t) }})
+			storeValidExperiment(t, "exp", tc.status, nil)
+
+			got, err := Schedule(t.Context(), ScheduleForName("exp"), ScheduleWithAlgorithm("round-robin"))
+			if !errors.Is(err, tc.wantErr) || got != nil {
+				t.Fatalf("Schedule(exp) = %v, %v; want nil, %v", got, err, tc.wantErr)
+			}
+
+			if tc.check != nil {
+				tc.check(t, experimentNamed(t, "exp"))
 			}
 		})
 	}

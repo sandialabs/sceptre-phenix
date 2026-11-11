@@ -156,7 +156,14 @@ lack it). Points that are easy to miss:
   and `subnet-compute`, then each `phenix-scheduler-<name>` on the server's
   PATH. It needs `experiments/schedule` `create`.
   `POST /experiments/{name}/schedule` also takes the built-in names with `_`
-  for `-`, such as `round_robin`.
+  for `-`, such as `round_robin`. An empty algorithm, or one with a `/`, is
+  `400`. The experiment is locked while it is scheduled. The scheduler has
+  45 s (`scheduler.Timeout`) for its read of the cluster hosts and, for a
+  user scheduler, its command; then the request is `504` and nothing is
+  stored. A change or start made by another process while the scheduler runs
+  is kept, and the request is `409`. The built-in schedulers read the hosts
+  without disk usage; only a user scheduler gets `hosts[].diskusage`, and
+  phēnix takes only `spec.schedules` from its answer.
 - `POST /experiments/{name}/stop` that cannot kill the VMs leaves the
   experiment running and answers 502 with `metadata.retry` `force`;
   `?force=true` marks it stopped anyway.

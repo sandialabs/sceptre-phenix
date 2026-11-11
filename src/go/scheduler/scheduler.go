@@ -1,14 +1,22 @@
 package scheduler
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	ifaces "phenix/types/interfaces"
+	"phenix/util/mm"
 	"phenix/util/shell"
 )
+
+// Timeout bounds one run of a scheduler: the read of the cluster hosts and,
+// for a user scheduler, its command.
+const Timeout = 45 * time.Second
 
 var schedulers = make(map[string]Scheduler) //nolint:gochecknoglobals // global registry
 
@@ -27,6 +35,14 @@ var descriptions = map[string]string{ //nolint:gochecknoglobals // global regist
 // cluster has none that VMs can be scheduled on.
 var ErrNoSchedulableHosts = errors.New("no schedulable cluster hosts")
 
+// ErrTimeout is returned when a scheduler does not finish before its deadline
+// (at most Timeout).
+var ErrTimeout = errors.New("scheduler timed out")
+
+// ErrInvalidName is returned for a scheduler name that is empty or that has a
+// path separator, which no scheduler can have.
+var ErrInvalidName = errors.New("invalid scheduler name")
+
 // Scheduler is the interface that identifies all the required functionality for
 // a phenix scheduler.
 type Scheduler interface {
@@ -37,8 +53,9 @@ type Scheduler interface {
 	// Name returns the name of the phenix scheduler.
 	Name() string
 
-	// Schedule runs the phenix scheduler algorithm against the given experiment.
-	Schedule(ifaces.ExperimentSpec) error
+	// Schedule runs the phenix scheduler algorithm against the given
+	// experiment. It gives up once ctx is done.
+	Schedule(ctx context.Context, spec ifaces.ExperimentSpec) error
 }
 
 func List() []string {
@@ -103,13 +120,50 @@ func builtinName(name string) string {
 }
 
 // Schedule runs the scheduler name on spec: the built-in scheduler of that
-// name (see builtinName), else the user scheduler phenix-scheduler-<name>.
-func Schedule(name string, spec ifaces.ExperimentSpec) error {
+// name (see builtinName), else the user scheduler phenix-scheduler-<name>. The
+// run gives up once ctx is done or Timeout has passed. Its error then wraps
+// ErrTimeout for a deadline, or ctx's error for a cancellation.
+func Schedule(ctx context.Context, name string, spec ifaces.ExperimentSpec) error {
+	if name == "" || strings.ContainsAny(name, "/\x00") {
+		return fmt.Errorf("%w: %q", ErrInvalidName, name)
+	}
+
 	scheduler, ok := schedulers[builtinName(name)]
 	if !ok {
 		scheduler = new(userScheduler)
 		_ = scheduler.Init(Name(name))
 	}
 
-	return scheduler.Schedule(spec)
+	// a spec without schedules gives a new map on each call, which would lose what the scheduler sets
+	spec.SetSchedule(spec.Schedules())
+
+	ctx, cancel := context.WithTimeout(ctx, Timeout)
+	defer cancel()
+
+	err := scheduler.Schedule(ctx, spec)
+
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return fmt.Errorf("%w: scheduler %s did not finish within %v: %w", ErrTimeout, name, Timeout, err)
+	case ctx.Err() != nil && !errors.Is(err, ctx.Err()):
+		return fmt.Errorf("%w: %w", err, ctx.Err())
+	}
+
+	return err
+}
+
+// schedulableHosts reads the hosts VMs can be scheduled on for a scheduler,
+// with their disk usage only when diskUsage is set. The hosts are sorted by
+// name, so hosts that tie in a scheduler's order are taken by name.
+func schedulableHosts(ctx context.Context, diskUsage bool) (mm.Hosts, error) {
+	hosts, err := mm.GetSchedulableHosts(ctx, diskUsage)
+	if err != nil {
+		return nil, fmt.Errorf("getting cluster hosts: %w", err)
+	}
+
+	slices.SortFunc(hosts, func(a, b mm.Host) int { return strings.Compare(a.Name, b.Name) })
+
+	return hosts, nil
 }

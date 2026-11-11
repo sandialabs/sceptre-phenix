@@ -540,7 +540,8 @@ func TestGetVMScreenshot(t *testing.T) { //nolint:paralleltest // shares the fak
 	}
 }
 
-// GetNamespaceHosts reads every field of each host and measures its disks.
+// GetNamespaceHosts reads every field of each host and measures its disks
+// with one command for all mesh peers.
 func TestGetNamespaceHosts(t *testing.T) { //nolint:paralleltest // shares the fake minimega
 	header := []string{
 		"name", "cpus", "cpucommit", "load", "memused", "memtotal", "memcommit", "vms", "tx", "rx", "netcommit", "uptime",
@@ -561,7 +562,7 @@ func TestGetNamespaceHosts(t *testing.T) { //nolint:paralleltest // shares the f
 	})
 
 	// the fake minimega sets common.MinimegaBase when it first starts
-	disk = "mesh send compute1 shell " + diskUsageCommand(common.PhenixBase, common.MinimegaBase)
+	disk = "mesh send all shell " + diskUsageCommand(common.PhenixBase, common.MinimegaBase)
 
 	hosts, err := GetNamespaceHosts("exp")
 	if err != nil {

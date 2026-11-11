@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -102,7 +103,7 @@ func TestSchedulersWithoutSchedulableHosts(t *testing.T) { //nolint:paralleltest
 
 				spec := schedulerSpec(t, test.schedules)
 
-				err := Schedule(name, spec)
+				err := Schedule(t.Context(), name, spec)
 				if !errors.Is(err, test.wantErr) || (test.wantErr == nil && err != nil) {
 					t.Fatalf("Schedule(%s) error = %v, want %v", name, err, test.wantErr)
 				}
@@ -131,6 +132,8 @@ type schedulerFakeShell struct {
 	mu sync.Mutex
 	// the commands looked for
 	asked []string
+	// the deadline of the last command run's context
+	deadline time.Time
 }
 
 func (s *schedulerFakeShell) FindCommandsWithPrefix(prefix string) []string {
@@ -153,7 +156,11 @@ func (s *schedulerFakeShell) CommandExists(name string) bool {
 	return slices.Contains(s.commands, name)
 }
 
-func (s *schedulerFakeShell) ExecCommand(context.Context, ...shell.Option) ([]byte, []byte, error) {
+func (s *schedulerFakeShell) ExecCommand(ctx context.Context, _ ...shell.Option) ([]byte, []byte, error) {
+	s.mu.Lock()
+	s.deadline, _ = ctx.Deadline()
+	s.mu.Unlock()
+
 	return s.out, nil, s.err
 }
 
@@ -216,6 +223,12 @@ func TestScheduleRunsUserSchedulers(t *testing.T) {
 			installed: true, out: `{"spec":{"schedules":{"vm1":"compute1","vm2":"compute2"}}}`,
 			want: map[string]string{"vm1": "compute1", "vm2": "compute2"},
 		},
+		// only the schedules of the answer are taken
+		"changes the rest of the spec": {
+			installed: true,
+			out:       `{"spec":{"experimentName":"other","topology":{"nodes":[]},"schedules":{"vm2":"compute2"}}}`,
+			want:      map[string]string{"vm2": "compute2"},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			original := mm.DefaultMM
@@ -231,7 +244,7 @@ func TestScheduleRunsUserSchedulers(t *testing.T) {
 			useSchedulerShell(t, fake)
 
 			spec := schedulerSpec(t, nil)
-			err := Schedule("custom", spec)
+			err := Schedule(t.Context(), "custom", spec)
 
 			if (err != nil) != tc.fails || (tc.wantErr != nil && !errors.Is(err, tc.wantErr)) {
 				t.Fatalf("Schedule(custom) error = %v, want error %t (%v)", err, tc.fails, tc.wantErr)
@@ -243,6 +256,14 @@ func TestScheduleRunsUserSchedulers(t *testing.T) {
 
 			if diff := cmp.Diff([]string{"phenix-scheduler-custom"}, fake.asked); diff != "" {
 				t.Errorf("Schedule(custom) looked for commands mismatch (-want +got):\n%s", diff)
+			}
+
+			if got := spec.ExperimentName(); got != "exp" {
+				t.Errorf("Schedule(custom) experiment name = %q, want %q", got, "exp")
+			}
+
+			if got := len(spec.Topology().Nodes()); got != 2 {
+				t.Errorf("Schedule(custom) left %d topology nodes, want 2", got)
 			}
 		})
 	}
@@ -314,7 +335,7 @@ func TestScheduleTakesUnderscoredBuiltinNames(t *testing.T) {
 			useSchedulerShell(t, fake)
 
 			spec := schedulerSpec(t, nil)
-			if err := Schedule(name, spec); err != nil {
+			if err := Schedule(t.Context(), name, spec); err != nil {
 				t.Fatalf("Schedule(%s) error = %v", name, err)
 			}
 
@@ -333,7 +354,7 @@ func TestScheduleTakesUnderscoredBuiltinNames(t *testing.T) {
 		fake := &schedulerFakeShell{}
 		useSchedulerShell(t, fake)
 
-		if err := Schedule("my_sched", schedulerSpec(t, nil)); !errors.Is(err, ErrUserSchedulerNotFound) {
+		if err := Schedule(t.Context(), "my_sched", schedulerSpec(t, nil)); !errors.Is(err, ErrUserSchedulerNotFound) {
 			t.Errorf("Schedule(my_sched) error = %v, want %v", err, ErrUserSchedulerNotFound)
 		}
 

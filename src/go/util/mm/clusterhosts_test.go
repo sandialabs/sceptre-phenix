@@ -1,6 +1,8 @@
 package mm
 
 import (
+	"context"
+	"errors"
 	"maps"
 	"strings"
 	"testing"
@@ -16,14 +18,37 @@ import (
 // meshHostCmd is the command GetClusterHosts sends to read the compute nodes.
 const meshHostCmd = "mesh send all host"
 
+// meshDiskCmd is the prefix of the command that measures the disk usage of
+// every mesh peer.
+const meshDiskCmd = "mesh send all shell "
+
+// headDiskCmd is the prefix of the command that measures the disk usage of
+// the headnode.
+const headDiskCmd = "shell "
+
 // fakeMesh answers the commands GetClusterHosts sends for a headnode and its
 // mesh peers.
 type fakeMesh struct {
 	head    string
 	peers   string   // `mesh list peers`
-	compute []string // the nodes that answer `mesh send all host`
+	compute []string // the nodes that answer `mesh send all host` and `mesh send all shell`
 	peerErr bool
 	disk    map[string]string // disk usage output by host, "0=1% 1=2%" if not given
+	diskErr map[string]bool   // hosts that answer the disk usage command with an error
+}
+
+// diskReply is host's answer to the disk usage command.
+func (f fakeMesh) diskReply(host string) *minicli.Response {
+	if f.diskErr[common.TrimHostnameSuffixes(host)] {
+		return mmtest.Error(host, "df: timed out")
+	}
+
+	usage, ok := f.disk[common.TrimHostnameSuffixes(host)]
+	if !ok {
+		usage = "0=1% 1=2%\n"
+	}
+
+	return mmtest.Text(host, usage)
 }
 
 func (f fakeMesh) reply(cmd mmtest.Command) []*minicli.Response {
@@ -46,27 +71,24 @@ func (f fakeMesh) reply(cmd mmtest.Command) []*minicli.Response {
 		}
 
 		return []*minicli.Response{mmtest.Text(f.head, f.peers)}
-	case strings.HasPrefix(cmd.Base, "mesh send ") || strings.HasPrefix(cmd.Base, "shell "):
-		host := f.head
-		if fields := strings.Fields(cmd.Base); fields[0] == "mesh" {
-			host = fields[2]
+	case strings.HasPrefix(cmd.Base, meshDiskCmd):
+		resps := make([]*minicli.Response, 0, len(f.compute))
+
+		for _, name := range f.compute {
+			resps = append(resps, f.diskReply(name))
 		}
 
-		usage, ok := f.disk[host]
-		if !ok {
-			usage = "0=1% 1=2%\n"
-		}
-
-		return []*minicli.Response{mmtest.Text(host, usage)}
+		return resps
+	case strings.HasPrefix(cmd.Base, headDiskCmd):
+		return []*minicli.Response{f.diskReply(f.head)}
 	}
 
 	return nil
 }
 
-// isDiskUsage reports whether cmd measures a host's disk usage.
+// isDiskUsage reports whether cmd measures disk usage.
 func isDiskUsage(cmd mmtest.Command) bool {
-	return strings.HasPrefix(cmd.Base, "shell ") ||
-		(strings.HasPrefix(cmd.Base, "mesh send ") && strings.Contains(cmd.Base, " shell "))
+	return strings.HasPrefix(cmd.Base, headDiskCmd) || strings.HasPrefix(cmd.Base, meshDiskCmd)
 }
 
 // hostCommands lists the commands sent, leaving out disk usage measurements.
@@ -338,25 +360,35 @@ func TestGetClusterHostsReusesRecentListForDisplay(t *testing.T) { //nolint:para
 	}
 }
 
+// The disk usage of all mesh peers is measured with one `mesh send all`
+// command and that of the headnode with one `shell` command, and reused: a
+// path df fails for, or a host that answers with an error, is not asked again
+// until diskUsageFailureTTL has passed.
 func TestGetClusterHostsMeasuresDiskOncePerHost(t *testing.T) { //nolint:paralleltest // shares the fake minimega
 	received := useFakeMinimega(t, fakeMesh{
-		head: "head", peers: "compute[1-2]",
-		compute: []string{"compute1", "compute2"},
+		head: "head-minimega", peers: "compute1-minimega,compute2-minimega,compute3-minimega",
+		compute: []string{"compute1-minimega", "compute2-minimega", "compute3-minimega"},
 		disk: map[string]string{
 			"compute1": "0=11% 1=12%\n",
 			"compute2": "0= 1=22%\n", // df failed for the first path
 			"head":     "0=1% 1=2%\n",
 		},
+		diskErr: map[string]bool{"compute3": true},
 	}.reply)
+
+	saved := common.HostnameSuffixes
+	common.HostnameSuffixes = "-minimega" //nolint:reassign // names minimega reports with a suffix
+
+	t.Cleanup(func() { common.HostnameSuffixes = saved }) //nolint:reassign // restore
 
 	want := map[string]DiskUsage{
 		"compute1": {Phenix: 11, Minimega: 12},
 		"compute2": {Phenix: 0, Minimega: 22},
+		"compute3": {Phenix: 0, Minimega: 0},
 		"head":     {Phenix: 1, Minimega: 2},
 	}
 
-	// A schedOnly call always asks minimega for the hosts, but reuses the
-	// disk usage measured, except for compute2's failed path.
+	// A schedOnly call always asks minimega for the hosts, but reuses the disk usage measured.
 	for _, schedOnly := range []bool{false, true} {
 		hosts, err := Minimega{}.GetClusterHosts(schedOnly)
 		if err != nil {
@@ -365,16 +397,9 @@ func TestGetClusterHostsMeasuresDiskOncePerHost(t *testing.T) { //nolint:paralle
 			continue
 		}
 
-		names := []string{"compute1", "compute2", "head"}
 		wantUsage := maps.Clone(want)
-
 		if schedOnly {
-			names = names[:2]
 			delete(wantUsage, "head")
-		}
-
-		if diff := cmp.Diff(names, hostNames(hosts)); diff != "" {
-			t.Errorf("GetClusterHosts(%t) host names mismatch (-want +got):\n%s", schedOnly, diff)
 		}
 
 		got := make(map[string]DiskUsage, len(hosts))
@@ -389,14 +414,191 @@ func TestGetClusterHostsMeasuresDiskOncePerHost(t *testing.T) { //nolint:paralle
 
 	cmds := received()
 
-	for prefix, want := range map[string]int{
-		"mesh send compute1 shell ": 1,
-		"mesh send compute2 shell ": 2,
-		"shell ":                    1,
-	} {
+	for prefix, want := range map[string]int{meshDiskCmd: 1, headDiskCmd: 1, "mesh send compute": 0} {
 		if got := mmtest.Count(cmds, prefix); got != want {
 			t.Errorf("GetClusterHosts(false) then (true) sent %d %q commands, want %d", got, prefix, want)
 		}
+	}
+
+	// Once the failures are old, the peers are asked again; the head is still fresh.
+	diskUsageMu.Lock()
+
+	for key, entry := range diskUsageCache {
+		if entry.failed {
+			entry.at = entry.at.Add(-diskUsageFailureTTL)
+			diskUsageCache[key] = entry
+		}
+	}
+
+	diskUsageMu.Unlock()
+
+	if _, err := (Minimega{}).GetClusterHosts(true); err != nil {
+		t.Errorf("GetClusterHosts(true) after %v error = %v", diskUsageFailureTTL, err)
+	}
+
+	cmds = received()
+
+	for prefix, want := range map[string]int{meshDiskCmd: 2, headDiskCmd: 1} {
+		if got := mmtest.Count(cmds, prefix); got != want {
+			t.Errorf("GetClusterHosts(true) after %v brought the %q commands to %d, want %d",
+				diskUsageFailureTTL, prefix, got, want)
+		}
+	}
+}
+
+// A disk usage command that ends because the caller's context is done keeps
+// no failure, so the next caller measures again.
+func TestDiskUsageKeepsNoFailureOfAnEndedCall(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	release := make(chan struct{})
+	mesh := fakeMesh{head: "head", peers: "compute1", compute: []string{"compute1"}}
+
+	received := useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+		if strings.HasPrefix(cmd.Base, meshDiskCmd) {
+			<-release
+		}
+
+		return mesh.reply(cmd)
+	})
+
+	t.Cleanup(func() { close(release) })
+
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+
+	if hosts, err := (Minimega{}).GetSchedulableHosts(ctx, true); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("GetSchedulableHosts(true) with a peer that does not answer = %v, %v; want %v",
+			hosts, err, context.DeadlineExceeded)
+	}
+
+	diskUsageMu.Lock()
+	_, kept := diskUsageCache["compute1\x00"+common.PhenixBase]
+	diskUsageMu.Unlock()
+
+	if kept {
+		t.Errorf("GetSchedulableHosts(true) kept the disk usage of compute1 after its context ended, want none")
+	}
+
+	if got := mmtest.Count(received(), meshDiskCmd); got != 1 {
+		t.Errorf("GetSchedulableHosts(true) sent %d %q commands, want 1", got, meshDiskCmd)
+	}
+}
+
+// GetSchedulableHosts reads the schedulable hosts with no disk usage command
+// and shares no run with GetClusterHosts; diskUsage adds the disk usage
+// with one command for the mesh peers and one for the headnode.
+func TestGetSchedulableHosts(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	mesh := fakeMesh{
+		head: "head", peers: "compute[1-2]", compute: []string{"compute1", "compute2"},
+		disk: map[string]string{"compute1": "0=11% 1=12%\n", "compute2": "0=21% 1=22%\n"},
+	}
+
+	for name, tc := range map[string]struct {
+		diskUsage bool
+		wantDisk  map[string]DiskUsage
+		wantCmds  []string
+	}{
+		"without disk usage": {
+			wantDisk: map[string]DiskUsage{"compute1": {}, "compute2": {}},
+			wantCmds: []string{"minimega: host", "mesh list peers", meshHostCmd},
+		},
+		"with disk usage": {
+			diskUsage: true,
+			wantDisk: map[string]DiskUsage{
+				"compute1": {Phenix: 11, Minimega: 12}, "compute2": {Phenix: 21, Minimega: 22},
+			},
+			wantCmds: []string{"minimega: host", "mesh list peers", meshHostCmd, headDiskCmd, meshDiskCmd},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			received := useFakeMinimega(t, mesh.reply)
+
+			hosts, err := Minimega{}.GetSchedulableHosts(t.Context(), tc.diskUsage)
+			if err != nil {
+				t.Fatalf("GetSchedulableHosts() error = %v", err)
+			}
+
+			got := make(map[string]DiskUsage, len(hosts))
+			for _, host := range hosts {
+				got[host.Name] = host.DiskUsage
+			}
+
+			if diff := cmp.Diff(tc.wantDisk, got); diff != "" {
+				t.Errorf("GetSchedulableHosts() disk usage by host mismatch (-want +got):\n%s", diff)
+			}
+
+			sent := make([]string, 0, len(tc.wantCmds))
+
+			for _, cmd := range received() {
+				base := cmd.Base
+				if prefix, ok := diskPrefix(cmd); ok {
+					base = prefix
+				}
+
+				if cmd.Namespace != "" {
+					base = cmd.Namespace + ": " + base
+				}
+
+				sent = append(sent, base)
+			}
+
+			if diff := cmp.Diff(tc.wantCmds, sent); diff != "" {
+				t.Errorf("GetSchedulableHosts() sent commands mismatch (-want +got):\n%s", diff)
+			}
+
+			// nothing is kept for GetClusterHosts(false) to reuse
+			if _, err := (Minimega{}).GetClusterHosts(false); err != nil {
+				t.Errorf("GetClusterHosts(false) error = %v", err)
+			}
+
+			if got := mmtest.Count(received(), meshHostCmd); got != 2 {
+				t.Errorf("GetSchedulableHosts() then GetClusterHosts(false) sent %d %q, want 2", got, meshHostCmd)
+			}
+		})
+	}
+}
+
+// diskPrefix is the prefix that names a disk usage command, without the
+// command itself.
+func diskPrefix(cmd mmtest.Command) (string, bool) {
+	for _, prefix := range []string{meshDiskCmd, headDiskCmd} {
+		if strings.HasPrefix(cmd.Base, prefix) {
+			return prefix, true
+		}
+	}
+
+	return "", false
+}
+
+// Once the deadline of its context passes, GetSchedulableHosts gives up at
+// once with an error wrapping [context.DeadlineExceeded], also while a command
+// waits for minimega's answer.
+func TestGetSchedulableHostsDeadline(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	release := make(chan struct{})
+	mesh := fakeMesh{head: "head", peers: "compute1", compute: []string{"compute1"}}
+
+	useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+		if cmd.Base == meshHostCmd {
+			<-release
+		}
+
+		return mesh.reply(cmd)
+	})
+
+	t.Cleanup(func() { close(release) })
+
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+
+	hosts, err := Minimega{}.GetSchedulableHosts(ctx, false)
+	if !errors.Is(err, context.DeadlineExceeded) || hosts != nil {
+		t.Errorf("GetSchedulableHosts() with a mesh that does not answer = %v, %v; want nil, %v",
+			hosts, err, context.DeadlineExceeded)
+	}
+
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("GetSchedulableHosts() took %v after a 200ms deadline, want it to give up at once", took)
 	}
 }
 

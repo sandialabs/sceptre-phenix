@@ -1747,7 +1747,13 @@ paths:
       summary: Update current schedule for existing experiment
       description: >-
         Places the VMs of a stopped experiment on cluster hosts with the named
-        algorithm. Needs `experiments/schedule` `create`.
+        algorithm, stores the schedule and publishes an `experiment`
+        `schedule` message on the `/ws` websocket to the roles with
+        `experiments/schedule` `create`. The experiment is locked while it is
+        scheduled, so no start or other change can begin. A change or start
+        made by another process in that time is kept, and the request fails
+        with 409. The scheduler must finish within 45 seconds, else the
+        request fails with 504. Needs `experiments/schedule` `create`.
       operationId: postExperimentsNameSchedule
       parameters:
         - name: name
@@ -1769,7 +1775,10 @@ paths:
                   title: "Algorithm"
                   description: >-
                     Scheduling algorithm used to assign VMs to cluster hosts:
-                    `round-robin`, `subnet-compute` or `isolate-experiment`.
+                    `round-robin`, `subnet-compute`, `isolate-experiment`, or
+                    the name of a user scheduler `phenix-scheduler-<name>`
+                    (GET /schedulers lists them). It must not be empty or
+                    have a `/`.
                   example: round-robin
                   type: string
       responses:
@@ -1780,7 +1789,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Schedule"
         "400":
-          description: the body is malformed or names no known scheduling algorithm
+          description: >-
+            the body is malformed, or the algorithm is empty, has a `/` or
+            names no known scheduling algorithm
           content:
             application/json:
               schema:
@@ -1799,14 +1810,21 @@ paths:
                 $ref: "#/components/schemas/Error"
         "409":
           description: >-
-            the experiment is running, starting or stopping, or the cluster has
-            no host the algorithm can schedule a VM on
+            the experiment is running, starting, stopping or being changed, it
+            changed while it was scheduled, or the cluster has no host the
+            algorithm can schedule a VM on
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
           description: the request body or the experiment could not be read, or scheduling failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "504":
+          description: the scheduler did not finish within 45 seconds
           content:
             application/json:
               schema:

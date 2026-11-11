@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -193,9 +194,19 @@ func TestScheduleExperiment(t *testing.T) {
 			role: "sched", body: strings.NewReader(`{"algorithm":"round-robin"}`), hostsErr: errors.New("minimega gone"),
 			want: http.StatusInternalServerError, outcome: "failure", fields: map[string]any{"phenix.schedule.algorithm": "round-robin"},
 		},
-		"stored schedule unreadable": {
+		// the answer is the experiment as stored, not read again
+		"store unreadable after the schedule": {
 			role: "sched", body: strings.NewReader(`{"algorithm":"round-robin"}`), hosts: hosts, failAfterSet: true,
-			want: http.StatusInternalServerError, outcome: "success", fields: map[string]any{"phenix.schedule.algorithm": "round-robin"},
+			want: http.StatusOK, outcome: "success", fields: map[string]any{"phenix.schedule.algorithm": "round-robin"},
+			schedule: map[string]string{"vm1": "host-a", "vm2": "host-b"},
+		},
+		"empty algorithm": {
+			role: "sched", body: strings.NewReader(`{"algorithm":""}`), hosts: hosts,
+			want: http.StatusBadRequest, outcome: "failure", fields: map[string]any{"phenix.schedule.algorithm": ""},
+		},
+		"algorithm with a path": {
+			role: "sched", body: strings.NewReader(`{"algorithm":"x/../../bin/sh"}`), hosts: hosts,
+			want: http.StatusBadRequest, outcome: "failure", fields: map[string]any{"phenix.schedule.algorithm": "x/../../bin/sh"},
 		},
 	}
 
@@ -244,6 +255,10 @@ func TestScheduleExperiment(t *testing.T) {
 				t.Errorf("ScheduleExperiment(%s) answered schedule mismatch (-want +got):\n%s", name, diff)
 			}
 
+			if tc.failAfterSet {
+				return
+			}
+
 			exp, err := experiment.Get("sched")
 			if err != nil {
 				t.Fatalf("experiment.Get(sched) error = %v", err)
@@ -256,8 +271,99 @@ func TestScheduleExperiment(t *testing.T) {
 	}
 }
 
-// A failed schedule answers 404 for a missing experiment, 409 for a running one or a cluster without
-// schedulable hosts, 400 for an unknown algorithm and 500 otherwise.
+// lockCheckingMM records the experiment lock status while the scheduler reads
+// the cluster hosts.
+type lockCheckingMM struct {
+	*testMM
+
+	status *cache.Status
+}
+
+func (m lockCheckingMM) GetClusterHosts(bool) (mm.Hosts, error) {
+	*m.status = cache.IsExperimentLocked("sched")
+
+	return mm.Hosts{{Name: "host-a", Schedulable: true}}, nil
+}
+
+// POST /experiments/{name}/schedule holds the experiment's update lock while
+// it schedules, so a start cannot begin, and frees it after.
+func TestScheduleExperimentHoldsTheLock(t *testing.T) { //nolint:paralleltest // replaces mm.DefaultMM and the store
+	useScheduleExperiment(t, "")
+
+	var during cache.Status
+
+	original := mm.DefaultMM
+	t.Cleanup(func() { mm.DefaultMM = original }) //nolint:reassign // restore the default
+
+	mm.DefaultMM = lockCheckingMM{testMM: &testMM{}, status: &during} //nolint:reassign // install test double
+
+	req := roleRequest(http.MethodPost, "/experiments/sched/schedule", `{"algorithm":"round-robin"}`,
+		map[string]string{"name": "sched"}, testRole("experiments/schedule", "create", "sched"))
+
+	w := httptest.NewRecorder()
+	if got := handlerStatus(t, w, ScheduleExperiment(w, req)); got != http.StatusOK {
+		t.Fatalf("ScheduleExperiment() status = %d, want %d: %s", got, http.StatusOK, w.Body.String())
+	}
+
+	if during != cache.StatusUpdating {
+		t.Errorf("experiment lock while scheduling = %q, want %q", during, cache.StatusUpdating)
+	}
+
+	if after := cache.IsExperimentLocked("sched"); after != "" {
+		t.Errorf("experiment lock after scheduling = %q, want none", after)
+	}
+}
+
+// cancelingMM ends the request while the scheduler reads the cluster hosts.
+type cancelingMM struct {
+	*testMM
+
+	cancel context.CancelFunc
+}
+
+func (m cancelingMM) GetClusterHosts(bool) (mm.Hosts, error) {
+	m.cancel()
+
+	return nil, context.Canceled
+}
+
+// A schedule whose request ended writes no answer and audits nothing.
+func TestScheduleExperimentRequestEnded(t *testing.T) { //nolint:paralleltest // replaces mm.DefaultMM and the store
+	useScheduleExperiment(t, "")
+
+	req := roleRequest(http.MethodPost, "/experiments/sched/schedule", `{"algorithm":"round-robin"}`,
+		map[string]string{"name": "sched"}, testRole("experiments/schedule", "create", "sched"))
+
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+
+	req = req.WithContext(ctx)
+
+	original := mm.DefaultMM
+	t.Cleanup(func() { mm.DefaultMM = original }) //nolint:reassign // restore the default
+
+	mm.DefaultMM = cancelingMM{testMM: &testMM{}, cancel: cancel} //nolint:reassign // install test double
+
+	events := captureAudit(t)
+
+	w := httptest.NewRecorder()
+	if err := ScheduleExperiment(w, req); err != nil {
+		t.Fatalf("ScheduleExperiment() with an ended request error = %v, want nil", err)
+	}
+
+	if w.Body.Len() != 0 {
+		t.Errorf("ScheduleExperiment() with an ended request wrote %q, want nothing", w.Body.String())
+	}
+
+	if n := countAudit(events(), "experiment-schedule", "failure", nil) +
+		countAudit(events(), "experiment-schedule", "success", nil); n != 0 {
+		t.Errorf("ScheduleExperiment() with an ended request audited %d events, want none", n)
+	}
+}
+
+// A failed schedule answers 404 for a missing experiment, 409 for a running or starting one, one that changed
+// while it was scheduled, or a cluster without schedulable hosts, 400 for an unknown or invalid algorithm, 504 for a
+// scheduler that did not finish in time and 500 otherwise.
 func TestScheduleErrorStatus(t *testing.T) {
 	t.Parallel()
 
@@ -274,6 +380,17 @@ func TestScheduleErrorStatus(t *testing.T) {
 		"unknown algorithm": {
 			err:  fmt.Errorf("running user scheduler: %w", scheduler.ErrUserSchedulerNotFound),
 			want: http.StatusBadRequest,
+		},
+		"invalid algorithm": {err: fmt.Errorf("%w: %q", scheduler.ErrInvalidName, ""), want: http.StatusBadRequest},
+		"starting experiment": {
+			err: &experiment.StartingError{Name: "sched"}, want: http.StatusConflict,
+		},
+		"changed while scheduled": {
+			err: fmt.Errorf("experiment sched changed: %w", store.ErrConflict), want: http.StatusConflict,
+		},
+		"scheduler timed out": {
+			err:  fmt.Errorf("running scheduler algorithm: %w", scheduler.ErrTimeout),
+			want: http.StatusGatewayTimeout,
 		},
 		"other failure": {err: errors.New("updating experiment config"), want: http.StatusInternalServerError},
 		"nil":           {err: nil, want: http.StatusInternalServerError},

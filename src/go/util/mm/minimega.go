@@ -1529,6 +1529,7 @@ func (m Minimega) GetVMCaptures(opts ...Option) []Capture {
 // GetClusterHosts returns the cluster's hosts, or only those VMs can be scheduled on. A schedOnly call always asks
 // minimega, since VM placement depends on current counts; the full list, shown only to people, is reused for up to
 // clusterHostsTTL. Concurrent calls share one set of commands (see flight.Group), and each caller gets its own copy.
+// The schedulers use GetSchedulableHosts, which skips the disk usage and shares nothing.
 func (m Minimega) GetClusterHosts(schedOnly bool) (Hosts, error) {
 	hosts, _, err := m.GetClusterHostsObserved(context.Background(), schedOnly)
 
@@ -1576,7 +1577,47 @@ func (m Minimega) GetClusterHostsObserved(ctx context.Context, schedOnly bool) (
 // started just before its first minimega command is sent. The headnode is
 // always last. Once ctx is done, it gives up with an error wrapping ctx's
 // error rather than return a list some commands gave up on.
-func (m Minimega) getClusterHosts(ctx context.Context, started func()) (Hosts, error) {
+func (Minimega) getClusterHosts(ctx context.Context, started func()) (Hosts, error) {
+	hosts, err := scanClusterHosts(ctx, started)
+	if err != nil {
+		return hosts, err
+	}
+
+	fillDiskUsage(ctx, hosts, func(name string) bool { return name == hosts[len(hosts)-1].Name })
+
+	if err := ended(ctx); err != nil {
+		return nil, err
+	}
+
+	return hosts, nil
+}
+
+// GetSchedulableHosts returns the hosts VMs can be scheduled on, read from
+// minimega now, for a scheduler; nil when there are none. It shares no
+// commands with other callers, so ctx's deadline bounds each of its commands,
+// and it returns an error wrapping ctx's error once ctx is done. It measures
+// the disk usage of the hosts, as GetClusterHosts does, only when diskUsage
+// is set; else DiskUsage stays zero.
+func (Minimega) GetSchedulableHosts(ctx context.Context, diskUsage bool) (Hosts, error) {
+	hosts, err := scanClusterHosts(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if diskUsage {
+		fillDiskUsage(ctx, hosts, func(name string) bool { return name == hosts[len(hosts)-1].Name })
+
+		if err := ended(ctx); err != nil {
+			return nil, err
+		}
+	}
+
+	return schedulableHosts(hosts), nil
+}
+
+// scanClusterHosts reads the cluster's hosts without their disk usage, as
+// getClusterHosts gives them.
+func scanClusterHosts(ctx context.Context, started func()) (Hosts, error) {
 	// Get headnode details. The default namespace only ever spans this node.
 	hosts := processNamespaceHosts(ctx, "minimega", started)
 
@@ -1625,20 +1666,10 @@ func (m Minimega) getClusterHosts(ctx context.Context, started func()) (Hosts, e
 		host.Name = common.TrimHostnameSuffixes(host.Name)
 		host.Schedulable = true
 
-		// Add disk info
-		host.DiskUsage = m.getHostDiskUsage(ctx, host.Name)
-
 		cluster = append(cluster, host)
 	}
 
 	head.Name = common.TrimHostnameSuffixes(head.Name)
-
-	// Add disk info
-	head.DiskUsage = m.getHostDiskUsage(ctx, head.Name)
-
-	if err := ended(ctx); err != nil {
-		return nil, err
-	}
 
 	cluster = append(cluster, head)
 
@@ -1677,20 +1708,15 @@ func schedulableHosts(hosts Hosts) Hosts {
 	return cloneHosts(hosts)
 }
 
-func (m Minimega) GetNamespaceHosts(ns string) (Hosts, error) {
+func (Minimega) GetNamespaceHosts(ns string) (Hosts, error) {
 	// Get namespace nodes details
-	processed := processNamespaceHosts(context.Background(), ns, nil)
+	hosts := processNamespaceHosts(context.Background(), ns, nil)
 
-	hosts := make([]Host, 0, len(processed))
-
-	for _, host := range processed {
-		host.Name = common.TrimHostnameSuffixes(host.Name)
-
-		// Add disk info
-		host.DiskUsage = m.getHostDiskUsage(context.Background(), host.Name)
-
-		hosts = append(hosts, host)
+	for i := range hosts {
+		hosts[i].Name = common.TrimHostnameSuffixes(hosts[i].Name)
 	}
+
+	fillDiskUsage(context.Background(), hosts, IsHeadnode)
 
 	return hosts, nil
 }
@@ -2660,9 +2686,23 @@ func processHosts(ctx context.Context, cmd *mmcli.Command, started func()) Hosts
 // command queue behind experiment work.
 const diskUsageTTL = time.Minute
 
+// diskUsageFailureTTL is how long a host whose disk usage could not be
+// measured is not asked again; its usage reads as 0 until then.
+const diskUsageFailureTTL = 15 * time.Second
+
 type diskUsageEntry struct {
-	value float64
-	at    time.Time
+	value  float64
+	at     time.Time
+	failed bool
+}
+
+// fresh reports whether e can still be used at now.
+func (e diskUsageEntry) fresh(now time.Time) bool {
+	if e.failed {
+		return now.Sub(e.at) < diskUsageFailureTTL
+	}
+
+	return now.Sub(e.at) < diskUsageTTL
 }
 
 var (
@@ -2670,56 +2710,128 @@ var (
 	diskUsageCache = map[string]diskUsageEntry{} //nolint:gochecknoglobals // cache shared across requests
 )
 
-// getHostDiskUsage returns the percent of the disks holding phenix's and
-// minimega's base directories on `host` that is in use, measured at most once
-// per diskUsageTTL. Both are measured with a single shell command.
-func (m Minimega) getHostDiskUsage(ctx context.Context, host string) DiskUsage {
+// fillDiskUsage sets the DiskUsage of each of hosts: the percent of the disks
+// holding phenix's and minimega's base directories that is in use. It reuses
+// a measurement for diskUsageTTL, and a failed one for diskUsageFailureTTL.
+// It measures all stale mesh peers with one `mesh send all` command, and the
+// headnode, which isHead names, with one `shell` command. A failure while ctx
+// is done is not kept.
+func fillDiskUsage(ctx context.Context, hosts Hosts, isHead func(string) bool) {
 	paths := []string{common.PhenixBase, common.MinimegaBase}
-	usage := make([]float64, len(paths))
-	stale := false
+	stale := make(map[int]bool) // index in hosts: true for the headnode
 
 	diskUsageMu.Lock()
 
-	for i, path := range paths {
-		entry, ok := diskUsageCache[host+"\x00"+path]
-		if ok && time.Since(entry.at) < diskUsageTTL {
-			usage[i] = entry.value
+	now := time.Now()
+
+	for i, host := range hosts {
+		usage, ok := cachedDiskUsage(host.Name, paths, now)
+		if ok {
+			hosts[i].DiskUsage = usage
 		} else {
-			stale = true
+			stale[i] = false
 		}
 	}
 
 	diskUsageMu.Unlock()
 
-	if stale {
-		measured := m.measureDiskUsage(ctx, host, paths...)
-		now := time.Now()
+	if len(stale) == 0 {
+		return
+	}
 
-		diskUsageMu.Lock()
+	measured := make(map[string]map[int]float64)
+	meshStale := false
 
-		for i, path := range paths {
-			if value, ok := measured[i]; ok {
-				usage[i] = value
-				diskUsageCache[host+"\x00"+path] = diskUsageEntry{value: value, at: now}
+	for i := range stale {
+		if isHead(hosts[i].Name) {
+			stale[i] = true
+
+			if resp, err := meshShellResponse(ctx, "", diskUsageCommand(paths...)); err == nil {
+				measured[hosts[i].Name] = parseDiskUsage(resp, len(paths))
+			}
+		} else {
+			meshStale = true
+		}
+	}
+
+	if meshStale {
+		maps.Copy(measured, measureMeshDiskUsage(ctx, paths))
+	}
+
+	keepFailures := ctx.Err() == nil
+
+	diskUsageMu.Lock()
+	defer diskUsageMu.Unlock()
+
+	now = time.Now()
+
+	for name, values := range measured {
+		for idx, path := range paths {
+			if value, ok := values[idx]; ok {
+				diskUsageCache[name+"\x00"+path] = diskUsageEntry{value: value, at: now, failed: false}
+			}
+		}
+	}
+
+	for i := range stale {
+		name := hosts[i].Name
+		values := measured[name]
+		usage := make([]float64, len(paths))
+
+		for idx, path := range paths {
+			if value, ok := values[idx]; ok {
+				usage[idx] = value
+			} else if keepFailures {
+				diskUsageCache[name+"\x00"+path] = diskUsageEntry{value: 0, at: now, failed: true}
 			}
 		}
 
-		diskUsageMu.Unlock()
+		hosts[i].DiskUsage = DiskUsage{Phenix: usage[0], Minimega: usage[1]}
 	}
-
-	return DiskUsage{Phenix: usage[0], Minimega: usage[1]}
 }
 
-// measureDiskUsage runs one shell command on `host` to get the disk usage for
-// each of `paths`, returning the usage keyed by index into `paths` for each
-// path it could be measured for.
-func (Minimega) measureDiskUsage(ctx context.Context, host string, paths ...string) map[int]float64 {
-	resp, err := meshShellResponse(ctx, host, diskUsageCommand(paths...))
-	if err != nil {
-		return nil
+// cachedDiskUsage returns host's disk usage for paths from the cache when
+// every path's entry is fresh at now. diskUsageMu must be held.
+func cachedDiskUsage(host string, paths []string, now time.Time) (DiskUsage, bool) {
+	usage := make([]float64, len(paths))
+
+	for i, path := range paths {
+		entry, ok := diskUsageCache[host+"\x00"+path]
+		if !ok || !entry.fresh(now) {
+			return DiskUsage{}, false
+		}
+
+		usage[i] = entry.value
 	}
 
-	return parseDiskUsage(resp, len(paths))
+	return DiskUsage{Phenix: usage[0], Minimega: usage[1]}, true
+}
+
+// measureMeshDiskUsage runs diskUsageCommand for paths on every mesh peer
+// with one `mesh send all` command. It returns the usage of each peer that
+// answered without an error, by host name without its suffixes.
+func measureMeshDiskUsage(ctx context.Context, paths []string) map[string]map[int]float64 {
+	cmd := mmcli.NewCommand()
+	cmd.Command = "mesh send all shell " + diskUsageCommand(paths...)
+
+	usage := make(map[string]map[int]float64)
+
+	// Drain the full response channel -- returning early would abandon it and wedge the shared minimega connection.
+	for resps := range mmcli.RunContext(ctx, cmd) {
+		for _, resp := range resps.Resp {
+			if resp.Error != "" {
+				if ctx.Err() == nil {
+					plog.Warn(plog.TypeSystem, "measuring disk usage", "host", resp.Host, "error", resp.Error)
+				}
+
+				continue
+			}
+
+			usage[common.TrimHostnameSuffixes(resp.Host)] = parseDiskUsage(resp.Response, len(paths))
+		}
+	}
+
+	return usage
 }
 
 // diskUsageCommand builds a shell command printing `<index>=<use%>` for each

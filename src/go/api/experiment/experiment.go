@@ -615,42 +615,54 @@ func processCreateScenario(
 	return nil
 }
 
-// Schedule applies the given scheduling algorithm to the experiment with the
-// given name. It returns any errors encountered while scheduling the
-// experiment.
-func Schedule(opts ...ScheduleOption) error {
-	var err error
+// Schedule applies the given scheduling algorithm to the stopped experiment
+// with the given name, stores the schedule and returns the experiment. The
+// scheduler gives up once ctx is done or scheduler.Timeout has passed. It
+// refuses an experiment that runs or that a live process starts, and an
+// experiment that changed while it was scheduled (store.ErrConflict), so it
+// never overwrites a change or a start made in the meantime.
+func Schedule(ctx context.Context, opts ...ScheduleOption) (*types.Experiment, error) {
 	o := newScheduleOptions(opts...)
 
 	c, _ := store.NewConfig("experiment/" + o.name)
 
-	err = store.Get(c)
-	if err != nil {
-		return fmt.Errorf("getting experiment %s from store: %w", o.name, err)
+	if err := store.Get(c); err != nil {
+		return nil, fmt.Errorf("getting experiment %s from store: %w", o.name, err)
 	}
 
-	exp, err2 := types.DecodeExperimentFromConfig(*c)
-	if err2 != nil {
-		return fmt.Errorf("decoding experiment from config: %w", err2)
+	exp, err := types.DecodeExperimentFromConfig(*c)
+	if err != nil {
+		return nil, fmt.Errorf("decoding experiment from config: %w", err)
 	}
 
 	if exp.Running() {
-		return fmt.Errorf("%w (started at: %s)", ErrExperimentRunning, exp.Status.StartTime())
+		return nil, fmt.Errorf("%w (started at: %s)", ErrExperimentRunning, exp.Status.StartTime())
 	}
 
-	err = scheduler.Schedule(o.algorithm, exp.Spec)
-	if err != nil {
-		return fmt.Errorf("running scheduler algorithm: %w", err)
+	if m := exp.Status.Starting(); StartMarkerLive(m) {
+		return nil, &StartingError{Name: o.name, Marker: m}
+	}
+
+	if err := scheduler.Schedule(ctx, o.algorithm, exp.Spec); err != nil {
+		return nil, fmt.Errorf("running scheduler algorithm: %w", err)
 	}
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
+	c.IfRevision = c.Metadata.Revision
 
 	err = store.Update(c)
-	if err != nil {
-		return fmt.Errorf("updating experiment config: %w", err)
+	c.IfRevision = 0
+
+	switch {
+	case errors.Is(err, store.ErrConflict):
+		return nil, fmt.Errorf("experiment %s changed while it was scheduled, schedule it again: %w", o.name, err)
+	case err != nil:
+		return nil, fmt.Errorf("updating experiment config: %w", err)
 	}
 
-	return nil
+	exp.Metadata = c.Metadata
+
+	return exp, nil
 }
 
 // Start starts the experiment with the given name. It returns any errors

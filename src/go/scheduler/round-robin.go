@@ -1,11 +1,11 @@
 package scheduler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
 	ifaces "phenix/types/interfaces"
-	"phenix/util/mm"
 )
 
 func init() { //nolint:gochecknoinits // scheduler registration
@@ -22,20 +22,20 @@ func (roundRobin) Name() string {
 	return "round-robin"
 }
 
-func (roundRobin) Schedule(spec ifaces.ExperimentSpec) error {
+func (roundRobin) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) error {
 	if len(spec.Topology().Nodes()) == 0 {
 		return errors.New("no VMs defined for experiment")
 	}
 
-	cluster, err := mm.GetClusterHosts(true)
+	cluster, err := schedulableHosts(ctx, false)
 	if err != nil {
-		return fmt.Errorf("getting cluster hosts: %w", err)
+		return err
 	}
 
 	// Update cluster host VM count to account for VMs manually scheduled before
-	// sorting hosts by VM count below.
-	for _, name := range spec.Schedules() {
-		if host := cluster.FindHostByName(name); host != nil {
+	// sorting hosts by VM count below; a pin of a VM the topology lacks counts for nothing.
+	for vm, name := range spec.Schedules() {
+		if node := spec.Topology().FindNodeByName(vm); node != nil && !node.External() {
 			_ = cluster.IncrHostVMs(name, 1)
 		}
 	}

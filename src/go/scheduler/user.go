@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 
 	ifaces "phenix/types/interfaces"
 	"phenix/util/common"
@@ -29,8 +30,8 @@ func (us userScheduler) Name() string {
 	return us.options.Name
 }
 
-func (us userScheduler) Schedule(spec ifaces.ExperimentSpec) error {
-	err := us.shellOut(spec)
+func (us userScheduler) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) error {
+	err := us.shellOut(ctx, spec)
 	if err != nil {
 		return fmt.Errorf("running user scheduler: %w", err)
 	}
@@ -38,7 +39,10 @@ func (us userScheduler) Schedule(spec ifaces.ExperimentSpec) error {
 	return nil
 }
 
-func (us userScheduler) shellOut(spec ifaces.ExperimentSpec) error {
+// shellOut runs the user scheduler on spec and the cluster hosts, and takes
+// the schedules it answers; it ignores the rest of the spec it answers. ctx
+// bounds the command.
+func (us userScheduler) shellOut(ctx context.Context, spec ifaces.ExperimentSpec) error {
 	cmdName := "phenix-scheduler-" + us.options.Name
 
 	if !shell.CommandExists(cmdName) {
@@ -49,9 +53,9 @@ func (us userScheduler) shellOut(spec ifaces.ExperimentSpec) error {
 		)
 	}
 
-	cluster, err := mm.GetClusterHosts(true)
+	cluster, err := schedulableHosts(ctx, true)
 	if err != nil {
-		return fmt.Errorf("getting cluster hosts: %w", err)
+		return err
 	}
 
 	exp := struct {
@@ -88,16 +92,23 @@ func (us userScheduler) shellOut(spec ifaces.ExperimentSpec) error {
 		shell.StreamStderr(stderrChan),
 	}
 
-	stdOut, _, err := shell.ExecCommand(context.Background(), opts...)
+	stdOut, _, err := shell.ExecCommand(ctx, opts...)
 	if err != nil {
 		return fmt.Errorf("user scheduler %s command %s failed: %w", us.options.Name, cmdName, err)
 	}
 
-	if err := json.Unmarshal(stdOut, &exp); err != nil {
+	// decoded apart from spec, as decoding into exp would also change the rest of spec in place
+	var answer struct {
+		Spec struct {
+			Schedules map[string]string `json:"schedules"`
+		} `json:"spec"`
+	}
+
+	if err := json.Unmarshal(stdOut, &answer); err != nil {
 		return fmt.Errorf("unmarshaling experiment spec from JSON: %w", err)
 	}
 
-	spec.SetSchedule(exp.Spec.Schedules())
+	maps.Copy(spec.Schedules(), answer.Spec.Schedules)
 
 	return nil
 }

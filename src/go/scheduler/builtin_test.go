@@ -114,7 +114,7 @@ func TestBuiltinSchedulerErrors(t *testing.T) {
 		t.Run(name+"/no VMs", func(t *testing.T) {
 			useClusterMM(t, clusterMM{hosts: mm.Hosts{{Name: "h1"}}})
 
-			if err := Schedule(name, builtinSpec(t, nil, nil)); err == nil {
+			if err := Schedule(t.Context(), name, builtinSpec(t, nil, nil)); err == nil {
 				t.Errorf("Schedule(%s, no VMs) = nil, want an error", name)
 			}
 		})
@@ -122,7 +122,7 @@ func TestBuiltinSchedulerErrors(t *testing.T) {
 		t.Run(name+"/no cluster hosts", func(t *testing.T) {
 			useClusterMM(t, failingClusterMM{})
 
-			if err := Schedule(name, builtinSpec(t, []builtinVM{{name: "vm1", vlan: "EXP"}}, nil)); err == nil {
+			if err := Schedule(t.Context(), name, builtinSpec(t, []builtinVM{{name: "vm1", vlan: "EXP"}}, nil)); err == nil {
 				t.Errorf("Schedule(%s, minimega not running) = nil, want an error", name)
 			}
 		})
@@ -189,7 +189,7 @@ func TestIsolateExperiment(t *testing.T) {
 
 			spec := builtinSpec(t, vms, tc.schedules)
 
-			err := Schedule("isolate-experiment", spec)
+			err := Schedule(t.Context(), "isolate-experiment", spec)
 
 			records := logs.Records(t, func(r map[string]any) bool { return r["msg"] == overloaded || r["msg"] == inUse })
 			gotLogs := make([]map[string]any, 0, len(records))
@@ -275,7 +275,7 @@ func TestSubnetCompute(t *testing.T) {
 
 			spec := builtinSpec(t, tc.vms, tc.schedules)
 
-			err := Schedule("subnet-compute", spec)
+			err := Schedule(t.Context(), "subnet-compute", spec)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("Schedule(subnet-compute) error = %v, want error %t", err, tc.wantErr)
 			}
@@ -302,11 +302,126 @@ func TestRoundRobin(t *testing.T) {
 		{name: "vm1", vlan: "EXP"}, {name: "vm2", vlan: "EXP"}, {name: "vm3", vlan: "EXP"}, {name: "ext", external: true},
 	}, map[string]any{"vm1": "h1"})
 
-	if err := Schedule("round-robin", spec); err != nil {
+	if err := Schedule(t.Context(), "round-robin", spec); err != nil {
 		t.Fatalf("Schedule(round-robin) error = %v", err)
 	}
 
 	if diff := cmp.Diff(map[string]string{"vm1": "h1", "vm2": "h1", "vm3": "h1"}, spec.Schedules()); diff != "" {
 		t.Errorf("Schedule(round-robin) schedules mismatch (-want +got):\n%s", diff)
 	}
+}
+
+// round-robin counts only the pins of VMs that the topology has and that are
+// not external, and takes hosts that tie by name, whatever order minimega
+// gives them in.
+//
+//nolint:paralleltest // replaces mm.DefaultMM
+func TestRoundRobinCountsOnlyPinnedVMs(t *testing.T) {
+	useClusterMM(t, clusterMM{hosts: mm.Hosts{{Name: "h2"}, {Name: "h1"}}})
+
+	spec := builtinSpec(t, []builtinVM{
+		{name: "vm1", vlan: "EXP"}, {name: "vm2", vlan: "EXP"}, {name: "ext", external: true},
+	}, map[string]any{"gone": "h1", "ext": "h1"})
+
+	if err := Schedule(t.Context(), "round-robin", spec); err != nil {
+		t.Fatalf("Schedule(round-robin) error = %v", err)
+	}
+
+	want := map[string]string{"gone": "h1", "ext": "h1", "vm1": "h1", "vm2": "h2"}
+	if diff := cmp.Diff(want, spec.Schedules()); diff != "" {
+		t.Errorf("Schedule(round-robin) schedules mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// isolate-experiment takes a free host where the VMs use exactly all of its
+// CPUs and memory, and reads no hosts for a topology of external nodes only.
+//
+//nolint:paralleltest // replaces mm.DefaultMM
+func TestIsolateExperimentEdges(t *testing.T) {
+	t.Run("exact fit", func(t *testing.T) {
+		// wide has the most free memory but too few CPUs
+		useClusterMM(t, clusterMM{hosts: mm.Hosts{
+			{Name: "wide", CPUs: 1, MemTotal: 4096}, {Name: "exact", CPUs: 2, MemTotal: 1024},
+		}})
+
+		spec := builtinSpec(t, []builtinVM{{name: "vm1", vlan: "EXP", memory: 512}, {name: "vm2", vlan: "EXP", memory: 512}}, nil)
+
+		if err := Schedule(t.Context(), "isolate-experiment", spec); err != nil {
+			t.Fatalf("Schedule(isolate-experiment) error = %v", err)
+		}
+
+		if diff := cmp.Diff(map[string]string{"vm1": "exact", "vm2": "exact"}, spec.Schedules()); diff != "" {
+			t.Errorf("Schedule(isolate-experiment) schedules mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("external nodes only", func(t *testing.T) {
+		useClusterMM(t, failingClusterMM{})
+
+		spec := builtinSpec(t, []builtinVM{{name: "ext", external: true}}, nil)
+
+		if err := Schedule(t.Context(), "isolate-experiment", spec); err != nil {
+			t.Fatalf("Schedule(isolate-experiment) of external nodes only error = %v", err)
+		}
+
+		if diff := cmp.Diff(map[string]string{}, spec.Schedules()); diff != "" {
+			t.Errorf("Schedule(isolate-experiment) schedules mismatch (-want +got):\n%s", diff)
+		}
+	})
+}
+
+// subnet-compute puts a VM on the host of its VLAN when it fills that host's
+// memory exactly, tries the hosts of a VLAN in the order of the names of the
+// VMs pinned to them, and does not need interfaces on a pinned external node.
+//
+//nolint:paralleltest // replaces mm.DefaultMM
+func TestSubnetComputeEdges(t *testing.T) {
+	t.Run("exact fit", func(t *testing.T) {
+		useClusterMM(t, clusterMM{hosts: mm.Hosts{{Name: "h1", MemTotal: 1024}, {Name: "h2", MemTotal: 4096}}})
+
+		spec := builtinSpec(t, []builtinVM{
+			{name: "vm1", vlan: "A", memory: 512}, {name: "vm2", vlan: "A", memory: 512},
+		}, map[string]any{"vm1": "h1"})
+
+		if err := Schedule(t.Context(), "subnet-compute", spec); err != nil {
+			t.Fatalf("Schedule(subnet-compute) error = %v", err)
+		}
+
+		if diff := cmp.Diff(map[string]string{"vm1": "h1", "vm2": "h1"}, spec.Schedules()); diff != "" {
+			t.Errorf("Schedule(subnet-compute) schedules mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("same order every time", func(t *testing.T) {
+		for range 20 {
+			useClusterMM(t, clusterMM{hosts: mm.Hosts{{Name: "h1", MemTotal: 4096}, {Name: "h2", MemTotal: 4096}}})
+
+			spec := builtinSpec(t, []builtinVM{
+				{name: "vmA", vlan: "X", memory: 256}, {name: "vmB", vlan: "X", memory: 256}, {name: "vmC", vlan: "X", memory: 256},
+			}, map[string]any{"vmA": "h2", "vmB": "h1"})
+
+			if err := Schedule(t.Context(), "subnet-compute", spec); err != nil {
+				t.Fatalf("Schedule(subnet-compute) error = %v", err)
+			}
+
+			if diff := cmp.Diff(map[string]string{"vmA": "h2", "vmB": "h1", "vmC": "h2"}, spec.Schedules()); diff != "" {
+				t.Fatalf("Schedule(subnet-compute) schedules mismatch (-want +got):\n%s", diff)
+			}
+		}
+	})
+
+	t.Run("pinned external node", func(t *testing.T) {
+		useClusterMM(t, clusterMM{hosts: mm.Hosts{{Name: "h1", MemTotal: 4096}}})
+
+		spec := builtinSpec(t, []builtinVM{{name: "ext", external: true}, {name: "vm1", vlan: "A", memory: 256}},
+			map[string]any{"ext": "h1"})
+
+		if err := Schedule(t.Context(), "subnet-compute", spec); err != nil {
+			t.Fatalf("Schedule(subnet-compute) with a pinned external node error = %v", err)
+		}
+
+		if diff := cmp.Diff(map[string]string{"ext": "h1", "vm1": "h1"}, spec.Schedules()); diff != "" {
+			t.Errorf("Schedule(subnet-compute) schedules mismatch (-want +got):\n%s", diff)
+		}
+	})
 }

@@ -207,6 +207,23 @@ func GetClusterHostsObserved(ctx context.Context, schedOnly bool) (Hosts, freshn
 	return hosts, freshness.Observed(at), nil
 }
 
+// schedulableHostsReader is the optional part of MM that reads the hosts for
+// a scheduler; see GetSchedulableHosts.
+type schedulableHostsReader interface {
+	GetSchedulableHosts(ctx context.Context, diskUsage bool) (Hosts, error)
+}
+
+// GetSchedulableHosts returns the hosts VMs can be scheduled on, read from
+// minimega now, with their disk usage only when diskUsage is set; see
+// Minimega.GetSchedulableHosts. An MM without it gives GetClusterHosts(true).
+func GetSchedulableHosts(ctx context.Context, diskUsage bool) (Hosts, error) {
+	if r, ok := DefaultMM.(schedulableHostsReader); ok {
+		return r.GetSchedulableHosts(ctx, diskUsage) //nolint:wrapcheck // as GetClusterHosts
+	}
+
+	return DefaultMM.GetClusterHosts(true) //nolint:wrapcheck // as GetClusterHosts
+}
+
 func GetNamespaceHosts(ns string) (Hosts, error) {
 	return DefaultMM.GetNamespaceHosts(ns)
 }

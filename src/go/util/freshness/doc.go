@@ -11,6 +11,7 @@
 //	cluster hosts           util/mm recentClusterHosts             5 s (clusterHostsTTL)  a newer read; schedulers always read    X-Phenix-Observed-At (GET /hosts)
 //	minimega VLAN side      api/vlan recent                        5 s (minimegaTTL)      a start or stop; phenix's VLAN changes  X-Phenix-Observed-At, minimega.read (GET /vlans)
 //	host disk usage         util/mm diskUsageCache                 1 min (diskUsageTTL)   expiry                                  not reported (part of a host)
+//	failed host disk usage  util/mm diskUsageCache                 15 s (diskUsageFailureTTL) expiry                              not reported (reads as 0)
 //	headnode name           util/mm headnode                       5 min (headnodeTTL)    expiry                                  not data
 //	experiment file lists   util/file experimentListings           5 s (listingTTL)       phenix's own file writes and deletes    X-Phenix-Observed-At (GET files)
 //	SoH VM states           web lastVMStates                       while minimega is busy the next read                           vms_observed_at, vms_stale, X-Phenix-Stale
@@ -33,5 +34,6 @@
 // each listing.
 //
 // Concurrent identical minimega reads (VM info, SoH VM states, cluster hosts) share one run
-// (util/flight Group) only if it has not started, so a shared answer is never older than the call.
+// (util/flight Group) only if it has not started, so a shared answer is never older than the call. The schedulers'
+// reads of the cluster hosts (mm.GetSchedulableHosts) share nothing, so their own deadlines bound them.
 package freshness

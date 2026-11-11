@@ -249,7 +249,8 @@ The experiment must be stopped; click on the experiment name to enter the
 Stopped Experiment component. Click the `Schedule` button to the right of the
 start button. The menu tells how many VMs have a host, and lists the
 schedulers of the server. Click a scheduler, then confirm. The scheduler
-assigns every VM to a host and replaces the hosts that you set before.
+assigns a host to each VM. `round-robin` and `subnet-compute` keep the hosts
+that you set before. `isolate-experiment` replaces them.
 
 ![Scheduling menu button circled in red on a stopped experiment's toolbar, open to the isolate_experiment and round_robin algorithms.](images/schedule.png){: width=400 .center}
 
@@ -266,6 +267,16 @@ Then apply the desired schedule with the following command.
 ```bash
 phenix experiment schedule <experiment name> <algorithm>
 ```
+
+### Scheduling Limits
+
+* A scheduler must finish in 45 seconds. If it does not, phēnix stops it and
+  stores no schedule. The web UI and the REST API then show error 504.
+* If the experiment changes or starts while phēnix schedules it, phēnix keeps
+  that change and stores no schedule. The web UI and the REST API then show
+  error 409. Schedule the experiment again.
+* The web UI and the REST API lock the experiment while they schedule it. You
+  cannot start or change the experiment until the schedule is complete.
 
 ## Triggering App Lifecycle Stages
 

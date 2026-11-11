@@ -5,7 +5,7 @@ etc. and cluster node capacity.
 
 Default Schedulers
 
-  - isolate-experiment.go: isolates all experiment VMs on a single cluster node
+  - isolate.go:            isolates all experiment VMs on a single cluster node
   - round-robin.go:        assigns experiment VMs to cluster nodes in a
     round-robin fashion
   - subnet-compute.go:     assigns experiment VMs to cluster nodes based on
@@ -16,9 +16,12 @@ Default Schedulers
 Custom user schedulers are interacted with through STDIN and STDOUT. The
 phenix `user.go` scheduler will pass a JSON blob to the custom user scheduler
 through STDIN. This JSON blob will contain the experiment data based on the
-latest version of the `Experiment` schema. The phenix will block further
+latest version of the `Experiment` schema (`spec`) and the schedulable cluster
+hosts with their disk usage (`hosts`). The phenix will block further
 actions and wait for STDOUT return of an updated JSON blob from the custom
-user scheduler. In addition to the JSON blob, the custom user scheduler
+user scheduler. phenix uses only `spec.schedules` of that blob, and adds its
+entries to the schedules of the experiment. A scheduler run, with the read of
+the cluster hosts, must finish within Timeout, or phenix stops it. In addition to the JSON blob, the custom user scheduler
 should exit with a value of 0. If the custom user scheduler is returning
 log(s) or any error messages, those should be written to STDERR (and in the
 case of an error, the exit value should be non-0). Custom user schedulers

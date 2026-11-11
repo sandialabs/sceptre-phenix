@@ -103,6 +103,14 @@ func (c *routeCluster) reply(cmd mmtest.Command) []*minicli.Response {
 		return []*minicli.Response{
 			mmtest.Tabular(c.head, []string{"image", "backingfile"}, []string{disk, "/images/base.qc2"}),
 		}
+	case strings.HasPrefix(base, "mesh send all shell "):
+		resps := make([]*minicli.Response, 0, len(c.compute))
+
+		for _, name := range c.compute {
+			resps = append(resps, mmtest.Text(name, "0=1% 1=2%\n"))
+		}
+
+		return resps
 	case strings.Contains(base, "shell "):
 		return []*minicli.Response{mmtest.Text(c.head, "0=1% 1=2%\n")}
 	case base == "host" && cmd.Namespace == "minimega":
@@ -487,8 +495,9 @@ func TestSoHSummaryCommandCount(t *testing.T) {
 	})
 }
 
-// Listing the cluster's hosts reads the mesh once and each host's disk usage
-// once, then reuses the list for a while.
+// Listing the cluster's hosts reads the mesh once and the disk usage of all
+// hosts with two commands (one for the mesh peers, one for the headnode),
+// then reuses the list for a while.
 func TestClusterHostsCommandCount(t *testing.T) {
 	for _, compute := range [][]string{{"compute1"}, {"compute1", "compute2", "compute3"}} {
 		t.Run(fmt.Sprintf("%d compute hosts", len(compute)), func(t *testing.T) {
@@ -502,7 +511,7 @@ func TestClusterHostsCommandCount(t *testing.T) {
 				"minimega: host":     1,
 				"mesh list peers":    1,
 				"mesh send all host": 1,
-				"disk usage":         len(compute) + 1,
+				"disk usage":         2,
 			}
 
 			for i, want := range []map[string]int{first, {}} {

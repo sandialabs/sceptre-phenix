@@ -71,7 +71,9 @@ func GetExperimentSchedule(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// ScheduleExperiment - POST /experiments/{name}/schedule.
+// ScheduleExperiment - POST /experiments/{name}/schedule. It holds the
+// experiment's lock while it schedules, so no start or other change can begin,
+// and answers 504 when the scheduler does not finish in time.
 func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
@@ -84,12 +86,6 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 		audit.Denied(r, audit.ExperimentSchedule, "creating experiment schedule not allowed", audit.Fields{Experiment: name})
 
 		return weberror.New(http.StatusForbidden, "forbidden")
-	}
-
-	if status := cache.IsExperimentLocked(name); status != "" {
-		plog.Warn(plog.TypeSystem, "experiment locked", "exp", name, "status", status)
-
-		return weberror.New(http.StatusConflict, fmt.Sprintf("experiment %s is locked with status %s", name, status))
 	}
 
 	body, err := io.ReadAll(r.Body)
@@ -108,12 +104,26 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, err.Error())
 	}
 
+	if err := cache.LockExperimentForUpdate(name); err != nil {
+		plog.Warn(plog.TypeSystem, "experiment locked", "exp", name, "err", err)
+
+		return weberror.New(http.StatusConflict, err.Error())
+	}
+
+	defer cache.UnlockExperiment(name)
+
 	scheduled := audit.Fields{Experiment: name, Extra: []any{"phenix.schedule.algorithm", req.GetAlgorithm()}}
 
-	err = experiment.Schedule(
+	exp, err := experiment.Schedule(
+		ctx,
 		experiment.ScheduleForName(name),
 		experiment.ScheduleWithAlgorithm(req.GetAlgorithm()),
 	)
+
+	if requestCanceled(r, err) {
+		return nil
+	}
+
 	if err != nil {
 		audit.Failure(r, audit.ExperimentSchedule, "scheduling experiment failed", scheduled, err)
 		plog.Error(
@@ -132,13 +142,6 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	audit.Success(r, audit.ExperimentSchedule, "experiment scheduled", scheduled)
 
-	exp, err := experiment.Get(name)
-	if err != nil {
-		plog.Error(plog.TypeSystem, "getting experiment", "exp", name, "err", err)
-
-		return weberror.New(http.StatusInternalServerError, err.Error())
-	}
-
 	body, err = marshaler.Marshal(util.ExperimentScheduleToProtobuf(*exp))
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling schedule for experiment", "exp", name, "err", err)
@@ -152,6 +155,10 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 		body,
 	)
 
+	if requestGone(r) {
+		return nil
+	}
+
 	w.Header().Set("Content-Type", mimeJSON)
 	_, _ = w.Write(body)
 
@@ -163,10 +170,13 @@ func scheduleErrorStatus(err error) int {
 	switch {
 	case errors.Is(err, store.ErrNotExist):
 		return http.StatusNotFound
-	case errors.Is(err, experiment.ErrExperimentRunning), errors.Is(err, scheduler.ErrNoSchedulableHosts):
+	case errors.Is(err, experiment.ErrExperimentRunning), errors.Is(err, experiment.ErrExperimentStarting),
+		errors.Is(err, store.ErrConflict), errors.Is(err, scheduler.ErrNoSchedulableHosts):
 		return http.StatusConflict
-	case errors.Is(err, scheduler.ErrUserSchedulerNotFound):
+	case errors.Is(err, scheduler.ErrUserSchedulerNotFound), errors.Is(err, scheduler.ErrInvalidName):
 		return http.StatusBadRequest
+	case errors.Is(err, scheduler.ErrTimeout):
+		return http.StatusGatewayTimeout
 	default:
 		return http.StatusInternalServerError
 	}
