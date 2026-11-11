@@ -199,29 +199,7 @@ func GetSoHSummary(w http.ResponseWriter, r *http.Request) error {
 		return !role.Allowed("experiments", "get", exp.Metadata.Name)
 	})
 
-	// the VM states of the experiments, read at once
-	type stateRead struct {
-		states map[string]string
-		obs    freshness.Observation
-		err    error
-	}
-
-	var (
-		reads = make([]stateRead, len(experiments))
-		group errgroup.Group
-	)
-
-	group.SetLimit(mmcli.ReadOnlyLimit())
-
-	for i, exp := range experiments {
-		group.Go(func() error {
-			reads[i].states, reads[i].obs, reads[i].err = sohVMStates(ctx, exp)
-
-			return nil
-		})
-	}
-
-	_ = group.Wait()
+	reads := readSoHVMStates(ctx, experiments)
 
 	for i, exp := range experiments {
 		name := exp.Metadata.Name
@@ -276,6 +254,39 @@ func GetSoHSummary(w http.ResponseWriter, r *http.Request) error {
 // at most liveReadWait. Past it, it gives the states last read, marked stale,
 // or unknown states, while the read goes on and keeps its states for later
 // summaries (see sohStateReads). It asks nothing about an experiment that is
+// sohStateRead is one result of sohVMStates.
+type sohStateRead struct {
+	states map[string]string
+	obs    freshness.Observation
+	err    error
+}
+
+// readSoHVMStates reads the VM states of the experiments with sohVMStates, in
+// their order, up to mmcli.ReadOnlyLimit() at once, waiting at most one wait in all.
+func readSoHVMStates(ctx context.Context, experiments []types.Experiment) []sohStateRead {
+	var (
+		reads = make([]sohStateRead, len(experiments))
+		group errgroup.Group
+	)
+
+	group.SetLimit(mmcli.ReadOnlyLimit())
+
+	ctx, cancel := sohStateReads.waitContext(ctx)
+	defer cancel()
+
+	for i, exp := range experiments {
+		group.Go(func() error {
+			reads[i].states, reads[i].obs, reads[i].err = sohVMStates(ctx, exp)
+
+			return nil
+		})
+	}
+
+	_ = group.Wait()
+
+	return reads
+}
+
 // stopped or a dry run.
 func sohVMStates(ctx context.Context, exp types.Experiment) (map[string]string, freshness.Observation, error) {
 	name := exp.Metadata.Name
@@ -307,7 +318,7 @@ func sohVMStates(ctx context.Context, exp types.Experiment) (map[string]string, 
 			fmt.Errorf("getting VM states: %w", read.err)
 	case ok:
 		return read.states, freshness.Observed(read.at), nil
-	case ctx.Err() != nil:
+	case ctx.Err() != nil && !waitPassed(ctx):
 		return nil, freshness.Observation{At: time.Time{}, Stale: false, Known: false, Err: ctx.Err()},
 			fmt.Errorf("getting VM states: %w", ctx.Err())
 	}

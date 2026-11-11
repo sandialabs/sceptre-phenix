@@ -285,6 +285,10 @@ func experimentVMLists(ctx context.Context, experiments []types.Experiment, with
 
 	group.SetLimit(mmcli.ReadOnlyLimit())
 
+	// one wait for all the reads, not one for each batch the limit makes
+	ctx, cancel := experimentVMReads.waitContext(ctx)
+	defer cancel()
+
 	for i, exp := range experiments {
 		group.Go(func() error {
 			lists[i].vms, lists[i].obs = listExperimentVMs(ctx, exp)
@@ -335,7 +339,7 @@ func listExperimentVMs(ctx context.Context, exp types.Experiment) ([]mm.VM, fres
 	switch {
 	case panicErr != nil:
 		obs.Err = panicErr
-	case ctx.Err() != nil:
+	case ctx.Err() != nil && !waitPassed(ctx):
 		obs.Err = ctx.Err()
 	}
 

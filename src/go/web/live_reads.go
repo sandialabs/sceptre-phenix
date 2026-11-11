@@ -25,6 +25,9 @@ const (
 // errLiveReadPanic is the error of a read of a liveReads that panicked.
 var errLiveReadPanic = errors.New("the read of minimega panicked")
 
+// errLiveReadWaitPassed is the cause of a waitContext ending at its deadline.
+var errLiveReadWaitPassed = errors.New("the wait for minimega passed")
+
 // liveReads runs one read of minimega at a time for each key, such as an
 // experiment's name. A caller waits for the read at most wait. The read goes
 // on to its end after every caller stopped waiting, so minimega's answer is
@@ -113,6 +116,22 @@ func (l *liveReads[T]) setWait(wait time.Duration) {
 	defer l.mu.Unlock()
 
 	l.wait = wait
+}
+
+// waitContext gives ctx with a deadline one wait away, for all the reads of
+// one list, so the list waits at most one wait in all (see waitPassed).
+func (l *liveReads[T]) waitContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	l.mu.Lock()
+	wait := l.wait
+	l.mu.Unlock()
+
+	return context.WithTimeoutCause(ctx, wait, errLiveReadWaitPassed)
+}
+
+// waitPassed reports whether ctx, from waitContext, ended because its wait
+// passed, not because the context it came from ended.
+func waitPassed(ctx context.Context) bool {
+	return errors.Is(context.Cause(ctx), errLiveReadWaitPassed)
 }
 
 // running reports how many reads run now.

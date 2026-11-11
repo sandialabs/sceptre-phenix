@@ -589,6 +589,23 @@ func TestDiskUsageKeepsNoFailureOfAnEndedCall(t *testing.T) { //nolint:parallelt
 	}
 }
 
+// A base path that is not safe in a command gives each host a zero disk
+// usage, not none, as the other failures do.
+func TestFillDiskUsageUnsafeBasePath(t *testing.T) { //nolint:paralleltest // changes common.PhenixBase
+	saved := common.PhenixBase
+	common.PhenixBase = "/phenix base" //nolint:reassign // a path that fails mmcli.SafeArg
+
+	t.Cleanup(func() { common.PhenixBase = saved }) //nolint:reassign // restore
+
+	hosts := Hosts{{Name: "unsafe-head"}, {Name: "unsafe-compute1"}}
+	fillDiskUsage(t.Context(), hosts, func(name string) bool { return name == "unsafe-head" })
+
+	want := map[string]*DiskUsage{"unsafe-compute1": {}, "unsafe-head": {}}
+	if diff := cmp.Diff(want, diskByHost(hosts)); diff != "" {
+		t.Errorf("fillDiskUsage with base path %q disk usage mismatch (-want +got):\n%s", common.PhenixBase, diff)
+	}
+}
+
 // A schedOnly read gives the schedulable hosts with no disk usage command
 // and shares no run with the full list; diskUsage adds the disk usage of the
 // schedulable hosts only: one command for the mesh peers, and one for the

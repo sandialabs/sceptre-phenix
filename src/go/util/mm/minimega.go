@@ -2975,6 +2975,10 @@ func fillDiskUsage(ctx context.Context, hosts Hosts, isHead func(string) bool) {
 	if err != nil {
 		plog.Warn(plog.TypeSystem, "phenix cannot measure the disk usage of these base directories", "error", err)
 
+		for i := range stale {
+			hosts[i].DiskUsage = &DiskUsage{Phenix: 0, Minimega: 0}
+		}
+
 		return
 	}
 
