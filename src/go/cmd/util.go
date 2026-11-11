@@ -187,6 +187,8 @@ func init() { //nolint:gochecknoinits // cobra command
 	utilCmd := newUtilCmd()
 
 	utilCmd.AddCommand(newUtilAppJSONCmd())
+	utilCmd.AddCommand(newUtilSchedulerJSONCmd())
+	utilCmd.AddCommand(newUtilScorchJSONCmd())
 	utilCmd.AddCommand(newUtilRoleTableCmd())
 
 	addCommandToRoot(utilCmd, true)

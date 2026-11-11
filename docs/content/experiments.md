@@ -268,6 +268,14 @@ Then apply the desired schedule with the following command.
 phenix experiment schedule <experiment name> <algorithm>
 ```
 
+A user scheduler (`phenix-scheduler-<name>`) gets a JSON object on STDIN: the
+experiment spec (`spec`) and the schedulable cluster hosts (`hosts`). To see
+this JSON, run the following command. The command stores nothing.
+
+```bash
+phenix util scheduler-json <experiment name>
+```
+
 ### Scheduling Limits
 
 * A built-in scheduler must finish in 45 seconds. A user scheduler

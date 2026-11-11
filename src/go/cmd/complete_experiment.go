@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"phenix/api/experiment"
+	"phenix/api/scorch"
+	"phenix/api/scorch/scorchmd"
 	"phenix/app"
 )
 
@@ -43,6 +45,36 @@ func completeAppNames(_ *cobra.Command, _ []string, toComplete string) ([]string
 	}
 
 	return matches, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
+}
+
+// completeScorchComponents completes the names of the SCORCH user components
+// of the experiment in the first argument: the components whose type phenix
+// does not have built in.
+func completeScorchComponents(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) < 1 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	exp, err := experiment.Get(args[0])
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	md, err := scorchmd.DecodeMetadata(exp)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	builtin := scorch.BuiltinComponents()
+	names := make([]string, 0, len(md.Components))
+
+	for _, c := range md.Components {
+		if !slices.Contains(builtin, c.Type) {
+			names = append(names, c.Name)
+		}
+	}
+
+	return completionMatches(names, toComplete), cobra.ShellCompDirectiveNoFileComp
 }
 
 // completeExperimentFiles completes the files of the experiment in the first

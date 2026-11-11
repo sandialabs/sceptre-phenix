@@ -39,20 +39,13 @@ func (us userScheduler) Schedule(ctx context.Context, spec ifaces.ExperimentSpec
 	return warnings, nil
 }
 
-// shellOut runs the user scheduler on spec and the cluster hosts, takes the
-// schedules it answers, and returns the warnings it answers in a top-level
-// warnings array; it ignores the rest of what it answers. ctx bounds the
-// command.
-func (us userScheduler) shellOut(ctx context.Context, spec ifaces.ExperimentSpec) ([]string, error) {
-	cmdName := "phenix-scheduler-" + us.options.Name
-
-	if !shell.CommandExists(cmdName) {
-		return nil, fmt.Errorf(
-			"external user scheduler %s does not exist in your path: %w",
-			cmdName,
-			ErrUserSchedulerNotFound,
-		)
-	}
+// UserInput returns the JSON that a user scheduler gets on stdin for spec: an
+// object with spec, after prepareSpec, and the schedulable cluster hosts
+// with their disk usage, sorted by name (hosts). The user scheduler run and
+// phenix util scheduler-json both make it here, so they cannot differ. The
+// host read gives up once ctx is done; it is the only minimega read.
+func UserInput(ctx context.Context, spec ifaces.ExperimentSpec) ([]byte, error) {
+	prepareSpec(spec)
 
 	cluster, err := schedulableHosts(ctx, true)
 	if err != nil {
@@ -70,6 +63,29 @@ func (us userScheduler) shellOut(ctx context.Context, spec ifaces.ExperimentSpec
 	data, err := json.Marshal(exp)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling experiment spec to JSON: %w", err)
+	}
+
+	return data, nil
+}
+
+// shellOut runs the user scheduler on spec and the cluster hosts, takes the
+// schedules it answers, and returns the warnings it answers in a top-level
+// warnings array; it ignores the rest of what it answers. ctx bounds the
+// command.
+func (us userScheduler) shellOut(ctx context.Context, spec ifaces.ExperimentSpec) ([]string, error) {
+	cmdName := "phenix-scheduler-" + us.options.Name
+
+	if !shell.CommandExists(cmdName) {
+		return nil, fmt.Errorf(
+			"external user scheduler %s does not exist in your path: %w",
+			cmdName,
+			ErrUserSchedulerNotFound,
+		)
+	}
+
+	data, err := UserInput(ctx, spec)
+	if err != nil {
+		return nil, err
 	}
 
 	stderrChan := make(chan []byte)

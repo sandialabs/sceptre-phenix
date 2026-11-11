@@ -153,7 +153,7 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 	var (
 		errors error
 		run    = s.md.Runs[runID]
-		opts   = []Option{Experiment(*exp), RunID(runID), StartTime(start.Format(time.RubyDate))}
+		opts   = []Option{Experiment(*exp), RunID(runID), StartTime(startTimeText(start))}
 	)
 
 	for i := range run.Count {
@@ -242,7 +242,7 @@ func (s *Scorch) cleanupOnly(
 	start time.Time,
 ) error {
 	opts := []Option{
-		Experiment(*exp), RunID(runID), StartTime(start.Format(time.RubyDate)),
+		Experiment(*exp), RunID(runID), StartTime(startTimeText(start)),
 		LoopCount(0), CleanupOnly(),
 	}
 
@@ -556,12 +556,11 @@ func executor(
 ) error {
 	options := NewOptions(opts...)
 
-	loopReplacements, err := scorchmd.ResolveReplacements(exe.Replace)
+	mergedReplacements, err := loopReplacements(options.Replacements, exe)
 	if err != nil {
-		return fmt.Errorf("resolving replacements: %w", err)
+		return err
 	}
 
-	mergedReplacements := scorchmd.MergeReplacements(options.Replacements, loopReplacements)
 	plog.Info(
 		plog.TypePhenixApp,
 		"Resolved replacements for Scorch loop",
@@ -628,7 +627,7 @@ func executor(
 
 			scorch.UpdateComponent(update)
 
-			meta := scorchmd.ApplyReplacements(components[name].Metadata, options.Replacements)
+			meta := componentMetadata(components[name], options.Replacements)
 			cmpOpts := opts
 			cmpOpts = append(cmpOpts, Name(name), Type(typ), Stage(stage), Metadata(meta))
 

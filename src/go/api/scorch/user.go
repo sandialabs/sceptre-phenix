@@ -76,7 +76,7 @@ func (u UserComponent) shellOut(ctx context.Context, stage Action) error {
 		return ctx.Err()
 	}
 
-	cmd := "phenix-scorch-component-" + u.options.Type
+	cmd := componentProgram(u.options.Type)
 
 	if !shell.CommandExists(cmd) {
 		return fmt.Errorf(
@@ -86,22 +86,9 @@ func (u UserComponent) shellOut(ctx context.Context, stage Action) error {
 		)
 	}
 
-	// Need to unmarshal the experiment, apply replacements, and then marshal before sending to component
-	blob, err := json.Marshal(u.options.Exp)
+	data, err := componentStdin(u.options)
 	if err != nil {
-		return fmt.Errorf("marshaling experiment: %w", err)
-	}
-
-	var generic map[string]any
-	if err = json.Unmarshal(blob, &generic); err != nil {
-		return fmt.Errorf("unmarshaling experiment to generic map: %w", err)
-	}
-
-	setComponentMetadata(generic, u.options.Name, u.options.Meta)
-
-	data, err := json.Marshal(generic)
-	if err != nil {
-		return fmt.Errorf("marshaling experiment metadata to JSON: %w", err)
+		return err
 	}
 
 	// TODO: consider letting the child process send a signal indicating it wants
@@ -114,6 +101,55 @@ func (u UserComponent) shellOut(ctx context.Context, stage Action) error {
 	}
 
 	return u.run(ctx, stage, cmd, data)
+}
+
+// componentStdin returns the JSON that the user component of o gets on stdin:
+// the experiment of o, with the metadata of the component (o.Meta, with the
+// replacements of the run applied) in its scenario. A SCORCH run and phenix
+// util scorch-json both make it here, so they cannot differ.
+func componentStdin(o Options) ([]byte, error) {
+	blob, err := json.Marshal(o.Exp)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling experiment: %w", err)
+	}
+
+	var generic map[string]any
+	if err = json.Unmarshal(blob, &generic); err != nil {
+		return nil, fmt.Errorf("unmarshaling experiment to generic map: %w", err)
+	}
+
+	setComponentMetadata(generic, o.Name, o.Meta)
+
+	data, err := json.Marshal(generic)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling experiment metadata to JSON: %w", err)
+	}
+
+	return data, nil
+}
+
+// componentProgram returns the program that runs a user component of type typ.
+func componentProgram(typ string) string {
+	return "phenix-scorch-component-" + typ
+}
+
+// componentArgs returns the arguments of the program of the user component
+// of o in stage: the stage, the component name, and the run, loop and count.
+func componentArgs(o Options, stage Action) []string {
+	return []string{string(stage), o.Name, strconv.Itoa(o.Run), strconv.Itoa(o.Loop), strconv.Itoa(o.Count)}
+}
+
+// componentEnv returns the environment variables that phenix adds for the
+// program of the user component of o.
+func componentEnv(o Options) []string {
+	return []string{
+		"PHENIX_DIR=" + common.PhenixBase,
+		"PHENIX_FILES_DIR=" + o.Exp.FilesDir(),
+		"PHENIX_LOG_LEVEL=" + util.GetEnv("PHENIX_LOG_LEVEL", "DEBUG"),
+		"PHENIX_LOG_FILE=stderr",
+		"PHENIX_DRYRUN=" + strconv.FormatBool(o.Exp.DryRun()),
+		"PHENIX_SCORCH_STARTTIME=" + o.StartTime,
+	}
 }
 
 // setComponentMetadata sets the metadata of each SCORCH component called name
@@ -175,23 +211,10 @@ func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data [
 
 	opts := []shell.Option{
 		shell.Command(cmd),
-		shell.Args(
-			string(stage),
-			u.options.Name,
-			strconv.Itoa(u.options.Run),
-			strconv.Itoa(u.options.Loop),
-			strconv.Itoa(u.options.Count),
-		),
+		shell.Args(componentArgs(u.options, stage)...),
 		shell.Stdin(data),
 		shell.StreamStdout(stdout),
-		shell.Env(
-			"PHENIX_DIR="+common.PhenixBase,
-			"PHENIX_FILES_DIR="+u.options.Exp.FilesDir(),
-			"PHENIX_LOG_LEVEL="+util.GetEnv("PHENIX_LOG_LEVEL", "DEBUG"),
-			"PHENIX_LOG_FILE=stderr",
-			"PHENIX_DRYRUN="+strconv.FormatBool(u.options.Exp.DryRun()),
-			"PHENIX_SCORCH_STARTTIME="+u.options.StartTime,
-		),
+		shell.Env(componentEnv(u.options)...),
 		shell.StreamStderr(stderrChan),
 	}
 

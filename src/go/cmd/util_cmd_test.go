@@ -2,10 +2,10 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
-	"io"
 	"strings"
 	"testing"
 
@@ -51,20 +51,29 @@ func utilCmdUseMM(t *testing.T, m mm.MM) {
 // utilCmdRun runs phenix util with args and returns what the command writes
 // to its output, and its error.
 func utilCmdRun(args ...string) (string, error) {
+	out, _, err := utilCmdOutputs(context.Background(), args...)
+
+	return out, err
+}
+
+// utilCmdOutputs runs phenix util with args and the context ctx, and returns
+// what the command writes to its output and to its error output, and its
+// error.
+func utilCmdOutputs(ctx context.Context, args ...string) (string, string, error) {
 	root := &cobra.Command{Use: "phenix", SilenceUsage: true, SilenceErrors: true}
 	utilCmd := newUtilCmd()
-	utilCmd.AddCommand(newUtilAppJSONCmd(), newUtilRoleTableCmd())
+	utilCmd.AddCommand(newUtilAppJSONCmd(), newUtilSchedulerJSONCmd(), newUtilScorchJSONCmd(), newUtilRoleTableCmd())
 	root.AddCommand(utilCmd)
 	root.SetArgs(append([]string{"util"}, args...))
 
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 
 	root.SetOut(&out)
-	root.SetErr(io.Discard)
+	root.SetErr(&errOut)
 
-	_, err := root.ExecuteC()
+	_, err := root.ExecuteContextC(ctx)
 
-	return out.String(), err
+	return out.String(), errOut.String(), err
 }
 
 // phenix util role-table prints a CSV row for each permission, with a column

@@ -301,7 +301,11 @@ for that experiment, which is the fastest way to test an app outside phenix:
 `phenix util app-json my-exp | phenix-app-foo configure`. Over REST,
 `GET /api/v1/experiments/{name}/apps/input` answers the same JSON (needs
 `experiments` `get`, `configs` `get` on `Experiment/<exp>` and `vms` `list` on
-each VM; `502` when minimega does not answer). Runnable Go and
+each VM; `502` when minimega does not answer).
+`phenix util scheduler-json <exp>` and
+`phenix util scorch-json <exp> <component>` print the exact stdin of a user
+scheduler and of a SCORCH user component (CLI only; see
+[`references/cli.md`](references/cli.md)). Runnable Go and
 Python reference apps live in the repository's `examples/` directory
 (`examples/go/main.go`, `examples/python/app.py`, with `examples/TUTORIAL.md`).
 

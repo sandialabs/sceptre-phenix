@@ -145,8 +145,7 @@ func Schedule(ctx context.Context, name string, spec ifaces.ExperimentSpec) ([]s
 		_ = scheduler.Init(Name(name))
 	}
 
-	// a spec without schedules gives a new map on each call, which would lose what the scheduler sets
-	spec.SetSchedule(spec.Schedules())
+	prepareSpec(spec)
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -163,6 +162,13 @@ func Schedule(ctx context.Context, name string, spec ifaces.ExperimentSpec) ([]s
 	}
 
 	return nil, err
+}
+
+// prepareSpec makes spec ready for a scheduler: it gives spec a schedules map
+// when it has none. It changes spec only in memory.
+func prepareSpec(spec ifaces.ExperimentSpec) {
+	// a spec without schedules gives a new map on each call, which would lose what the scheduler sets
+	spec.SetSchedule(spec.Schedules())
 }
 
 // schedulableHosts reads the hosts VMs can be scheduled on for a scheduler,

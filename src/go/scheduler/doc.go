@@ -31,7 +31,8 @@ Custom user schedulers are interacted with through STDIN and STDOUT. The
 phenix `user.go` scheduler will pass a JSON blob to the custom user scheduler
 through STDIN. This JSON blob will contain the experiment data based on the
 latest version of the `Experiment` schema (`spec`) and the schedulable cluster
-hosts with their disk usage (`hosts`). The phenix will block further
+hosts with their disk usage (`hosts`); UserInput makes it, and
+`phenix util scheduler-json <experiment>` prints it. The phenix will block further
 actions and wait for STDOUT return of an updated JSON blob from the custom
 user scheduler. phenix uses only `spec.schedules` of that blob, and adds its
 entries to the schedules of the experiment. phenix also uses the optional
