@@ -9,7 +9,21 @@ Default Schedulers
   - round-robin.go:        assigns experiment VMs to cluster nodes in a
     round-robin fashion
   - subnet-compute.go:     assigns experiment VMs to cluster nodes based on
-    interface VLAN assignments
+    interface VLAN assignments. It puts a VM that has no interfaces after
+    the other VMs, on the node that has the most VMs of the experiment and
+    sufficient memory.
+
+# Warnings
+
+A schedule can have warnings. A warning does not stop the schedule. The
+built-in schedulers give a warning when a VM is set to a node that is not a
+schedulable cluster node, and for each node where the VMs need more memory
+or more CPUs than the node has. The capacity checks include the VMs that
+have do_not_boot set, because these VMs can boot later. A node that gives a
+capacity of 0 is not checked. Nodes have no VM limit.
+
+A built-in scheduler must finish within BuiltinTimeout, with its read of the
+cluster nodes.
 
 # Custom User Schedulers
 
@@ -20,9 +34,11 @@ latest version of the `Experiment` schema (`spec`) and the schedulable cluster
 hosts with their disk usage (`hosts`). The phenix will block further
 actions and wait for STDOUT return of an updated JSON blob from the custom
 user scheduler. phenix uses only `spec.schedules` of that blob, and adds its
-entries to the schedules of the experiment. A scheduler run, with the read of
-the cluster hosts, must finish within Timeout, or phenix stops it. In addition to the JSON blob, the custom user scheduler
-should exit with a value of 0. If the custom user scheduler is returning
+entries to the schedules of the experiment. phenix also uses the optional
+top-level `warnings` array of strings of that blob as the warnings of the
+schedule. A user scheduler run, with the read of the cluster hosts, must
+finish within UserTimeout, or phenix stops it. In addition to the JSON blob,
+the custom user scheduler should exit with a value of 0. If the custom user scheduler is returning
 log(s) or any error messages, those should be written to STDERR (and in the
 case of an error, the exit value should be non-0). Custom user schedulers
 must 1) be in the user's PATH, 2) be executable, and 3) follow the naming

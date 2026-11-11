@@ -157,13 +157,20 @@ lack it). Points that are easy to miss:
   PATH. It needs `experiments/schedule` `create`.
   `POST /experiments/{name}/schedule` also takes the built-in names with `_`
   for `-`, such as `round_robin`. An empty algorithm, or one with a `/`, is
-  `400`. The experiment is locked while it is scheduled. The scheduler has
-  45 s (`scheduler.Timeout`) for its read of the cluster hosts and, for a
-  user scheduler, its command; then the request is `504` and nothing is
-  stored. A change or start made by another process while the scheduler runs
-  is kept, and the request is `409`. The built-in schedulers read the hosts
-  without disk usage; only a user scheduler gets `hosts[].diskusage`, and
-  phēnix takes only `spec.schedules` from its answer.
+  `400`. The experiment is locked while it is scheduled. A built-in
+  scheduler has 45 s (`scheduler.BuiltinTimeout`) for its read of the
+  cluster hosts. A user scheduler has 2 min (`scheduler.UserTimeout`) for
+  its read of the cluster hosts and its command. Then the request is `504`
+  and nothing is stored. A change or start made by another process while the
+  scheduler runs is kept, and the request is `409`. Mesh peers that do not
+  answer `mesh send all host` make the request `503` (`unavailable`). The
+  built-in schedulers read the hosts without disk usage; only a user
+  scheduler gets `hosts[].diskusage`, and phēnix takes only `spec.schedules`
+  and a top-level `warnings` string array from its answer. The answer and the
+  `experiment` `schedule` websocket message, sent to the roles with
+  `experiments/schedule` `get`, add `warnings`: a pin to a host that is not
+  schedulable, and each host whose memory or CPUs are overcommitted (VMs
+  with `do_not_boot` count). The schedule is stored with its warnings.
 - `POST /experiments/{name}/stop` that cannot kill the VMs leaves the
   experiment running and answers 502 with `metadata.retry` `force`;
   `?force=true` marks it stopped anyway.

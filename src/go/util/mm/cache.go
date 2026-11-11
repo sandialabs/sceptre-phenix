@@ -44,11 +44,13 @@ type vmStates struct {
 }
 
 // clusterHosts is one GetClusterHosts result, as shared between the callers of
-// one run, with when the run started.
+// one run, with when the run started. peerErr tells that the compute nodes
+// could not be read (see clusterScan); only a schedOnly caller gets it.
 type clusterHosts struct {
-	hosts Hosts
-	at    time.Time
-	err   error
+	hosts   Hosts
+	at      time.Time
+	err     error
+	peerErr error
 }
 
 // recentClusterHosts holds the latest full list of cluster hosts.

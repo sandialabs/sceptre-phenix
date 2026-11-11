@@ -30,23 +30,24 @@ func (us userScheduler) Name() string {
 	return us.options.Name
 }
 
-func (us userScheduler) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) error {
-	err := us.shellOut(ctx, spec)
+func (us userScheduler) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) ([]string, error) {
+	warnings, err := us.shellOut(ctx, spec)
 	if err != nil {
-		return fmt.Errorf("running user scheduler: %w", err)
+		return nil, fmt.Errorf("running user scheduler: %w", err)
 	}
 
-	return nil
+	return warnings, nil
 }
 
-// shellOut runs the user scheduler on spec and the cluster hosts, and takes
-// the schedules it answers; it ignores the rest of the spec it answers. ctx
-// bounds the command.
-func (us userScheduler) shellOut(ctx context.Context, spec ifaces.ExperimentSpec) error {
+// shellOut runs the user scheduler on spec and the cluster hosts, takes the
+// schedules it answers, and returns the warnings it answers in a top-level
+// warnings array; it ignores the rest of what it answers. ctx bounds the
+// command.
+func (us userScheduler) shellOut(ctx context.Context, spec ifaces.ExperimentSpec) ([]string, error) {
 	cmdName := "phenix-scheduler-" + us.options.Name
 
 	if !shell.CommandExists(cmdName) {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"external user scheduler %s does not exist in your path: %w",
 			cmdName,
 			ErrUserSchedulerNotFound,
@@ -55,7 +56,7 @@ func (us userScheduler) shellOut(ctx context.Context, spec ifaces.ExperimentSpec
 
 	cluster, err := schedulableHosts(ctx, true)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	exp := struct {
@@ -68,7 +69,7 @@ func (us userScheduler) shellOut(ctx context.Context, spec ifaces.ExperimentSpec
 
 	data, err := json.Marshal(exp)
 	if err != nil {
-		return fmt.Errorf("marshaling experiment spec to JSON: %w", err)
+		return nil, fmt.Errorf("marshaling experiment spec to JSON: %w", err)
 	}
 
 	stderrChan := make(chan []byte)
@@ -94,7 +95,7 @@ func (us userScheduler) shellOut(ctx context.Context, spec ifaces.ExperimentSpec
 
 	stdOut, _, err := shell.ExecCommand(ctx, opts...)
 	if err != nil {
-		return fmt.Errorf("user scheduler %s command %s failed: %w", us.options.Name, cmdName, err)
+		return nil, fmt.Errorf("user scheduler %s command %s failed: %w", us.options.Name, cmdName, err)
 	}
 
 	// decoded apart from spec, as decoding into exp would also change the rest of spec in place
@@ -102,13 +103,14 @@ func (us userScheduler) shellOut(ctx context.Context, spec ifaces.ExperimentSpec
 		Spec struct {
 			Schedules map[string]string `json:"schedules"`
 		} `json:"spec"`
+		Warnings []string `json:"warnings"`
 	}
 
 	if err := json.Unmarshal(stdOut, &answer); err != nil {
-		return fmt.Errorf("unmarshaling experiment spec from JSON: %w", err)
+		return nil, fmt.Errorf("unmarshaling experiment spec from JSON: %w", err)
 	}
 
 	maps.Copy(spec.Schedules(), answer.Spec.Schedules)
 
-	return nil
+	return answer.Warnings, nil
 }

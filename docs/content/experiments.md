@@ -270,13 +270,32 @@ phenix experiment schedule <experiment name> <algorithm>
 
 ### Scheduling Limits
 
-* A scheduler must finish in 45 seconds. If it does not, phēnix stops it and
-  stores no schedule. The web UI and the REST API then show error 504.
+* A built-in scheduler must finish in 45 seconds. A user scheduler
+  (`phenix-scheduler-<name>`) must finish in 2 minutes. If a scheduler does
+  not finish in time, phēnix stops it and stores no schedule. The web UI and
+  the REST API then show error 504.
 * If the experiment changes or starts while phēnix schedules it, phēnix keeps
   that change and stores no schedule. The web UI and the REST API then show
   error 409. Schedule the experiment again.
 * The web UI and the REST API lock the experiment while they schedule it. You
   cannot start or change the experiment until the schedule is complete.
+* If the cluster has mesh peers and no peer answers, phēnix stores no
+  schedule. The web UI and the REST API then show error 503. Make sure that
+  minimega runs on the compute nodes, then schedule the experiment again.
+* A schedule can have warnings. phēnix stores the schedule and shows each
+  warning. The web UI shows them in a notice, `phenix experiment schedule`
+  logs them, and the REST API puts them in `warnings`. A built-in scheduler
+  gives a warning in these conditions:
+    * A VM is set to a host that is not a schedulable cluster host.
+      `round-robin` and `subnet-compute` keep that host.
+      `isolate-experiment` puts the VM on a different host.
+    * The VMs on a host need more memory or more CPUs than the host has.
+      The warning gives the committed value and the available value.
+* The capacity checks include the VMs that have `do_not_boot` set, because
+  you can boot these VMs later.
+* `subnet-compute` puts a VM that has no interfaces on the host that has the
+  most VMs of the experiment. If that host does not have sufficient memory,
+  it uses the next host.
 
 ## Triggering App Lifecycle Stages
 

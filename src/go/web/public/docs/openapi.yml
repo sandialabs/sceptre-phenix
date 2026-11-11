@@ -1748,12 +1748,14 @@ paths:
       description: >-
         Places the VMs of a stopped experiment on cluster hosts with the named
         algorithm, stores the schedule and publishes an `experiment`
-        `schedule` message on the `/ws` websocket to the roles with
-        `experiments/schedule` `create`. The experiment is locked while it is
-        scheduled, so no start or other change can begin. A change or start
-        made by another process in that time is kept, and the request fails
-        with 409. The scheduler must finish within 45 seconds, else the
-        request fails with 504. Needs `experiments/schedule` `create`.
+        `schedule` message with the same body on the `/ws` websocket to the
+        roles with `experiments/schedule` `get`. The experiment is locked
+        while it is scheduled, so no start or other change can begin. A
+        change or start made by another process in that time is kept, and the
+        request fails with 409. A built-in scheduler must finish within 45
+        seconds and a user scheduler within 2 minutes, else the request fails
+        with 504. The schedule is stored also when it has `warnings`. Needs
+        `experiments/schedule` `create`.
       operationId: postExperimentsNameSchedule
       parameters:
         - name: name
@@ -1823,8 +1825,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "503":
+          description: >-
+            the cluster has mesh peers and none of them answered, or the
+            command that reads them failed (code `unavailable`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "504":
-          description: the scheduler did not finish within 45 seconds
+          description: >-
+            the scheduler did not finish within 45 seconds (built-in) or 2
+            minutes (user scheduler)
           content:
             application/json:
               schema:
@@ -15771,6 +15783,19 @@ components:
                 description: "Whether the scheduler selected this host automatically."
                 example: false
                 type: boolean
+        warnings:
+          title: "Warnings"
+          description: >-
+            The warnings of the scheduler about the schedule that POST made,
+            one sentence each: a VM set to a host that is not a schedulable
+            cluster host, and each host whose committed memory or CPUs are
+            more than it has. Empty when there are none, and always empty
+            from GET.
+          type: array
+          items:
+            type: string
+          example:
+            - "host compute3: 96 GiB of memory committed, 64 GiB available"
     Captures:
       title: "Captures"
       description: >-

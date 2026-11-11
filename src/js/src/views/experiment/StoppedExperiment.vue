@@ -249,6 +249,7 @@
   import { escapeHTML } from '@/utils/escapeHTML.js';
   import {
     confirmStart,
+    notifyScheduleWarnings,
     notifyStartResult,
   } from '@/utils/experimentActions.js';
   import { startResult } from '@/utils/startOptions.js';
@@ -1046,6 +1047,7 @@
             algorithm,
           );
           this.applySchedule(resp.data?.schedule);
+          notifyScheduleWarnings(this.$route.params.id, resp.data?.warnings);
           this.loadVmList();
         } catch (err) {
           useErrorNotification(err);

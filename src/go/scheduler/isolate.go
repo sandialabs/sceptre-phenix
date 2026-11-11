@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	ifaces "phenix/types/interfaces"
 	"phenix/util/plog"
@@ -25,9 +26,9 @@ func (isolateExperiment) Name() string {
 	return "isolate-experiment"
 }
 
-func (isolateExperiment) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) error {
+func (isolateExperiment) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) ([]string, error) {
 	if len(spec.Topology().Nodes()) == 0 {
-		return errors.New("no VMs defined for experiment")
+		return nil, errors.New("no VMs defined for experiment")
 	}
 
 	var (
@@ -51,13 +52,17 @@ func (isolateExperiment) Schedule(ctx context.Context, spec ifaces.ExperimentSpe
 
 	// only external nodes: nothing to place
 	if first == "" {
-		return nil
+		return nil, nil
 	}
 
 	cluster, err := schedulableHosts(ctx, false)
 	if err != nil {
-		return err
+		return nil, err
 	}
+
+	read := slices.Clone(cluster)
+	missing := missingHostPins(spec, read)
+	warnings := func(host string) []string { return movedPinWarnings(spec, read, missing, host) }
 
 	// if first VM is scheduled manually, put all VMs there
 
@@ -78,7 +83,7 @@ func (isolateExperiment) Schedule(ctx context.Context, spec ifaces.ExperimentSpe
 
 				placeAll(spec, host.Name)
 
-				return nil
+				return warnings(host.Name), nil
 			}
 
 			plog.Warn(
@@ -103,7 +108,7 @@ func (isolateExperiment) Schedule(ctx context.Context, spec ifaces.ExperimentSpe
 			if cpuUsage <= maxUsageRatio && memUsage <= maxUsageRatio {
 				placeAll(spec, host.Name)
 
-				return nil
+				return warnings(host.Name), nil
 			}
 		}
 	}
@@ -114,17 +119,17 @@ func (isolateExperiment) Schedule(ctx context.Context, spec ifaces.ExperimentSpe
 		if host.VMs == 0 {
 			placeAll(spec, host.Name)
 
-			return nil
+			return warnings(host.Name), nil
 		}
 	}
 
 	// if that doesn't work either, there are no unoccupied hosts
 
 	if len(cluster) == 0 {
-		return fmt.Errorf("isolating experiment: %w", ErrNoSchedulableHosts)
+		return nil, fmt.Errorf("isolating experiment: %w", ErrNoSchedulableHosts)
 	}
 
-	return errors.New("no unused hosts -- cannot isolate experiment")
+	return nil, errors.New("no unused hosts -- cannot isolate experiment")
 }
 
 // placeAll puts every VM of spec that is not external on host.

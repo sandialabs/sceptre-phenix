@@ -75,28 +75,44 @@ func gotErr(err error) string {
 	return err.Error()
 }
 
-// Schedule places the VMs of a stopped experiment with the algorithm it is given and stores where; it refuses an
-// experiment it cannot find or that is running, and reports a scheduler or store that fails.
+// Schedule places the VMs of a stopped experiment with the algorithm it is given, stores where and returns the
+// scheduler's warnings; it refuses an experiment it cannot find or that is running, and reports a scheduler or store
+// that fails.
 func TestSchedule(t *testing.T) { //nolint:paralleltest // replaces package globals
+	twoVMs := []any{launchNode("vm1", "a.qc2", nil), launchNode("vm2", "a.qc2", nil)}
+
 	tests := []struct {
-		name      string
-		exp       string
-		status    map[string]any
-		nodes     []any
-		updateErr error
-		wantErr   string
-		wantSched map[string]string
+		name         string
+		exp          string
+		status       map[string]any
+		nodes        []any
+		schedules    map[string]any
+		spec         map[string]any
+		updateErr    error
+		wantErr      string
+		wantSched    map[string]string
+		wantWarnings []string
 	}{
 		{name: "places each VM", exp: "exp", wantSched: map[string]string{"vm1": "node1"}},
 		{
 			name: "keeps a VM placed by hand", exp: "exp",
-			nodes:     []any{launchNode("vm1", "a.qc2", nil), launchNode("vm2", "a.qc2", nil)},
+			nodes: twoVMs, schedules: map[string]any{"vm1": "node2"},
 			wantSched: map[string]string{"vm1": "node2", "vm2": "node1"},
+		},
+		{
+			name: "warns of a host that is not in the cluster", exp: "exp",
+			nodes: twoVMs, schedules: map[string]any{"vm1": "gone"},
+			wantSched:    map[string]string{"vm1": "gone", "vm2": "node1"},
+			wantWarnings: []string{"VM vm1 stays on host gone, which is not a schedulable cluster host"},
 		},
 		{name: "an experiment not in the store", exp: "missing", wantErr: "getting experiment missing from store: "},
 		{
 			name: "a running experiment", exp: "exp", status: map[string]any{"startTime": stopTestStart},
 			wantErr: "experiment already running (started at: " + stopTestStart + ")",
+		},
+		{
+			name: "an experiment that does not decode", exp: "exp", spec: map[string]any{"experimentName": []any{1}},
+			wantErr: "decoding experiment from config: ",
 		},
 		{
 			name: "an experiment with no VMs", exp: "exp", nodes: []any{},
@@ -118,15 +134,17 @@ func TestSchedule(t *testing.T) { //nolint:paralleltest // replaces package glob
 				spec["topology"] = map[string]any{"nodes": tc.nodes}
 			}
 
-			if len(tc.nodes) == 2 {
-				spec["schedules"] = map[string]any{"vm1": "node2"}
+			if tc.schedules != nil {
+				spec["schedules"] = tc.schedules
 			}
+
+			maps.Copy(spec, tc.spec)
 
 			storeValidExperiment(t, "exp", tc.status, spec)
 
 			s.updateErr = tc.updateErr
 
-			scheduled, err := Schedule(t.Context(), ScheduleForName(tc.exp), ScheduleWithAlgorithm("round-robin"))
+			scheduled, warnings, err := Schedule(t.Context(), ScheduleForName(tc.exp), ScheduleWithAlgorithm("round-robin"))
 			if got := gotErr(err); !strings.HasPrefix(got, tc.wantErr) || (tc.wantErr == "") != (got == "") {
 				t.Fatalf("Schedule(%s) error = %q, want one starting with %q", tc.exp, got, tc.wantErr)
 			}
@@ -136,7 +154,15 @@ func TestSchedule(t *testing.T) { //nolint:paralleltest // replaces package glob
 			}
 
 			if tc.wantErr != "" {
+				if warnings != nil {
+					t.Errorf("Schedule(%s) failed with warnings %q, want none", tc.exp, warnings)
+				}
+
 				return
+			}
+
+			if diff := cmp.Diff(tc.wantWarnings, warnings, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("Schedule(%s) warnings mismatch (-want +got):\n%s", tc.exp, diff)
 			}
 
 			stored := experimentNamed(t, "exp")
@@ -245,7 +271,7 @@ func TestScheduleRevisionConflict(t *testing.T) { //nolint:paralleltest // repla
 			useMM(t, changingMM{change: func() { tc.change(t) }})
 			storeValidExperiment(t, "exp", tc.status, nil)
 
-			got, err := Schedule(t.Context(), ScheduleForName("exp"), ScheduleWithAlgorithm("round-robin"))
+			got, _, err := Schedule(t.Context(), ScheduleForName("exp"), ScheduleWithAlgorithm("round-robin"))
 			if !errors.Is(err, tc.wantErr) || got != nil {
 				t.Fatalf("Schedule(exp) = %v, %v; want nil, %v", got, err, tc.wantErr)
 			}

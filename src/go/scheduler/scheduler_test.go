@@ -70,11 +70,12 @@ func TestSchedulersWithoutSchedulableHosts(t *testing.T) { //nolint:paralleltest
 	head := mm.Host{Name: "head", MemTotal: 4096, CPUs: 4}
 
 	tests := []struct {
-		name      string
-		hosts     mm.Hosts
-		schedules map[string]any
-		wantErr   error
-		want      map[string]string
+		name         string
+		hosts        mm.Hosts
+		schedules    map[string]any
+		wantErr      error
+		want         map[string]string
+		wantWarnings []string
 	}{
 		{name: "fails with no hosts", wantErr: ErrNoSchedulableHosts},
 		{
@@ -86,6 +87,10 @@ func TestSchedulersWithoutSchedulableHosts(t *testing.T) { //nolint:paralleltest
 			name:      "needs no host when every VM is scheduled",
 			schedules: map[string]any{"vm1": "compute1", "vm2": "compute1"},
 			want:      map[string]string{"vm1": "compute1", "vm2": "compute1"},
+			wantWarnings: []string{
+				"VM vm1 stays on host compute1, which is not a schedulable cluster host",
+				"VM vm2 stays on host compute1, which is not a schedulable cluster host",
+			},
 		},
 	}
 
@@ -103,7 +108,7 @@ func TestSchedulersWithoutSchedulableHosts(t *testing.T) { //nolint:paralleltest
 
 				spec := schedulerSpec(t, test.schedules)
 
-				err := Schedule(t.Context(), name, spec)
+				warnings, err := Schedule(t.Context(), name, spec)
 				if !errors.Is(err, test.wantErr) || (test.wantErr == nil && err != nil) {
 					t.Fatalf("Schedule(%s) error = %v, want %v", name, err, test.wantErr)
 				}
@@ -114,6 +119,10 @@ func TestSchedulersWithoutSchedulableHosts(t *testing.T) { //nolint:paralleltest
 
 				if diff := cmp.Diff(test.want, spec.Schedules()); diff != "" {
 					t.Errorf("Schedule(%s) schedules mismatch (-want +got):\n%s", name, diff)
+				}
+
+				if diff := cmp.Diff(test.wantWarnings, warnings, cmpopts.EquateEmpty()); diff != "" {
+					t.Errorf("Schedule(%s) warnings mismatch (-want +got):\n%s", name, diff)
 				}
 			})
 		}
@@ -215,6 +224,7 @@ func TestScheduleRunsUserSchedulers(t *testing.T) {
 		fails     bool
 		wantErr   error
 		want      map[string]string
+		warnings  []string
 	}{
 		"not installed":   {fails: true, wantErr: ErrUserSchedulerNotFound},
 		"fails":           {installed: true, err: errors.New("exit status 1"), fails: true},
@@ -223,7 +233,11 @@ func TestScheduleRunsUserSchedulers(t *testing.T) {
 			installed: true, out: `{"spec":{"schedules":{"vm1":"compute1","vm2":"compute2"}}}`,
 			want: map[string]string{"vm1": "compute1", "vm2": "compute2"},
 		},
-		// only the schedules of the answer are taken
+		"answers warnings": {
+			installed: true, out: `{"spec":{"schedules":{"vm1":"compute1"}},"warnings":["compute1 is busy"]}`,
+			want: map[string]string{"vm1": "compute1"}, warnings: []string{"compute1 is busy"},
+		},
+		// only the schedules and warnings of the answer are taken
 		"changes the rest of the spec": {
 			installed: true,
 			out:       `{"spec":{"experimentName":"other","topology":{"nodes":[]},"schedules":{"vm2":"compute2"}}}`,
@@ -244,7 +258,7 @@ func TestScheduleRunsUserSchedulers(t *testing.T) {
 			useSchedulerShell(t, fake)
 
 			spec := schedulerSpec(t, nil)
-			err := Schedule(t.Context(), "custom", spec)
+			warnings, err := Schedule(t.Context(), "custom", spec)
 
 			if (err != nil) != tc.fails || (tc.wantErr != nil && !errors.Is(err, tc.wantErr)) {
 				t.Fatalf("Schedule(custom) error = %v, want error %t (%v)", err, tc.fails, tc.wantErr)
@@ -252,6 +266,10 @@ func TestScheduleRunsUserSchedulers(t *testing.T) {
 
 			if diff := cmp.Diff(tc.want, spec.Schedules(), cmpopts.EquateEmpty()); diff != "" {
 				t.Errorf("Schedule(custom) schedules mismatch (-want +got):\n%s", diff)
+			}
+
+			if diff := cmp.Diff(tc.warnings, warnings, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("Schedule(custom) warnings mismatch (-want +got):\n%s", diff)
 			}
 
 			if diff := cmp.Diff([]string{"phenix-scheduler-custom"}, fake.asked); diff != "" {
@@ -266,6 +284,34 @@ func TestScheduleRunsUserSchedulers(t *testing.T) {
 				t.Errorf("Schedule(custom) left %d topology nodes, want 2", got)
 			}
 		})
+	}
+}
+
+// A user scheduler has the name it is given, and a run whose context was
+// canceled fails with an error that wraps both the command's error and the
+// cancellation, and that is not ErrTimeout.
+//
+//nolint:paralleltest // replaces shell.DefaultShell and mm.DefaultMM
+func TestUserSchedulerCanceled(t *testing.T) {
+	us := new(userScheduler)
+	_ = us.Init(Name("custom"))
+
+	if got := us.Name(); got != "custom" {
+		t.Errorf("userScheduler.Name() = %q, want %q", got, "custom")
+	}
+
+	useClusterMM(t, clusterMM{hosts: mm.Hosts{{Name: "compute1"}}})
+
+	killed := errors.New("signal: killed")
+	useSchedulerShell(t, &schedulerFakeShell{commands: []string{"phenix-scheduler-custom"}, err: killed})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := Schedule(ctx, "custom", schedulerSpec(t, nil))
+	if !errors.Is(err, killed) || !errors.Is(err, context.Canceled) || errors.Is(err, ErrTimeout) {
+		t.Errorf("Schedule(custom) with a canceled context error = %v, want %v and %v, not %v",
+			err, killed, context.Canceled, ErrTimeout)
 	}
 }
 
@@ -335,7 +381,7 @@ func TestScheduleTakesUnderscoredBuiltinNames(t *testing.T) {
 			useSchedulerShell(t, fake)
 
 			spec := schedulerSpec(t, nil)
-			if err := Schedule(t.Context(), name, spec); err != nil {
+			if _, err := Schedule(t.Context(), name, spec); err != nil {
 				t.Fatalf("Schedule(%s) error = %v", name, err)
 			}
 
@@ -354,7 +400,7 @@ func TestScheduleTakesUnderscoredBuiltinNames(t *testing.T) {
 		fake := &schedulerFakeShell{}
 		useSchedulerShell(t, fake)
 
-		if err := Schedule(t.Context(), "my_sched", schedulerSpec(t, nil)); !errors.Is(err, ErrUserSchedulerNotFound) {
+		if _, err := Schedule(t.Context(), "my_sched", schedulerSpec(t, nil)); !errors.Is(err, ErrUserSchedulerNotFound) {
 			t.Errorf("Schedule(my_sched) error = %v, want %v", err, ErrUserSchedulerNotFound)
 		}
 

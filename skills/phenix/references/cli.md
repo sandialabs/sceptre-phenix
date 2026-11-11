@@ -194,7 +194,7 @@ phenix experiment schedulers                        # list scheduling algorithms
 phenix experiment create <exp> -t <topology> [-s <scenario>] [flags]
 phenix experiment edit <exp> [--force]              # --force overrides the running-experiment check
 phenix experiment delete <exp> [-f|--force] [--dry-run]  # -f stops a running experiment before deleting it, forcing the stop
-phenix experiment schedule <exp> <algorithm>         # e.g. round-robin, isolate-experiment, subnet-compute
+phenix experiment schedule <exp> <algorithm>         # e.g. round-robin, isolate-experiment, subnet-compute; logs each warning
 phenix experiment start <exp|all> [--dry-run] [flags]
 phenix experiment stop <exp|all> [-K] [-f|--force]   # -f marks it stopped even if minimega cannot kill its VMs
 phenix experiment restart <exp> [flags]              # the flags of stop (-f, -K) and of start

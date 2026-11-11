@@ -1,25 +1,37 @@
 package web
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	gwebsocket "github.com/gorilla/websocket"
 
 	"phenix/api/experiment"
 	"phenix/scheduler"
 	"phenix/store"
 	"phenix/store/storetest"
 	"phenix/util/mm"
+	"phenix/util/polltest"
+	"phenix/web/broker"
+	bt "phenix/web/broker/brokertypes"
 	"phenix/web/cache"
+	"phenix/web/middleware"
 	"phenix/web/proto"
+	"phenix/web/rbac"
 )
 
 // experimentScheduleMM is the test minimega, with the given cluster hosts or
@@ -31,7 +43,9 @@ type experimentScheduleMM struct {
 	err   error
 }
 
-func (m experimentScheduleMM) GetClusterHosts(bool) (mm.Hosts, error) { return m.hosts, m.err }
+func (m experimentScheduleMM) GetClusterHosts(bool) (mm.Hosts, error) {
+	return slices.Clone(m.hosts), m.err
+}
 
 // experimentScheduleStore is a store whose Get fails once a config was
 // updated.
@@ -87,6 +101,18 @@ func experimentScheduleBody(t *testing.T, w *httptest.ResponseRecorder) map[stri
 	}
 
 	return got
+}
+
+// experimentScheduleWarnings decodes the warnings of a schedule response.
+func experimentScheduleWarnings(t *testing.T, w *httptest.ResponseRecorder) []string {
+	t.Helper()
+
+	var sched proto.ExperimentSchedule
+	if err := unmarshaler.Unmarshal(w.Body.Bytes(), &sched); err != nil {
+		t.Fatalf("unmarshaling schedule %s error = %v", w.Body.String(), err)
+	}
+
+	return sched.GetWarnings()
 }
 
 // experimentScheduleLock locks the experiment name for an update until the
@@ -160,6 +186,7 @@ func TestScheduleExperiment(t *testing.T) {
 		outcome      string
 		fields       map[string]any
 		schedule     map[string]string
+		warnings     []string
 	}{
 		"scheduled": {
 			role: "sched", body: strings.NewReader(`{"algorithm":"round-robin"}`), hosts: hosts,
@@ -189,6 +216,18 @@ func TestScheduleExperiment(t *testing.T) {
 		"no schedulable hosts": {
 			role: "sched", body: strings.NewReader(`{"algorithm":"round-robin"}`),
 			want: http.StatusConflict, outcome: "failure", fields: map[string]any{"phenix.schedule.algorithm": "round-robin"},
+		},
+		"pinned to a host not in the cluster": {
+			role: "sched", body: strings.NewReader(`{"algorithm":"round-robin"}`), hosts: hosts[1:],
+			want: http.StatusOK, outcome: "success", fields: map[string]any{"phenix.schedule.algorithm": "round-robin"},
+			schedule: map[string]string{"vm1": "host-a", "vm2": "host-b"},
+			warnings: []string{"VM vm1 stays on host host-a, which is not a schedulable cluster host"},
+		},
+		"mesh peers do not answer": {
+			role: "sched", body: strings.NewReader(`{"algorithm":"round-robin"}`),
+			hostsErr: fmt.Errorf("%w: none of the mesh peers compute1 answered", mm.ErrMeshUnavailable),
+			want:     http.StatusServiceUnavailable, outcome: "failure",
+			fields: map[string]any{"phenix.schedule.algorithm": "round-robin"},
 		},
 		"cluster hosts unreadable": {
 			role: "sched", body: strings.NewReader(`{"algorithm":"round-robin"}`), hostsErr: errors.New("minimega gone"),
@@ -253,6 +292,10 @@ func TestScheduleExperiment(t *testing.T) {
 
 			if diff := cmp.Diff(tc.schedule, experimentScheduleBody(t, w)); diff != "" {
 				t.Errorf("ScheduleExperiment(%s) answered schedule mismatch (-want +got):\n%s", name, diff)
+			}
+
+			if diff := cmp.Diff(tc.warnings, experimentScheduleWarnings(t, w), cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("ScheduleExperiment(%s) answered warnings mismatch (-want +got):\n%s", name, diff)
 			}
 
 			if tc.failAfterSet {
@@ -361,9 +404,64 @@ func TestScheduleExperimentRequestEnded(t *testing.T) { //nolint:paralleltest //
 	}
 }
 
+// leavingMM ends the request while the scheduler reads the cluster hosts, and
+// gives the hosts.
+type leavingMM struct {
+	*testMM
+
+	cancel context.CancelFunc
+}
+
+func (m leavingMM) GetClusterHosts(bool) (mm.Hosts, error) {
+	m.cancel()
+
+	return mm.Hosts{{Name: "host-a", Schedulable: true}}, nil
+}
+
+// A schedule that works after its client left is stored and audited, but no
+// answer is written.
+func TestScheduleExperimentClientLeft(t *testing.T) { //nolint:paralleltest // replaces mm.DefaultMM and the store
+	useScheduleExperiment(t, "")
+
+	req := roleRequest(http.MethodPost, "/experiments/sched/schedule", `{"algorithm":"round-robin"}`,
+		map[string]string{"name": "sched"}, testRole("experiments/schedule", "create", "sched"))
+
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+
+	req = req.WithContext(ctx)
+
+	original := mm.DefaultMM
+	t.Cleanup(func() { mm.DefaultMM = original }) //nolint:reassign // restore the default
+
+	mm.DefaultMM = leavingMM{testMM: &testMM{}, cancel: cancel} //nolint:reassign // install test double
+
+	events := captureAudit(t)
+
+	w := httptest.NewRecorder()
+	if err := ScheduleExperiment(w, req); err != nil {
+		t.Fatalf("ScheduleExperiment() after its client left error = %v, want nil", err)
+	}
+
+	if w.Body.Len() != 0 {
+		t.Errorf("ScheduleExperiment() after its client left wrote %q, want nothing", w.Body.String())
+	}
+
+	wantAudit(t, events(), "experiment-schedule", "success", map[string]any{"phenix.schedule.algorithm": "round-robin"})
+
+	exp, err := experiment.Get("sched")
+	if err != nil {
+		t.Fatalf("experiment.Get(sched) error = %v", err)
+	}
+
+	if diff := cmp.Diff(map[string]string{"vm1": "host-a", "vm2": "host-a"}, exp.Spec.Schedules()); diff != "" {
+		t.Errorf("stored schedule after the client left mismatch (-want +got):\n%s", diff)
+	}
+}
+
 // A failed schedule answers 404 for a missing experiment, 409 for a running or starting one, one that changed
 // while it was scheduled, or a cluster without schedulable hosts, 400 for an unknown or invalid algorithm, 504 for a
-// scheduler that did not finish in time and 500 otherwise.
+// scheduler that did not finish in time, 503 for mesh peers that do not answer and 500 otherwise.
 func TestScheduleErrorStatus(t *testing.T) {
 	t.Parallel()
 
@@ -392,6 +490,10 @@ func TestScheduleErrorStatus(t *testing.T) {
 			err:  fmt.Errorf("running scheduler algorithm: %w", scheduler.ErrTimeout),
 			want: http.StatusGatewayTimeout,
 		},
+		"mesh peers do not answer": {
+			err:  fmt.Errorf("running scheduler algorithm: getting cluster hosts: %w", mm.ErrMeshUnavailable),
+			want: http.StatusServiceUnavailable,
+		},
 		"other failure": {err: errors.New("updating experiment config"), want: http.StatusInternalServerError},
 		"nil":           {err: nil, want: http.StatusInternalServerError},
 	}
@@ -404,5 +506,164 @@ func TestScheduleErrorStatus(t *testing.T) {
 				t.Errorf("scheduleErrorStatus(%v) = %d, want %d", tc.err, got, tc.want)
 			}
 		})
+	}
+}
+
+// scheduleListener is a broker client that records the warnings of each
+// experiment schedule broadcast it gets, and how many probes it got.
+type scheduleListener struct {
+	mu        sync.Mutex
+	schedules [][]string
+	probes    int
+}
+
+// got returns the warnings of each schedule broadcast and the probe count.
+func (l *scheduleListener) got() ([][]string, int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return slices.Clone(l.schedules), l.probes
+}
+
+// scheduleListeners runs the broker for the rest of the test with one client
+// of each role, and returns them once each gets broadcasts.
+func scheduleListeners(t *testing.T, roles ...rbac.Role) []*scheduleListener {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan struct{})
+
+	go func() {
+		defer close(stopped)
+
+		broker.Start(ctx)
+	}()
+
+	t.Cleanup(func() {
+		cancel()
+		<-stopped
+	})
+
+	listeners := make([]*scheduleListener, 0, len(roles))
+
+	for _, role := range roles {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			broker.ServeWS(w, r.WithContext(context.WithValue(r.Context(), middleware.ContextKeyRole, role)))
+		}))
+		t.Cleanup(server.Close)
+
+		conn, resp, err := gwebsocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+		if err != nil {
+			t.Fatalf("dialing the broker: %v", err)
+		}
+
+		resp.Body.Close()
+		t.Cleanup(func() { conn.Close() })
+
+		l := new(scheduleListener)
+		listeners = append(listeners, l)
+
+		go func() {
+			for {
+				_, b, err := conn.ReadMessage()
+				if err != nil {
+					return
+				}
+
+				// the broker may send several messages in one frame
+				for dec := json.NewDecoder(bytes.NewReader(b)); ; {
+					var m struct {
+						Resource struct {
+							Type   string `json:"type"`
+							Action string `json:"action"`
+						} `json:"resource"`
+						Result struct {
+							Warnings []string `json:"warnings"`
+						} `json:"result"`
+					}
+
+					if dec.Decode(&m) != nil {
+						break
+					}
+
+					l.mu.Lock()
+
+					switch {
+					case m.Resource.Type == "schedule/probe":
+						l.probes++
+					case m.Resource.Type == "experiment" && m.Resource.Action == "schedule":
+						l.schedules = append(l.schedules, m.Result.Warnings)
+					}
+
+					l.mu.Unlock()
+				}
+			}
+		}()
+	}
+
+	scheduleProbe(t, listeners, 1)
+
+	return listeners
+}
+
+// scheduleProbe broadcasts probes to every client until each listener has
+// got at least want of them.
+func scheduleProbe(t *testing.T, listeners []*scheduleListener, want int) {
+	t.Helper()
+
+	polltest.Until(t, "the broker clients getting broadcasts", func() bool {
+		broker.Broadcast(nil, bt.NewResource("schedule/probe", "x", "probe"), nil)
+		time.Sleep(5 * time.Millisecond)
+
+		for _, l := range listeners {
+			if _, probes := l.got(); probes < want {
+				return false
+			}
+		}
+
+		return true
+	})
+}
+
+// POST /experiments/{name}/schedule broadcasts the schedule, with the
+// scheduler's warnings, to the roles that may get the experiment's schedule,
+// and to no other role, not even one that may only schedule it.
+//
+//nolint:paralleltest // replaces mm.DefaultMM and the store, and runs the broker
+func TestScheduleExperimentBroadcast(t *testing.T) {
+	useScheduleExperiment(t, "gone")
+
+	original := mm.DefaultMM
+	t.Cleanup(func() { mm.DefaultMM = original }) //nolint:reassign // restore the default
+
+	mm.DefaultMM = experimentScheduleMM{ //nolint:reassign // install test double
+		testMM: &testMM{}, hosts: mm.Hosts{{Name: "host-a", Schedulable: true}},
+	}
+
+	listeners := scheduleListeners(t,
+		testRole("experiments/schedule", "get", "sched"),
+		testRole("experiments/schedule", "create", "sched"),
+		testRole("experiments/schedule", "get", "other"),
+	)
+
+	req := roleRequest(http.MethodPost, "/experiments/sched/schedule", `{"algorithm":"round-robin"}`,
+		map[string]string{"name": "sched"}, testRole("experiments/schedule", "create", "sched"))
+
+	w := httptest.NewRecorder()
+	if got := handlerStatus(t, w, ScheduleExperiment(w, req)); got != http.StatusOK {
+		t.Fatalf("ScheduleExperiment() status = %d, want %d: %s", got, http.StatusOK, w.Body.String())
+	}
+
+	// the clients get messages in order, so a later probe comes after the schedule
+	_, sent := listeners[0].got()
+	scheduleProbe(t, listeners, sent+1)
+
+	warnings := []string{"VM vm1 stays on host gone, which is not a schedulable cluster host"}
+
+	for i, want := range [][][]string{{warnings}, nil, nil} {
+		got, _ := listeners[i].got()
+		if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+			t.Errorf("schedule broadcasts to client %d mismatch (-want +got):\n%s", i, diff)
+		}
 	}
 }

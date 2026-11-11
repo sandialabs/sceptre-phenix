@@ -96,7 +96,8 @@ func TestExpCmdOneExperiment(t *testing.T) { //nolint:paralleltest // replaces t
 	}
 }
 
-// experiment schedule applies a scheduler to the VMs of an experiment.
+// experiment schedule applies a scheduler to the VMs of an experiment, and
+// logs each warning of the scheduler as a warning.
 func TestExpCmdSchedule(t *testing.T) { //nolint:paralleltest // replaces the phenix store and minimega
 	expCmdUseStore(t, vmCmdExperiment(t, "stopped", false))
 	utilCmdUseMM(t, utilCmdMM{})
@@ -109,6 +110,23 @@ func TestExpCmdSchedule(t *testing.T) { //nolint:paralleltest // replaces the ph
 
 	if diff := cmp.Diff([]string{"stopped"}, expCmdLogged(t, logs, "experiment scheduled")); diff != "" {
 		t.Errorf("experiment schedule logged mismatch (-want +got):\n%s", diff)
+	}
+
+	records := logs.Records(t, plogtest.Message("schedule warning"))
+	warnings := make([]map[string]any, 0, len(records))
+
+	for _, r := range records {
+		warnings = append(warnings, map[string]any{
+			"level": r["level"], "exp": r["exp"], "algorithm": r["algorithm"], "warning": r["warning"],
+		})
+	}
+
+	want := []map[string]any{{
+		"level": "WARN", "exp": "stopped", "algorithm": "round-robin",
+		"warning": "VM db stays on host compute2, which is not a schedulable cluster host",
+	}}
+	if diff := cmp.Diff(want, warnings); diff != "" {
+		t.Errorf("experiment schedule warnings mismatch (-want +got):\n%s", diff)
 	}
 }
 

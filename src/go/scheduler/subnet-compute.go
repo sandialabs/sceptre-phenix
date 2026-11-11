@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	ifaces "phenix/types/interfaces"
 	"phenix/util/mm"
@@ -25,15 +26,18 @@ func (subnetCompute) Name() string {
 	return "subnet-compute"
 }
 
-func (subnetCompute) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) error {
+func (subnetCompute) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) ([]string, error) {
 	if len(spec.Topology().Nodes()) == 0 {
-		return errors.New("no VMs defined for experiment")
+		return nil, errors.New("no VMs defined for experiment")
 	}
 
 	cluster, err := schedulableHosts(ctx, false)
 	if err != nil {
-		return err
+		return nil, err
 	}
+
+	read := slices.Clone(cluster)
+	warnings := keptPinWarnings(spec, read)
 
 	// map VLAN aliases (key) to one (or more) cluster hosts
 	vlans := make(map[string][]string)
@@ -46,16 +50,11 @@ func (subnetCompute) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) e
 
 		if h := cluster.FindHostByName(host); h != nil {
 			if n := spec.Topology().FindNodeByName(node); n != nil && !n.External() {
-				if len(n.Network().Interfaces()) == 0 {
-					return fmt.Errorf(
-						"node %s doesn't have any network interfaces",
-						n.General().Hostname(),
-					)
-				}
-
-				// cluster.IncrHostVMs(host, 1)
-				// cluster.IncrHostCPUCommit(host, n.Hardware.VCPU)
 				_ = cluster.IncrHostMemCommit(host, n.Hardware().Memory())
+
+				if len(n.Network().Interfaces()) == 0 {
+					continue
+				}
 
 				vlan := n.Network().Interfaces()[0].VLAN()
 
@@ -68,6 +67,9 @@ func (subnetCompute) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) e
 
 	cluster.SortByCommittedMem(true)
 
+	// the VMs without interfaces, placed after the others
+	var unconnected []ifaces.NodeSpec
+
 	for _, node := range spec.Topology().Nodes() {
 		if node.External() {
 			continue
@@ -77,14 +79,13 @@ func (subnetCompute) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) e
 			continue
 		}
 
-		var scheduled *mm.Host
-
 		if len(node.Network().Interfaces()) == 0 {
-			return fmt.Errorf(
-				"node %s doesn't have any network interfaces",
-				node.General().Hostname(),
-			)
+			unconnected = append(unconnected, node)
+
+			continue
 		}
+
+		var scheduled *mm.Host
 
 		vlan := node.Network().Interfaces()[0].VLAN()
 
@@ -102,7 +103,7 @@ func (subnetCompute) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) e
 
 		if scheduled == nil {
 			if len(cluster) == 0 {
-				return fmt.Errorf("scheduling VM %s: %w", node.General().Hostname(), ErrNoSchedulableHosts)
+				return nil, fmt.Errorf("scheduling VM %s: %w", node.General().Hostname(), ErrNoSchedulableHosts)
 			}
 
 			// VM's VLAN alias not mapped to a cluster host yet, so use round-robin
@@ -116,11 +117,66 @@ func (subnetCompute) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) e
 
 		spec.Schedules()[node.General().Hostname()] = scheduled.Name
 
-		// cluster.IncrHostVMs(scheduled.Name, 1)
-		// cluster.IncrHostCPUCommit(scheduled.Name, node.Hardware.VCPU)
 		_ = cluster.IncrHostMemCommit(scheduled.Name, node.Hardware().Memory())
 
 		cluster.SortByCommittedMem(true)
+	}
+
+	if err := placeUnconnected(spec, cluster, unconnected); err != nil {
+		return nil, err
+	}
+
+	return append(warnings, overcommitWarnings(spec, read)...), nil
+}
+
+// placeUnconnected puts each of vms, the VMs without interfaces that have no
+// host, on the host of cluster that holds the most VMs of spec, pinned or
+// placed, with ties taken by host name. When that host does not have the
+// memory for the VM, it takes the next host in that order that has it, and
+// the first host when none has it. It counts each VM that it places, on the
+// host and in the host's committed memory.
+func placeUnconnected(spec ifaces.ExperimentSpec, cluster mm.Hosts, vms []ifaces.NodeSpec) error {
+	if len(vms) == 0 {
+		return nil
+	}
+
+	if len(cluster) == 0 {
+		return fmt.Errorf("scheduling VM %s: %w", vms[0].General().Hostname(), ErrNoSchedulableHosts)
+	}
+
+	held := make(map[string]int)
+
+	for vm, host := range spec.Schedules() {
+		if node := spec.Topology().FindNodeByName(vm); node != nil && !node.External() {
+			held[host]++
+		}
+	}
+
+	for _, vm := range vms {
+		order := slices.Clone(cluster)
+		slices.SortFunc(order, func(a, b mm.Host) int {
+			if byCount := held[b.Name] - held[a.Name]; byCount != 0 {
+				return byCount
+			}
+
+			return strings.Compare(a.Name, b.Name)
+		})
+
+		memory := vm.Hardware().Memory()
+		chosen := order[0].Name
+
+		for _, host := range order {
+			if host.MemCommit+memory <= host.MemTotal {
+				chosen = host.Name
+
+				break
+			}
+		}
+
+		spec.Schedules()[vm.General().Hostname()] = chosen
+		held[chosen]++
+
+		_ = cluster.IncrHostMemCommit(chosen, memory)
 	}
 
 	return nil

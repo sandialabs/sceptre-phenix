@@ -39,6 +39,10 @@ var (
 	// ErrOldMinimega is the error of a minimega whose `vm info` does not have the vga column. phenix needs a minimega
 	// release that has it.
 	ErrOldMinimega = errors.New("minimega is too old: vm info has no vga column, update minimega")
+
+	// ErrMeshUnavailable is the error of a host read for VM placement when the cluster has mesh peers but the
+	// `mesh send all host` command failed or no peer answered it, so the compute nodes are unknown.
+	ErrMeshUnavailable = errors.New("the mesh peers did not answer")
 )
 
 // VMNotFoundError is an error about a VM that minimega or the experiment does not have. It keeps the message of Err
@@ -129,6 +133,11 @@ func (o options) tabular(cmd *mmcli.Command) []map[string]string {
 func ended(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("minimega commands stopped: %w", err)
+	}
+
+	// a command's own timer, set from the deadline, can fire before ctx's
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return fmt.Errorf("minimega commands stopped: %w", context.DeadlineExceeded)
 	}
 
 	return nil
@@ -1540,7 +1549,9 @@ func (m Minimega) GetClusterHosts(schedOnly bool) (Hosts, error) {
 // were read from minimega, which for a reused list is up to clusterHostsTTL
 // ago. The list's minimega commands give up once ctx, and that of every other
 // caller waiting for the same list, is done (see Context), and the call then
-// returns an error wrapping ctx's error.
+// returns an error wrapping ctx's error. When the mesh peers cannot be read
+// (see ErrMeshUnavailable), a schedOnly call fails, and the full list has the
+// headnode and the peers that answered.
 func (m Minimega) GetClusterHostsObserved(ctx context.Context, schedOnly bool) (Hosts, freshness.Observation, error) {
 	if !schedOnly {
 		if hosts, at, ok := recentHosts.get(); ok {
@@ -1551,12 +1562,12 @@ func (m Minimega) GetClusterHostsObserved(ctx context.Context, schedOnly bool) (
 	res, err := clusterHostsFlights.Do(ctx, "", func(ctx context.Context, seal func()) (clusterHosts, error) {
 		at := time.Now()
 
-		hosts, err := m.getClusterHosts(ctx, seal)
+		scan, err := m.getClusterHosts(ctx, seal)
 		if err == nil {
-			recentHosts.put(hosts, at)
+			recentHosts.put(scan.hosts, at)
 		}
 
-		return clusterHosts{hosts: hosts, at: at, err: err}, nil
+		return clusterHosts{hosts: scan.hosts, at: at, err: err, peerErr: scan.peerErr}, nil
 	})
 	if err != nil {
 		return nil, freshness.Observation{}, fmt.Errorf("getting cluster hosts: %w", err)
@@ -1567,6 +1578,10 @@ func (m Minimega) GetClusterHostsObserved(ctx context.Context, schedOnly bool) (
 	}
 
 	if schedOnly {
+		if res.peerErr != nil {
+			return nil, freshness.Observation{}, res.peerErr
+		}
+
 		return schedulableHosts(res.hosts), freshness.Observed(res.at), nil
 	}
 
@@ -1577,19 +1592,21 @@ func (m Minimega) GetClusterHostsObserved(ctx context.Context, schedOnly bool) (
 // started just before its first minimega command is sent. The headnode is
 // always last. Once ctx is done, it gives up with an error wrapping ctx's
 // error rather than return a list some commands gave up on.
-func (Minimega) getClusterHosts(ctx context.Context, started func()) (Hosts, error) {
-	hosts, err := scanClusterHosts(ctx, started)
+func (Minimega) getClusterHosts(ctx context.Context, started func()) (clusterScan, error) {
+	scan, err := scanClusterHosts(ctx, started)
 	if err != nil {
-		return hosts, err
+		return scan, err
 	}
+
+	hosts := scan.hosts
 
 	fillDiskUsage(ctx, hosts, func(name string) bool { return name == hosts[len(hosts)-1].Name })
 
 	if err := ended(ctx); err != nil {
-		return nil, err
+		return clusterScan{}, err
 	}
 
-	return hosts, nil
+	return scan, nil
 }
 
 // GetSchedulableHosts returns the hosts VMs can be scheduled on, read from
@@ -1597,12 +1614,20 @@ func (Minimega) getClusterHosts(ctx context.Context, started func()) (Hosts, err
 // commands with other callers, so ctx's deadline bounds each of its commands,
 // and it returns an error wrapping ctx's error once ctx is done. It measures
 // the disk usage of the hosts, as GetClusterHosts does, only when diskUsage
-// is set; else DiskUsage stays zero.
+// is set; else DiskUsage stays zero. When the cluster has mesh peers and none
+// of them answers, or the mesh command fails, it returns an error wrapping
+// ErrMeshUnavailable.
 func (Minimega) GetSchedulableHosts(ctx context.Context, diskUsage bool) (Hosts, error) {
-	hosts, err := scanClusterHosts(ctx, nil)
+	scan, err := scanClusterHosts(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
+
+	if scan.peerErr != nil {
+		return nil, scan.peerErr
+	}
+
+	hosts := scan.hosts
 
 	if diskUsage {
 		fillDiskUsage(ctx, hosts, func(name string) bool { return name == hosts[len(hosts)-1].Name })
@@ -1615,18 +1640,26 @@ func (Minimega) GetSchedulableHosts(ctx context.Context, diskUsage bool) (Hosts,
 	return schedulableHosts(hosts), nil
 }
 
+// clusterScan is the cluster's hosts as scanClusterHosts reads them. peerErr,
+// which wraps ErrMeshUnavailable, tells that the compute nodes could not be
+// read; hosts then has only the headnode, or the peers that answered.
+type clusterScan struct {
+	hosts   Hosts
+	peerErr error
+}
+
 // scanClusterHosts reads the cluster's hosts without their disk usage, as
 // getClusterHosts gives them.
-func scanClusterHosts(ctx context.Context, started func()) (Hosts, error) {
+func scanClusterHosts(ctx context.Context, started func()) (clusterScan, error) {
 	// Get headnode details. The default namespace only ever spans this node.
 	hosts := processNamespaceHosts(ctx, "minimega", started)
 
 	if err := ended(ctx); err != nil {
-		return nil, err
+		return clusterScan{}, err
 	}
 
 	if len(hosts) == 0 {
-		return []Host{}, errors.New("no cluster hosts found")
+		return clusterScan{hosts: []Host{}, peerErr: nil}, errors.New("no cluster hosts found")
 	}
 
 	head := hosts[0]
@@ -1641,25 +1674,39 @@ func scanClusterHosts(ctx context.Context, started func()) (Hosts, error) {
 	// itself, as minimega then puts it in every new namespace.
 	peers, err := hostList(ctx, mmcli.NewCommand(), "mesh list peers")
 	if endErr := ended(ctx); endErr != nil {
-		return nil, endErr
+		return clusterScan{}, endErr
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("getting compute nodes: %w", err)
+		return clusterScan{}, fmt.Errorf("getting compute nodes: %w", err)
 	}
 
-	var compute Hosts
+	var (
+		compute Hosts
+		peerErr error
+	)
 
 	if len(peers) == 0 {
 		head.Schedulable = true
 	} else {
 		cmd := mmcli.NewCommand()
 		cmd.Command = "mesh send all " + hostColumn
-		compute = processHosts(ctx, cmd, nil)
+		rows, err := mmcli.RunTabularCheckedContext(ctx, cmd, nil)
+		compute = parseHosts(rows)
+
+		switch {
+		case err != nil && ended(ctx) == nil:
+			plog.Error(plog.TypeSystem, "error running mm cmd", "cmd", cmd.Command, "error", err)
+
+			peerErr = fmt.Errorf("%w: reading the compute nodes with %q: %w", ErrMeshUnavailable, cmd.Command, err)
+		case err == nil && len(compute) == 0:
+			peerErr = fmt.Errorf("%w: none of the mesh peers %s answered %q",
+				ErrMeshUnavailable, strings.Join(peers, ", "), cmd.Command)
+		}
 	}
 
 	if err := ended(ctx); err != nil {
-		return nil, err
+		return clusterScan{}, err
 	}
 
 	for _, host := range compute {
@@ -1673,7 +1720,7 @@ func scanClusterHosts(ctx context.Context, started func()) (Hosts, error) {
 
 	cluster = append(cluster, head)
 
-	return cluster, nil
+	return clusterScan{hosts: cluster, peerErr: peerErr}, nil
 }
 
 // hostList runs a command answering with a minimega host list such as
@@ -2654,7 +2701,11 @@ func processNamespaceHosts(ctx context.Context, namespace string, started func()
 // processHosts runs cmd, `host` or a command that forwards it to other nodes,
 // and reads one Host from each row of its answer.
 func processHosts(ctx context.Context, cmd *mmcli.Command, started func()) Hosts {
-	status := mmcli.RunTabularStartedContext(ctx, cmd, started)
+	return parseHosts(mmcli.RunTabularStartedContext(ctx, cmd, started))
+}
+
+// parseHosts reads one Host from each row of a `host` answer.
+func parseHosts(status []map[string]string) Hosts {
 	hosts := make(Hosts, 0, len(status))
 
 	for _, row := range status {

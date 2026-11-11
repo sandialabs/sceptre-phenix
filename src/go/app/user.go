@@ -142,9 +142,14 @@ func (u UserApp) shellOut(ctx context.Context, action Action, exp *types.Experim
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == ExitSchedule {
 			sched := strings.TrimSpace(string(stdOut))
 
-			err := scheduler.Schedule(ctx, sched, exp.Spec)
+			warnings, err := scheduler.Schedule(ctx, sched, exp.Spec)
 			if err != nil {
 				return fmt.Errorf("scheduling experiment with %s: %w", sched, err)
+			}
+
+			for _, warning := range warnings {
+				plog.Warn(plog.TypeSystem, "schedule warning", "exp", exp.Spec.ExperimentName(), "algorithm", sched,
+					"warning", warning)
 			}
 
 			return u.shellOut(ctx, action, exp)

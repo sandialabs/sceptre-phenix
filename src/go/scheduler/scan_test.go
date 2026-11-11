@@ -34,6 +34,8 @@ const scanHeadDisk = "shell "
 type scanMesh struct {
 	hold    string
 	release chan struct{}
+	// silent peers do not answer `mesh send all host`
+	silent bool
 }
 
 func (f scanMesh) reply(cmd mmtest.Command) []*minicli.Response {
@@ -48,6 +50,8 @@ func (f scanMesh) reply(cmd mmtest.Command) []*minicli.Response {
 		return []*minicli.Response{mmtest.Tabular("head", header, []string{"head", "8", "8192", "0"})}
 	case cmd.Base == "mesh list peers":
 		return []*minicli.Response{mmtest.Text("head", "compute1,compute2")}
+	case cmd.Base == "mesh send all host" && f.silent:
+		return nil
 	case cmd.Base == "mesh send all host":
 		return []*minicli.Response{
 			mmtest.Tabular("compute1", header, []string{"compute1", "16", "65536", "0"}),
@@ -106,7 +110,7 @@ func TestBuiltinSchedulersReadNoDiskUsage(t *testing.T) { //nolint:paralleltest 
 			received := useScanMinimega(t, scanMesh{})
 
 			spec := builtinSpec(t, []builtinVM{{name: "vm1", vlan: "EXP", memory: 512}}, nil)
-			if err := Schedule(t.Context(), name, spec); err != nil {
+			if _, err := Schedule(t.Context(), name, spec); err != nil {
 				t.Fatalf("Schedule(%s) error = %v", name, err)
 			}
 
@@ -121,6 +125,23 @@ func TestBuiltinSchedulersReadNoDiskUsage(t *testing.T) { //nolint:paralleltest 
 	}
 }
 
+// Each scheduler fails with mm.ErrMeshUnavailable, not ErrNoSchedulableHosts,
+// when the cluster has mesh peers and none of them answers.
+func TestSchedulersWhenThePeersDoNotAnswer(t *testing.T) { //nolint:paralleltest // shares the fake minimega and sets PATH
+	useUserScheduler(t, "any", `cat > /dev/null; echo '{}'`)
+
+	for _, name := range []string{"round-robin", "subnet-compute", "isolate-experiment", "any"} {
+		t.Run(name, func(t *testing.T) {
+			useScanMinimega(t, scanMesh{silent: true})
+
+			_, err := Schedule(t.Context(), name, schedulerSpec(t, nil))
+			if !errors.Is(err, mm.ErrMeshUnavailable) || errors.Is(err, ErrNoSchedulableHosts) {
+				t.Errorf("Schedule(%s) with silent mesh peers error = %v, want %v", name, err, mm.ErrMeshUnavailable)
+			}
+		})
+	}
+}
+
 // A user scheduler gets the hosts with their disk usage, measured with one
 // command for the mesh peers and one for the headnode.
 func TestUserSchedulerReadsDiskUsage(t *testing.T) { //nolint:paralleltest // shares the fake minimega and sets PATH
@@ -130,7 +151,7 @@ func TestUserSchedulerReadsDiskUsage(t *testing.T) { //nolint:paralleltest // sh
 	useUserScheduler(t, "disk", `cat > '`+input+`'; echo '{"spec":{"schedules":{"vm1":"compute2"}}}'`)
 
 	spec := schedulerSpec(t, nil)
-	if err := Schedule(t.Context(), "disk", spec); err != nil {
+	if _, err := Schedule(t.Context(), "disk", spec); err != nil {
 		t.Fatalf("Schedule(disk) error = %v", err)
 	}
 
@@ -195,7 +216,7 @@ func TestScheduleDeadline(t *testing.T) { //nolint:paralleltest // shares the fa
 
 			start := time.Now()
 
-			err := Schedule(ctx, tc.scheduler, schedulerSpec(t, nil))
+			_, err := Schedule(ctx, tc.scheduler, schedulerSpec(t, nil))
 			if !errors.Is(err, ErrTimeout) {
 				t.Errorf("Schedule(%s) after its deadline error = %v, want %v", tc.scheduler, err, ErrTimeout)
 			}
@@ -220,8 +241,9 @@ func (m deadlineMM) GetSchedulableHosts(ctx context.Context, _ bool) (mm.Hosts, 
 	return mm.Hosts{{Name: "h1", MemTotal: 4096, CPUs: 4}}, nil
 }
 
-// Schedule gives each run Timeout: the read of the hosts and a user
-// scheduler's command get a deadline Timeout after the call.
+// Schedule gives each run its limit: the read of the hosts and a user
+// scheduler's command get a deadline BuiltinTimeout after the call for a
+// built-in scheduler, and UserTimeout after it for a user scheduler.
 //
 //nolint:paralleltest // replaces mm.DefaultMM and shell.DefaultShell
 func TestScheduleAppliesTimeout(t *testing.T) {
@@ -232,10 +254,10 @@ func TestScheduleAppliesTimeout(t *testing.T) {
 	fake := &schedulerFakeShell{commands: []string{"phenix-scheduler-custom"}, out: []byte(`{}`)}
 	useSchedulerShell(t, fake)
 
-	for _, name := range []string{"round-robin", "custom"} {
+	for name, timeout := range map[string]time.Duration{"round-robin": BuiltinTimeout, "custom": UserTimeout} {
 		start := time.Now()
 
-		if err := Schedule(t.Context(), name, schedulerSpec(t, nil)); err != nil {
+		if _, err := Schedule(t.Context(), name, schedulerSpec(t, nil)); err != nil {
 			t.Fatalf("Schedule(%s) error = %v", name, err)
 		}
 
@@ -247,8 +269,8 @@ func TestScheduleAppliesTimeout(t *testing.T) {
 		}
 
 		for what, deadline := range deadlines {
-			if deadline.Before(start.Add(Timeout)) || deadline.After(end.Add(Timeout)) {
-				t.Errorf("Schedule(%s) %s deadline = %v, want %v after the call", name, what, deadline, Timeout)
+			if deadline.Before(start.Add(timeout)) || deadline.After(end.Add(timeout)) {
+				t.Errorf("Schedule(%s) %s deadline = %v, want %v after the call", name, what, deadline, timeout)
 			}
 		}
 	}
@@ -263,7 +285,7 @@ func TestScheduleRefusesInvalidNames(t *testing.T) {
 		fake := &schedulerFakeShell{}
 		useSchedulerShell(t, fake)
 
-		if err := Schedule(t.Context(), name, schedulerSpec(t, nil)); !errors.Is(err, ErrInvalidName) {
+		if _, err := Schedule(t.Context(), name, schedulerSpec(t, nil)); !errors.Is(err, ErrInvalidName) {
 			t.Errorf("Schedule(%q) error = %v, want %v", name, err, ErrInvalidName)
 		}
 
@@ -295,7 +317,7 @@ func TestScheduleSpecWithoutSchedules(t *testing.T) {
 		t.Fatalf("types.DecodeExperimentFromConfig() error = %v", err)
 	}
 
-	if err := Schedule(t.Context(), "round-robin", exp.Spec); err != nil {
+	if _, err := Schedule(t.Context(), "round-robin", exp.Spec); err != nil {
 		t.Fatalf("Schedule(round-robin) error = %v", err)
 	}
 

@@ -219,6 +219,29 @@ export function notifyStartResult(name, { dryRun, warnings, mmScript }) {
   });
 }
 
+// Tells of the warnings of a schedule of the experiment `name`, each on its
+// own line, in a notice that stays until it is dismissed; nothing when there
+// are none.
+export function notifyScheduleWarnings(name, warnings) {
+  if (!Array.isArray(warnings) || !warnings.length) return;
+  openNotification({
+    type: 'is-warning',
+    hasIcon: true,
+    position: 'is-top',
+    indefinite: true,
+    ariaCloseLabel: 'Dismiss',
+    message: h('div', { role: 'alert' }, [
+      h('span', { class: 'error-title' }, [
+        h(
+          'b',
+          `Scheduled the ${name} experiment with ${plural(warnings.length, 'warning')}`,
+        ),
+      ]),
+      ...warnings.map((warning) => h('span', { class: 'error-step' }, warning)),
+    ]),
+  });
+}
+
 // Whether a failed stop left the experiment running because minimega could
 // not kill its VMs, so that forcing the stop could mark it stopped.
 export const stopCanBeForced = (err) =>

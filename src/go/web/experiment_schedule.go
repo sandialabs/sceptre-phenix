@@ -11,6 +11,7 @@ import (
 	"phenix/api/experiment"
 	"phenix/scheduler"
 	"phenix/store"
+	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/web/audit"
 	"phenix/web/broker"
@@ -73,7 +74,9 @@ func GetExperimentSchedule(w http.ResponseWriter, r *http.Request) error {
 
 // ScheduleExperiment - POST /experiments/{name}/schedule. It holds the
 // experiment's lock while it schedules, so no start or other change can begin,
-// and answers 504 when the scheduler does not finish in time.
+// answers 504 when the scheduler does not finish in time and 503 when the mesh
+// peers do not answer. The schedule it answers and broadcasts to the roles
+// that may get the schedule carries the scheduler's warnings.
 func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
@@ -114,7 +117,7 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	scheduled := audit.Fields{Experiment: name, Extra: []any{"phenix.schedule.algorithm", req.GetAlgorithm()}}
 
-	exp, err := experiment.Schedule(
+	exp, warnings, err := experiment.Schedule(
 		ctx,
 		experiment.ScheduleForName(name),
 		experiment.ScheduleWithAlgorithm(req.GetAlgorithm()),
@@ -142,7 +145,10 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 
 	audit.Success(r, audit.ExperimentSchedule, "experiment scheduled", scheduled)
 
-	body, err = marshaler.Marshal(util.ExperimentScheduleToProtobuf(*exp))
+	schedule := util.ExperimentScheduleToProtobuf(*exp)
+	schedule.Warnings = warnings
+
+	body, err = marshaler.Marshal(schedule)
 	if err != nil {
 		plog.Error(plog.TypeSystem, "marshaling schedule for experiment", "exp", name, "err", err)
 
@@ -150,7 +156,7 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	broker.Broadcast(
-		bt.NewRequestPolicy("experiments/schedule", "create", name),
+		bt.NewRequestPolicy("experiments/schedule", "get", name),
 		bt.NewResource("experiment", name, "schedule"),
 		body,
 	)
@@ -177,6 +183,8 @@ func scheduleErrorStatus(err error) int {
 		return http.StatusBadRequest
 	case errors.Is(err, scheduler.ErrTimeout):
 		return http.StatusGatewayTimeout
+	case errors.Is(err, mm.ErrMeshUnavailable):
+		return http.StatusServiceUnavailable
 	default:
 		return http.StatusInternalServerError
 	}

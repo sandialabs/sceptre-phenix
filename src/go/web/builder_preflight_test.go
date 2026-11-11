@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -35,7 +36,7 @@ func preflightDisks() builderOption {
 // phenix, and apps ntp and scorch. hostReads counts the host reads.
 func preflightSources(hostReads *atomic.Int32) builderPreflightSources {
 	return builderPreflightSources{
-		clusterHosts: func() (mm.Hosts, error) {
+		clusterHosts: func(context.Context) (mm.Hosts, error) {
 			hostReads.Add(1)
 
 			return mm.Hosts{
@@ -730,7 +731,7 @@ func TestBuilderPreflightEnvironmentFailures(t *testing.T) {
 
 	api := &builderAPI{
 		preflight: builderPreflightSources{
-			clusterHosts: func() (mm.Hosts, error) {
+			clusterHosts: func(context.Context) (mm.Hosts, error) {
 				reads++
 
 				return nil, failure
@@ -745,7 +746,7 @@ func TestBuilderPreflightEnvironmentFailures(t *testing.T) {
 		listConfigs: func(string) (store.Configs, error) { return nil, failure },
 		disks:       newBuilderDiskLister(func() ([]disk.Details, error) { return nil, failure }, time.Now, builderDiskListWait),
 	}
-	env := newBuilderPreflightEnvironment(api, builderActor{user: builderAlice, role: *builderFullRole()})
+	env := newBuilderPreflightEnvironment(t.Context(), api, builderActor{user: builderAlice, role: *builderFullRole()})
 	ctx := t.Context()
 
 	checks := map[string]func() error{
@@ -772,14 +773,14 @@ func TestBuilderPreflightEnvironmentFailures(t *testing.T) {
 // caller may list is schedulable.
 func TestBuilderPreflightBridgesOfNoHost(t *testing.T) {
 	api := &builderAPI{preflight: builderPreflightSources{
-		clusterHosts: func() (mm.Hosts, error) { return mm.Hosts{{Name: "head", Schedulable: false}}, nil },
+		clusterHosts: func(context.Context) (mm.Hosts, error) { return mm.Hosts{{Name: "head", Schedulable: false}}, nil },
 		bridges: func(...string) (map[string][]string, error) {
 			t.Error("the environment read the bridges of no host")
 
 			return map[string][]string{}, nil
 		},
 	}}
-	env := newBuilderPreflightEnvironment(api, builderActor{user: builderAlice, role: *builderFullRole()})
+	env := newBuilderPreflightEnvironment(t.Context(), api, builderActor{user: builderAlice, role: *builderFullRole()})
 
 	got, err := env.Bridges(t.Context())
 	if err != nil {
@@ -788,5 +789,62 @@ func TestBuilderPreflightBridgesOfNoHost(t *testing.T) {
 
 	if diff := cmp.Diff(map[string][]string{}, got); diff != "" {
 		t.Errorf("Bridges() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// preflightHostsMM records how the schedulable hosts were read; other mm.MM
+// methods panic.
+type preflightHostsMM struct {
+	mm.MM
+
+	marker    *any
+	diskUsage *bool
+}
+
+//nolint:unparam // mm's signature
+func (m preflightHostsMM) GetSchedulableHosts(ctx context.Context, diskUsage bool) (mm.Hosts, error) {
+	*m.marker, *m.diskUsage = ctx.Value(preflightContextKey{}), diskUsage
+
+	return mm.Hosts{{Name: "h1", Schedulable: true}}, nil
+}
+
+// preflightContextKey marks the request context in
+// TestBuilderPreflightReadsHostsWithTheRequestContext.
+type preflightContextKey struct{}
+
+// The preflight checks read the schedulable hosts without their disk usage,
+// with the context of the request.
+//
+//nolint:paralleltest // replaces mm.DefaultMM
+func TestBuilderPreflightReadsHostsWithTheRequestContext(t *testing.T) {
+	var (
+		marker    any
+		diskUsage = true
+	)
+
+	original := mm.DefaultMM
+	t.Cleanup(func() { mm.DefaultMM = original }) //nolint:reassign // restore the default
+
+	mm.DefaultMM = preflightHostsMM{marker: &marker, diskUsage: &diskUsage} //nolint:reassign // install test double
+
+	ctx := context.WithValue(t.Context(), preflightContextKey{}, "request")
+	api := &builderAPI{preflight: defaultBuilderPreflightSources()}
+	env := newBuilderPreflightEnvironment(ctx, api, builderActor{user: builderAlice, role: *builderFullRole()})
+
+	hosts, err := env.ClusterHosts(t.Context())
+	if err != nil {
+		t.Fatalf("ClusterHosts() error = %v", err)
+	}
+
+	if diff := cmp.Diff([]bapi.PreflightHost{{Name: "h1"}}, hosts); diff != "" {
+		t.Errorf("ClusterHosts() mismatch (-want +got):\n%s", diff)
+	}
+
+	if marker != "request" {
+		t.Error("the preflight read the cluster hosts without the request context")
+	}
+
+	if diskUsage {
+		t.Error("the preflight read the cluster hosts with their disk usage, want none")
 	}
 }

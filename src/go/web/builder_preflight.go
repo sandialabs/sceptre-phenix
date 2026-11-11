@@ -46,7 +46,7 @@ type builderPreflightRequest struct {
 // other routes that compare a document with them share. Tests replace them,
 // so no test needs minimega.
 type builderPreflightSources struct {
-	clusterHosts func() (mm.Hosts, error)
+	clusterHosts func(ctx context.Context) (mm.Hosts, error)
 	bridges      func(hosts ...string) (map[string][]string, error)
 	// defaultApps are the apps that every experiment runs. apps are the
 	// others that the server can run, built in or on its PATH.
@@ -60,7 +60,7 @@ type builderPreflightSources struct {
 // apps as GET /applications does.
 func defaultBuilderPreflightSources() builderPreflightSources {
 	return builderPreflightSources{
-		clusterHosts: func() (mm.Hosts, error) { return mm.GetClusterHosts(true) },
+		clusterHosts: func(ctx context.Context) (mm.Hosts, error) { return mm.GetSchedulableHosts(ctx, false) },
 		bridges:      mm.GetBridges,
 		defaultApps:  app.DefaultApps,
 		apps:         app.List,
@@ -110,7 +110,7 @@ func (b *builderAPI) preflightDraft(w http.ResponseWriter, r *http.Request) erro
 
 	report := bapi.RunPreflight(r.Context(), document, bapi.PreflightRequest{
 		Checks: checks, Experiment: request.Experiment, Timeout: b.preflight.timeout,
-	}, newBuilderPreflightEnvironment(b, actor))
+	}, newBuilderPreflightEnvironment(r.Context(), b, actor))
 
 	return builderWriteJSON(w, http.StatusOK, "", report)
 }
@@ -156,10 +156,14 @@ type builderPreflightEnvironment struct {
 }
 
 // newBuilderPreflightEnvironment returns the environment of a request of
-// actor.
-func newBuilderPreflightEnvironment(api *builderAPI, actor builderActor) *builderPreflightEnvironment {
+// actor. The read of the cluster hosts gives up once ctx, the request's
+// context, is done.
+func newBuilderPreflightEnvironment(
+	ctx context.Context, api *builderAPI, actor builderActor,
+) *builderPreflightEnvironment {
 	return &builderPreflightEnvironment{
-		api: api, actor: actor, hosts: sync.OnceValues(api.preflight.clusterHosts),
+		api: api, actor: actor,
+		hosts: sync.OnceValues(func() (mm.Hosts, error) { return api.preflight.clusterHosts(ctx) }),
 	}
 }
 

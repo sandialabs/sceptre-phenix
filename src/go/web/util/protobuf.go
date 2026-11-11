@@ -391,5 +391,5 @@ func ExperimentScheduleToProtobuf(exp types.Experiment) *proto.ExperimentSchedul
 		sched = append(sched, &proto.Schedule{Vm: vm, Host: host}) //nolint:exhaustruct // partial initialization
 	}
 
-	return &proto.ExperimentSchedule{Schedule: sched}
+	return &proto.ExperimentSchedule{Schedule: sched, Warnings: nil}
 }

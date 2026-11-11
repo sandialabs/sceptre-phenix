@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	ifaces "phenix/types/interfaces"
 )
@@ -22,15 +23,18 @@ func (roundRobin) Name() string {
 	return "round-robin"
 }
 
-func (roundRobin) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) error {
+func (roundRobin) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) ([]string, error) {
 	if len(spec.Topology().Nodes()) == 0 {
-		return errors.New("no VMs defined for experiment")
+		return nil, errors.New("no VMs defined for experiment")
 	}
 
 	cluster, err := schedulableHosts(ctx, false)
 	if err != nil {
-		return err
+		return nil, err
 	}
+
+	read := slices.Clone(cluster)
+	warnings := keptPinWarnings(spec, read)
 
 	// Update cluster host VM count to account for VMs manually scheduled before
 	// sorting hosts by VM count below; a pin of a VM the topology lacks counts for nothing.
@@ -51,7 +55,7 @@ func (roundRobin) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) erro
 
 		if _, ok := spec.Schedules()[node.General().Hostname()]; !ok {
 			if len(cluster) == 0 {
-				return fmt.Errorf("scheduling VM %s: %w", node.General().Hostname(), ErrNoSchedulableHosts)
+				return nil, fmt.Errorf("scheduling VM %s: %w", node.General().Hostname(), ErrNoSchedulableHosts)
 			}
 
 			spec.Schedules()[node.General().Hostname()] = cluster[0].Name
@@ -61,5 +65,5 @@ func (roundRobin) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) erro
 		}
 	}
 
-	return nil
+	return append(warnings, overcommitWarnings(spec, read)...), nil
 }

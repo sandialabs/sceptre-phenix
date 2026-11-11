@@ -60,7 +60,8 @@ export function listSchedulers() {
   return axiosInstance.get('schedulers');
 }
 
-// POST /experiments/{name}/schedule: places the VMs on hosts by algorithm
+// POST /experiments/{name}/schedule: places the VMs on hosts by algorithm;
+// { schedule: [{ vm, host }], warnings: [string] }
 export function scheduleExperiment(name, algorithm) {
   return axiosInstance.post('experiments/' + name + '/schedule', {
     algorithm,

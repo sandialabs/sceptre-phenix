@@ -658,7 +658,7 @@ func newExperimentScheduleCmd() *cobra.Command {
 				experiment.ScheduleWithAlgorithm(args[1]),
 			}
 
-			_, err := experiment.Schedule(commandContext(cmd), opts...)
+			_, warnings, err := experiment.Schedule(commandContext(cmd), opts...)
 			if err != nil {
 				err := util.HumanizeError(
 					err,
@@ -670,6 +670,10 @@ func newExperimentScheduleCmd() *cobra.Command {
 			}
 
 			plog.Info(plog.TypeSystem, "experiment scheduled", "exp", args[0], "algorithm", args[1])
+
+			for _, warning := range warnings {
+				plog.Warn(plog.TypeSystem, "schedule warning", "exp", args[0], "algorithm", args[1], "warning", warning)
+			}
 
 			return nil
 		},

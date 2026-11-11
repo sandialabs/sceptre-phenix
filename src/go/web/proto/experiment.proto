@@ -70,6 +70,8 @@ message Schedule {
 
 message ExperimentSchedule {
 	repeated Schedule schedule = 1;
+	// the scheduler's warnings about a schedule it made; only POST sets them
+	repeated string warnings = 2;
 }
 
 message TopologyList {

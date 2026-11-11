@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
 
 	"phenix/util/common"
@@ -285,12 +286,67 @@ func TestGetClusterHostsSchedOnlyLeavesOutHeadnode(t *testing.T) { //nolint:para
 		t.Errorf("GetClusterHosts(true) host names mismatch (-want +got):\n%s", diff)
 	}
 
-	// With no compute node answering, nothing is schedulable.
+	// With no compute node answering, the schedulable hosts are unknown.
 	useFakeMinimega(t, fakeMesh{head: "head", peers: "compute1"}.reply)
 
 	hosts, err = Minimega{}.GetClusterHosts(true)
-	if err != nil || hosts != nil {
-		t.Errorf("GetClusterHosts(true) with no compute node = %#v, %v; want nil, nil", hosts, err)
+	if !errors.Is(err, ErrMeshUnavailable) || hosts != nil {
+		t.Errorf("GetClusterHosts(true) with no compute node = %#v, %v; want nil, %v", hosts, err, ErrMeshUnavailable)
+	}
+}
+
+// When the cluster has mesh peers and none of them answers `mesh send all
+// host`, or the command fails, a read for VM placement fails with
+// ErrMeshUnavailable, and the full list for display still has the headnode
+// and the peers that answered. A node without peers is schedulable itself.
+func TestClusterHostsMeshUnavailable(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	for name, tc := range map[string]struct {
+		mesh        fakeMesh
+		meshErr     bool
+		wantErr     error
+		wantSched   []string
+		wantDisplay []string
+	}{
+		"no peer answers": {
+			mesh: fakeMesh{head: "head", peers: "compute1,compute2"}, wantErr: ErrMeshUnavailable,
+			wantDisplay: []string{"head"},
+		},
+		"a peer answers with an error": {
+			mesh: fakeMesh{head: "head", peers: "compute1,compute2", compute: []string{"compute1"}}, meshErr: true,
+			wantErr: ErrMeshUnavailable, wantDisplay: []string{"compute1", "head"},
+		},
+		"only the headnode": {
+			mesh: fakeMesh{head: "head"}, wantSched: []string{"head"}, wantDisplay: []string{"head"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+				resps := tc.mesh.reply(cmd)
+				if tc.meshErr && cmd.Base == meshHostCmd {
+					resps = append(resps, mmtest.Error("compute2", "timed out"))
+				}
+
+				return resps
+			})
+
+			hosts, err := Minimega{}.GetSchedulableHosts(t.Context(), false)
+			if !errors.Is(err, tc.wantErr) || (tc.wantErr == nil && err != nil) {
+				t.Fatalf("GetSchedulableHosts() error = %v, want %v", err, tc.wantErr)
+			}
+
+			if diff := cmp.Diff(tc.wantSched, hostNames(hosts), cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("GetSchedulableHosts() host names mismatch (-want +got):\n%s", diff)
+			}
+
+			display, err := Minimega{}.GetClusterHosts(false)
+			if err != nil {
+				t.Fatalf("GetClusterHosts(false) error = %v", err)
+			}
+
+			if diff := cmp.Diff(tc.wantDisplay, hostNames(display)); diff != "" {
+				t.Errorf("GetClusterHosts(false) host names mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -573,32 +629,62 @@ func diskPrefix(cmd mmtest.Command) (string, bool) {
 // once with an error wrapping [context.DeadlineExceeded], also while a command
 // waits for minimega's answer.
 func TestGetSchedulableHostsDeadline(t *testing.T) { //nolint:paralleltest // shares the fake minimega
-	release := make(chan struct{})
 	mesh := fakeMesh{head: "head", peers: "compute1", compute: []string{"compute1"}}
 
-	useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
-		if cmd.Base == meshHostCmd {
-			<-release
-		}
+	for name, held := range map[string]func(mmtest.Command) bool{
+		"the headnode":   func(cmd mmtest.Command) bool { return cmd.Base == "host" && cmd.Namespace == "minimega" },
+		"the mesh peers": func(cmd mmtest.Command) bool { return cmd.Base == meshHostCmd },
+	} {
+		t.Run(name, func(t *testing.T) {
+			release := make(chan struct{})
 
-		return mesh.reply(cmd)
-	})
+			useFakeMinimega(t, func(cmd mmtest.Command) []*minicli.Response {
+				if held(cmd) {
+					<-release
+				}
 
-	t.Cleanup(func() { close(release) })
+				return mesh.reply(cmd)
+			})
 
-	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
-	defer cancel()
+			t.Cleanup(func() { close(release) })
 
-	start := time.Now()
+			ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+			defer cancel()
 
-	hosts, err := Minimega{}.GetSchedulableHosts(ctx, false)
-	if !errors.Is(err, context.DeadlineExceeded) || hosts != nil {
-		t.Errorf("GetSchedulableHosts() with a mesh that does not answer = %v, %v; want nil, %v",
-			hosts, err, context.DeadlineExceeded)
+			start := time.Now()
+
+			hosts, err := Minimega{}.GetSchedulableHosts(ctx, false)
+			if !errors.Is(err, context.DeadlineExceeded) || hosts != nil {
+				t.Errorf("GetSchedulableHosts() with %s not answering = %v, %v; want nil, %v",
+					name, hosts, err, context.DeadlineExceeded)
+			}
+
+			if took := time.Since(start); took > 5*time.Second {
+				t.Errorf("GetSchedulableHosts() took %v after a 200ms deadline, want it to give up at once", took)
+			}
+		})
+	}
+}
+
+// pastDeadline is a context whose deadline has passed and whose Err is still
+// nil, as a context is in the moment before its own timer fires.
+type pastDeadline struct {
+	context.Context
+}
+
+func (pastDeadline) Deadline() (time.Time, bool) { return time.Now().Add(-time.Millisecond), true }
+
+// ended reports a passed deadline also before ctx's own timer sets its error,
+// so a command whose timer fired first does not read as a full answer.
+func TestEndedAfterTheDeadline(t *testing.T) {
+	t.Parallel()
+
+	if err := ended(pastDeadline{Context: context.Background()}); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("ended(a context past its deadline) = %v, want %v", err, context.DeadlineExceeded)
 	}
 
-	if took := time.Since(start); took > 5*time.Second {
-		t.Errorf("GetSchedulableHosts() took %v after a 200ms deadline, want it to give up at once", took)
+	if err := ended(t.Context()); err != nil {
+		t.Errorf("ended(a live context) = %v, want nil", err)
 	}
 }
 
@@ -615,4 +701,55 @@ func TestGetClusterHostsErrorIsNotReused(t *testing.T) { //nolint:paralleltest /
 	if got := mmtest.Count(received(), "host"); got != 2 {
 		t.Errorf("GetClusterHosts(false) twice with no host answering sent %d host commands, want 2", got)
 	}
+}
+
+// clusterOnlyMM has only GetClusterHosts of the cluster host reads; other MM
+// methods panic.
+type clusterOnlyMM struct {
+	MM
+
+	schedOnly *bool
+}
+
+func (m clusterOnlyMM) GetClusterHosts(schedOnly bool) (Hosts, error) {
+	*m.schedOnly = schedOnly
+
+	return Hosts{{Name: "compute1", Schedulable: true}}, nil
+}
+
+// The package GetSchedulableHosts asks DefaultMM for the schedulable hosts,
+// and an MM without GetSchedulableHosts for GetClusterHosts(true).
+func TestPackageGetSchedulableHosts(t *testing.T) { //nolint:paralleltest // replaces DefaultMM and shares the fake minimega
+	saved := DefaultMM
+	t.Cleanup(func() { DefaultMM = saved })
+
+	t.Run("Minimega", func(t *testing.T) {
+		DefaultMM = Minimega{}
+
+		useFakeMinimega(t, fakeMesh{head: "head", peers: "compute1", compute: []string{"compute1"}}.reply)
+
+		hosts, err := GetSchedulableHosts(t.Context(), false)
+		if err != nil {
+			t.Fatalf("GetSchedulableHosts() error = %v", err)
+		}
+
+		if diff := cmp.Diff([]string{"compute1"}, hostNames(hosts)); diff != "" {
+			t.Errorf("GetSchedulableHosts() host names mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("an MM without it", func(t *testing.T) {
+		var schedOnly bool
+
+		DefaultMM = clusterOnlyMM{schedOnly: &schedOnly}
+
+		hosts, err := GetSchedulableHosts(t.Context(), true)
+		if err != nil || !schedOnly {
+			t.Fatalf("GetSchedulableHosts() = %v, %v with schedOnly %t; want GetClusterHosts(true)", hosts, err, schedOnly)
+		}
+
+		if diff := cmp.Diff([]string{"compute1"}, hostNames(hosts)); diff != "" {
+			t.Errorf("GetSchedulableHosts() host names mismatch (-want +got):\n%s", diff)
+		}
+	})
 }

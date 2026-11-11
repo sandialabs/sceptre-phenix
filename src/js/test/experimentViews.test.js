@@ -1043,6 +1043,69 @@ describe('StoppedExperiment', () => {
       expect(note()).toBe('1 of 2 VMs has a host');
     });
 
+    it('tells of each warning of a schedule in a notice that stays', async () => {
+      axios.post.mockResolvedValue({
+        data: {
+          schedule: [{ vm: 'vm1', host: 'gone' }],
+          warnings: [
+            'VM vm1 stays on host gone, which is not a schedulable cluster host',
+            'host n1: 96 GiB of memory committed, 64 GiB available',
+          ],
+        },
+      });
+      const page = await stopped([{ name: 'vm1', host: '' }]);
+      await page.findAll('.schedule-menu-item').at(1).trigger('click');
+      await confirmDialog();
+      await flushPromises();
+
+      expect(notices.open).toHaveBeenCalledTimes(1);
+      const notice = lastNotice();
+      expect(notice).toMatchObject({
+        type: 'is-warning',
+        indefinite: true,
+        ariaCloseLabel: 'Dismiss',
+      });
+      expect(notice.message.props.role).toBe('alert');
+      const lines = notice.message.children.map((line) =>
+        typeof line.children === 'string'
+          ? line.children
+          : line.children[0].children,
+      );
+      expect(lines).toEqual([
+        'Scheduled the exp1 experiment with 2 warnings',
+        'VM vm1 stays on host gone, which is not a schedulable cluster host',
+        'host n1: 96 GiB of memory committed, 64 GiB available',
+      ]);
+      expect(
+        tableRows(page).map((r) => r.Host.find('select').element.value),
+      ).toEqual(['gone']);
+    });
+
+    it.each([
+      ['no warnings', { schedule: [], warnings: [] }],
+      ['an older server', { schedule: [] }],
+    ])('opens no notice for %s', async (_, data) => {
+      axios.post.mockResolvedValue({ data });
+      const page = await stopped([{ name: 'vm1', host: '' }]);
+      await page.findAll('.schedule-menu-item').at(1).trigger('click');
+      await confirmDialog();
+      await flushPromises();
+      expect(notices.open).not.toHaveBeenCalled();
+    });
+
+    it('keeps its success message with the warnings', async () => {
+      await stopped([{ name: 'vm1', host: '' }]);
+      await publish(
+        wsMsg('experiment', 'exp1', 'schedule', {
+          schedule: [{ vm: 'vm1', host: 'n1' }],
+          warnings: ['host n1: 96 GiB of memory committed, 64 GiB available'],
+        }),
+      );
+      expect(toasts().map((t) => t.text)).toEqual([
+        'The VMs for this experiment have been scheduled.',
+      ]);
+    });
+
     it('stops spinning and tells of a failed schedule', async () => {
       const err = new Error('no hosts');
       axios.post.mockRejectedValue(err);

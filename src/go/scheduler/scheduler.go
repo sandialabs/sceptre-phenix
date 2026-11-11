@@ -14,9 +14,14 @@ import (
 	"phenix/util/shell"
 )
 
-// Timeout bounds one run of a scheduler: the read of the cluster hosts and,
-// for a user scheduler, its command.
-const Timeout = 45 * time.Second
+// The limits of one run of a scheduler. BuiltinTimeout bounds a built-in
+// scheduler with its read of the cluster hosts. UserTimeout bounds a user
+// scheduler: its read of the cluster hosts with their disk usage, and its
+// command.
+const (
+	BuiltinTimeout = 45 * time.Second
+	UserTimeout    = 2 * time.Minute
+)
 
 var schedulers = make(map[string]Scheduler) //nolint:gochecknoglobals // global registry
 
@@ -36,7 +41,7 @@ var descriptions = map[string]string{ //nolint:gochecknoglobals // global regist
 var ErrNoSchedulableHosts = errors.New("no schedulable cluster hosts")
 
 // ErrTimeout is returned when a scheduler does not finish before its deadline
-// (at most Timeout).
+// (at most BuiltinTimeout or UserTimeout).
 var ErrTimeout = errors.New("scheduler timed out")
 
 // ErrInvalidName is returned for a scheduler name that is empty or that has a
@@ -54,8 +59,9 @@ type Scheduler interface {
 	Name() string
 
 	// Schedule runs the phenix scheduler algorithm against the given
-	// experiment. It gives up once ctx is done.
-	Schedule(ctx context.Context, spec ifaces.ExperimentSpec) error
+	// experiment. It gives up once ctx is done. It returns warnings about
+	// the schedule that it made, such as a host that it overcommits.
+	Schedule(ctx context.Context, spec ifaces.ExperimentSpec) ([]string, error)
 }
 
 func List() []string {
@@ -121,15 +127,20 @@ func builtinName(name string) string {
 
 // Schedule runs the scheduler name on spec: the built-in scheduler of that
 // name (see builtinName), else the user scheduler phenix-scheduler-<name>. The
-// run gives up once ctx is done or Timeout has passed. Its error then wraps
-// ErrTimeout for a deadline, or ctx's error for a cancellation.
-func Schedule(ctx context.Context, name string, spec ifaces.ExperimentSpec) error {
+// run gives up once ctx is done or its limit (BuiltinTimeout or UserTimeout)
+// has passed. Its error then wraps ErrTimeout for a deadline, or ctx's error
+// for a cancellation. It returns the scheduler's warnings about the schedule,
+// which does not fail because of them.
+func Schedule(ctx context.Context, name string, spec ifaces.ExperimentSpec) ([]string, error) {
 	if name == "" || strings.ContainsAny(name, "/\x00") {
-		return fmt.Errorf("%w: %q", ErrInvalidName, name)
+		return nil, fmt.Errorf("%w: %q", ErrInvalidName, name)
 	}
+
+	timeout := BuiltinTimeout
 
 	scheduler, ok := schedulers[builtinName(name)]
 	if !ok {
+		timeout = UserTimeout
 		scheduler = new(userScheduler)
 		_ = scheduler.Init(Name(name))
 	}
@@ -137,21 +148,21 @@ func Schedule(ctx context.Context, name string, spec ifaces.ExperimentSpec) erro
 	// a spec without schedules gives a new map on each call, which would lose what the scheduler sets
 	spec.SetSchedule(spec.Schedules())
 
-	ctx, cancel := context.WithTimeout(ctx, Timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	err := scheduler.Schedule(ctx, spec)
+	warnings, err := scheduler.Schedule(ctx, spec)
 
 	switch {
 	case err == nil:
-		return nil
-	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return fmt.Errorf("%w: scheduler %s did not finish within %v: %w", ErrTimeout, name, Timeout, err)
+		return warnings, nil
+	case errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded):
+		return nil, fmt.Errorf("%w: scheduler %s did not finish within %v: %w", ErrTimeout, name, timeout, err)
 	case ctx.Err() != nil && !errors.Is(err, ctx.Err()):
-		return fmt.Errorf("%w: %w", err, ctx.Err())
+		return nil, fmt.Errorf("%w: %w", err, ctx.Err())
 	}
 
-	return err
+	return nil, err
 }
 
 // schedulableHosts reads the hosts VMs can be scheduled on for a scheduler,
