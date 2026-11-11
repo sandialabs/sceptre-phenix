@@ -86,11 +86,12 @@ const barOf = (cell) => {
 };
 
 // Each row's name and status, and its topology, VM count and VLANs when
-// `details`; a starting or stopping experiment shows its bar in place of a tag.
+// `details`; a row with a bar shows the bar, not its status.
 const shown = (wrapper, details) =>
   tableRows(wrapper).map((cells) => {
     const tag = cells.Status.find('.exp-status');
-    const status = tag.exists() ? textOf(tag) : barOf(cells.Status);
+    const bar = cells.Status.find('.progress').exists() || !tag.exists();
+    const status = bar ? barOf(cells.Status) : textOf(tag);
     return [
       textOf(cells.Name),
       status,
@@ -927,6 +928,80 @@ describe('the start and stop bar', () => {
     // a stop sends no done: its stop message ends the bar
     await send(wrapper, msg('b', 'stop', { name: 'b', running: false }));
     expect(statusOf(wrapper)).toEqual(['stopped']);
+  });
+
+  // the status button of row `i` beside its bar: its label, and whether it
+  // is disabled; null when the row shows no status button
+  const powerBesideBar = (wrapper, i = 0) => {
+    const cell = tableRows(wrapper)[i].Status;
+    const button = cell.find('button.exp-status');
+    if (!cell.find('.status-progress .progress').exists()) return 'no bar';
+    if (!button.exists()) return null;
+    return {
+      label: button.attributes('aria-label'),
+      disabled: button.attributes('disabled') !== undefined,
+    };
+  };
+
+  it('shows the Stop button beside the bar of post-start apps, and only the bar while starting', async () => {
+    const wrapper = await page(three());
+
+    await send(wrapper, msg('a', 'starting'));
+    await send(
+      wrapper,
+      msg('a', 'progress', progress('start', 0.6, 'launch-vms', 12, 40, '')),
+    );
+    expect(powerBesideBar(wrapper)).toBeNull();
+
+    await send(wrapper, msg('a', 'start', { name: 'a', running: true }));
+    await send(
+      wrapper,
+      msg(
+        'a',
+        'progress',
+        progress('start', 0.9, 'post-start-apps', 1, 2, 'scorch'),
+      ),
+    );
+    expect(statusOf(wrapper)).toEqual(['bar 90% Post-start apps 1/2: scorch']);
+    expect(powerBesideBar(wrapper)).toEqual({
+      label: 'Stop experiment a (started)',
+      disabled: false,
+    });
+
+    axios.post.mockReturnValue(never());
+    await byLabel(wrapper, 'Stop experiment a (started)').trigger('click');
+    await confirmDialog();
+    expect(axios.post.mock.calls).toEqual([['experiments/a/stop']]);
+    // stopping shows only the bar
+    expect(statusOf(wrapper)).toEqual(['bar 0% Sending stop request']);
+    expect(powerBesideBar(wrapper)).toBeNull();
+  });
+
+  it.each([
+    [
+      'a stopping experiment',
+      { status: 'stopping', running: true },
+      () => true,
+    ],
+    [
+      'a running experiment the role may not stop',
+      { status: 'started', running: true },
+      denyOnly(['experiments/stop', 'update', 'a']),
+    ],
+  ])('shows only the bar of %s', async (_, exp, role) => {
+    rbac.allowed = role;
+    const wrapper = await page([
+      {
+        name: 'a',
+        ...exp,
+        progress: progress('start', 0.9, 'post-start-apps', 1, 2, 'scorch'),
+      },
+    ]);
+
+    expect(powerBesideBar(wrapper)).toBeNull();
+    expect(tableRows(wrapper)[0].Status.find('.exp-status').exists()).toBe(
+      false,
+    );
   });
 
   it("shows only the bar of an old server's percent", async () => {

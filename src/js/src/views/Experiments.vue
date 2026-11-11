@@ -192,13 +192,14 @@
             header-class="sort-inline"
             centered
             v-slot="props">
-            <experiment-progress
-              v-if="progressShown(props.row)"
-              class="status-progress"
-              :name="props.row.name"
-              :progress="props.row.progress" />
-            <template v-else-if="rowActions[props.row.name].power.permitted">
+            <div class="status-cell">
+              <experiment-progress
+                v-if="progressShown(props.row)"
+                class="status-progress"
+                :name="props.row.name"
+                :progress="props.row.progress" />
               <b-tooltip
+                v-if="powerShown(props.row)"
                 :label="
                   rowActions[props.row.name].power.reason ||
                   getExpControlLabel(props.row.name, props.row.status)
@@ -222,14 +223,13 @@
                   <span>{{ props.row.status }}</span>
                 </button>
               </b-tooltip>
-            </template>
-            <template v-else>
               <span
+                v-else-if="!progressShown(props.row)"
                 class="tag is-medium exp-status status-width"
                 :class="decorator(props.row.status)">
                 {{ props.row.status }}
               </span>
-            </template>
+            </div>
             <experiment-progress
               v-if="failures[props.row.name] && !progressShown(props.row)"
               class="status-progress status-failure"
@@ -883,9 +883,17 @@
         );
       },
 
-      // whether the row shows the bar in place of its status
+      // whether the row shows the bar
       progressShown(row) {
         return this.updating(row.status) || progressActive(row.progress);
+      },
+
+      // Whether the row shows its start or stop button. While the experiment
+      // starts or stops, only the bar shows; once it runs, both show.
+      powerShown(row) {
+        if (!this.rowActions[row.name].power.permitted) return false;
+        if (!this.progressShown(row)) return true;
+        return !!row.running && !this.updating(row.status);
       },
 
       // A row from a list load: a row known only from messages takes the list's
@@ -1284,6 +1292,14 @@
   /* every status tag, button and progress bar has one width, so rows line up */
   .status-width {
     min-width: 7.5rem;
+  }
+
+  /* the bar and the stop button of a running experiment wrap onto two lines */
+  .status-cell {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.25rem;
   }
 
   .status-progress {
