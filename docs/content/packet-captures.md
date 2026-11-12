@@ -139,6 +139,11 @@ minimega gives these states:
 * `orphaned`: A host lost its connection to the head node and stopped its part
   of the capture.
 
+A capture that you stop stays in the list as `stopped`. It stays until you
+delete its file or the experiment stops. phēnix keeps this list in memory, so
+a restart of `phenix ui` removes the stopped captures from the tab. Their
+files stay in the `Files` tab.
+
 Click the expand button of a capture to see a row for each host and bridge:
 
 | Column | Value |

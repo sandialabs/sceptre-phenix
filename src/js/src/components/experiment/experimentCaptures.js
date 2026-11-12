@@ -63,12 +63,19 @@ export const isRunning = (capture) =>
 export const runningCount = (captures) =>
   (captures ?? []).filter(isRunning).length;
 
-// The Bulma color of a capture's status tag: running and failed are red,
-// full yellow, the others gray.
+// The Bulma color of a capture's status tag: running is green, failed red,
+// full yellow, and stopped and the others the neutral gray.
 export function statusType(capture) {
-  if (isRunning(capture) || capture?.state === 'failed') return 'is-danger';
+  if (isRunning(capture)) return 'is-success';
+  if (capture?.state === 'failed') return 'is-danger';
   if (capture?.state === 'full') return 'is-warning';
   return null;
+}
+
+// The text of a capture's status tag: its state with a capital letter.
+export function statusText(capture) {
+  const state = capture?.state || 'unknown';
+  return `${state.charAt(0).toUpperCase()}${state.slice(1)}`;
 }
 
 // what a capture covers: its VLANs or all of them, then its filter

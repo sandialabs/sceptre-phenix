@@ -138,6 +138,9 @@ func (c *fakeCluster) reply(cmd mmtest.Command) []*minicli.Response {
 			}
 		}
 
+		// minimega forgets a capture that it stops
+		c.captures = slices.DeleteFunc(c.captures, func(row []string) bool { return row[0] == id })
+
 		return []*minicli.Response{mmtest.Tabular("compute1", namespaceHeader, final...)}
 	case strings.HasPrefix(base, "capture pcap namespace "):
 		if c.started != nil {
@@ -327,6 +330,9 @@ func useExperimentSpec(t *testing.T, stopped bool, spec map[string]any) {
 	t.Cleanup(func() { store.DefaultStore = original }) //nolint:reassign // restore the default
 
 	store.DefaultStore = &fakeStore{experiment: exp} //nolint:reassign // install the test double
+
+	// the captures that a stop keeps would reach the next test
+	t.Cleanup(func() { Forget(testExp) })
 }
 
 // vmsOn are VMs a on compute1 and b on compute2, as minimega runs them.

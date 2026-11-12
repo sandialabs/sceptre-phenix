@@ -29,6 +29,7 @@
 //	idempotent job starts   web/idempotency Store                  1 h, 1000, 16 MiB      expiry; the oldest dropped when full    Idempotent-Replayed: true
 //	app runtime details     app stageRuntime                       one ApplyApps run      the next run                            not data (app input)
 //	minimega version        util/mm minimegaVersion                the process            a restart                               not reported (run info, captures)
+//	stopped exp. captures   api/capture kept                       100 per experiment     the run's end; the file's deletion      not reported (state stopped)
 //	VLAN blacklist removal  util/mm blacklistRemoval               until a redial         mmcli.Redials changes; ForgetCluster    not reported (a stale true fails the removal)
 //
 // The experiment file lists also hold the capture format of each headnode file, read from its first bytes once for

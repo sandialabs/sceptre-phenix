@@ -554,8 +554,8 @@ in `openapi.yml`:
 |---|---|---|
 | `GET /experiments/{exp}/captures` | `list` | VM interface `captures`, plus `experimentCaptures`, `support`, `budget`, `budgetError` and `experimentCapturesError` |
 | `POST /experiments/{exp}/captures` | `create` | `201` `{capture, warnings}` |
-| `GET /experiments/{exp}/captures/{id}` | `get` | one capture with `streams`, `404` when minimega does not list it |
-| `DELETE /experiments/{exp}/captures/{id}` | `delete` | `200` with the last counters, and the file stays |
+| `GET /experiments/{exp}/captures/{id}` | `get` | one capture with `streams`, `404` when it is not in the list |
+| `DELETE /experiments/{exp}/captures/{id}` | `delete` | `200` with the last counters, and the file stays; `404` when already stopped |
 | `GET /experiments/{exp}/captures/{id}/stream[?from=now]` | `get`, and `experiments/files` `get` | websocket binary messages or a chunked body |
 | `POST /experiments/{exp}/webshark` with `{"capture": "<id>"}` | as for the stream | WebShark on the merged file, title `exp1 capture 3 (live)` |
 
@@ -572,6 +572,9 @@ in `openapi.yml`:
   vSwitch mirrors`, or 32 captures already run), or a running capture or a
   file has the given name, `501` no minimega support. A `409` or `400` sends
   nothing to minimega.
+- minimega forgets a capture that it stops. The `phenix ui` process keeps
+  each capture that it stopped in the list as `stopped`, while the head node
+  has its file, until the experiment stops. A restart of phenix loses them.
 - Mirror budget: Open vSwitch applies 32 mirrors per bridge and ignores a 33rd.
   `budget` rows are `{host, bridge, total, experiment, limit, level}` for each
   host and bridge the experiment's VMs use. `level` is `full` (total >= 32),

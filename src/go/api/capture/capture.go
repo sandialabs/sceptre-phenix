@@ -112,28 +112,42 @@ func runningExperiment(exp string) (*types.Experiment, bool, error) {
 	return stored, stored.Running(), nil
 }
 
-// List returns the experiment captures of exp, sorted by ID. A stopped experiment has none, and minimega is not asked
-// about it, which would make its namespace again.
-func List(ctx context.Context, exp string) ([]mm.NamespaceCapture, error) {
-	_, running, err := runningExperiment(exp)
+// live returns the experiment captures that minimega lists for exp, sorted by ID, and the start time of exp's run. A
+// stopped experiment has none and no run, and minimega is not asked about it, which would make its namespace again.
+func live(ctx context.Context, exp string) ([]mm.NamespaceCapture, string, error) {
+	stored, running, err := runningExperiment(exp)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if err := supported(ctx); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if !running {
-		return nil, nil
+		Forget(exp)
+
+		return nil, "", nil
 	}
 
 	captures, err := mm.GetNamespaceCaptures(mm.NS(exp), mm.Context(ctx))
 	if err != nil {
-		return nil, fmt.Errorf("listing the experiment captures of %s: %w", exp, err)
+		return nil, "", fmt.Errorf("listing the experiment captures of %s: %w", exp, err)
 	}
 
-	return captures, nil
+	return captures, stored.Status.StartTime(), nil
+}
+
+// List returns the experiment captures of exp, sorted by ID: those that minimega lists, and those that Stop stopped in
+// this process during the experiment's run while the head node has their file. A stopped experiment has none, and
+// minimega is not asked about it, which would make its namespace again.
+func List(ctx context.Context, exp string) ([]mm.NamespaceCapture, error) {
+	captures, run, err := live(ctx, exp)
+	if err != nil || run == "" {
+		return captures, err
+	}
+
+	return kept.merge(exp, run, captures), nil
 }
 
 // Get returns the experiment capture id of exp, with its streams.
@@ -157,9 +171,15 @@ func find(captures []mm.NamespaceCapture, exp, id string) (mm.NamespaceCapture, 
 	return mm.NamespaceCapture{}, fmt.Errorf("%w: %s in experiment %s", ErrNotFound, id, exp)
 }
 
-// Stop stops the experiment capture id of exp and returns it as minimega last gave it.
+// Stop stops the experiment capture id of exp and returns it as minimega last gave it, in the stopped state. The
+// capture stays in List as stopped. A capture that minimega does not list, as one already stopped, is ErrNotFound.
 func Stop(ctx context.Context, exp, id string) (mm.NamespaceCapture, error) {
-	listed, err := Get(ctx, exp, id)
+	captures, run, err := live(ctx, exp)
+	if err != nil {
+		return mm.NamespaceCapture{}, err
+	}
+
+	listed, err := find(captures, exp, id)
 	if err != nil {
 		return listed, err
 	}
@@ -169,11 +189,18 @@ func Stop(ctx context.Context, exp, id string) (mm.NamespaceCapture, error) {
 		return listed, fmt.Errorf("stopping experiment capture %s of %s: %w", id, exp, err)
 	}
 
-	if final, err := find(rows, exp, id); err == nil {
-		return final, nil
+	final := listed
+	if c, err := find(rows, exp, id); err == nil {
+		final = c
 	}
 
-	return listed, nil
+	if final.Running() {
+		final.State = stateStopped
+	}
+
+	kept.add(exp, run, final)
+
+	return final, nil
 }
 
 // File is the path of the capture's file relative to the files directory of the experiment exp, or "" when the file

@@ -516,7 +516,7 @@ describe('the Captures tab', () => {
     expect(cells(wrapper)).toEqual([
       {
         ID: '3',
-        Status: 'running',
+        Status: 'Running',
         Scope: 'All VLANs',
         Size: '812.4 MiB',
         Packets: '1,284,113',
@@ -524,7 +524,7 @@ describe('the Captures tab', () => {
       },
       {
         ID: '2',
-        Status: 'stopped',
+        Status: 'Stopped',
         Scope: 'EXP_2',
         Size: '41.0 MiB',
         Packets: '98,221',
@@ -532,15 +532,18 @@ describe('the Captures tab', () => {
       },
       {
         ID: '1',
-        Status: 'failed',
+        Status: 'Failed',
         Scope: 'bridge mega_bridge_exp1 on compute3 has 32 mirrors',
         Size: '0 B',
         Packets: '0',
         Drops: '0',
       },
     ]);
+    // running is green, stopped the neutral tag, failed red
     const tags = wrapper.findAll('.capture-state').map((t) => t.classes());
-    expect(tags[0]).toContain('is-danger');
+    expect(tags[0]).toContain('is-success');
+    expect(tags[0]).not.toContain('is-danger');
+    expect(tags[1]).not.toContain('is-success');
     expect(tags[1]).not.toContain('is-danger');
     expect(tags[2]).toContain('is-danger');
   });
@@ -747,7 +750,7 @@ describe('the Captures tab', () => {
     expect(cells(wrapper)).toEqual([
       {
         ID: '7',
-        Status: 'unknown',
+        Status: 'Unknown',
         Scope: 'All VLANs',
         Size: '0 B',
         Packets: '0',
@@ -1197,6 +1200,7 @@ describe('the running experiment page', () => {
     expect(textOf(tab)).toBe('Captures2, 2 running');
     expect(tab.find('.captures-count [aria-hidden="true"]').text()).toBe('2');
     expect(tab.find('.captures-count .is-sr-only').text()).toBe(', 2 running');
+    expect(tab.find('.captures-count').classes()).toContain('is-success');
   });
 
   describe('while another tab shows', () => {
@@ -1472,6 +1476,44 @@ describe('the running experiment page', () => {
       text: 'Experiment capture 3 stopped.',
       type: 'is-info',
     });
+  });
+
+  it('keeps a capture it stopped in the list as stopped, as the server lists it', async () => {
+    store.features = ['webshark'];
+    const stoppedAgain = { ...RUNNING, state: 'stopped', running: false };
+    let list = listOf({ experimentCaptures: [RUNNING] });
+    axios.delete.mockImplementation(async () => {
+      list = listOf({ experimentCaptures: [stoppedAgain] });
+      return { data: stoppedAgain };
+    });
+    const page = await openPage(() => list, { tab: 'captures' });
+    const row = () =>
+      tableRows(page.find('.experiment-captures')).find(
+        (r) => r.ID && textOf(r.ID) === '3',
+      );
+    expect(textOf(row().Status)).toBe('Running');
+    expect(row().Status.find('.tag').classes()).toContain('is-success');
+
+    await page.find('.capture-stop').trigger('click');
+    await flushPromises();
+    await handle(wsMsg('experiment/capture', 'demo/3', 'stop', {}));
+    expect(textOf(row().Status)).toBe('Stopped');
+    expect(row().Status.find('.tag').classes()).not.toContain('is-success');
+    expect([...row().Actions.findAll('a, button')].map(textOf)).toEqual([
+      'Open in WebShark',
+      'Download',
+      'Delete',
+    ]);
+    expect(page.find('.captures-count').exists()).toBe(false);
+
+    // a new page reads the same list, with the capture still stopped
+    document.body.innerHTML = '';
+    const reloaded = await openPage(() => list, { tab: 'captures' });
+    const again = tableRows(reloaded.find('.experiment-captures')).find(
+      (r) => r.ID && textOf(r.ID) === '3',
+    );
+    expect(textOf(again.Status)).toBe('Stopped');
+    expect(reloaded.find('.capture-stop').exists()).toBe(false);
   });
 
   it('toasts a stop it did not make as stopped', async () => {

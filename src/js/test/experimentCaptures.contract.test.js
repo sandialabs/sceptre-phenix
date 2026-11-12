@@ -18,6 +18,7 @@ import {
   runningCount,
   shortReason,
   snaplenProblem,
+  statusText,
   statusType,
   unsupportedNotice,
 } from '@/components/experiment/experimentCaptures.js';
@@ -385,16 +386,26 @@ describe('the budget banner of the Captures tab', () => {
 
 describe('a capture in the table', () => {
   it.each([
-    ['running', 'is-danger'],
-    ['starting', 'is-danger'],
-    ['stalled', 'is-danger'],
-    ['stopping', 'is-danger'],
+    ['running', 'is-success'],
+    ['starting', 'is-success'],
+    ['stalled', 'is-success'],
+    ['stopping', 'is-success'],
     ['failed', 'is-danger'],
     ['full', 'is-warning'],
     ['stopped', null],
     ['orphaned', null],
   ])('tags a %s capture %s', (state, want) => {
     expect(statusType({ state })).toBe(want);
+  });
+
+  it.each([
+    ['running', 'Running'],
+    ['stopped', 'Stopped'],
+    ['failed', 'Failed'],
+    ['', 'Unknown'],
+    [undefined, 'Unknown'],
+  ])('names a %j capture %s', (state, want) => {
+    expect(statusText({ state })).toBe(want);
   });
 
   it('counts the running captures', () => {

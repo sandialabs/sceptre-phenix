@@ -297,10 +297,10 @@ func TestStop(t *testing.T) { //nolint:paralleltest // shares the fake minimega
 			wantSent: []string{listed, "capture pcap delete namespace 2"},
 		},
 		{
-			name:     "answers the listed capture when the stop gives no final rows",
+			name:     "answers the listed capture as stopped when the stop gives no final rows",
 			id:       "2",
 			prepare:  func(c *fakeCluster) { c.noFinal = true },
-			want:     mm.NamespaceCapture{ID: "2", State: "running", Path: "exp1/files/b.pcapng", Format: "pcapng"},
+			want:     mm.NamespaceCapture{ID: "2", State: "stopped", Path: "exp1/files/b.pcapng", Format: "pcapng"},
 			wantSent: []string{listed, "capture pcap delete namespace 2"},
 		},
 		{

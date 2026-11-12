@@ -1924,7 +1924,10 @@ paths:
         minimega supports them (`support`), and the Open vSwitch mirror
         budget of each host and bridge that the experiment uses (`budget`).
         Experiment captures and the budget are given only while the
-        experiment runs and minimega supports experiment captures. A budget
+        experiment runs and minimega supports experiment captures. An
+        experiment capture that this server stopped stays in the list as
+        `stopped` while the head node has its file, until the experiment
+        stops or the server restarts. A budget
         that cannot be read gives `budgetError`, and experiment captures
         that cannot be listed give `experimentCapturesError`; the list does
         not fail.
@@ -2084,8 +2087,8 @@ paths:
                 $ref: "#/components/schemas/Error"
         "404":
           description: >-
-            the experiment does not exist, or minimega does not list the
-            capture (a stopped experiment has none)
+            the experiment does not exist, or the capture is not in the
+            list (a stopped experiment has none)
           content:
             application/json:
               schema:
@@ -2144,7 +2147,7 @@ paths:
         "404":
           description: >-
             the experiment does not exist, or minimega does not list the
-            capture
+            capture, as one already stopped
           content:
             application/json:
               schema:

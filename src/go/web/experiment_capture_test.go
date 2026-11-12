@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -48,6 +49,9 @@ func useCaptureSupport(t *testing.T, available bool) {
 
 	mm.SetCaptureFeaturesForced(available)
 	t.Cleanup(func() { mm.SetCaptureFeaturesForced(!mm.CaptureVersionRequired) })
+
+	// the captures that a stop keeps would reach the next test
+	t.Cleanup(func() { expcapture.Forget("test-experiment") })
 }
 
 // captureRole may do what verbs name on test-experiment's experiment captures.
@@ -333,6 +337,65 @@ func TestGetAndStopExperimentCapture(t *testing.T) {
 				t.Errorf("%s %s mismatch (-want +got):\n%s", tc.method, path, diff)
 			}
 		})
+	}
+}
+
+// forgettingMM is the test minimega, which forgets an experiment capture once it stops it, as minimega does.
+type forgettingMM struct {
+	*testMM
+
+	stopped atomic.Bool
+}
+
+func (m *forgettingMM) GetNamespaceCaptures(opts ...mm.Option) ([]mm.NamespaceCapture, error) {
+	if m.stopped.Load() {
+		return nil, nil
+	}
+
+	return m.testMM.GetNamespaceCaptures(opts...)
+}
+
+func (m *forgettingMM) StopNamespaceCapture(opts ...mm.Option) ([]mm.NamespaceCapture, error) {
+	defer m.stopped.Store(true)
+
+	return m.testMM.StopNamespaceCapture(opts...)
+}
+
+// A capture that a stop stopped stays in the list as stopped, also in a later list request, though minimega forgets it.
+func TestStoppedExperimentCaptureStaysListed(t *testing.T) {
+	useCaptureSupport(t, true)
+	useExperimentFilesDir(t, map[string]string{"c.pcapng": ""})
+
+	path := filepath.Join(common.PhenixBase, "images", "test-experiment", "files", "c.pcapng")
+	fake := useCapturedExperiment(t, false, mm.NamespaceCapture{ID: "3", State: "running", Path: path, Format: "pcapng"})
+	original := mm.DefaultMM
+	t.Cleanup(func() { mm.DefaultMM = original }) //nolint:reassign // restore test double
+
+	mm.DefaultMM = &forgettingMM{testMM: fake} //nolint:reassign // test double
+
+	server := serveAs(t, "alice", captureRole("list", "delete")).URL
+
+	resp := do(t, http.MethodDelete, server+experimentCapturesPath+"/3", "")
+	if body := readBody(t, resp); resp.StatusCode != http.StatusOK {
+		t.Fatalf("DELETE %s/3 = %d, want %d: %s", experimentCapturesPath, resp.StatusCode, http.StatusOK, body)
+	}
+
+	want := []*proto.ExperimentCapture{{
+		Id: "3", State: "stopped", Path: path, File: "c.pcapng", Format: "pcapng", Counters: &proto.CaptureCounters{},
+	}}
+
+	for _, request := range []string{"after the stop", "on a reload"} {
+		resp := do(t, http.MethodGet, server+experimentCapturesPath, "")
+		body := readBody(t, resp)
+
+		got := new(proto.CaptureList)
+		if err := protojson.Unmarshal([]byte(body), got); err != nil {
+			t.Fatalf("GET %s %s = %s, not a capture list: %v", experimentCapturesPath, request, body, err)
+		}
+
+		if diff := cmp.Diff(want, got.GetExperimentCaptures(), protocmp.Transform()); diff != "" {
+			t.Errorf("GET %s %s experiment captures mismatch (-want +got):\n%s", experimentCapturesPath, request, diff)
+		}
 	}
 }
 

@@ -93,7 +93,7 @@
       </b-table-column>
       <b-table-column field="state" label="Status" v-slot="props">
         <b-tag :type="statusType(props.row)" class="capture-state">
-          {{ props.row.state || 'unknown' }}
+          {{ statusText(props.row) }}
         </b-tag>
       </b-table-column>
       <b-table-column field="scope" label="Scope" v-slot="props">
@@ -240,6 +240,7 @@
     countText,
     isRunning,
     msText,
+    statusText,
     statusType,
     unsupportedNotice,
     budgetBanner,
@@ -294,6 +295,7 @@
         countText,
         isRunning,
         msText,
+        statusText,
         statusType,
         captureIcon: CAPTURE_ICON,
       };

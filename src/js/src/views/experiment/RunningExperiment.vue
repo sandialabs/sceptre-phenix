@@ -395,7 +395,7 @@
             <b-tag
               v-if="runningCaptureCount"
               class="captures-count"
-              type="is-danger"
+              type="is-success"
               rounded>
               <span aria-hidden="true">{{ runningCaptureCount }}</span>
               <span class="is-sr-only"

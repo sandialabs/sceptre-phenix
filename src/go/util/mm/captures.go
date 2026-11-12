@@ -339,7 +339,7 @@ func parseNamespaceCaptures(rows []map[string]string) []NamespaceCapture {
 		})
 	}
 
-	slices.SortStableFunc(captures, func(a, b NamespaceCapture) int { return compareCaptureIDs(a.ID, b.ID) })
+	slices.SortStableFunc(captures, func(a, b NamespaceCapture) int { return CompareCaptureIDs(a.ID, b.ID) })
 
 	return captures
 }
@@ -364,8 +364,8 @@ func summarize(c *NamespaceCapture, row map[string]string) {
 	}
 }
 
-// compareCaptureIDs orders numeric IDs by number, before any other ID, which sorts by text.
-func compareCaptureIDs(a, b string) int {
+// CompareCaptureIDs orders numeric IDs by number, before any other ID, which sorts by text.
+func CompareCaptureIDs(a, b string) int {
 	na, errA := strconv.ParseUint(a, 10, 64)
 	nb, errB := strconv.ParseUint(b, 10, 64)
 

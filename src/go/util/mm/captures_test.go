@@ -160,7 +160,7 @@ func TestParseNamespaceCapturesProperty(t *testing.T) {
 			}
 		}
 
-		if !slices.IsSortedFunc(ids, compareCaptureIDs) || len(slices.Compact(slices.Clone(ids))) != len(ids) {
+		if !slices.IsSortedFunc(ids, CompareCaptureIDs) || len(slices.Compact(slices.Clone(ids))) != len(ids) {
 			t.Fatalf("capture IDs = %q, want each once, sorted", ids)
 		}
 
@@ -608,7 +608,7 @@ func TestNamespaceCaptureRunning(t *testing.T) {
 	}
 }
 
-// compareCaptureIDs orders numeric IDs by number, equal numbers as equal, and puts them before other IDs, which sort
+// CompareCaptureIDs orders numeric IDs by number, equal numbers as equal, and puts them before other IDs, which sort
 // by text.
 func TestCompareCaptureIDs(t *testing.T) {
 	t.Parallel()
@@ -628,8 +628,8 @@ func TestCompareCaptureIDs(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		if got := compareCaptureIDs(tc.a, tc.b); got != tc.want {
-			t.Errorf("compareCaptureIDs(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.want)
+		if got := CompareCaptureIDs(tc.a, tc.b); got != tc.want {
+			t.Errorf("CompareCaptureIDs(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.want)
 		}
 	}
 }

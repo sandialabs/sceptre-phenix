@@ -34,6 +34,8 @@ func init() {
 // experimentCapturesStopped tells the clients that every experiment capture of the stopped experiment exp has stopped,
 // in one event named <exp>/*: minimega stops them as it clears the namespace, so none is left to list by ID.
 func experimentCapturesStopped(_, exp string) {
+	expcapture.Forget(exp)
+
 	if !mm.CaptureFeatures() {
 		return
 	}
