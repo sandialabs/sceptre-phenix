@@ -11,7 +11,7 @@ multi-ecosystem-groups:
     # The branch-name hook in prek.toml rejects '/', Dependabot's default separator.
     pull-request-branch-name:
       separator: '-'
-  go:
+  gomod:
     schedule:
       interval: weekly
     commit-message:
@@ -57,7 +57,7 @@ updates:
   - package-ecosystem: gomod
     directories: [/src/go, /examples/go]
     patterns: ['*']
-    multi-ecosystem-group: go
+    multi-ecosystem-group: gomod
     cooldown:
       default-days: 14
     ignore:
