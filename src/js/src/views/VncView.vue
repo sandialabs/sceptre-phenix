@@ -2,7 +2,8 @@
      four VM consoles in one of the layouts, with the narrow top bar that
      acts on the pane that has keyboard input. The user can hide the top bar;
      a small button in the top left corner then shows it again. There is no
-     status bar and no leave-page warning. -->
+     status bar and no leave-page warning. A pane says when its VM restarts
+     for a redeploy or a disk reset, and when its VM was killed. -->
 <script setup>
   import {
     computed,
@@ -19,10 +20,19 @@
   import { useRoute, useRouter } from 'vue-router';
   import { ToastProgrammatic as Toast } from 'buefy';
 
-  import { createVmSnapshot, startVmActionsJob } from '@/api/vms.js';
+  import {
+    createVmSnapshot,
+    redeployVm,
+    startVmActionsJob,
+  } from '@/api/vms.js';
+  import { captureSupport } from '@/components/experiment/experimentCaptures.js';
   import { minuteStamp } from '@/components/experiment/timestamp.js';
+  import { useVmCaptures } from '@/components/experiment/useVmCaptures.js';
+  import VmAnnotationsModal from '@/components/experiment/VmAnnotationsModal.vue';
   import { VM_ACTION_CONFIRMS } from '@/components/experiment/vmActions.js';
   import { saveScreenshot } from '@/components/experiment/vmTools.js';
+  import VMLabelsModal from '@/components/VMLabelsModal.vue';
+  import VMMountBrowserModal from '@/components/VMMountBrowserModal.vue';
   import { usePhenixStore } from '@/store.js';
   import { useErrorNotification } from '@/utils/errorNotif';
   import { escapeHTML } from '@/utils/escapeHTML.js';
@@ -31,6 +41,7 @@
     confirmOperation,
     notifyOutcome,
     outcomeFromJob,
+    outcomeFromSettled,
   } from '@/utils/operations.js';
   import { pageTitle } from '@/utils/pageTitle.js';
   import {
@@ -66,6 +77,7 @@
   import { useVncSession } from '@/vnc/useVncSession.js';
   import VncAddVm from '@/vnc/VncAddVm.vue';
   import VncClipboardPanel from '@/vnc/VncClipboardPanel.vue';
+  import VncForwardsPanel from '@/vnc/VncForwardsPanel.vue';
   import VncKeysMenu from '@/vnc/VncKeysMenu.vue';
   import VncPane from '@/vnc/VncPane.vue';
   import VncSettingsPanel from '@/vnc/VncSettingsPanel.vue';
@@ -73,7 +85,25 @@
   import VncVmModals from '@/vnc/VncVmModals.vue';
 
   // the VM actions that open a dialog of VncVmModals
-  const DIALOG_ACTIONS = ['cdrom', 'portForward', 'memorySnapshot'];
+  const DIALOG_ACTIONS = [
+    'cdrom',
+    'portForward',
+    'memorySnapshot',
+    'commit',
+    'redeploy',
+  ];
+
+  // what a pane says while its VM restarts for the action
+  const RESTARTS = {
+    redeploy: 'Redeploy restarts the VM.',
+    resetDisk: 'Reset disk restarts the VM.',
+  };
+  // after the action, how many times and how far apart, in milliseconds,
+  // the page tries to connect the console again
+  const RESTART_TRIES = 6;
+  const RESTART_RETRY_MS = 5000;
+  // the session states of a connection that is under way
+  const CONNECTING = new Set(['loading', 'connecting', 'checking']);
 
   // the session storage key: the chord toast shows once each browser session
   const CHORD_TOAST_KEY = 'phenix.vnc.chordHintShown';
@@ -83,6 +113,8 @@
     pause: 'Paused',
     restart: 'Restarted',
     shutdown: 'Shut down',
+    kill: 'Killed',
+    resetDisk: 'Reset the disk of',
   };
 
   const route = useRoute();
@@ -165,7 +197,17 @@
         clipboard: '',
         // the VM action that runs on this VM, or null
         pending: null,
+        // the action that restarts the VM (see RESTARTS), or null
+        restarting: null,
+        restartTimer: null,
+        // Kill on this page removed the VM
+        killed: false,
+        stopped: false,
+        reload: row.reload,
+        reloadCaptures: row.reloadCaptures,
         stop() {
+          controller.stopped = true;
+          clearTimeout(controller.restartTimer);
           release();
           session.dispose();
           row.dispose();
@@ -174,6 +216,11 @@
       });
       // a closed or new connection has no key down in QEMU
       watch(session.connection, () => (controller.held = []));
+      watch(session.state, (state) => {
+        if (state !== 'connected' || !controller.restarting) return;
+        clearTimeout(controller.restartTimer);
+        controller.restarting = null;
+      });
       return controller;
     });
   }
@@ -322,6 +369,66 @@
   const can = (controller, resource, verb) =>
     roleAllowed(resource, verb, `${controller.experiment}/${controller.vm}`);
 
+  // Sends one request for each name, then tells in one summary how they
+  // went, offering to send again those that may work if retried.
+  async function fanOut(names, verbPast, send, noun = 'VM') {
+    const results = await Promise.allSettled(names.map(send));
+    notifyOutcome(buefy, {
+      verbPast,
+      noun,
+      items: outcomeFromSettled(names, results),
+      onRetry: (retry) => fanOut(retry, verbPast, send, noun),
+    });
+  }
+
+  const {
+    capturePending,
+    captureAllPending,
+    handlePcap,
+    captureAllInterfaces,
+    stopAllCaptures,
+  } = useVmCaptures({ fanOut, experimentOf: (vm) => vm.experiment });
+
+  // the VM of a pane as the capture functions take it
+  const captureTarget = (controller) => ({
+    ...controller.row,
+    name: controller.vm,
+    experiment: controller.experiment,
+  });
+
+  // the action whose button spins for the pane, or null
+  function pendingOf(controller) {
+    if (!controller) return null;
+    if (controller.pending) return controller.pending;
+    if (capturePending.value[`${controller.vm}/0`]) return 'captureIface';
+    if (captureAllPending.value[controller.vm]) {
+      return (controller.row?.captures ?? []).length
+        ? 'stopCaptures'
+        : 'captureAll';
+    }
+    return null;
+  }
+
+  // the text of a pane while its VM restarts, or ''
+  const restartText = (controller) => RESTARTS[controller.restarting] ?? '';
+
+  // Connects the console again after a redeploy or a disk reset restarts the
+  // VM: a few tries, RESTART_RETRY_MS apart, until the console connects.
+  function reconnectAfterRestart(controller, tries = RESTART_TRIES) {
+    clearTimeout(controller.restartTimer);
+    if (controller.stopped) return;
+    const state = controller.session.state;
+    if (state === 'connected' || tries <= 0) {
+      controller.restarting = null;
+      return;
+    }
+    if (!CONNECTING.has(state)) controller.session.retryNow();
+    controller.restartTimer = setTimeout(
+      () => reconnectAfterRestart(controller, tries - 1),
+      RESTART_RETRY_MS,
+    );
+  }
+
   async function snapshot(controller) {
     if (controller.pending) return;
     controller.pending = 'snapshot';
@@ -352,9 +459,114 @@
   }
 
   async function openDialog(name, controller) {
+    toolbar.value?.closePanels();
     // a dialog takes the keyboard from the fullscreen console
     await exitFullscreen().catch(() => {});
     vmModals.value?.open(name, controller);
+  }
+
+  // opens a dialog component of the experiment page for the pane's VM
+  async function openModal(component, props, events = {}) {
+    toolbar.value?.closePanels();
+    await exitFullscreen().catch(() => {});
+    buefy?.modal.open({
+      component,
+      trapFocus: true,
+      hasModalCard: true,
+      props,
+      events,
+    });
+  }
+
+  function openMount(controller) {
+    return openModal(VMMountBrowserModal, {
+      targetVm: controller.vm,
+      targetExp: controller.experiment,
+    });
+  }
+
+  function openLabels(controller) {
+    return openModal(
+      VMLabelsModal,
+      {
+        vmName: controller.vm,
+        experiment: controller.experiment,
+        tags: controller.row?.tags ?? {},
+      },
+      { saved: () => controller.reload() },
+    );
+  }
+
+  function openAnnotations(controller) {
+    return openModal(
+      VmAnnotationsModal,
+      {
+        experiment: controller.experiment,
+        vmName: controller.vm,
+        running: Boolean(controller.row?.running),
+      },
+      { saved: () => controller.reload() },
+    );
+  }
+
+  // Starts a capture on interface 0: in the format the dialog asks for when
+  // minimega takes one, else at once.
+  function startCapture(controller) {
+    if (captureSupport(null, store.features).available) {
+      return openDialog('captureIface', controller);
+    }
+    return captureOn(controller);
+  }
+
+  async function captureOn(controller, format) {
+    await handlePcap(captureTarget(controller), 0, format);
+    await controller.reloadCaptures();
+  }
+
+  async function captureAll(controller) {
+    await captureAllInterfaces(captureTarget(controller));
+    await controller.reloadCaptures();
+  }
+
+  async function stopCaptures(controller) {
+    await stopAllCaptures(captureTarget(controller));
+    await controller.reloadCaptures();
+  }
+
+  // Redeploys the VM with the settings of the dialog. The pane says that the
+  // VM restarts until its console connects again.
+  async function redeploy(controller, body) {
+    if (controller.pending) return;
+    controller.pending = 'redeploy';
+    controller.restarting = 'redeploy';
+    let redeployed = false;
+    try {
+      const { data } = await redeployVm(
+        controller.experiment,
+        controller.vm,
+        body,
+      );
+      if (data?.name) controller.row = data;
+      redeployed = true;
+      buefy?.toast.open({
+        message: escapeHTML(`Redeployed the ${controller.vm} VM`),
+        type: 'is-success',
+      });
+    } catch (err) {
+      useErrorNotification(err);
+    } finally {
+      controller.pending = null;
+      if (redeployed) reconnectAfterRestart(controller);
+      else controller.restarting = null;
+    }
+  }
+
+  // after an add, the port forwards panel opens again with a fresh list
+  const forwardsRefresh = ref(0);
+  function dialogDone(action, controller) {
+    if (action !== 'portForward') return;
+    forwardsRefresh.value += 1;
+    if (controller === active.value) toolbar.value?.openPanel('forwards');
   }
 
   // asks before an action of VM_ACTION_CONFIRMS but Start, which does not ask
@@ -367,28 +579,43 @@
     return confirmOperation(buefy, { ...ask([controller.vm]), noun: 'VM' });
   }
 
+  // the actions that need no confirm and no job, by name
+  const DIRECT_ACTIONS = {
+    screenshot,
+    mount: openMount,
+    labels: openLabels,
+    annotations: openAnnotations,
+    captureIface: startCapture,
+    captureAll,
+    stopCaptures,
+  };
+
   async function runAction(name, controller = active.value) {
-    if (!controller || controller.pending) return;
-    if (name === 'screenshot') return screenshot(controller);
+    if (!controller || pendingOf(controller)) return;
+    if (DIRECT_ACTIONS[name]) return DIRECT_ACTIONS[name](controller);
     if (DIALOG_ACTIONS.includes(name)) return openDialog(name, controller);
     if (!(await confirmAction(name, controller))) return;
     if (name === 'snapshot') return snapshot(controller);
     return runJob(name, controller);
   }
 
-  // takes a power action in a background job; a retry does not ask again
+  // Takes a power action in a background job; a retry does not ask again.
+  // A pane shows that Reset disk restarts the VM, and that Kill removed it.
   async function runJob(name, controller) {
     if (controller.pending) return;
     controller.pending = name;
+    if (RESTARTS[name]) controller.restarting = name;
+    let succeeded = null;
     try {
       const job = await startVmActionsJob(controller.experiment, name, [
         controller.vm,
       ]);
       const done = await useJobStore().whenDone(job.id);
-      const succeeded = (done?.items ?? []).find(
-        (item) => item.status === 'succeeded' && item.result,
+      succeeded = (done?.items ?? []).find(
+        (item) => item.status === 'succeeded',
       );
-      if (succeeded) controller.row = succeeded.result;
+      if (succeeded?.result) controller.row = succeeded.result;
+      if (succeeded && name === 'kill') controller.killed = true;
       notifyOutcome(buefy, {
         verbPast: VM_ACTION_DONE[name],
         noun: 'VM',
@@ -399,6 +626,10 @@
       useErrorNotification(err);
     } finally {
       controller.pending = null;
+      if (controller.restarting === name) {
+        if (succeeded) reconnectAfterRestart(controller);
+        else controller.restarting = null;
+      }
     }
   }
 
@@ -515,7 +746,7 @@
   <div ref="page" :class="['vnc-page', { 'is-toolbar-hidden': toolbarHidden }]">
     <b-tooltip
       v-if="toolbarHidden"
-      label="Show the toolbar"
+      label="Show the toolbar (Ctrl+] then T)"
       type="is-dark"
       position="is-right"
       class="vnc-show-toolbar-tip">
@@ -540,7 +771,7 @@
       :details="details"
       :layout="layout"
       :pane-count="vms.length"
-      :pending="active?.pending ?? null"
+      :pending="pendingOf(active)"
       :fullscreen="inFullscreen"
       @action="runAction"
       @layout="(name) => show(vms, name)"
@@ -577,6 +808,16 @@
             fullscreen(active && paneRefs.get(active.key)?.element())
           " />
       </template>
+      <template #forwards="{ open }">
+        <VncForwardsPanel
+          v-if="active"
+          :experiment="active.experiment"
+          :vm="active.vm"
+          :vm-row="active.row"
+          :open="open"
+          :refresh="forwardsRefresh"
+          @add="runAction('portForward')" />
+      </template>
       <template #add="{ open }">
         <VncAddVm v-if="open" :shown="vms" @add="addVm" />
       </template>
@@ -606,6 +847,8 @@
         :quality="settings.quality"
         :compression="settings.compression"
         :can-resume="can(controller, 'vms/start', 'update')"
+        :restarting="restartText(controller)"
+        :killed="controller.killed"
         @activate="activate(controller.key)"
         @keyboard="(on) => setKeyboard(controller.key, on)"
         @connect="controller.session.connected()"
@@ -632,7 +875,11 @@
       </div>
     </div>
     <div class="is-sr-only" aria-live="polite">{{ live }}</div>
-    <VncVmModals ref="vmModals" />
+    <VncVmModals
+      ref="vmModals"
+      @done="dialogDone"
+      @redeploy="redeploy"
+      @capture="captureOn" />
   </div>
 </template>
 
@@ -1002,6 +1249,74 @@
 
     .vnc-pane-status-label {
       font-weight: 700;
+    }
+
+    .vnc-pane-status a {
+      color: $vnc-ring;
+      text-decoration: underline;
+    }
+
+    .vnc-addresses {
+      margin: 0 0 0.4rem;
+      font-size: 0.8rem;
+
+      li {
+        display: flex;
+        gap: 0.4rem;
+        align-items: center;
+        margin-bottom: 0.2rem;
+      }
+    }
+
+    .vnc-address {
+      font-family: monospace;
+    }
+
+    .vnc-vm-title {
+      margin-top: 0.6rem;
+    }
+
+    // the Actions menu matches the panels of the bar
+    .vnc-actions-menu {
+      .dropdown-content {
+        background: $vnc-panel;
+        border: 1px solid $vnc-line;
+      }
+
+      .dropdown-divider {
+        background: $vnc-line;
+      }
+
+      .dropdown-item {
+        padding-right: 1rem;
+        color: #fff;
+        white-space: nowrap;
+
+        &:hover,
+        &:focus-visible {
+          color: #fff;
+          background: $vnc-ground;
+        }
+
+        &:focus-visible {
+          outline: 2px solid $vnc-ring;
+        }
+      }
+
+      .vnc-actions-item--danger,
+      .vnc-actions-item--danger:hover,
+      .vnc-actions-item--danger:focus-visible {
+        color: #ffb3b3;
+      }
+
+      // the tooltip's trigger fills the row, so the whole row shows it
+      .vnc-actions-tip,
+      .vnc-actions-tip .tooltip-trigger {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        width: 100%;
+      }
     }
 
     .vnc-paused {

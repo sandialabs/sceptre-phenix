@@ -1,9 +1,9 @@
 // The VM tools that the running experiment page and the console page share:
 // a screenshot saved in the experiment files, and the state of the CD-ROM,
-// port forward and memory snapshot dialogs.
+// port forward, memory snapshot, disk image and redeploy dialogs.
 import { listDisks } from '@/api/disks.js';
 import { saveVmScreenshot } from '@/api/vms.js';
-import { isoDisks } from '@/utils/diskChain.js';
+import { baseName, isoDisks } from '@/utils/diskChain.js';
 import { useErrorNotification } from '@/utils/errorNotif';
 import { escapeHTML } from '@/utils/escapeHTML.js';
 import { roleAllowed } from '@/utils/rbac.js';
@@ -103,6 +103,48 @@ export function memorySnapshotEntry(name) {
     nameErrType: '',
     nameErrMsg: '',
   };
+}
+
+// The disk image dialog's entry for a VM: its file is named after the VM,
+// the stem of its disk and the time now, with no extension.
+export function diskImageEntry(vm) {
+  const t = timestampParts();
+  const stamp = `${t.year}${t.month}${t.day}${t.hours}${t.minutes}${t.seconds}`;
+  // the disk's file name up to its first "_" when it holds a date and time,
+  // else up to its first "."
+  const file = baseName(vm.disk);
+  const stem = file.split(/_\d{14}/.test(file) ? '_' : '.')[0];
+  return {
+    dateTime: stamp,
+    name: vm.name,
+    filename: `${vm.name}_${stem}_${stamp}`,
+    nameErrType: '',
+    nameErrMsg: '',
+  };
+}
+
+// the redeploy dialog's entry for a VM, with its settings now
+export function redeployEntry(vm) {
+  return {
+    name: vm.name,
+    cpus: vm.cpus,
+    ram: vm.ram,
+    disk: vm.disk,
+    // the server keeps the VM's disk unless another one is picked
+    currentDisk: vm.disk,
+    inject: false,
+  };
+}
+
+// The redeploy request body for an entry of the redeploy dialog.
+export function redeployBody(entry) {
+  const body = { cpus: parseInt(entry.cpus), ram: parseInt(entry.ram) };
+  // a snapshot VM's disk is the image under phēnix's own snapshot overlay;
+  // sending it back would replace the overlay with the image
+  if (entry.disk !== entry.currentDisk) body.disk = entry.disk;
+  // the select stores the string 'true' or 'false'
+  if (entry.inject === true || entry.inject === 'true') body.injects = true;
+  return body;
 }
 
 // Whether every file name of the filename dialog is allowed; marks the first

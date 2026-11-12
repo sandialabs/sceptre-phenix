@@ -37,19 +37,20 @@ module.exports = [
     // includes the State of Health layout libraries, loaded when a layout is
     // picked: ELK (elkjs, about 460 kB, shared with the Builder), dagre, cola.js,
     // and the VNC files that the next budget guards
-    limit: '1393 kB',
+    limit: '1465 kB',
   },
   {
     name: 'VNC JS (lazy-loaded)',
     // noVNC (rfb, which only src/vnc/loadRfb.js imports), the console page,
-    // the live tiles and the console link handler
+    // the live tiles, the console link handler, and the console's Actions menu
+    // and port forwards panel
     path: [
       '../dist/assets/rfb-*.js',
       '../dist/assets/Vnc*.js',
       '../dist/assets/openConsole-*.js',
     ],
     gzip: true,
-    limit: '83 kB',
+    limit: '92 kB',
   },
   {
     name: 'Builder JS (lazy-loaded)',

@@ -236,6 +236,20 @@ export const VM_ACTIONS = {
       return null;
     },
   },
+  // the console page's capture button while the VM captures nothing
+  captureIface: {
+    label: 'Capture interface 0',
+    description: 'Start a packet capture on interface 0 of the VM',
+    icon: CAPTURE_ICON,
+    rbac: [['vms/captures', 'create']],
+    blocked: (vm) => {
+      if (!vm.running) return NOT_RUNNING;
+      const iface = vmInterfaces(vm)[0];
+      if (!iface) return 'the VM has no interface 0';
+      if (iface.disconnected) return 'interface 0 of the VM is disconnected';
+      return null;
+    },
+  },
   // takes captureAll's place in the Actions column while the VM is capturing
   stopCaptures: {
     label: 'Stop all packet captures',
@@ -246,7 +260,26 @@ export const VM_ACTIONS = {
     blocked: (vm) =>
       (vm.captures ?? []).length ? null : 'no packet capture is running',
   },
+  labels: {
+    label: 'Edit labels',
+    description: 'Edit the labels and notes of the VM',
+    icon: 'tag',
+    rbac: [['vms', 'patch']],
+    blocked: () => null,
+  },
+  annotations: {
+    label: 'Edit annotations',
+    description:
+      "Edit the annotations of the VM in this experiment's copy of the topology",
+    icon: 'edit',
+    rbac: [['vms', 'patch']],
+    blocked: () => null,
+  },
 };
+
+// Why the role may not take an action: the first permission it does not have.
+export const notPermittedReason = (resource, verb) =>
+  `Your role does not permit this action (${resource} ${verb})`;
 
 // The confirm dialog of an action: the title names the VM, or the count of
 // VMs; `does` says what the action does. `many` replaces the words for VMs.
@@ -403,6 +436,7 @@ const forVm = (text, vm) => (typeof text === 'function' ? text(vm) : text);
 // Whether and how to offer an action for a VM. `can(resource, verb)` answers
 // RBAC for this VM; `features` lists the server's enabled features.
 //   permitted: the role may take the action (and the server supports it)
+//   denied: the role may not take it; `reason` names the permission
 //   disabled: it cannot be taken now; `reason` says why
 export function vmActionState(name, vm, { can, features = [] }) {
   const action = VM_ACTIONS[name];
@@ -415,7 +449,10 @@ export function vmActionState(name, vm, { can, features = [] }) {
     unavailable = 'the server does not support it';
   }
 
-  return actionState(
+  const missing = unavailable
+    ? null
+    : action.rbac.find(([resource, verb]) => !can(resource, verb));
+  const state = actionState(
     {
       name,
       label,
@@ -427,10 +464,13 @@ export function vmActionState(name, vm, { can, features = [] }) {
     },
     {
       unavailable,
-      permitted: unavailable ? true : actionPermitted(name, can),
+      permitted: !missing,
       blocked: unavailable ? null : stateBlocks(action, vm),
     },
   );
+  return missing
+    ? { ...state, denied: true, reason: notPermittedReason(...missing) }
+    : state;
 }
 
 // the action states for a list of action names

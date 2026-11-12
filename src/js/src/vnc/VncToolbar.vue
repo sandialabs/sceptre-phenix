@@ -1,15 +1,25 @@
 <!-- The narrow top bar of the console page (M2a). It acts on the pane that
      has keyboard input: links to its experiment and to the details of its
-     VM, the VM actions that the role may take, the Keys, Clipboard and View
-     panels (M6a), the layout picker, Add VM, full screen, and the
-     connection indicator and Hide toolbar at the right end. The page fills
-     the panels through the keys, clipboard, view and add slots. -->
+     VM, the VM action buttons, the Keys, Clipboard and View panels (M6a),
+     the Actions menu, the layout picker, Add VM, full screen, and the
+     connection indicator and Hide toolbar at the right end. An action that
+     the role or the VM state rules out is greyed out with the reason. The
+     page fills the panels through the keys, clipboard, view, forwards and
+     add slots. -->
 <script setup>
+  import { ToastProgrammatic as Toast } from 'buefy';
   import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
+  import { copyText } from '@/components/console/consoleTools.js';
   import { vmDetailsRoute } from '@/components/experiment/experimentTabs.js';
-  import { vmButtonStates } from '@/components/experiment/vmActions.js';
+  import {
+    notPermittedReason,
+    vmButtonStates,
+    vmInterfaces,
+  } from '@/components/experiment/vmActions.js';
   import { usePhenixStore } from '@/store.js';
+  import { escapeHTML } from '@/utils/escapeHTML.js';
+  import { formattingMixin } from '@/utils/formattingMixin.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import { CHORD_HINT } from './chord.js';
   import {
@@ -28,6 +38,7 @@
     MAX_PANES,
   } from './consoleUrl.js';
   import { keyboardCaptureNote } from './fullscreen.js';
+  import VncActionsMenu from './VncActionsMenu.vue';
 
   const props = defineProps({
     experiment: { type: String, default: '' },
@@ -66,6 +77,7 @@
 
   const root = ref(null);
   const open = ref(null);
+  const actionsMenu = ref(null);
 
   // wide: the panel is as wide as its rows of buttons
   const PANELS = [
@@ -73,6 +85,18 @@
     { name: 'clipboard', label: 'Clipboard', icon: 'clipboard', wide: true },
     { name: 'view', label: 'View', icon: 'gear', caret: true },
   ];
+
+  // the groups of the Actions menu; the last one, in red, kills or
+  // replaces the VM
+  const MENU_GROUPS = [
+    ['snapshot', 'memorySnapshot', 'commit', 'captureAll'],
+    ['cdrom'],
+    ['labels', 'annotations'],
+    ['redeploy', 'resetDisk', 'kill'],
+  ];
+  const DANGER_GROUP = MENU_GROUPS.length - 1;
+
+  const HIDE_TIP = 'Hide the toolbar (Ctrl+] then T)';
 
   const hasVm = computed(() => Boolean(props.experiment && props.vm));
 
@@ -91,26 +115,67 @@
   const can = (resource, verb) =>
     roleAllowed(resource, verb, `${props.experiment}/${props.vm}`);
 
-  // the power actions, the snapshots, the screenshot, the CD-ROM and the
-  // port forward; those the role may not take are left out
+  const stateOpts = () => ({
+    can,
+    features: usePhenixStore().features ?? [],
+  });
+
+  // a packet capture of the VM runs
+  const capturing = computed(() => (props.vmRow?.captures ?? []).length > 0);
+  // the menu offers to stop the captures while one runs
+  const swapCapture = (name) =>
+    name === 'captureAll' && capturing.value ? 'stopCaptures' : name;
+
+  // Port forwards opens a panel: the list needs vms/forwards list
+  function forwardsButton() {
+    const permitted = can('vms/forwards', 'list');
+    return {
+      name: 'portForward',
+      label: 'Port forwards',
+      description: 'List, add and remove the port forwards of the VM',
+      icon: 'arrow-right',
+      permitted,
+      disabled: !permitted,
+      reason: permitted ? null : notPermittedReason('vms/forwards', 'list'),
+      panel: true,
+    };
+  }
+
+  // The icon buttons: power, screenshot, port forwards, mount and the
+  // capture button, which stops every capture of the VM while one runs.
   const actions = computed(() => {
     const row = props.vmRow;
     if (!row || !hasVm.value) return [];
-    const names = [
-      row.running ? 'pause' : 'start',
-      'restart',
-      'shutdown',
-      'snapshot',
-      'memorySnapshot',
-      'screenshot',
-      'cdrom',
-      'portForward',
+    const power = [row.running ? 'pause' : 'start', 'restart', 'shutdown'];
+    const capture = capturing.value ? 'stopCaptures' : 'captureIface';
+    const [mount, captureButton] = vmButtonStates(
+      ['mount', capture],
+      row,
+      stateOpts(),
+    );
+    return [
+      ...vmButtonStates([...power, 'screenshot'], row, stateOpts()),
+      forwardsButton(),
+      mount,
+      capturing.value
+        ? { ...captureButton, label: 'Stop captures' }
+        : captureButton,
     ];
-    return vmButtonStates(names, row, {
-      can,
-      features: usePhenixStore().features ?? [],
-    }).filter((action) => action.permitted);
   });
+
+  const menuGroups = computed(() => {
+    const row = props.vmRow;
+    if (!row || !hasVm.value) return [];
+    return MENU_GROUPS.map((names) =>
+      vmButtonStates(names.map(swapCapture), row, stateOpts()),
+    );
+  });
+
+  const menuPending = computed(() =>
+    menuGroups.value.some((group) =>
+      group.some((action) => action.name === props.pending),
+    ),
+  );
 
   const layouts = computed(() =>
     LAYOUTS.map((name) => {
@@ -150,6 +215,37 @@
     props.details.scaling ? detailsLine(props.details) : label.value,
   );
 
+  // the IP address of each interface of the VM that has one
+  const addresses = computed(() =>
+    vmInterfaces(props.vmRow)
+      .filter((iface) => iface.ip)
+      .map((iface) => ({ ip: iface.ip, network: iface.network })),
+  );
+
+  // the VM rows of the indicator popover
+  const vmRows = computed(() => {
+    const row = props.vmRow;
+    if (!row) return [];
+    const list = [];
+    if (row.host) list.push(['Host', row.host]);
+    if (row.running && row.uptime != null) {
+      list.push(['Uptime', formattingMixin.methods.formatUptime(row.uptime)]);
+    }
+    list.push(['miniccc agent', row.ccActive ? 'Active' : 'Not active']);
+    return list;
+  });
+
+  // the clipboard write runs in the click handler, as browsers require
+  async function copyAddress(ip) {
+    const copied = await copyText(ip);
+    new Toast().open({
+      message: escapeHTML(
+        copied ? `Copied ${ip}` : `Could not copy ${ip} to the clipboard`,
+      ),
+      type: copied ? 'is-success' : 'is-danger',
+    });
+  }
+
   // the rows of the indicator popover
   const rows = computed(() => {
     const d = props.details;
@@ -171,6 +267,7 @@
 
   function toggle(name) {
     if (name === 'add' && addDisabled.value) return;
+    actionsMenu.value?.close();
     open.value = open.value === name ? null : name;
     if (open.value === 'status') emit('details');
   }
@@ -188,12 +285,13 @@
 
   function closePanels() {
     open.value = null;
+    actionsMenu.value?.close();
   }
 
   /**
    * Opens one panel, as its button does.
    *
-   * @param {'keys'|'clipboard'|'view'|'add'|'status'} name
+   * @param {'keys'|'clipboard'|'view'|'forwards'|'add'|'status'} name
    */
   function openPanel(name) {
     if (open.value !== name) toggle(name);
@@ -281,22 +379,52 @@
       class="vnc-vm-actions"
       role="group"
       aria-label="VM actions">
-      <b-tooltip
-        v-for="action in actions"
-        :key="action.name"
-        :label="action.reason || action.description"
-        type="is-dark"
-        position="is-bottom"
-        multilined>
-        <b-button
-          size="is-small"
-          :icon-left="action.icon"
-          :aria-label="action.label"
-          :aria-disabled="action.disabled ? 'true' : undefined"
-          :loading="pending === action.name"
-          :aria-busy="pending === action.name ? 'true' : undefined"
-          @click="action.disabled || pending || emit('action', action.name)" />
-      </b-tooltip>
+      <template v-for="action in actions" :key="action.name">
+        <div v-if="action.panel" class="vnc-panel-wrap" @keydown.esc="escape">
+          <b-tooltip
+            :label="action.reason || action.description"
+            type="is-dark"
+            position="is-bottom"
+            multilined
+            :active="open !== 'forwards'">
+            <b-button
+              size="is-small"
+              class="vnc-panel-button vnc-forwards-button"
+              :icon-left="action.icon"
+              :aria-label="action.label"
+              :aria-disabled="action.disabled ? 'true' : undefined"
+              :aria-expanded="String(open === 'forwards')"
+              aria-controls="vnc-panel-forwards"
+              @click="action.disabled || toggle('forwards')" />
+          </b-tooltip>
+          <div
+            v-show="open === 'forwards'"
+            id="vnc-panel-forwards"
+            class="vnc-panel vnc-panel--wide"
+            role="dialog"
+            aria-label="Port forwards">
+            <slot name="forwards" :open="open === 'forwards'"></slot>
+          </div>
+        </div>
+        <b-tooltip
+          v-else
+          :label="action.reason || action.description"
+          type="is-dark"
+          position="is-bottom"
+          multilined>
+          <b-button
+            size="is-small"
+            :class="`vnc-action-${action.name}`"
+            :icon-left="action.icon"
+            :aria-label="action.label"
+            :aria-disabled="action.disabled ? 'true' : undefined"
+            :loading="pending === action.name"
+            :aria-busy="pending === action.name ? 'true' : undefined"
+            @click="
+              action.disabled || pending || emit('action', action.name)
+            " />
+        </b-tooltip>
+      </template>
     </div>
 
     <div
@@ -304,16 +432,21 @@
       :key="panel.name"
       class="vnc-panel-wrap"
       @keydown.esc="escape">
-      <b-button
-        size="is-small"
-        class="vnc-panel-button"
-        :icon-left="panel.icon"
-        :icon-right="panel.caret ? 'caret-down' : undefined"
-        :aria-expanded="String(open === panel.name)"
-        :aria-controls="`vnc-panel-${panel.name}`"
-        @click="toggle(panel.name)">
-        {{ panel.label }}
-      </b-button>
+      <b-tooltip
+        :label="panel.label"
+        type="is-dark"
+        position="is-bottom"
+        :active="open !== panel.name">
+        <b-button
+          size="is-small"
+          class="vnc-panel-button"
+          :icon-left="panel.icon"
+          :icon-right="panel.caret ? 'caret-down' : undefined"
+          :aria-label="panel.label"
+          :aria-expanded="String(open === panel.name)"
+          :aria-controls="`vnc-panel-${panel.name}`"
+          @click="toggle(panel.name)" />
+      </b-tooltip>
       <div
         v-show="open === panel.name"
         :id="`vnc-panel-${panel.name}`"
@@ -323,6 +456,15 @@
         <slot :name="panel.name" :open="open === panel.name"></slot>
       </div>
     </div>
+
+    <VncActionsMenu
+      v-if="menuGroups.length"
+      ref="actionsMenu"
+      :groups="menuGroups"
+      :danger-group="DANGER_GROUP"
+      :pending="menuPending"
+      @open="open = null"
+      @action="(name) => pending || emit('action', name)" />
 
     <div class="vnc-layouts" role="group" aria-label="Layout">
       <b-tooltip
@@ -351,7 +493,8 @@
             : 'Add a VM in a new pane'
         "
         type="is-dark"
-        position="is-bottom">
+        position="is-bottom"
+        :active="open !== 'add'">
         <b-button
           size="is-small"
           class="vnc-panel-button"
@@ -384,7 +527,11 @@
     </b-tooltip>
 
     <div class="vnc-panel-wrap" @keydown.esc="escape">
-      <b-tooltip :label="tooltip" type="is-dark" position="is-left">
+      <b-tooltip
+        :label="tooltip"
+        type="is-dark"
+        position="is-left"
+        :active="open !== 'status'">
         <button
           type="button"
           class="vnc-status"
@@ -412,6 +559,30 @@
         <p v-for="[name, value] in rows" :key="name" class="vnc-detail">
           <strong>{{ name }}:</strong> {{ value }}
         </p>
+        <template v-if="vmRow">
+          <h3 class="vnc-panel-title vnc-vm-title">VM {{ vm }}</h3>
+          <p v-for="[name, value] in vmRows" :key="name" class="vnc-detail">
+            <strong>{{ name }}:</strong> {{ value }}
+          </p>
+          <p class="vnc-detail">
+            <strong>IP addresses:</strong>
+            <template v-if="!addresses.length"> None</template>
+          </p>
+          <ul v-if="addresses.length" class="vnc-addresses">
+            <li v-for="address in addresses" :key="address.ip">
+              <span class="vnc-address">{{ address.ip }}</span>
+              <span class="vnc-address-network">({{ address.network }})</span>
+              <b-tooltip label="Copy" type="is-dark" position="is-left">
+                <b-button
+                  size="is-small"
+                  class="vnc-copy-address"
+                  icon-left="copy"
+                  :aria-label="`Copy ${address.ip}`"
+                  @click="copyAddress(address.ip)" />
+              </b-tooltip>
+            </li>
+          </ul>
+        </template>
         <b-button
           v-if="reconnect"
           size="is-small"
@@ -424,9 +595,10 @@
     </div>
 
     <b-tooltip
-      label="Hide the toolbar. Ctrl+] then T shows it again."
+      :label="HIDE_TIP"
       type="is-dark"
-      position="is-left">
+      position="is-left"
+      class="vnc-hide-toolbar-tip">
       <b-button
         size="is-small"
         class="vnc-hide-toolbar"

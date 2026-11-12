@@ -16,10 +16,12 @@ export const QUIET_MS = 5000;
 // Packet captures of the running experiment's VMs: starting and stopping them
 // on the server, and which capture buttons are waiting on it. Call it from
 // setup(); `fanOut` sends one request per name and summarizes how they went.
-export function useVmCaptures({ fanOut }) {
+// `experimentOf(vm)` names the experiment of a VM; by default it is the
+// experiment of the page route.
+export function useVmCaptures({ fanOut, experimentOf }) {
   const { proxy } = getCurrentInstance();
   const route = useRoute();
-  const exp = () => route.params.id;
+  const exp = (vm) => experimentOf?.(vm) ?? route.params.id;
 
   // "vm/interface" keys of the capture buttons waiting on the server
   const capturePending = ref({});
@@ -96,7 +98,7 @@ export function useVmCaptures({ fanOut }) {
     if (capturePending.value[captureKey(vm.name, iface)]) return;
 
     const time = uniqueStamp();
-    const expName = exp();
+    const expName = exp(vm);
 
     setCapturePending(vm.name, iface, true);
     try {
@@ -136,7 +138,7 @@ export function useVmCaptures({ fanOut }) {
     if (captureAllPending.value[vm.name]) return;
 
     const time = uniqueStamp();
-    const expName = exp();
+    const expName = exp(vm);
 
     setAllPending(vm.name, true);
     let release;
@@ -190,7 +192,7 @@ export function useVmCaptures({ fanOut }) {
     setAllPending(vm.name, true);
     try {
       // the row updates from the captures' websocket events
-      await vmsApi.deleteVmCaptures(exp(), vm.name);
+      await vmsApi.deleteVmCaptures(exp(vm), vm.name);
     } catch (err) {
       useErrorNotification(err);
     } finally {
@@ -215,7 +217,7 @@ export function useVmCaptures({ fanOut }) {
     try {
       if (start) {
         const resp = await experimentsApi.startVlanCaptures(
-          exp(),
+          route.params.id,
           alias,
           format,
         );
@@ -229,7 +231,10 @@ export function useVmCaptures({ fanOut }) {
           type: count ? 'is-success' : 'is-info',
         });
       } else {
-        const resp = await experimentsApi.stopVlanCaptures(exp(), alias);
+        const resp = await experimentsApi.stopVlanCaptures(
+          route.params.id,
+          alias,
+        );
         const vms = new Set(resp.data?.vms ?? []);
         release((name, ...rest) => vms.has(name) && onVlan(name, ...rest));
         proxy.$buefy.toast.open({

@@ -1,8 +1,9 @@
 <!-- The View panel of the console top bar (M6a): scaling, quality and
-     compression (kept for each user), View only, and full screen for the
-     pane. Resize VM shows disabled with the reason when the VM does not use
-     vga virtio. -->
+     compression (kept for each user), View only, full screen for the pane,
+     and the keyboard shortcuts of the console. Resize VM shows disabled
+     with the reason when the VM does not use vga virtio. -->
 <script setup>
+  import { CHORD_KEYS, CHORD_START } from './chord.js';
   import { keyboardCaptureNote } from './fullscreen.js';
 
   defineProps({
@@ -111,5 +112,37 @@
         </b-button>
       </b-tooltip>
     </div>
+    <h2 id="vnc-shortcuts-title" class="vnc-panel-title">Keyboard shortcuts</h2>
+    <p class="vnc-panel-hint">Press {{ CHORD_START }}, then:</p>
+    <dl class="vnc-shortcuts" aria-labelledby="vnc-shortcuts-title">
+      <template v-for="item in CHORD_KEYS" :key="item.key">
+        <dt>
+          <kbd>{{ item.key }}</kbd>
+        </dt>
+        <dd>{{ item.does }}</dd>
+      </template>
+    </dl>
   </div>
 </template>
+
+<style scoped>
+  .vnc-shortcuts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.2rem 0.6rem;
+    margin: 0;
+    font-size: 0.8rem;
+  }
+
+  .vnc-shortcuts dd {
+    margin: 0;
+  }
+
+  .vnc-shortcuts kbd {
+    padding: 0 0.3rem;
+    color: #fff;
+    background: #1a1d22;
+    border: 1px solid #6b7280;
+    border-radius: 3px;
+  }
+</style>

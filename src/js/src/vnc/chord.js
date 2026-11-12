@@ -12,6 +12,21 @@ import { readonly, ref } from 'vue';
 /** The hint for the KEYBOARD tag tooltip, the Keys menu and the toast. */
 export const CHORD_HINT = 'Ctrl+] then Tab to leave';
 
+/** The key that starts the chord, as the shortcut list names it. */
+export const CHORD_START = 'Ctrl+]';
+
+/**
+ * The keys after Ctrl+] and what each does, for the shortcut list of the
+ * View panel. Keep it in step with handleKeydown.
+ */
+export const CHORD_KEYS = [
+  { key: '1–4', does: 'Select that pane' },
+  { key: 'F', does: 'Exit full screen' },
+  { key: 'T', does: 'Show or hide the toolbar' },
+  { key: 'Tab', does: 'Leave the console' },
+  { key: 'Esc', does: 'Cancel the shortcut' },
+];
+
 const MODIFIERS = new Set(['Control', 'Shift', 'Alt', 'AltGraph', 'Meta']);
 const PANE_KEY = /^(?:Digit|Numpad)([1-4])$/;
 

@@ -149,36 +149,62 @@ and these controls:
   experiment of the pane.
 * In single view, the information button at the right of the VM name opens
   the details card of the VM on the experiment page.
-* The VM actions: `Pause` or `Resume`, `Restart`, `Shut down`, `Snapshot`,
-  `Memory snapshot`, `Screenshot`, `Insert CD-ROM` (or `Change CD-ROM`) and
-  `Port forward`. The bar shows only the actions that the role can do.
-  `Memory snapshot`, `Insert CD-ROM` and `Port forward` open the same dialogs
-  as on the experiment page. `Screenshot` saves a PNG image of the VM screen
-  in the experiment files (see [Save a VM Screenshot](#save-a-vm-screenshot)).
+* The VM action buttons: `Pause` or `Resume`, `Restart`, `Shut down`,
+  `Screenshot`, `Port forwards`, `Mount disk` and the packet capture button.
+  `Screenshot` saves a PNG image of the VM screen in the experiment files
+  (see [Save a VM Screenshot](#save-a-vm-screenshot)). `Mount disk` opens
+  the same file browser as on the experiment page. It needs the `vm-mount`
+  feature, a running VM and an active miniccc agent.
+* `Port forwards` lists the port forwards of the VM. Each forward has
+  `Remove`. Only the user that made a forward can remove it.
+  `Add port forward` opens the same dialog as on the experiment page.
+  `Tunneler` opens the [Tunneler](tunneler.md) page in a new tab.
+* The packet capture button starts a capture on interface 0 when no capture
+  of the VM runs. When minimega can write pcapng, a dialog asks for the
+  format first. When a capture of the VM runs, the button is
+  `Stop captures` and stops all captures of the VM.
+* `Keys`, `Clipboard` and `View` are icon buttons. Their tooltips give their
+  names.
 * `Keys`: send Ctrl+Alt+Del, Esc, Tab, PrintScreen and Ctrl+Alt+F1 to F12. Hold
   Ctrl, Alt or Win, and release all held keys.
 * `Clipboard`: send text to the VM (see [Copy and Paste](#copy-and-paste)).
   `Clear` empties the text box.
 * `View`: the scaling (`Fit`, `Actual` or `Resize VM`), the quality, the
-  compression, `View only` and full screen for the pane. The browser keeps
+  compression, `View only`, full screen for the pane, and the keyboard
+  shortcuts (see [The Keyboard Chord](#the-keyboard-chord)). The browser keeps
   these settings for each user. With `View only`, the console shows the VM
   screen, but sends no keyboard or mouse input to the VM.
   `Resize VM` needs a VM with `vga` `virtio`.
   To set it, add `vga: virtio` to the `advanced` settings of the VM in the
   topology. Linux VMs use `qxl` by default.
+* `Actions`: a menu with `Snapshot`, `Memory snapshot`, `Backing image` and
+  `Capture all interfaces` (or `Stop all packet captures`), then
+  `Insert CD-ROM` (or `Change CD-ROM`), then `Edit labels` and
+  `Edit annotations`, then `Redeploy`, `Reset disk` and `Kill` in red. They
+  open the same dialogs as on the experiment page.
 * The layout buttons, `Add VM` and `Full screen` for the page. In full
   screen, the same button is `Exit full screen`. `Add VM` shows the list of
   running VMs that it read the last time, and reads the list again. The
   browser keeps the list for each user.
 * The connection state, for example `Connected`. Click it to see the screen
-  size, the scaling, the encoding and the copy/paste mode.
+  size, the scaling, the encoding and the copy/paste mode. It also shows the
+  host of the VM, its uptime, the state of its miniccc agent and its IP
+  addresses, each with a copy button.
 * `Hide toolbar`, at the right end, hides the top bar. The panes then use
   all of the page. A small `Show toolbar` button in the top left corner shows
   the bar again. Ctrl+] then T also hides or shows the bar (see
   [The Keyboard Chord](#the-keyboard-chord)). The browser keeps the choice.
 
-`Pause`, `Restart`, `Shut down` and `Snapshot` ask you to confirm. `Resume`
-does not ask.
+An action that the VM state does not allow is grayed out, and its tooltip
+gives the reason. An action that the role cannot do is also grayed out. Its
+tooltip names the permission, for example
+`Your role does not permit this action (vms delete)`.
+
+`Pause`, `Restart`, `Shut down`, `Snapshot`, `Reset disk` and `Kill` ask you
+to confirm. `Resume` does not ask. During `Redeploy` and `Reset disk`, the
+pane shows that the VM restarts, and the console connects again when the VM
+runs. After `Kill`, the pane shows `VM killed` and a link to the experiment
+page.
 
 ![The console page in two columns: the web pane has keyboard input, and each pane shows its VM between its two banners](images/vnc_console_split.png)
 

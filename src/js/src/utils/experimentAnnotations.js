@@ -184,6 +184,16 @@ export function nodeAnnotationsPayload(rows) {
   );
 }
 
+// The help of a VM's annotation editor: when apps read what it saves.
+export function vmAnnotationHelp(running) {
+  return running
+    ? "Saved to this experiment's copy of the topology. Apps read most " +
+        'annotations when the experiment starts, so most changes take ' +
+        'effect the next time it starts.'
+    : "Saved to this experiment's copy of the topology, where apps read " +
+        'them when the experiment starts.';
+}
+
 // The create request's (experiment) annotations for a list of rows.
 export function experimentAnnotationsPayload(rows) {
   return Object.fromEntries(

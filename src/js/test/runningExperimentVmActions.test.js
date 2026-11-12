@@ -150,6 +150,14 @@ async function act(page, label, names) {
 // the power action a VM's row and details take at once, without asking
 const UNASKED = ['start'];
 
+// the actions only the console page offers, with the page's handler and its
+// arguments for the VM
+const CONSOLE_ONLY = [
+  ['captureIface', 'startCaptureFromMenu', (vm) => [vm, 0]],
+  ['labels', 'showTagsModal', (vm) => [vm]],
+  ['annotations', 'showAnnotationsModal', (vm) => [vm]],
+];
+
 // the page's handler for each other VM action, and whether it takes the VM
 // itself rather than its name
 const handlers = [
@@ -171,10 +179,24 @@ const handlers = [
 ];
 
 it('runs every VM action', () => {
-  expect([...UNASKED, ...handlers.map(([action]) => action)].sort()).toEqual(
-    Object.keys(VM_ACTIONS).sort(),
-  );
+  expect(
+    [...UNASKED, ...handlers, ...CONSOLE_ONLY]
+      .map((entry) => [entry].flat()[0])
+      .sort(),
+  ).toEqual(Object.keys(VM_ACTIONS).sort());
 });
+
+it.each(CONSOLE_ONLY)(
+  'runs %s, which the console page offers, with %s',
+  async (action, handler, args) => {
+    const vm = { name: 'vm1', running: true };
+    const page = await open({ experiment: { name: 'demo', vms: [vm] } });
+    const run = vi.spyOn(page.vm, handler).mockImplementation(() => {});
+
+    page.findComponent(VmRowActions).vm.$emit('action', action);
+    expect(run).toHaveBeenCalledWith(...args(listed(vm)));
+  },
+);
 
 it.each(UNASKED)(
   "runs %s from a row's actions with runVmAction",

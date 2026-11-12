@@ -116,17 +116,22 @@ export const tooltipPositions = (node) =>
     .map((tooltip) => tooltip.props('position'));
 
 // Each Buefy tooltip's text with its control's aria-label and disabled state,
-// read from the component because append-to-body moves the text.
+// read from the component because append-to-body moves the text. A tooltip
+// with no button or link in it, such as one on a menu row, is left out.
 export const tooltipButtons = (wrapper) =>
-  wrapper.findAllComponents({ name: 'BTooltip' }).map((tooltip) => {
-    const control = tooltip.find('.tooltip-trigger').find('button, a');
-    return {
+  wrapper
+    .findAllComponents({ name: 'BTooltip' })
+    .map((tooltip) => ({
+      tooltip,
+      control: tooltip.find('.tooltip-trigger').find('button, a'),
+    }))
+    .filter(({ control }) => control.exists())
+    .map(({ tooltip, control }) => ({
       tooltip: textOf(tooltip.vm.$refs.content),
       label: control.attributes('aria-label') ?? '',
       disabled: disabled(control),
       control,
-    };
-  });
+    }));
 
 // the Buefy dialogs open on the page body, oldest first
 export const dialogs = () =>

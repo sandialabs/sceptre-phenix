@@ -235,7 +235,14 @@ describe('the state rules', () => {
             expect(button.permitted).toBe(false);
             expect(button.reason).toMatch(/: external nodes are not VMs$/);
           }
-          if (button.reason) expect(button.reason).toMatch(/^Cannot \S.*: \S/);
+          if (button.denied) {
+            expect(button.permitted).toBe(false);
+            expect(button.reason).toMatch(
+              /^Your role does not permit this action \(\S+ \S+\)$/,
+            );
+          } else if (button.reason) {
+            expect(button.reason).toMatch(/^Cannot \S.*: \S/);
+          }
           if (vm.busy && button.permitted) {
             expect(button.reason?.endsWith(`: ${BUSY}`)).toBe(true);
           }
@@ -377,10 +384,33 @@ describe('vmActionState', () => {
     });
   });
 
-  it("marks actions the role can't take as not permitted", () => {
+  it("marks actions the role can't take as denied, naming the permission", () => {
     const states = vmActionStates(POWER_ACTIONS, running, { can: denyAll });
-    expect(states.every((a) => !a.permitted && a.disabled)).toBe(true);
-    expect(states[0].reason).toBe('Cannot start: you do not have permission');
+    expect(states.every((a) => !a.permitted && a.disabled && a.denied)).toBe(
+      true,
+    );
+    expect(states.map((a) => a.reason)).toEqual([
+      'Your role does not permit this action (vms/start update)',
+      'Your role does not permit this action (vms/stop update)',
+      'Your role does not permit this action (vms/restart update)',
+      'Your role does not permit this action (vms/shutdown update)',
+      'Your role does not permit this action (vms delete)',
+    ]);
+  });
+
+  it('names the first permission the role lacks', () => {
+    const can = allowOnly(['vms/cdrom', 'update']);
+    expect(vmActionState('cdrom', running, { can }).reason).toBe(
+      'Your role does not permit this action (vms/cdrom delete)',
+    );
+  });
+
+  it('does not mark an action the server does not support as denied', () => {
+    const state = vmActionState('mount', running, { can: denyAll });
+    expect(state.denied).toBeUndefined();
+    expect(state.reason).toBe(
+      'Cannot mount disk: the server does not support it',
+    );
   });
 
   it('checks each action against its own permission', () => {
@@ -637,6 +667,59 @@ describe('capture all interfaces', () => {
     expect(state.disabled).toBe(true);
     expect(state.reason).toMatch(/^Cannot capture all interfaces: /);
     expect(state.reason).toMatch(reason);
+  });
+});
+
+describe('capture interface 0', () => {
+  const vm = {
+    ...running,
+    networks: ['DMZ (1)', 'MGMT (2)'],
+    captures: [],
+  };
+
+  it('is offered for a running VM with interface 0 connected', () => {
+    expect(vmActionState('captureIface', vm, { can: allowAll })).toMatchObject({
+      label: 'Capture interface 0',
+      icon: CAPTURE_ICON,
+      disabled: false,
+    });
+  });
+
+  it.each([
+    ['not running', { ...vm, running: false }, NOT_RUNNING],
+    [
+      'without interfaces',
+      { ...vm, networks: [] },
+      'the VM has no interface 0',
+    ],
+    [
+      'with interface 0 disconnected',
+      { ...vm, networks: ['disconnected', 'MGMT (2)'] },
+      'interface 0 of the VM is disconnected',
+    ],
+  ])('is greyed out for a VM %s', (_, target, reason) => {
+    expect(
+      vmActionState('captureIface', target, { can: allowAll }).reason,
+    ).toBe(`Cannot capture interface 0: ${reason}`);
+  });
+
+  it('needs vms/captures create', () => {
+    expect(
+      vmActionState('captureIface', vm, {
+        can: allowOnly(['vms/captures', 'delete']),
+      }).reason,
+    ).toBe('Your role does not permit this action (vms/captures create)');
+  });
+});
+
+describe('labels and annotations', () => {
+  it.each(['labels', 'annotations'])('%s needs vms patch', (name) => {
+    expect(vmActionState(name, running, { can: allowAll }).disabled).toBe(
+      false,
+    );
+    expect(
+      vmActionState(name, running, { can: allowOnly(['vms', 'get']) }).reason,
+    ).toBe('Your role does not permit this action (vms patch)');
   });
 });
 

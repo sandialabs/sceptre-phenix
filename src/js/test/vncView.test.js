@@ -5,9 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises } from '@vue/test-utils';
 import { nextTick } from 'vue';
 
-const { axios, modules, notify, rbac, resetMocks, ws } = await vi.hoisted(
-  () => import('./helpers/mocks.js'),
-);
+const { axios, modules, notify, rbac, resetMocks, store, ws } =
+  await vi.hoisted(() => import('./helpers/mocks.js'));
 const { FakeRfb, rfbs, resetRfbs } = await vi.hoisted(
   () => import('./helpers/fakeRfb.js'),
 );
@@ -89,6 +88,15 @@ const consoleLabels = (wrapper) =>
   wrapper.findAll('.vnc-console').map((c) => c.attributes('aria-label'));
 
 const query = (wrapper) => wrapper.router.currentRoute.value.query;
+
+// a button of the top bar by its name, or else a row of its Actions menu
+const control = (wrapper, name) => {
+  const found = wrapper.find(`[aria-label="${name}"]`);
+  if (found.exists()) return found;
+  return wrapper
+    .findAll('.vnc-actions-menu .dropdown-item')
+    .find((row) => textOf(row.find('.vnc-actions-label')) === name);
+};
 
 beforeEach(() => {
   resetMocks();
@@ -479,7 +487,9 @@ describe('the console tab', () => {
 
 describe('what the top bar does', () => {
   const button = (wrapper, text) =>
-    wrapper.findAll('button').find((b) => textOf(b) === text);
+    wrapper
+      .findAll('button')
+      .find((b) => textOf(b) === text || b.attributes('aria-label') === text);
   const panel = (wrapper, name) => wrapper.find(`#vnc-panel-${name}`);
 
   async function connected(route) {
@@ -560,7 +570,7 @@ describe('what the top bar does', () => {
       jobs.done = { id: 'j1', status: 'succeeded', items: [] };
       axios.post.mockResolvedValue({ data: { id: 'j1', status: 'running' } });
       const wrapper = await connected('/vnc?vm=demo/web');
-      await wrapper.find(`[aria-label="${label}"]`).trigger('click');
+      await control(wrapper, label).trigger('click');
       await flushPromises();
       expect(dialogs()).toHaveLength(1);
       expect(textOf(dialogs()[0].querySelector('.modal-card-title'))).toBe(
@@ -578,7 +588,7 @@ describe('what the top bar does', () => {
       await flushPromises();
       expect(axios.post).not.toHaveBeenCalled();
 
-      await wrapper.find(`[aria-label="${label}"]`).trigger('click');
+      await control(wrapper, label).trigger('click');
       await flushPromises();
       await confirmDialog();
       expect(axios.post).toHaveBeenCalledExactlyOnceWith(...request);
@@ -623,7 +633,7 @@ describe('what the top bar does', () => {
       configurable: true,
     });
     try {
-      await wrapper.find('[aria-label="Snapshot"]').trigger('click');
+      await control(wrapper, 'Snapshot').trigger('click');
       await flushPromises();
       expect(exit).toHaveBeenCalledOnce();
       expect(dialogs()).toHaveLength(1);
@@ -669,10 +679,15 @@ describe('what the top bar does', () => {
     expect(toasts()).toEqual([]);
   });
 
-  it('creates a port forward from its dialog', async () => {
+  it('creates a port forward from the dialog of the Port forwards panel', async () => {
+    answers['experiments/demo/vms/web/forwards'] = { listeners: [] };
     axios.post.mockResolvedValue({ data: {} });
     const wrapper = await connected('/vnc?vm=demo/web');
-    await wrapper.find('[aria-label="Port forward"]').trigger('click');
+    await wrapper.find('[aria-label="Port forwards"]').trigger('click');
+    await flushPromises();
+    await button(panel(wrapper, 'forwards'), 'Add port forward').trigger(
+      'click',
+    );
     await flushPromises();
     await wrapper.find('#port-forward-src-port').setValue('8080');
     await wrapper.find('#port-forward-dst-port').setValue('80');
@@ -686,11 +701,18 @@ describe('what the top bar does', () => {
     expect(toasts().map((t) => t.text)).toContain(
       'Port forward 8080 → 127.0.0.1:80 created for the web VM.',
     );
+    // the panel opens again with a fresh list after the add
+    expect(panel(wrapper, 'forwards').isVisible()).toBe(true);
+    expect(
+      axios.get.mock.calls.filter(
+        ([url]) => url === 'experiments/demo/vms/web/forwards',
+      ),
+    ).toHaveLength(2);
   });
 
   it('sends no memory snapshot when its dialog is cancelled', async () => {
     const wrapper = await connected('/vnc?vm=demo/web');
-    await wrapper.find('[aria-label="Memory snapshot"]').trigger('click');
+    await control(wrapper, 'Memory snapshot').trigger('click');
     await flushPromises();
     const modal = wrapper.find('.modal.is-active');
     expect(textOf(modal.find('.modal-card-body p'))).toBe(
@@ -704,7 +726,7 @@ describe('what the top bar does', () => {
   it('creates a memory snapshot with the name from its dialog', async () => {
     axios.post.mockResolvedValue({ data: {} });
     const wrapper = await connected('/vnc?vm=demo/web');
-    await wrapper.find('[aria-label="Memory snapshot"]').trigger('click');
+    await control(wrapper, 'Memory snapshot').trigger('click');
     await flushPromises();
     const name = wrapper.find(
       '[aria-label="Memory snapshot filename for VM web"]',
@@ -729,7 +751,7 @@ describe('what the top bar does', () => {
     };
     axios.post.mockResolvedValue({ data: {} });
     const wrapper = await connected('/vnc?vm=demo/web');
-    await wrapper.find('[aria-label="Insert CD-ROM"]').trigger('click');
+    await control(wrapper, 'Insert CD-ROM').trigger('click');
     await flushPromises();
     expect(axios.get).toHaveBeenCalledWith('disks', {
       params: { diskType: 'ISO' },
@@ -774,16 +796,21 @@ describe('what the top bar does', () => {
     ).toBe('Full screen');
   });
 
-  it('offers no VM action that the role may not take on the VM', async () => {
+  it('greys out each VM action that the role may not take on the VM of the active pane', async () => {
     rbac.allowed = allowOnly(['vms/restart', 'update', 'demo/web']);
     const wrapper = await openPage('/vnc?vm=demo/kali&vm=demo/web');
-    const actions = () =>
+    const enabled = () =>
       wrapper
         .findAll('.vnc-vm-actions button')
+        .filter((b) => !b.element.closest('.vnc-panel'))
+        .filter((b) => b.attributes('aria-disabled') !== 'true')
         .map((b) => b.attributes('aria-label'));
-    expect(actions()).toEqual([]);
+    expect(enabled()).toEqual([]);
+    expect(
+      wrapper.find('[aria-label="Restart"]').attributes('aria-disabled'),
+    ).toBe('true');
     await wrapper.findAll('.vnc-pane')[1].trigger('pointerdown');
-    expect(actions()).toEqual(['Restart']);
+    expect(enabled()).toEqual(['Restart']);
   });
 
   it('sends the keys of the Keys menu to the console of the active pane', async () => {
@@ -1068,6 +1095,252 @@ describe('what the top bar does', () => {
   });
 });
 
+describe('the new VM actions of the top bar', () => {
+  const menu = (wrapper, name) => control(wrapper, name);
+  const buttonIn = (node, text) =>
+    node.findAll('button').find((b) => textOf(b) === text);
+
+  async function connected(route) {
+    const wrapper = await openPage(route);
+    rfbs.forEach((rfb) => rfb.connect());
+    await nextTick();
+    return wrapper;
+  }
+
+  // a job that ends when the test calls the function it returns
+  function pendingJob(items) {
+    let finish;
+    jobs.done = new Promise((resolve) => {
+      finish = () => resolve({ id: 'j1', status: 'succeeded', items });
+    });
+    axios.post.mockResolvedValue({ data: { id: 'j1', status: 'running' } });
+    return () => finish();
+  }
+
+  it('kills the VM of the active pane after it asks, and says so in the pane with a link to the experiment', async () => {
+    jobs.done = {
+      id: 'j1',
+      status: 'succeeded',
+      items: [{ name: 'web', status: 'succeeded' }],
+    };
+    axios.post.mockResolvedValue({ data: { id: 'j1', status: 'running' } });
+    const wrapper = await connected('/vnc?vm=demo/kali&vm=demo/web');
+    await wrapper.findAll('.vnc-pane')[1].trigger('pointerdown');
+    await menu(wrapper, 'Kill').trigger('click');
+    await flushPromises();
+    expect(textOf(dialogs()[0].querySelector('.modal-card-title'))).toBe(
+      'Kill the web VM',
+    );
+    await confirmDialog();
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith(
+      'experiments/demo/vms/actions',
+      { action: 'kill', vms: ['web'] },
+    );
+    const panes = wrapper.findAll('.vnc-pane');
+    expect(panes[0].find('.vnc-pane-killed').exists()).toBe(false);
+    const killed = panes[1].find('.vnc-pane-killed');
+    expect(textOf(killed.find('.vnc-pane-status-label'))).toBe('VM killed');
+    expect(killed.find('a').attributes('href')).toBe('/experiment/demo');
+    expect(wrapper.router.currentRoute.value.name).toBe('vnc');
+  });
+
+  it('shows that Reset disk restarts the VM, then connects again', async () => {
+    const finish = pendingJob([
+      { name: 'web', status: 'succeeded', result: vm() },
+    ]);
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await menu(wrapper, 'Reset disk').trigger('click');
+    await flushPromises();
+    await confirmDialog();
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith(
+      'experiments/demo/vms/actions',
+      { action: 'resetDisk', vms: ['web'] },
+    );
+    // the VM restarts: the console drops and waits to connect again
+    rfbs[0].drop();
+    await flushPromises();
+    const restarting = wrapper.find('.vnc-pane-restarting');
+    expect(textOf(restarting.find('.vnc-pane-status-label'))).toBe(
+      'Restarting the VM',
+    );
+    expect(textOf(restarting)).toContain('Reset disk restarts the VM.');
+
+    finish();
+    await flushPromises();
+    expect(rfbs).toHaveLength(2);
+    rfbs[1].connect();
+    await nextTick();
+    expect(wrapper.find('.vnc-pane-restarting').exists()).toBe(false);
+    expect(textOf(wrapper.find('.vnc-status'))).toBe('Connected');
+  });
+
+  it('redeploys the VM with the settings of its dialog, shows that it restarts, then connects again', async () => {
+    let answer;
+    axios.post.mockImplementation((url) =>
+      url.endsWith('/redeploy')
+        ? new Promise((resolve) => (answer = resolve))
+        : Promise.resolve({ data: {} }),
+    );
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await menu(wrapper, 'Redeploy').trigger('click');
+    await flushPromises();
+    const modal = wrapper.find('.modal.is-active');
+    expect(textOf(modal.find('.modal-card-title'))).toBe('Redeploy the VM');
+    await buttonIn(modal, 'Redeploy').trigger('click');
+    await flushPromises();
+    expect(axios.post).toHaveBeenCalledWith(
+      'experiments/demo/vms/web/redeploy',
+      { cpus: 1, ram: 2048 },
+    );
+    ws.handlers.forEach((h) =>
+      h(wsMsg('experiment/vm', 'demo/web', 'redeploying', null)),
+    );
+    await nextTick();
+    expect(wrapper.find('.vnc-pane-restarting').exists()).toBe(true);
+    expect(rfbs[0].disconnected).toBe(true);
+
+    answer({ data: vm() });
+    ws.handlers.forEach((h) =>
+      h(wsMsg('experiment/vm', 'demo/web', 'redeployed', vm())),
+    );
+    await flushPromises();
+    rfbs.at(-1).connect();
+    await nextTick();
+    expect(wrapper.find('.vnc-pane-restarting').exists()).toBe(false);
+    expect(toasts().map((t) => t.text)).toContain('Redeployed the web VM');
+  });
+
+  it('opens the mount browser for the VM', async () => {
+    store.features = ['vm-mount'];
+    axios.post.mockResolvedValue({ data: {} });
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await wrapper.find('[aria-label="Mount disk"]').trigger('click');
+    await flushPromises();
+    expect(
+      [...document.querySelectorAll('.modal-card-title')].map(textOf),
+    ).toContain('web Mount');
+    expect(axios.post).toHaveBeenCalledWith('experiments/demo/vms/web/mount');
+  });
+
+  it('opens the label editor for the VM', async () => {
+    answers['experiments/demo/vms/web'] = vm({ tags: { role: 'server' } });
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await menu(wrapper, 'Edit labels').trigger('click');
+    await flushPromises();
+    expect(
+      [...document.querySelectorAll('.modal-card-title')].map(textOf),
+    ).toContain('web Labels');
+  });
+
+  it('edits the annotations of the VM in a dialog and saves them', async () => {
+    answers['experiments/demo/vms/web'] = vm({
+      annotations: { 'custom/key': 'one' },
+    });
+    axios.patch.mockResolvedValue({ data: vm() });
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await menu(wrapper, 'Edit annotations').trigger('click');
+    await flushPromises();
+    const card = document.querySelector('.vm-annotations-modal');
+    expect(textOf(card.querySelector('.modal-card-title'))).toBe(
+      'Annotations of the web VM',
+    );
+    card.querySelector('.vm-annotations-save').click();
+    await flushPromises();
+    expect(axios.patch).toHaveBeenCalledExactlyOnceWith(
+      'experiments/demo/vms/web',
+      { annotations: { 'custom/key': 'one' } },
+    );
+    expect(document.querySelector('.vm-annotations-modal')).toBeNull();
+  });
+
+  it('starts a capture on interface 0 in the format picked, then reads the captures again', async () => {
+    store.features = ['minimega-captures'];
+    answers['experiments/demo/vms/web/captures'] = { captures: [] };
+    axios.post.mockResolvedValue({ data: {} });
+    const wrapper = await connected('/vnc?vm=demo/web');
+    const reads = () =>
+      axios.get.mock.calls.filter(
+        ([url]) => url === 'experiments/demo/vms/web/captures',
+      ).length;
+    const before = reads();
+    await wrapper.find('[aria-label="Capture interface 0"]').trigger('click');
+    await flushPromises();
+    const modal = wrapper.find('.capture-format-card');
+    expect(textOf(modal.find('.modal-card-title'))).toBe(
+      'Start capture on interface 0 of web',
+    );
+    await modal.trigger('submit');
+    await flushPromises();
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith(
+      'experiments/demo/vms/web/captures',
+      {
+        interface: 0,
+        filename: expect.stringMatching(/^web_0_.*\.pcapng$/),
+        format: 'pcapng',
+      },
+    );
+    expect(reads()).toBeGreaterThan(before + 1);
+  });
+
+  it('stops every capture of the VM while one runs, and shows the capture button again', async () => {
+    answers['experiments/demo/vms/web'] = vm({ captures: [{ interface: 1 }] });
+    axios.delete.mockResolvedValue({ data: {} });
+    const wrapper = await connected('/vnc?vm=demo/web');
+    // GET captures, after the stop, finds none
+    answers['experiments/demo/vms/web/captures'] = { captures: [] };
+    await wrapper.find('[aria-label="Stop captures"]').trigger('click');
+    await flushPromises();
+    expect(axios.delete).toHaveBeenCalledExactlyOnceWith(
+      'experiments/demo/vms/web/captures',
+    );
+    expect(wrapper.find('[aria-label="Capture interface 0"]').exists()).toBe(
+      true,
+    );
+  });
+
+  it('reads the captures again when one starts or stops elsewhere', async () => {
+    const wrapper = await connected('/vnc?vm=demo/web');
+    answers['experiments/demo/vms/web/captures'] = {
+      captures: [{ interface: 0 }],
+    };
+    ws.handlers.forEach((h) =>
+      h(wsMsg('experiment/vm/capture', 'demo/web', 'start', {})),
+    );
+    await flushPromises();
+    expect(wrapper.find('[aria-label="Stop captures"]').exists()).toBe(true);
+  });
+
+  it('acts on the VM of the active pane in split view', async () => {
+    store.features = ['vm-mount'];
+    axios.post.mockResolvedValue({ data: {} });
+    const wrapper = await connected('/vnc?vm=demo/kali&vm=demo/web');
+    await wrapper.findAll('.vnc-pane')[1].trigger('pointerdown');
+    await wrapper.find('[aria-label="Mount disk"]').trigger('click');
+    await flushPromises();
+    expect(axios.post).toHaveBeenCalledWith('experiments/demo/vms/web/mount');
+  });
+
+  it('lists the keyboard shortcuts in the View panel', async () => {
+    const wrapper = await connected('/vnc?vm=demo/web');
+    const view = wrapper.find('#vnc-panel-view');
+    expect(
+      view
+        .findAll('.vnc-shortcuts dt')
+        .map((dt, i) => [
+          textOf(dt),
+          textOf(view.findAll('.vnc-shortcuts dd')[i]),
+        ]),
+    ).toEqual([
+      ['1–4', 'Select that pane'],
+      ['F', 'Exit full screen'],
+      ['T', 'Show or hide the toolbar'],
+      ['Tab', 'Leave the console'],
+      ['Esc', 'Cancel the shortcut'],
+    ]);
+    expect(textOf(view)).toContain('Press Ctrl+], then:');
+  });
+});
+
 describe('the pane menu', () => {
   const menuButton = (wrapper) => wrapper.find('.vnc-pane-menu-button');
   const menuList = (wrapper) => wrapper.find('.vnc-pane-menu-list');
@@ -1156,6 +1429,13 @@ describe('hiding the top bar', () => {
     expect(barShown(wrapper)).toBe(false);
     expect(localStorage.getItem(HIDDEN_KEY)).toBe('true');
     expect(document.activeElement).toBe(showButton(wrapper).element);
+    const tip = wrapper
+      .findAllComponents({ name: 'BTooltip' })
+      .find((t) => t.find('[aria-label="Show toolbar"]').exists());
+    expect(textOf(tip.vm.$refs.content)).toBe(
+      'Show the toolbar (Ctrl+] then T)',
+    );
+    expect(tip.props('position')).toBe('is-right');
     // the panes get the space, and keep their connections
     expect(wrapper.classes()).toContain('is-toolbar-hidden');
     expect(wrapper.findAll('.vnc-pane')).toHaveLength(2);

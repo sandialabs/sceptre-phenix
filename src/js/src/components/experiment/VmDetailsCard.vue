@@ -667,6 +667,7 @@
     annotationRowsFrom,
     annotationText,
     nodeAnnotationsPayload,
+    vmAnnotationHelp,
   } from '@/utils/experimentAnnotations.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import { docsPage } from '@/utils/docs.js';
@@ -953,12 +954,7 @@
         return annotationErrors(this.annotationRows ?? []).every((e) => !e);
       },
       annotationHelp() {
-        return this.vm.running
-          ? "Saved to this experiment's copy of the topology. Apps read most " +
-              'annotations when the experiment starts, so most changes take ' +
-              'effect the next time it starts.'
-          : "Saved to this experiment's copy of the topology, where apps read " +
-              'them when the experiment starts.';
+        return vmAnnotationHelp(this.vm.running);
       },
       snapshotList() {
         return Array.isArray(this.snapshots) ? this.snapshots : [];

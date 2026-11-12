@@ -1,7 +1,8 @@
 <!-- One pane of the console page: in split view a thin header with the VM
      name, state, a link to its details, pane number and menu; the top and bottom banners of the VM;
      the console; and the connection state over the screen when it is not
-     connected. The page owns the VNC session and gives its values here. -->
+     connected, or that the VM restarts, or that Kill removed it. The page
+     owns the VNC session and gives its values here. -->
 <script setup>
   import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
@@ -36,6 +37,10 @@
     compression: { type: Number, default: 2 },
     // the role may resume the VM
     canResume: { type: Boolean, default: false },
+    // what restarts the VM, such as a redeploy, or '' when nothing does
+    restarting: { type: String, default: '' },
+    // Kill on this page removed the VM
+    killed: { type: Boolean, default: false },
   });
 
   const emit = defineEmits([
@@ -73,9 +78,15 @@
   );
   const state = computed(() => (props.vmRow ? vmStateInfo(props.vmRow) : null));
   // the VM details on the experiment page, for a role that may open it
+  const canSeeExperiment = computed(() =>
+    roleAllowed('experiments', 'get', props.experiment),
+  );
   const detailsLink = computed(() =>
-    roleAllowed('experiments', 'get', props.experiment)
-      ? vmDetailsRoute(props.experiment, props.vm)
+    canSeeExperiment.value ? vmDetailsRoute(props.experiment, props.vm) : null,
+  );
+  const experimentLink = computed(() =>
+    canSeeExperiment.value
+      ? { name: 'experiment', params: { id: props.experiment } }
       : null,
   );
   const paused = computed(
@@ -273,7 +284,24 @@
         @clipboard="emit('clipboard', $event)"
         @bell="onBell"
         @desktopname="desktopName = $event" />
-      <div v-if="!connected" class="vnc-pane-status">
+      <div v-if="killed" class="vnc-pane-status vnc-pane-killed" role="status">
+        <p class="vnc-pane-status-label">VM killed</p>
+        <p>
+          The {{ vm }} VM stays off until the experiment {{ experiment }}
+          starts again.
+        </p>
+        <router-link v-if="experimentLink" :to="experimentLink">
+          Go to the page of experiment {{ experiment }}
+        </router-link>
+      </div>
+      <div
+        v-else-if="restarting && !connected"
+        class="vnc-pane-status vnc-pane-restarting"
+        role="status">
+        <p class="vnc-pane-status-label">Restarting the VM</p>
+        <p>{{ restarting }} The console connects again when the VM runs.</p>
+      </div>
+      <div v-else-if="!connected" class="vnc-pane-status">
         <p class="vnc-pane-status-label">{{ statusLabel }}</p>
         <p v-if="status.message && status.message !== statusLabel">
           {{ status.message }}

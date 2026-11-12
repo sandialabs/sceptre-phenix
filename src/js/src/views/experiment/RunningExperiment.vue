@@ -438,6 +438,7 @@
   import OpticalDiscModal from '@/components/experiment/OpticalDiscModal.vue';
   import PortForwardModal from '@/components/experiment/PortForwardModal.vue';
   import RedeployModal from '@/components/experiment/RedeployModal.vue';
+  import VmAnnotationsModal from '@/components/experiment/VmAnnotationsModal.vue';
   import TriggerAppsModal from '@/components/experiment/TriggerAppsModal.vue';
   import VlanModal from '@/components/experiment/VlanModal.vue';
   import VmDetailsCard from '@/components/experiment/VmDetailsCard.vue';
@@ -492,16 +493,16 @@
     tabQuery,
     withoutVm,
   } from '@/components/experiment/experimentTabs.js';
+  import { minuteStamp } from '@/components/experiment/timestamp.js';
   import {
-    minuteStamp,
-    timestampParts,
-  } from '@/components/experiment/timestamp.js';
-  import {
+    diskImageEntry,
     emptyOpticalDiscModal,
     emptyPortForwardModal,
     loadIsoChoices,
     memorySnapshotEntry,
     openOpticalDiscModal,
+    redeployBody,
+    redeployEntry,
     saveScreenshot,
     validFilenames,
   } from '@/components/experiment/vmTools.js';
@@ -538,7 +539,6 @@
   } from '@/utils/experimentActions.js';
   import {
     backingChain,
-    baseName,
     diskList,
     filesDir,
     findDisk,
@@ -1052,6 +1052,20 @@
             vmName: vm.name,
             experiment: this.$route.params.id,
             tags: vm.tags,
+          },
+          events: { saved: () => this.refreshVmDetails(vm.name) },
+        });
+      },
+
+      showAnnotationsModal(vm) {
+        this.$buefy.modal.open({
+          component: VmAnnotationsModal,
+          trapFocus: true,
+          hasModalCard: true,
+          props: {
+            experiment: this.$route.params.id,
+            vmName: vm.name,
+            running: !!vm.running,
           },
           events: { saved: () => this.refreshVmDetails(vm.name) },
         });
@@ -1629,28 +1643,10 @@
         name = this.actionableVMs('commit', name);
         if (name.length === 0) return;
 
-        const t = timestampParts();
-        const date = `${t.year}${t.month}${t.day}`;
-        const time = `${t.hours}${t.minutes}${t.seconds}`;
-        let vms = this.experiment.vms;
-        name.forEach((arg) => {
-          for (let i = 0; i < vms.length; i++) {
-            if (vms[i].name == arg) {
-              // the disk's file name up to its first "_" when it holds a date
-              // and time, else up to its first "."
-              const file = baseName(vms[i].disk);
-              const stem = file.split(/_\d{14}/.test(file) ? '_' : '.')[0];
-              const filename = `${vms[i].name}_${stem}_${date}${time}`;
-              this.diskImageModal.vm.push({
-                dateTime: date + time + '',
-                name: vms[i].name,
-                filename: filename,
-                nameErrType: '',
-                nameErrMsg: '',
-              });
-            }
-          }
-        });
+        for (const arg of name) {
+          const vm = findVm(this.experiment, arg);
+          if (vm) this.diskImageModal.vm.push(diskImageEntry(vm));
+        }
 
         this.diskImageModal.active = true;
       },
@@ -1837,6 +1833,15 @@
           case 'stopCaptures':
             this.stopAllCaptures(vm);
             break;
+          case 'captureIface':
+            this.startCaptureFromMenu(vm, 0);
+            break;
+          case 'labels':
+            this.showTagsModal(vm);
+            break;
+          case 'annotations':
+            this.showAnnotationsModal(vm);
+            break;
         }
       },
 
@@ -1891,16 +1896,9 @@
           this.disks = null;
         }
         for (const name of vmList) {
-          const vm = findVm(this.experiment, name);
-          this.redeployModal.vm.push({
-            name: vm.name,
-            cpus: vm.cpus,
-            ram: vm.ram,
-            disk: vm.disk,
-            // the server keeps the VM's disk unless another one is picked
-            currentDisk: vm.disk,
-            inject: false,
-          });
+          this.redeployModal.vm.push(
+            redeployEntry(findVm(this.experiment, name)),
+          );
         }
 
         this.redeployModal.active = true;
@@ -1912,21 +1910,8 @@
         const exp = this.$route.params.id;
 
         vms.forEach((vm) => {
-          body = {
-            cpus: parseInt(vm.cpus),
-            ram: parseInt(vm.ram),
-          };
-          // a snapshot VM's disk is the image under phēnix's own snapshot
-          // overlay; sending it back would replace the overlay with the image
-          if (vm.disk !== vm.currentDisk) {
-            body.disk = vm.disk;
-          }
+          body = redeployBody(vm);
           name = vm.name;
-
-          // the select stores the string 'true' or 'false'
-          if (vm.inject === true || vm.inject === 'true') {
-            body['injects'] = true;
-          }
 
           this.redeployModal.actionsQueue.push({
             name: vm.name,
