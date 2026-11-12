@@ -15,6 +15,7 @@
   import OpticalDiscModal from '@/components/experiment/OpticalDiscModal.vue';
   import PortForwardModal from '@/components/experiment/PortForwardModal.vue';
   import VmFilenamesModal from '@/components/experiment/VmFilenamesModal.vue';
+  import { MEMORY_SNAPSHOT_DOES } from '@/components/experiment/vmActions.js';
   import {
     emptyOpticalDiscModal,
     emptyPortForwardModal,
@@ -148,6 +149,7 @@
     title="Create memory snapshot"
     kind="Memory snapshot"
     prompt="Create a memory snapshot for the"
+    :description="MEMORY_SNAPSHOT_DOES"
     :vms="memory.vm"
     :valid="validFilenames(memory)"
     @close="memory = { active: false, vm: [] }"

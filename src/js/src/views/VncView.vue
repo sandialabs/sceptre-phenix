@@ -1,7 +1,8 @@
 <!-- The console page /vnc?vm=exp/vm&vm=…&layout=… (M1, M2a). It shows one to
      four VM consoles in one of the layouts, with the narrow top bar that
-     acts on the pane that has keyboard input. There is no status bar and no
-     leave-page warning. -->
+     acts on the pane that has keyboard input. The user can hide the top bar;
+     a small button in the top left corner then shows it again. There is no
+     status bar and no leave-page warning. -->
 <script setup>
   import {
     computed,
@@ -20,7 +21,7 @@
 
   import { createVmSnapshot, startVmActionsJob } from '@/api/vms.js';
   import { minuteStamp } from '@/components/experiment/timestamp.js';
-  import { POWER_CONFIRMS } from '@/components/experiment/vmActions.js';
+  import { VM_ACTION_CONFIRMS } from '@/components/experiment/vmActions.js';
   import { saveScreenshot } from '@/components/experiment/vmTools.js';
   import { usePhenixStore } from '@/store.js';
   import { useErrorNotification } from '@/utils/errorNotif';
@@ -32,7 +33,12 @@
     outcomeFromJob,
   } from '@/utils/operations.js';
   import { pageTitle } from '@/utils/pageTitle.js';
-  import { loadVncSettings, saveVncSettings } from '@/utils/prefs.js';
+  import {
+    loadVncSettings,
+    loadVncToolbarHidden,
+    saveVncSettings,
+    saveVncToolbarHidden,
+  } from '@/utils/prefs.js';
   import { roleAllowed } from '@/utils/rbac.js';
   import { CHORD_HINT } from '@/vnc/chord.js';
   import { announcement } from '@/vnc/connectionStatus.js';
@@ -86,7 +92,10 @@
 
   const page = ref(null);
   const toolbar = ref(null);
+  const showToolbarButton = ref(null);
   const vmModals = ref(null);
+  // the user hid the top bar; the browser keeps the choice
+  const toolbarHidden = ref(loadVncToolbarHidden());
   // an element of the page is full screen
   const inFullscreen = ref(false);
   const paneRefs = new Map();
@@ -314,18 +323,7 @@
     roleAllowed(resource, verb, `${controller.experiment}/${controller.vm}`);
 
   async function snapshot(controller) {
-    // a confirm dialog takes the keyboard from the fullscreen console
-    await exitFullscreen().catch(() => {});
-    const confirmed = await confirmOperation(buefy, {
-      title: 'Create a VM Snapshot',
-      message: escapeHTML(
-        `This will create a snapshot of the ${controller.vm} VM.`,
-      ),
-      confirmText: 'Create',
-      type: 'is-success',
-      noun: 'VM',
-    });
-    if (!confirmed) return;
+    if (controller.pending) return;
     controller.pending = 'snapshot';
     try {
       await createVmSnapshot(
@@ -359,9 +357,10 @@
     vmModals.value?.open(name, controller);
   }
 
-  // asks before a power action of POWER_CONFIRMS; resolves true for the others
-  async function confirmPower(name, controller) {
-    const ask = POWER_CONFIRMS[name];
+  // asks before an action of VM_ACTION_CONFIRMS but Start, which does not ask
+  // for one VM; resolves true for the others
+  async function confirmAction(name, controller) {
+    const ask = name !== 'start' && VM_ACTION_CONFIRMS[name];
     if (!ask) return true;
     // a confirm dialog takes the keyboard from the fullscreen console
     await exitFullscreen().catch(() => {});
@@ -370,10 +369,11 @@
 
   async function runAction(name, controller = active.value) {
     if (!controller || controller.pending) return;
-    if (name === 'snapshot') return snapshot(controller);
     if (name === 'screenshot') return screenshot(controller);
     if (DIALOG_ACTIONS.includes(name)) return openDialog(name, controller);
-    if (await confirmPower(name, controller)) return runJob(name, controller);
+    if (!(await confirmAction(name, controller))) return;
+    if (name === 'snapshot') return snapshot(controller);
+    return runJob(name, controller);
   }
 
   // takes a power action in a background job; a retry does not ask again
@@ -440,6 +440,31 @@
     );
   }
 
+  // Hides or shows the top bar. Focus that was on a control of the bar moves
+  // to the control that takes its place. The panes fill the space: noVNC
+  // scales each screen when its element changes size.
+  function setToolbarHidden(hidden, { focus = false } = {}) {
+    if (hidden) toolbar.value?.closePanels();
+    toolbarHidden.value = hidden;
+    saveVncToolbarHidden(hidden);
+    if (!focus) return;
+    nextTick(() => {
+      if (hidden) showToolbarButton.value?.focus();
+      else toolbar.value?.focusBar({ last: true });
+    });
+  }
+
+  // the chord Tab goes to the top bar, or to Show toolbar when it is hidden
+  function leaveConsole(backward) {
+    if (toolbarHidden.value) showToolbarButton.value?.focus();
+    else toolbar.value?.focusBar({ last: backward });
+  }
+
+  function openAddPanel() {
+    setToolbarHidden(false);
+    nextTick(() => toolbar.value?.openPanel('add'));
+  }
+
   function addVm(key) {
     toolbar.value?.closePanels();
     if (vms.value.includes(key)) return;
@@ -487,8 +512,24 @@
 </script>
 
 <template>
-  <div ref="page" class="vnc-page">
+  <div ref="page" :class="['vnc-page', { 'is-toolbar-hidden': toolbarHidden }]">
+    <b-tooltip
+      v-if="toolbarHidden"
+      label="Show the toolbar"
+      type="is-dark"
+      position="is-right"
+      class="vnc-show-toolbar-tip">
+      <button
+        ref="showToolbarButton"
+        type="button"
+        class="vnc-show-toolbar"
+        aria-label="Show toolbar"
+        @click="setToolbarHidden(false, { focus: true })">
+        <b-icon icon="chevron-down" size="is-small" />
+      </button>
+    </b-tooltip>
     <VncToolbar
+      v-show="!toolbarHidden"
       ref="toolbar"
       :experiment="active?.experiment ?? ''"
       :vm="active?.vm ?? ''"
@@ -507,7 +548,8 @@
       @exit-fullscreen="exitFullscreen().catch(() => {})"
       @reconnect="active?.session.retryNow()"
       @panel-close="focusActive"
-      @details="refreshScreen">
+      @details="refreshScreen"
+      @hide="setToolbarHidden(true, { focus: true })">
       <template #keys>
         <VncKeysMenu
           :held="active?.held ?? []"
@@ -578,15 +620,13 @@
         @close="close(controller.key)"
         @open-alone="openAlone(controller.key)"
         @fullscreen="fullscreen(paneRefs.get(controller.key)?.element())"
-        @chord-leave="(backward) => toolbar?.focusBar({ last: backward })"
+        @chord-leave="leaveConsole"
         @chord-pane="focusPane"
-        @chord-exit-fullscreen="exitFullscreen" />
+        @chord-exit-fullscreen="exitFullscreen"
+        @chord-toggle-toolbar="setToolbarHidden(!toolbarHidden)" />
       <div v-for="n in emptySlots" :key="`empty-${n}`" class="vnc-empty-pane">
         <p>Empty pane</p>
-        <b-button
-          size="is-small"
-          icon-left="plus"
-          @click="toolbar?.openPanel('add')">
+        <b-button size="is-small" icon-left="plus" @click="openAddPanel">
           Add VM
         </b-button>
       </div>
@@ -606,6 +646,7 @@
   $vnc-ring: #62c0d7;
 
   .vnc-page {
+    position: relative;
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
@@ -988,6 +1029,43 @@
     .vnc-no-vm {
       padding: 2rem;
       text-align: center;
+    }
+
+    .vnc-show-toolbar-tip {
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      z-index: 20;
+    }
+
+    // dim until the pointer or focus is on it, so it hides little of a screen
+    .vnc-show-toolbar {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      color: #fff;
+      cursor: pointer;
+      background: $vnc-bar;
+      border: 1px solid $vnc-line;
+      border-radius: 4px;
+      opacity: 0.6;
+
+      &:hover,
+      &:focus-visible {
+        opacity: 1;
+      }
+
+      &:focus-visible {
+        outline: 2px solid $vnc-ring;
+      }
+    }
+
+    // the header of the top left pane leaves room for Show toolbar
+    &.is-toolbar-hidden .vnc-panes > .vnc-pane:first-child .vnc-pane-header {
+      padding-left: 34px;
     }
   }
 

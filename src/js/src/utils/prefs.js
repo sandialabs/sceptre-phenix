@@ -118,3 +118,24 @@ export function saveVncSettings(username, { scaling, quality, compression }) {
     JSON.stringify({ scaling, quality, compression }),
   );
 }
+
+// The console page hides its top bar, for each browser.
+const VNC_TOOLBAR_HIDDEN_KEY = 'phenix.vnc.toolbarHidden';
+
+/**
+ * Whether this browser keeps the top bar of the console page hidden.
+ *
+ * @returns {boolean}
+ */
+export function loadVncToolbarHidden() {
+  return readPref(VNC_TOOLBAR_HIDDEN_KEY) === 'true';
+}
+
+/**
+ * Keeps whether the top bar of the console page is hidden.
+ *
+ * @param {boolean} hidden
+ */
+export function saveVncToolbarHidden(hidden) {
+  writePref(VNC_TOOLBAR_HIDDEN_KEY, Boolean(hidden));
+}

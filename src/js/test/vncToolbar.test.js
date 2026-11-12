@@ -473,3 +473,17 @@ describe('the dropdown panels', () => {
     expect(wrapper.find(`#${id}`).classes('vnc-panel--wide')).toBe(wide);
   });
 });
+
+describe('Hide toolbar', () => {
+  it('is the last control of the bar, with an accessible name, and asks to hide the bar', async () => {
+    const wrapper = await mountToolbar();
+    const buttons = wrapper.findAll('button');
+    const hide = buttons.at(-1);
+    expect(hide.attributes('aria-label')).toBe('Hide toolbar');
+    expect(
+      textOf(tooltipOf(wrapper, '.vnc-hide-toolbar').vm.$refs.content),
+    ).toBe('Hide the toolbar. Ctrl+] then T shows it again.');
+    await hide.trigger('click');
+    expect(wrapper.emitted('hide')).toEqual([[]]);
+  });
+});

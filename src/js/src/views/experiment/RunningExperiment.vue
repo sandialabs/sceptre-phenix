@@ -93,6 +93,7 @@
       title="Create memory snapshot"
       kind="Memory snapshot"
       prompt="Create a memory snapshot for the"
+      :description="MEMORY_SNAPSHOT_DOES"
       :vms="memorySnapshotModal.vm"
       :valid="validFilenames(memorySnapshotModal)"
       @close="resetMemorySnapshotModal"
@@ -448,7 +449,8 @@
   import VmTable from '@/components/experiment/VmTable.vue';
   import VncTiles from '@/components/experiment/VncTiles.vue';
   import {
-    POWER_CONFIRMS,
+    MEMORY_SNAPSHOT_DOES,
+    VM_ACTION_CONFIRMS,
     partitionVMsForAction,
     restorePendingKey,
     skippedVMsText,
@@ -633,6 +635,7 @@
         vmScreenshot,
         TAB,
         STOP_QUIET_MS,
+        MEMORY_SNAPSHOT_DOES,
       };
     },
 
@@ -1564,14 +1567,7 @@
         const time = minuteStamp();
 
         const confirmed = await confirmOperation(this.$buefy, {
-          title: pluralWord(
-            allowed.length,
-            'Create a VM Snapshot',
-            'Create VM Snapshots',
-          ),
-          message: `This will create ${pluralWord(allowed.length, 'a snapshot', 'snapshots')} of ${namedList(allowed, 'VM')}.`,
-          confirmText: 'Create',
-          type: 'is-success',
+          ...VM_ACTION_CONFIRMS.snapshot(allowed),
           skipped,
           noun: 'VM',
         });
@@ -1745,15 +1741,7 @@
       },
 
       killVm(names) {
-        this.confirmVmAction('kill', names, (vms) => ({
-          title: `Kill the ${pluralWord(vms.length, 'VM')}`,
-          message:
-            `This will kill ${namedList(vms, 'VM')}. You will not be able ` +
-            `to restore ${pluralWord(vms.length, 'it', 'them')} until you ` +
-            `restart the ${this.$route.params.id} experiment!`,
-          confirmText: pluralWord(vms.length, 'KILL IT!', 'KILL THEM!'),
-          type: 'is-danger',
-        }));
+        this.confirmVmAction('kill', names, VM_ACTION_CONFIRMS.kill);
       },
 
       stop() {
@@ -1798,12 +1786,14 @@
       },
 
       // runs a VM action from the details modal, the table's Actions column
-      // or a VNC tile; start and pause run without asking, unlike the toolbar's
+      // or a VNC tile; start runs without asking, unlike the toolbar's
       onVmAction(action, vm) {
         switch (action) {
           case 'start':
-          case 'pause':
             this.runVmAction(action, vm.name);
+            break;
+          case 'pause':
+            this.pauseVm(vm.name);
             break;
           case 'restart':
             this.restartVm(vm.name);
@@ -1872,38 +1862,23 @@
       },
 
       startVm(names) {
-        this.confirmVmAction('start', names, (vms) => ({
-          title: `Start the ${pluralWord(vms.length, 'VM')}`,
-          message: `This will start ${namedList(vms, 'VM')}.`,
-          confirmText: 'Start',
-          type: 'is-success',
-        }));
+        this.confirmVmAction('start', names, VM_ACTION_CONFIRMS.start);
       },
 
       pauseVm(names) {
-        this.confirmVmAction('pause', names, (vms) => ({
-          title: `Pause the ${pluralWord(vms.length, 'VM')}`,
-          message: `This will pause ${namedList(vms, 'VM')}.`,
-          confirmText: 'Pause',
-          type: 'is-success',
-        }));
+        this.confirmVmAction('pause', names, VM_ACTION_CONFIRMS.pause);
       },
 
       resetVmState(names) {
-        this.confirmVmAction('resetDisk', names, (vms) => ({
-          title: `Reset the ${pluralWord(vms.length, "VM's Disk", "VMs' Disks")}`,
-          message: `This will reset the disk state of ${namedList(vms, 'VM')}.`,
-          confirmText: 'Reset',
-          type: 'is-success',
-        }));
+        this.confirmVmAction('resetDisk', names, VM_ACTION_CONFIRMS.resetDisk);
       },
 
       restartVm(names) {
-        this.confirmVmAction('restart', names, POWER_CONFIRMS.restart);
+        this.confirmVmAction('restart', names, VM_ACTION_CONFIRMS.restart);
       },
 
       shutdownVm(names) {
-        this.confirmVmAction('shutdown', names, POWER_CONFIRMS.shutdown);
+        this.confirmVmAction('shutdown', names, VM_ACTION_CONFIRMS.shutdown);
       },
 
       redeploy(names) {

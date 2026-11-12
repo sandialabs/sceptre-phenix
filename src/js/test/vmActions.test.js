@@ -10,6 +10,7 @@ import {
   rowActionNames,
   TOOL_ACTIONS,
   VM_ACTIONS,
+  VM_ACTION_CONFIRMS,
   captureTargets,
   partitionVMsForAction,
   skippedVMsText,
@@ -798,5 +799,65 @@ describe('actions on a selection', () => {
         /^The VMs a and b (are|do) .*\.$/,
       );
     }
+  });
+});
+
+describe('the confirm dialogs of the VM actions', () => {
+  it('ask before start, pause, restart, shut down, kill, reset disk and snapshot', () => {
+    expect(Object.keys(VM_ACTION_CONFIRMS).sort()).toEqual(
+      [
+        'start',
+        'pause',
+        'restart',
+        'shutdown',
+        'kill',
+        'resetDisk',
+        'snapshot',
+      ].sort(),
+    );
+  });
+
+  it.each([
+    ['start', 'Start the web VM', 'Start 3 VMs', 'is-success'],
+    ['pause', 'Pause the web VM', 'Pause 3 VMs', 'is-success'],
+    [
+      'resetDisk',
+      'Reset the Disk of the web VM',
+      'Reset the Disks of 3 VMs',
+      'is-success',
+    ],
+    ['restart', 'Restart the web VM', 'Restart 3 VMs', 'is-success'],
+    ['shutdown', 'Shut Down the web VM', 'Shut Down 3 VMs', 'is-danger'],
+    ['kill', 'Kill the web VM', 'Kill 3 VMs', 'is-danger'],
+    [
+      'snapshot',
+      'Create a Snapshot of the web VM',
+      'Create Snapshots of 3 VMs',
+      'is-success',
+    ],
+  ])(
+    '%s names one VM, or counts many, and says what it does',
+    (name, one, many, type) => {
+      const single = VM_ACTION_CONFIRMS[name](['web']);
+      expect(single).toMatchObject({ title: one, type });
+      expect(single.message).toMatch(/the web VM\. [A-Z].*\.$/);
+      const several = VM_ACTION_CONFIRMS[name](['a', 'b', 'c']);
+      expect(several.title).toBe(many);
+      expect(several.message).toContain('the VMs a, b, and c.');
+    },
+  );
+
+  it('escapes the VM names in the message, which is HTML', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...Object.keys(VM_ACTION_CONFIRMS)),
+        fc.string({ minLength: 1 }),
+        (name, vm) => {
+          const { message } = VM_ACTION_CONFIRMS[name]([vm]);
+          expect(message).not.toMatch(/[<>"]/);
+        },
+      ),
+      { numRuns: 100 },
+    );
   });
 });

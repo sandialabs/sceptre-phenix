@@ -147,12 +147,13 @@ async function act(page, label, names) {
   await flushPromises();
 }
 
-// the power actions a VM's row and details take at once, without asking
-const UNASKED = ['start', 'pause'];
+// the power action a VM's row and details take at once, without asking
+const UNASKED = ['start'];
 
 // the page's handler for each other VM action, and whether it takes the VM
 // itself rather than its name
 const handlers = [
+  ['pause', 'pauseVm'],
   ['restart', 'restartVm'],
   ['shutdown', 'shutdownVm'],
   ['kill', 'killVm'],
@@ -911,26 +912,26 @@ describe('actions on VMs', () => {
   };
 
   it.each([
-    ['Start selected VMs', 'start', 'Start the VMs', 'Start', 'Started'],
-    ['Pause selected VMs', 'pause', 'Pause the VMs', 'Pause', 'Paused'],
+    ['Start selected VMs', 'start', 'Start 2 VMs', 'Start', 'Started'],
+    ['Pause selected VMs', 'pause', 'Pause 3 VMs', 'Pause', 'Paused'],
     [
       'Restart selected VMs',
       'restart',
-      'Restart the VMs',
+      'Restart 3 VMs',
       'Restart',
       'Restarted',
     ],
     [
       'Shut down selected VMs',
       'shutdown',
-      'Shut Down the VMs',
+      'Shut Down 3 VMs',
       'Shut Down',
       'Shut down',
     ],
     [
       'Reset disk state of selected VMs',
       'resetDisk',
-      "Reset the VMs' Disks",
+      'Reset the Disks of 3 VMs',
       'Reset',
       'Reset the disks of',
     ],
@@ -980,12 +981,11 @@ describe('actions on VMs', () => {
     await act(page, 'Kill selected VMs', selection);
     const [dialog] = questions();
     expect(asked(dialog)).toMatchObject({
-      title: 'Kill the VMs',
-      confirmText: 'KILL THEM!',
+      title: 'Kill 3 VMs',
+      confirmText: 'Kill',
     });
     expect(messageOf(dialog)).toContain(
-      '<p>This will kill the VMs web, persistent, and db. You will not be ' +
-        'able to restore them until you restart the demo experiment!</p>',
+      '<p>This will kill the VMs web, persistent, and db. Kill stops a VM at once without a shutdown and removes it until the experiment starts again; unsaved data is lost.</p>',
     );
     expect(messageOf(dialog)).toContain(skippedVMsText(skipped));
 
@@ -1035,7 +1035,8 @@ describe('actions on VMs', () => {
     const page = await showing();
     await act(page, 'Shut down selected VMs', selection);
     expect(messageOf(questions()[0])).toBe(
-      '<p>This will shut down the VMs web, persistent, and db.</p>' +
+      '<p>This will shut down the VMs web, persistent, and db. ' +
+        'Shut down tells the operating system of a VM to power off; you can start the VM again.</p>' +
         '<p class="mt-3 has-text-grey-lighter">The VMs off and held are not ' +
         'running. The gone VM is not in the table.</p>',
     );
@@ -1066,25 +1067,37 @@ describe('actions on VMs', () => {
     const page = await showing();
     await act(page, 'Shut down selected VMs', ['web']);
     expect(asked(questions()[0])).toMatchObject({
-      title: 'Shut Down the VM',
-      message: '<p>This will shut down the web VM.</p>',
+      title: 'Shut Down the web VM',
+      message:
+        '<p>This will shut down the web VM. Shut down tells the operating system of a VM to power off; you can start the VM again.</p>',
     });
     await act(page, 'Reset disk state of selected VMs', ['web']);
-    expect(titleOf(questions()[1])).toBe("Reset the VM's Disk");
-    await act(page, 'Kill selected VMs', ['web']);
-    expect(asked(questions()[2])).toEqual({
-      title: 'Kill the VM',
+    expect(asked(questions()[1])).toEqual({
+      title: 'Reset the Disk of the web VM',
       message:
-        '<p>This will kill the web VM. You will not be able to restore it ' +
-        'until you restart the demo experiment!</p>',
-      confirmText: 'KILL IT!',
+        '<p>This will reset the disk of the web VM. Reset disk sets the disk of a VM back to its state at the start of the experiment; changes are lost.</p>',
+      confirmText: 'Reset',
+    });
+    await act(page, 'Start selected VMs', ['off']);
+    expect(asked(questions().at(-1))).toEqual({
+      title: 'Start the off VM',
+      message:
+        '<p>This will start the off VM. Start boots a VM that is shut down and resumes a VM that is paused.</p>',
+      confirmText: 'Start',
+    });
+    await act(page, 'Kill selected VMs', ['web']);
+    expect(asked(questions().at(-1))).toEqual({
+      title: 'Kill the web VM',
+      message:
+        '<p>This will kill the web VM. Kill stops a VM at once without a shutdown and removes it until the experiment starts again; unsaved data is lost.</p>',
+      confirmText: 'Kill',
     });
     expect(alerts()).toEqual([]);
   });
 
   it.each([
     ['start', 'off', 'details'],
-    ['pause', 'web', 'details'],
+    ['start', 'held', 'details'],
   ])(
     'runs %s on the %s VM from its %s without asking',
     async (action, name, from) => {
@@ -1111,45 +1124,335 @@ describe('actions on VMs', () => {
     },
   );
 
+  // what each action that asks says about the web VM, and the request that
+  // it sends once confirmed
+  const SNAPSHOT_REQUEST = (name) => [
+    `experiments/demo/vms/${name}/snapshots`,
+    { filename: expect.stringMatching(/^\d{4}-\d{2}-\d{2}_\d{4}$/) },
+    { timeout: 0 },
+  ];
+  const ASKS = {
+    pause: {
+      title: 'Pause the web VM',
+      text: 'This will pause the web VM. Pause stops a VM and keeps its memory until you resume it.',
+      confirmText: 'Pause',
+      type: 'is-success',
+      request: [
+        'experiments/demo/vms/actions',
+        { action: 'pause', vms: ['web'] },
+      ],
+    },
+    restart: {
+      title: 'Restart the web VM',
+      text: 'This will restart the web VM. Restart resets a VM at once without a shutdown; unsaved data is lost.',
+      confirmText: 'Restart',
+      type: 'is-success',
+      request: [
+        'experiments/demo/vms/actions',
+        { action: 'restart', vms: ['web'] },
+      ],
+    },
+    shutdown: {
+      title: 'Shut Down the web VM',
+      text: 'This will shut down the web VM. Shut down tells the operating system of a VM to power off; you can start the VM again.',
+      confirmText: 'Shut Down',
+      type: 'is-danger',
+      request: [
+        'experiments/demo/vms/actions',
+        { action: 'shutdown', vms: ['web'] },
+      ],
+    },
+    kill: {
+      title: 'Kill the web VM',
+      text: 'This will kill the web VM. Kill stops a VM at once without a shutdown and removes it until the experiment starts again; unsaved data is lost.',
+      confirmText: 'Kill',
+      type: 'is-danger',
+      request: [
+        'experiments/demo/vms/actions',
+        { action: 'kill', vms: ['web'] },
+      ],
+    },
+    snapshot: {
+      title: 'Create a Snapshot of the web VM',
+      text: 'This will create a snapshot of the web VM. A snapshot saves the disk and memory of a VM, which you can restore later.',
+      confirmText: 'Create',
+      type: 'is-success',
+      request: SNAPSHOT_REQUEST('web'),
+    },
+  };
+  // the tile bar labels its power buttons "<label> VM <name>"
+  const TILE_LABELS = {
+    pause: 'Pause',
+    restart: 'Restart',
+    shutdown: 'Shut down',
+    kill: 'Kill',
+  };
+  // the button of the action for the web VM in a row, its details or its tile
+  const entryButton = (page, from, action) => {
+    if (from === 'row') {
+      return vmRows(page)
+        .find((cells) => nodeOf(cells) === 'web')
+        .Actions.find(`.vm-row-${action}`);
+    }
+    if (from === 'details') {
+      return page.findComponent(VmDetailsCard).find(`.vm-action-${action}`);
+    }
+    const tiles = page.findComponent({ name: 'VncTiles' });
+    return action === 'snapshot'
+      ? tiles.find('.vnc-tile-item .vnc-tile-snapshot')
+      : tiles.find(`button[aria-label="${TILE_LABELS[action]} VM web"]`);
+  };
+  const cancelDialog = async () => {
+    dialogs().at(-1).querySelector('footer .button:first-child').click();
+    await flushPromises();
+  };
+
   it.each([
-    ['restart', 'Restart the VM', 'This will restart the web VM.', 'details'],
-    [
-      'shutdown',
-      'Shut Down the VM',
-      'This will shut down the web VM.',
-      'details',
-    ],
-    ['restart', 'Restart the VM', 'This will restart the web VM.', 'row'],
-    ['shutdown', 'Shut Down the VM', 'This will shut down the web VM.', 'row'],
+    ['row', 'restart'],
+    ['row', 'shutdown'],
+    ['row', 'snapshot'],
+    ['details', 'pause'],
+    ['details', 'restart'],
+    ['details', 'shutdown'],
+    ['details', 'kill'],
+    ['details', 'snapshot'],
+    ['tile', 'pause'],
+    ['tile', 'restart'],
+    ['tile', 'shutdown'],
+    ['tile', 'kill'],
+    ['tile', 'snapshot'],
   ])(
-    'asks before it runs %s on the web VM from its %s',
-    async (action, title, message, from) => {
+    'asks from a %s before it runs %s on the web VM: Cancel sends nothing, confirm sends it once',
+    async (from, action) => {
       const vm = vms.find((v) => v.name === 'web');
       const page = await open({
         experiment: { name: 'demo', vms },
-        expModal: { active: true, vm },
+        expModal: { active: from === 'details', vm, snapshots: [] },
+        activeTab: from === 'tile' ? 'vnc' : 'vms',
       });
       answerJob();
-      const button = () =>
-        from === 'row'
-          ? vmRows(page)
-              .find((cells) => nodeOf(cells) === 'web')
-              .Actions.find(`.vm-row-${action}`)
-          : page.findComponent(VmDetailsCard).find(`.vm-action-${action}`);
+      axios.get.mockResolvedValue({ data: { snapshots: [] } });
+      const ask = ASKS[action];
 
-      await button().trigger('click');
+      await entryButton(page, from, action).trigger('click');
       await flushPromises();
-      expect(asked(questions()[0])).toMatchObject({
-        title,
-        message: `<p>${message}</p>`,
+      expect(questions()).toHaveLength(1);
+      expect(asked(questions()[0])).toEqual({
+        title: ask.title,
+        message: `<p>${ask.text}</p>`,
+        confirmText: ask.confirmText,
       });
+      expect(
+        questions()[0].querySelector('footer .button:last-child').classList,
+      ).toContain(ask.type);
       expect(axios.post).not.toHaveBeenCalled();
 
+      await cancelDialog();
+      expect(questions()).toEqual([]);
+      expect(axios.post).not.toHaveBeenCalled();
+
+      await entryButton(page, from, action).trigger('click');
+      await flushPromises();
       await confirmDialog();
-      expect(axios.post.mock.calls).toEqual([
-        ['experiments/demo/vms/actions', { action, vms: ['web'] }],
-      ]);
-      expect(page.vm.expModal.active).toBe(true);
+      expect(axios.post).toHaveBeenCalledExactlyOnceWith(...ask.request);
+      if (action !== 'kill') {
+        expect(page.vm.expModal.active).toBe(from === 'details');
+      }
+    },
+  );
+
+  it.each([
+    [
+      'Pause selected VMs',
+      'pause',
+      'Pause 2 VMs',
+      'This will pause the VMs web and db.',
+    ],
+    [
+      'Restart selected VMs',
+      'restart',
+      'Restart 2 VMs',
+      'This will restart the VMs web and db.',
+    ],
+    [
+      'Shut down selected VMs',
+      'shutdown',
+      'Shut Down 2 VMs',
+      'This will shut down the VMs web and db.',
+    ],
+    [
+      'Kill selected VMs',
+      'kill',
+      'Kill 2 VMs',
+      'This will kill the VMs web and db.',
+    ],
+  ])(
+    '%s asks once for the selection: Cancel sends nothing, confirm sends one job',
+    async (label, action, title, opening) => {
+      const page = await showing();
+      answerJob();
+
+      await act(page, label, ['web', 'db']);
+      expect(questions()).toHaveLength(1);
+      expect(titleOf(questions()[0])).toBe(title);
+      expect(textOf(questions()[0].querySelector('.media-content'))).toBe(
+        // the same sentence on what the action does as for one VM
+        `${opening} ${ASKS[action].text.split('VM. ')[1]}`,
+      );
+      await cancelDialog();
+      expect(axios.post).not.toHaveBeenCalled();
+
+      await act(page, label, ['web', 'db']);
+      expect(questions()).toHaveLength(1);
+      await confirmDialog();
+      expect(axios.post).toHaveBeenCalledExactlyOnceWith(
+        'experiments/demo/vms/actions',
+        { action, vms: ['web', 'db'] },
+      );
+    },
+  );
+
+  it.each([
+    [
+      'Start selected VMs',
+      'start',
+      ['off', 'held'],
+      'Start 2 VMs',
+      'This will start the VMs off and held. Start boots a VM that is shut down and resumes a VM that is paused.',
+    ],
+    [
+      'Reset disk state of selected VMs',
+      'resetDisk',
+      ['web', 'db'],
+      'Reset the Disks of 2 VMs',
+      'This will reset the disks of the VMs web and db. Reset disk sets the disk of a VM back to its state at the start of the experiment; changes are lost.',
+    ],
+  ])(
+    '%s asks once for the selection: Cancel sends nothing, confirm sends one job',
+    async (label, action, names, title, text) => {
+      const page = await showing();
+      answerJob();
+
+      await act(page, label, names);
+      expect(questions()).toHaveLength(1);
+      expect(titleOf(questions()[0])).toBe(title);
+      expect(textOf(questions()[0].querySelector('.media-content'))).toBe(text);
+      await cancelDialog();
+      expect(axios.post).not.toHaveBeenCalled();
+
+      await act(page, label, names);
+      expect(questions()).toHaveLength(1);
+      await confirmDialog();
+      expect(axios.post).toHaveBeenCalledExactlyOnceWith(
+        'experiments/demo/vms/actions',
+        { action, vms: names },
+      );
+    },
+  );
+
+  it('Create snapshots of selected VMs asks once for the selection: Cancel sends nothing, confirm sends one request for each VM', async () => {
+    const page = await showing();
+    axios.post.mockResolvedValue({});
+
+    await act(page, 'Create snapshots of selected VMs', ['web', 'db']);
+    expect(questions()).toHaveLength(1);
+    expect(asked(questions()[0])).toEqual({
+      title: 'Create Snapshots of 2 VMs',
+      message:
+        '<p>This will create snapshots of the VMs web and db. A snapshot ' +
+        'saves the disk and memory of a VM, which you can restore later.</p>',
+      confirmText: 'Create',
+    });
+    await cancelDialog();
+    expect(axios.post).not.toHaveBeenCalled();
+
+    await act(page, 'Create snapshots of selected VMs', ['web', 'db']);
+    expect(questions()).toHaveLength(1);
+    await confirmDialog();
+    expect(axios.post.mock.calls).toEqual([
+      SNAPSHOT_REQUEST('web'),
+      SNAPSHOT_REQUEST('db'),
+    ]);
+  });
+
+  it.each([
+    ['details', 'Create memory snapshot'],
+    ['bulk', 'Create memory snapshot'],
+  ])(
+    'asks for a memory snapshot from the %s in its file name dialog: Cancel sends nothing, Create sends it once',
+    async (from, title) => {
+      const page = await open({
+        experiment: { name: 'demo', vms },
+        expModal: { active: from === 'details', vm: vms[0], snapshots: [] },
+      });
+      axios.post.mockResolvedValue({});
+      const start = () =>
+        from === 'details'
+          ? entryButton(page, 'details', 'memorySnapshot').trigger('click')
+          : act(page, 'Create memory snapshots of selected VMs', ['web']);
+      const modal = () => modalTitled(page, title);
+
+      await start();
+      await flushPromises();
+      expect(textOf(modal().find('.modal-card-body p'))).toBe(
+        'A memory snapshot saves the memory of a VM to an ELF file in the experiment files.',
+      );
+      await modal()
+        .findAll('footer button')
+        .find((b) => textOf(b) === 'Cancel')
+        .trigger('click');
+      await flushPromises();
+      expect(modal()).toBeUndefined();
+      expect(axios.post).not.toHaveBeenCalled();
+
+      await start();
+      await flushPromises();
+      await modal().find('footer .is-success').trigger('click');
+      await flushPromises();
+      expect(axios.post).toHaveBeenCalledExactlyOnceWith(
+        'experiments/demo/vms/web/memorySnapshot',
+        { filename: expect.stringMatching(/^web_.*\.elf$/) },
+        { timeout: 0 },
+      );
+    },
+  );
+
+  it.each(['row', 'details', 'tile'])(
+    'starts and resumes a VM from its %s without asking',
+    async (from) => {
+      const page = await open({
+        experiment: { name: 'demo', vms },
+        expModal: { active: from === 'details', vm: vms[2] },
+        activeTab: from === 'tile' ? 'vnc' : 'vms',
+      });
+      answerJob();
+      const startOf = (name) => {
+        if (from === 'row') {
+          return vmRows(page)
+            .find((cells) => nodeOf(cells) === name)
+            .Actions.find('.vm-row-start');
+        }
+        if (from === 'details') {
+          return page.findComponent(VmDetailsCard).find('.vm-action-start');
+        }
+        const label = name === 'held' ? 'Resume' : 'Start';
+        return page
+          .findComponent({ name: 'VncTiles' })
+          .find(`button[aria-label="${label} VM ${name}"]`);
+      };
+      // the details card shows the held VM alone
+      const names = from === 'details' ? ['held'] : ['held', 'off'];
+      for (const name of names) {
+        await startOf(name).trigger('click');
+        await flushPromises();
+      }
+      expect(dialogs()).toEqual([]);
+      expect(axios.post.mock.calls).toEqual(
+        names.map((name) => [
+          'experiments/demo/vms/actions',
+          { action: 'start', vms: [name] },
+        ]),
+      );
     },
   );
 
@@ -1195,15 +1498,14 @@ describe('actions on VMs', () => {
     };
 
     expect(titleOf(await pick(details('resetDisk')))).toBe(
-      "Reset the VM's Disk",
+      'Reset the Disk of the web VM',
     );
-    expect(asked(await pick(row('snapshot')))).toMatchObject({
-      title: 'Create a VM Snapshot',
-      message: '<p>This will create a snapshot of the web VM.</p>',
-    });
+    expect(titleOf(await pick(row('snapshot')))).toBe(
+      'Create a Snapshot of the web VM',
+    );
     expect(asked(await pick(details('kill')))).toMatchObject({
-      title: 'Kill the VM',
-      confirmText: 'KILL IT!',
+      title: 'Kill the web VM',
+      confirmText: 'Kill',
     });
     expect(questions()).toHaveLength(3);
     expect(alerts()).toEqual([]);
@@ -1388,7 +1690,7 @@ describe('actions on VMs', () => {
     await act(page, 'Create snapshots of selected VMs', selection);
     expect(alerts()).toEqual([]);
     const [dialog] = questions();
-    expect(titleOf(dialog)).toBe('Create VM Snapshots');
+    expect(titleOf(dialog)).toBe('Create Snapshots of 2 VMs');
     expect(messageOf(dialog)).toContain(
       'This will create snapshots of the VMs web and db.',
     );
@@ -1404,10 +1706,7 @@ describe('actions on VMs', () => {
     expect(noticeText()).toContain('Snapshotted 1 of 2 VMs: 1 failed');
 
     await act(page, 'Create snapshots of selected VMs', ['web']);
-    expect(asked(questions().at(-1))).toMatchObject({
-      title: 'Create a VM Snapshot',
-      message: '<p>This will create a snapshot of the web VM.</p>',
-    });
+    expect(titleOf(questions().at(-1))).toBe('Create a Snapshot of the web VM');
   });
 
   it("snapshots the VM from its details, spinning its button, then lists the VM's snapshots again", async () => {
@@ -1972,20 +2271,20 @@ describe('the selection toolbar', () => {
       .map(textOf);
 
   it.each([
-    ['Start selected VMs', 'Start the VMs', { running: false }],
-    ['Pause selected VMs', 'Pause the VMs'],
+    ['Start selected VMs', 'Start 2 VMs', { running: false }],
+    ['Pause selected VMs', 'Pause 2 VMs'],
     ['Create memory snapshots of selected VMs', 'Create memory snapshot'],
     ['Create backing images for selected VMs', 'Create a Disk Image'],
-    ['Create snapshots of selected VMs', 'Create VM Snapshots'],
+    ['Create snapshots of selected VMs', 'Create Snapshots of 2 VMs'],
     ['Redeploy selected VMs', 'Redeploy the VMs', { stateBar: true }],
     [
       'Reset disk state of selected VMs',
-      "Reset the VMs' Disks",
+      'Reset the Disks of 2 VMs',
       { stateBar: true },
     ],
-    ['Restart selected VMs', 'Restart the VMs', { stateBar: true }],
-    ['Shut down selected VMs', 'Shut Down the VMs', { stateBar: true }],
-    ['Kill selected VMs', 'Kill the VMs', { stateBar: true }],
+    ['Restart selected VMs', 'Restart 2 VMs', { stateBar: true }],
+    ['Shut down selected VMs', 'Shut Down 2 VMs', { stateBar: true }],
+    ['Kill selected VMs', 'Kill 2 VMs', { stateBar: true }],
   ])(
     '%s asks "%s" about both VMs',
     async (label, title, { running, stateBar } = {}) => {

@@ -9,10 +9,12 @@ import {
   LIVE_TILE_LIMITS,
   loadLiveTileLimit,
   loadVncSettings,
+  loadVncToolbarHidden,
   readPref,
   removePref,
   saveLiveTileLimit,
   saveVncSettings,
+  saveVncToolbarHidden,
   writePref,
 } from '@/utils/prefs.js';
 import { blockedStorage } from './helpers/storage.js';
@@ -177,5 +179,27 @@ describe('the VNC console settings', () => {
     vi.stubGlobal('localStorage', blockedStorage());
     expect(loadVncSettings('alice')).toEqual(DEFAULT_VNC_SETTINGS);
     expect(() => saveVncSettings('alice', DEFAULT_VNC_SETTINGS)).not.toThrow();
+  });
+});
+
+describe('the hidden top bar of the VNC console page', () => {
+  it('shows the bar when the browser keeps no choice', () => {
+    expect(loadVncToolbarHidden()).toBe(false);
+  });
+
+  it.each([true, false])('keeps the choice hidden=%s', (hidden) => {
+    saveVncToolbarHidden(hidden);
+    expect(loadVncToolbarHidden()).toBe(hidden);
+  });
+
+  it.each(['yes', '1', '{}'])('shows the bar for a stored %s', (value) => {
+    writePref('phenix.vnc.toolbarHidden', value);
+    expect(loadVncToolbarHidden()).toBe(false);
+  });
+
+  it('shows the bar, and drops the choice, when the browser blocks storage', () => {
+    vi.stubGlobal('localStorage', blockedStorage());
+    expect(() => saveVncToolbarHidden(true)).not.toThrow();
+    expect(loadVncToolbarHidden()).toBe(false);
   });
 });

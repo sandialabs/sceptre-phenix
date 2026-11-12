@@ -41,6 +41,7 @@ import {
   toasts,
 } from './helpers/mount.js';
 import { allowOnly } from './helpers/permissions.js';
+import { blockedStorage } from './helpers/storage.js';
 
 const session = (exp, name, banners = {}) => ({
   experiment: exp,
@@ -505,6 +506,7 @@ describe('what the top bar does', () => {
     await wrapper.findAll('.vnc-pane')[1].trigger('pointerdown');
     await wrapper.find('[aria-label="Pause"]').trigger('click');
     await flushPromises();
+    await confirmDialog();
     expect(axios.post).toHaveBeenCalledWith('experiments/demo/vms/actions', {
       action: 'pause',
       vms: ['web'],
@@ -513,25 +515,63 @@ describe('what the top bar does', () => {
     expect(wrapper.find('[aria-label="Resume"]').exists()).toBe(true);
   });
 
+  const SNAPSHOT_REQUEST = [
+    'experiments/demo/vms/web/snapshots',
+    { filename: expect.stringMatching(/^\d{4}-\d{2}-\d{2}_\d{4}$/) },
+    { timeout: 0 },
+  ];
+  const jobRequest = (action) => [
+    'experiments/demo/vms/actions',
+    { action, vms: ['web'] },
+  ];
+
   it.each([
     [
-      'Shut down',
-      'shutdown',
-      'Shut Down the VM',
-      'This will shut down the web VM.',
+      'Pause',
+      'Pause the web VM',
+      'This will pause the web VM. Pause stops a VM and keeps its memory until you resume it.',
+      'is-success',
+      jobRequest('pause'),
     ],
-    ['Restart', 'restart', 'Restart the VM', 'This will restart the web VM.'],
+    [
+      'Restart',
+      'Restart the web VM',
+      'This will restart the web VM. Restart resets a VM at once without a shutdown; unsaved data is lost.',
+      'is-success',
+      jobRequest('restart'),
+    ],
+    [
+      'Shut down',
+      'Shut Down the web VM',
+      'This will shut down the web VM. Shut down tells the operating system of a VM to power off; you can start the VM again.',
+      'is-danger',
+      jobRequest('shutdown'),
+    ],
+    [
+      'Snapshot',
+      'Create a Snapshot of the web VM',
+      'This will create a snapshot of the web VM. A snapshot saves the disk and memory of a VM, which you can restore later.',
+      'is-success',
+      SNAPSHOT_REQUEST,
+    ],
   ])(
-    'asks before %s, and runs nothing when the user cancels',
-    async (label, action, title, message) => {
+    'asks before %s, sends nothing on Cancel, and sends it once on confirm',
+    async (label, title, message, type, request) => {
       jobs.done = { id: 'j1', status: 'succeeded', items: [] };
       axios.post.mockResolvedValue({ data: { id: 'j1', status: 'running' } });
       const wrapper = await connected('/vnc?vm=demo/web');
       await wrapper.find(`[aria-label="${label}"]`).trigger('click');
       await flushPromises();
       expect(dialogs()).toHaveLength(1);
-      expect(textOf(dialogs()[0])).toContain(title);
-      expect(textOf(dialogs()[0])).toContain(message);
+      expect(textOf(dialogs()[0].querySelector('.modal-card-title'))).toBe(
+        title,
+      );
+      expect(textOf(dialogs()[0].querySelector('.media-content'))).toBe(
+        message,
+      );
+      expect(
+        dialogs()[0].querySelector('footer .button:last-child').classList,
+      ).toContain(type);
       expect(axios.post).not.toHaveBeenCalled();
 
       dialogs()[0].querySelector('footer .button:first-child').click();
@@ -541,12 +581,33 @@ describe('what the top bar does', () => {
       await wrapper.find(`[aria-label="${label}"]`).trigger('click');
       await flushPromises();
       await confirmDialog();
-      expect(axios.post).toHaveBeenCalledExactlyOnceWith(
-        'experiments/demo/vms/actions',
-        { action, vms: ['web'] },
-      );
+      expect(axios.post).toHaveBeenCalledExactlyOnceWith(...request);
     },
   );
+
+  it.each([
+    ['the top bar', (wrapper) => wrapper.find('[aria-label="Resume"]')],
+    [
+      'the paused pane',
+      (wrapper) =>
+        wrapper
+          .findAll('.vnc-paused button')
+          .find((b) => textOf(b) === 'Resume'),
+    ],
+  ])('resumes a paused VM from %s without asking', async (_, resume) => {
+    answers['experiments/demo/vms/web'] = vm({
+      name: 'web',
+      state: 'PAUSED',
+      running: false,
+    });
+    jobs.done = { id: 'j1', status: 'succeeded', items: [] };
+    axios.post.mockResolvedValue({ data: { id: 'j1', status: 'running' } });
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await resume(wrapper).trigger('click');
+    await flushPromises();
+    expect(dialogs()).toEqual([]);
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith(...jobRequest('start'));
+  });
 
   it('leaves fullscreen before it asks to confirm a snapshot', async () => {
     const wrapper = await connected('/vnc?vm=demo/web');
@@ -627,6 +688,19 @@ describe('what the top bar does', () => {
     );
   });
 
+  it('sends no memory snapshot when its dialog is cancelled', async () => {
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await wrapper.find('[aria-label="Memory snapshot"]').trigger('click');
+    await flushPromises();
+    const modal = wrapper.find('.modal.is-active');
+    expect(textOf(modal.find('.modal-card-body p'))).toBe(
+      'A memory snapshot saves the memory of a VM to an ELF file in the experiment files.',
+    );
+    await button(wrapper, 'Cancel').trigger('click');
+    await flushPromises();
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
   it('creates a memory snapshot with the name from its dialog', async () => {
     axios.post.mockResolvedValue({ data: {} });
     const wrapper = await connected('/vnc?vm=demo/web');
@@ -639,7 +713,7 @@ describe('what the top bar does', () => {
     await name.setValue('web-dump');
     await button(wrapper, 'Create').trigger('click');
     await flushPromises();
-    expect(axios.post).toHaveBeenCalledWith(
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith(
       'experiments/demo/vms/web/memorySnapshot',
       { filename: 'web-dump.elf' },
       { timeout: 0 },
@@ -1050,5 +1124,100 @@ describe('one connection for each VM in a tab', () => {
     wrapper.unmount();
     expect(web.live.value).toBe(true);
     pool.dispose();
+  });
+});
+
+describe('hiding the top bar', () => {
+  const HIDDEN_KEY = 'phenix.vnc.toolbarHidden';
+  const bar = (wrapper) => wrapper.find('.vnc-toolbar');
+  const barShown = (wrapper) => bar(wrapper).element.style.display !== 'none';
+  const showButton = (wrapper) => wrapper.find('[aria-label="Show toolbar"]');
+  const hideButton = (wrapper) => wrapper.find('[aria-label="Hide toolbar"]');
+  const chord = async (code, key) => {
+    for (const init of [
+      { code: 'BracketRight', key: ']', ctrlKey: true },
+      { code, key },
+    ]) {
+      rfbs[0].canvas.dispatchEvent(
+        new KeyboardEvent('keydown', { ...init, bubbles: true }),
+      );
+    }
+    await nextTick();
+    await nextTick();
+  };
+
+  it('hides the bar from Hide toolbar, keeps the choice, and gives focus to Show toolbar', async () => {
+    const wrapper = await openPage('/vnc?vm=demo/kali&vm=demo/web');
+    expect(barShown(wrapper)).toBe(true);
+    expect(showButton(wrapper).exists()).toBe(false);
+
+    await hideButton(wrapper).trigger('click');
+    await nextTick();
+    expect(barShown(wrapper)).toBe(false);
+    expect(localStorage.getItem(HIDDEN_KEY)).toBe('true');
+    expect(document.activeElement).toBe(showButton(wrapper).element);
+    // the panes get the space, and keep their connections
+    expect(wrapper.classes()).toContain('is-toolbar-hidden');
+    expect(wrapper.findAll('.vnc-pane')).toHaveLength(2);
+    expect(rfbs).toHaveLength(2);
+    expect(rfbs.some((rfb) => rfb.disconnected)).toBe(false);
+  });
+
+  it('shows the bar again from Show toolbar, and gives focus to Hide toolbar', async () => {
+    localStorage.setItem(HIDDEN_KEY, 'true');
+    const wrapper = await openPage('/vnc?vm=demo/web');
+    expect(barShown(wrapper)).toBe(false);
+    // a native button that Tab reaches, before the panes
+    const show = showButton(wrapper);
+    expect(show.element.tagName).toBe('BUTTON');
+    expect(show.attributes('tabindex')).toBeUndefined();
+
+    await show.trigger('click');
+    await nextTick();
+    expect(barShown(wrapper)).toBe(true);
+    expect(showButton(wrapper).exists()).toBe(false);
+    expect(localStorage.getItem(HIDDEN_KEY)).toBe('false');
+    expect(document.activeElement).toBe(hideButton(wrapper).element);
+  });
+
+  it('hides and shows the bar with the chord Ctrl+] then T, and the VM gets no key', async () => {
+    const wrapper = await openPage('/vnc?vm=demo/web');
+    rfbs[0].connect();
+    rfbs[0].focus();
+    await chord('KeyT', 't');
+    expect(barShown(wrapper)).toBe(false);
+    expect(localStorage.getItem(HIDDEN_KEY)).toBe('true');
+    expect(document.activeElement).toBe(rfbs[0].canvas);
+
+    await chord('KeyT', 't');
+    expect(barShown(wrapper)).toBe(true);
+    expect(localStorage.getItem(HIDDEN_KEY)).toBe('false');
+    expect(rfbs[0].keys).toEqual([]);
+  });
+
+  it('leaves the console for Show toolbar with the chord Ctrl+] then Tab while the bar is hidden', async () => {
+    localStorage.setItem(HIDDEN_KEY, 'true');
+    const wrapper = await openPage('/vnc?vm=demo/web');
+    rfbs[0].focus();
+    await chord('Tab', 'Tab');
+    expect(document.activeElement).toBe(showButton(wrapper).element);
+  });
+
+  it('shows the bar and its Add VM panel from Add VM in an empty pane', async () => {
+    localStorage.setItem(HIDDEN_KEY, 'true');
+    const wrapper = await openPage('/vnc?vm=demo/web&layout=cols');
+    await wrapper.find('.vnc-empty-pane button').trigger('click');
+    await flushPromises();
+    expect(barShown(wrapper)).toBe(true);
+    expect(wrapper.find('#vnc-panel-add').isVisible()).toBe(true);
+  });
+
+  it('hides the bar for the visit when the browser blocks storage', async () => {
+    vi.stubGlobal('localStorage', blockedStorage());
+    const wrapper = await openPage('/vnc?vm=demo/web');
+    expect(barShown(wrapper)).toBe(true);
+    await hideButton(wrapper).trigger('click');
+    await nextTick();
+    expect(barShown(wrapper)).toBe(false);
   });
 });

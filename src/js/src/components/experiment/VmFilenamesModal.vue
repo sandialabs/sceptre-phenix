@@ -10,6 +10,7 @@
         <h2 class="modal-card-title">{{ title }}</h2>
       </header>
       <section class="modal-card-body">
+        <p v-if="description" class="mb-4">{{ description }}</p>
         <div v-if="vms.length > 0">
           <div v-for="(vmI, index) in vms" :key="index">
             <div>
@@ -60,6 +61,8 @@
       kind: { type: String, required: true },
       // what the dialog asks before each VM's name
       prompt: { type: String, required: true },
+      // one sentence above the fields that says what the action does
+      description: { type: String, default: '' },
       // each VM: { name, filename, nameErrType, nameErrMsg }
       vms: { type: Array, default: () => [] },
       // whether every filename is allowed

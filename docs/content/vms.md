@@ -55,7 +55,8 @@ There is currently no CLI subcommand to create backing images from running VMs. 
 ### From the Web-UI
 
 Click on the name of a running VM in a started experiment to open its details
-card, then click `Memory snapshot` in `More actions`. The button is disabled
+card, then click `Memory snapshot` in `More actions`. Type the file name and
+click `Create`, or click `Cancel` to stop. The button is disabled
 when the VM is not running.
 
 ### From the Command Line Binary
@@ -80,6 +81,8 @@ Click on a running VM in a started experiment to open its details card, then
 click `Snapshot` in `More actions` and confirm. The button is disabled when
 the VM is not running or does not have snapshots enabled. In Live mode, the bar
 of a tile in the VNC tab also has `Snapshot` (see [Live Tiles](#live-tiles)).
+The VM table's `Actions` column, the selection toolbar and the top bar of the
+console page also ask you to confirm.
 
 ### From the Command Line Binary
 
@@ -169,6 +172,13 @@ and these controls:
   browser keeps the list for each user.
 * The connection state, for example `Connected`. Click it to see the screen
   size, the scaling, the encoding and the copy/paste mode.
+* `Hide toolbar`, at the right end, hides the top bar. The panes then use
+  all of the page. A small `Show toolbar` button in the top left corner shows
+  the bar again. Ctrl+] then T also hides or shows the bar (see
+  [The Keyboard Chord](#the-keyboard-chord)). The browser keeps the choice.
+
+`Pause`, `Restart`, `Shut down` and `Snapshot` ask you to confirm. `Resume`
+does not ask.
 
 ![The console page in two columns: the web pane has keyboard input, and each pane shows its VM between its two banners](images/vnc_console_split.png)
 
@@ -199,9 +209,10 @@ console, press Ctrl+], then one more key:
 
 | Key | Action |
 |---|---|
-| Tab | Move focus to the top bar. Shift+Tab moves focus to the last control of the bar. |
+| Tab | Move focus to the top bar. Shift+Tab moves focus to the last control of the bar. When the top bar is hidden, move focus to `Show toolbar`. |
 | 1 to 4 | Give keyboard input to that pane. |
 | F | Exit full screen. |
+| T | Hide or show the top bar. |
 | Esc | Cancel the chord. |
 
 Press the key in the position of ] on a US keyboard. On a German keyboard,
@@ -239,7 +250,9 @@ pointer events to the VM. A paused VM keeps a still tile with the `PAUSED`
 tag. Click a tile to open its console page. Move the pointer over a tile to
 show its bar, with `Open console`, `Details` and the VM power actions. In Live
 mode, the bar also has `Screenshot` and `Snapshot`. The bar also shows when a control of the tile has
-keyboard focus. A disabled button tells why in its tooltip.
+keyboard focus. A disabled button tells why in its tooltip. `Pause`,
+`Restart`, `Shut down`, `Kill` and `Snapshot` ask you to confirm. `Start` and
+`Resume` do not ask.
 
 ![The VNC tab with the Live and Snapshots switch, the Live tile limit, and live tiles for two running VMs, one paused VM and one VM that is not running](images/vnc_tiles.png)
 
@@ -467,7 +480,8 @@ phenix vm capture stop <experiment name> <vm name> [iface name/index]
 ### From the Web-UI
 
 Click on the name of a running VM in a started experiment to open its details
-card, then click `Kill` in the `Power` section and confirm.
+card, then click `Kill` in the `Power` section and confirm. The bar of a live
+tile and the selection toolbar also ask you to confirm.
 
 _Note_: if you stop and then start the experiment again, that VM will run again
 per the experiment configuration.
@@ -508,7 +522,9 @@ phenix vm net disconnect <experiment name> <vm name> <iface index>
 ### From the Web-UI
 
 Click on the name of a running VM in a started experiment to open its details
-card, then click `Pause` in the `Power` section.
+card, then click `Pause` in the `Power` section and confirm. The bar of a live
+tile, the selection toolbar and the top bar of the console page also ask you
+to confirm.
 
 ### From the Command Line Binary
 
@@ -571,7 +587,8 @@ phenix vm reset-disk <experiment name> [vm name] [--label <label>]
 Click on the name of a running VM in a started experiment to open its details
 card, then click `Restart` in the `Power` section and confirm. The button is
 disabled when the VM is not running. The `Actions` column of the VM table, the
-bar of a live tile and the console page also ask you to confirm a restart.
+bar of a live tile, the selection toolbar and the console page also ask you to
+confirm a restart.
 
 ### From the Command Line Binary
 
@@ -606,8 +623,8 @@ phenix vm resume <experiment name> [vm name] [--label <label>]
 
 Click on the name of a running VM in a started experiment to open its details
 card, then click `Shut down` in the `Power` section and confirm. `Shut down` is
-also in the VM table's `Actions` column, the bar of a live tile and the top
-bar of the console page. Each one asks you to confirm.
+also in the VM table's `Actions` column, the selection toolbar, the bar of a
+live tile and the top bar of the console page. Each one asks you to confirm.
 
 ### From the Command Line Binary
 

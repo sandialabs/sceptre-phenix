@@ -54,6 +54,7 @@
     'chord-leave',
     'chord-pane',
     'chord-exit-fullscreen',
+    'chord-toggle-toolbar',
   ]);
 
   const root = ref(null);
@@ -141,6 +142,7 @@
       onLeave: ({ backward }) => emit('chord-leave', backward),
       onSelectPane: (n) => emit('chord-pane', n),
       onExitFullscreen: () => emit('chord-exit-fullscreen'),
+      onToggleToolbar: () => emit('chord-toggle-toolbar'),
     });
   });
 

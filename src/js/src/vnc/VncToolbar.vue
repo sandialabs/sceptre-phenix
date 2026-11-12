@@ -2,8 +2,8 @@
      has keyboard input: links to its experiment and to the details of its
      VM, the VM actions that the role may take, the Keys, Clipboard and View
      panels (M6a), the layout picker, Add VM, full screen, and the
-     connection indicator at the right end. The page fills the panels
-     through the keys, clipboard, view and add slots. -->
+     connection indicator and Hide toolbar at the right end. The page fills
+     the panels through the keys, clipboard, view and add slots. -->
 <script setup>
   import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
@@ -61,6 +61,7 @@
     'reconnect',
     'panel-close',
     'details',
+    'hide',
   ]);
 
   const root = ref(null);
@@ -421,5 +422,17 @@
         </b-button>
       </div>
     </div>
+
+    <b-tooltip
+      label="Hide the toolbar. Ctrl+] then T shows it again."
+      type="is-dark"
+      position="is-left">
+      <b-button
+        size="is-small"
+        class="vnc-hide-toolbar"
+        icon-left="chevron-up"
+        aria-label="Hide toolbar"
+        @click="emit('hide')" />
+    </b-tooltip>
   </div>
 </template>

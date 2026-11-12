@@ -37,6 +37,7 @@ beforeEach(() => {
     onLeave: vi.fn(),
     onSelectPane: vi.fn(),
     onExitFullscreen: vi.fn(),
+    onToggleToolbar: vi.fn(),
   };
 });
 
@@ -116,6 +117,21 @@ describe('the key after Ctrl+]', () => {
   it('F exits fullscreen', () => {
     expect(armed().handleKeydown(key('KeyF', 'f'))).toBe(true);
     expect(handlers.onExitFullscreen).toHaveBeenCalledOnce();
+  });
+
+  it('T hides or shows the top bar, and the console does not get it', () => {
+    const chord = armed();
+    const event = key('KeyT', 't');
+    expect(chord.handleKeydown(event)).toBe(true);
+    expect(event.defaultPrevented).toBe(true);
+    expect(handlers.onToggleToolbar).toHaveBeenCalledOnce();
+    expect(chord.armed.value).toBe(false);
+  });
+
+  it('T without the chord goes to the console', () => {
+    const chord = createChord(handlers);
+    expect(chord.handleKeydown(key('KeyT', 't'))).toBe(false);
+    expect(handlers.onToggleToolbar).not.toHaveBeenCalled();
   });
 
   it('Esc cancels the chord', () => {

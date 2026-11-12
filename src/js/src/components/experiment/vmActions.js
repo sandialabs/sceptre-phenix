@@ -5,7 +5,7 @@ import {
   partitionForAction,
   skippedText,
 } from '@/utils/operations.js';
-import { namedList, pluralWord } from '@/utils/plural.js';
+import { namedList } from '@/utils/plural.js';
 
 // What the running experiment page shows for a VM's state, and which VM
 // actions a role may take on a VM in its current state. The details modal, the
@@ -248,23 +248,82 @@ export const VM_ACTIONS = {
   },
 };
 
-// The confirm dialog (see confirmOperation) of the power actions that ask
-// first wherever a user takes them on one VM, for the VM names given. The
-// message is HTML.
-export const POWER_CONFIRMS = {
-  restart: (vms) => ({
-    title: `Restart the ${pluralWord(vms.length, 'VM')}`,
-    message: escapeHTML(`This will restart ${namedList(vms, 'VM')}.`),
-    confirmText: 'Restart',
-    type: 'is-success',
+// The confirm dialog of an action: the title names the VM, or the count of
+// VMs; `does` says what the action does. `many` replaces the words for VMs.
+const askFor =
+  ({ title, verb, does, confirmText, type = 'is-success', many = {} }) =>
+  (vms) => {
+    const one = vms.length === 1;
+    const words = one ? { title, verb } : { title, verb, ...many };
+    return {
+      title: one
+        ? `${words.title} the ${vms[0]} VM`
+        : `${words.title} ${vms.length} VMs`,
+      message: escapeHTML(
+        `This will ${words.verb} ${namedList(vms, 'VM')}. ${does}`,
+      ),
+      confirmText,
+      type,
+    };
+  };
+
+// The confirm dialog (see confirmOperation) of each VM action that asks
+// first, for the VM names given. The message is HTML. Start asks only for a
+// selection; memory snapshot asks in its file name dialog.
+export const VM_ACTION_CONFIRMS = {
+  start: askFor({
+    title: 'Start',
+    verb: 'start',
+    does: 'Start boots a VM that is shut down and resumes a VM that is paused.',
+    confirmText: 'Start',
   }),
-  shutdown: (vms) => ({
-    title: `Shut Down the ${pluralWord(vms.length, 'VM')}`,
-    message: escapeHTML(`This will shut down ${namedList(vms, 'VM')}.`),
+  pause: askFor({
+    title: 'Pause',
+    verb: 'pause',
+    does: 'Pause stops a VM and keeps its memory until you resume it.',
+    confirmText: 'Pause',
+  }),
+  restart: askFor({
+    title: 'Restart',
+    verb: 'restart',
+    does: 'Restart resets a VM at once without a shutdown; unsaved data is lost.',
+    confirmText: 'Restart',
+  }),
+  shutdown: askFor({
+    title: 'Shut Down',
+    verb: 'shut down',
+    does: 'Shut down tells the operating system of a VM to power off; you can start the VM again.',
     confirmText: 'Shut Down',
     type: 'is-danger',
   }),
+  kill: askFor({
+    title: 'Kill',
+    verb: 'kill',
+    does:
+      'Kill stops a VM at once without a shutdown and removes it until the ' +
+      'experiment starts again; unsaved data is lost.',
+    confirmText: 'Kill',
+    type: 'is-danger',
+  }),
+  resetDisk: askFor({
+    title: 'Reset the Disk of',
+    verb: 'reset the disk of',
+    does: 'Reset disk sets the disk of a VM back to its state at the start of the experiment; changes are lost.',
+    confirmText: 'Reset',
+    many: { title: 'Reset the Disks of', verb: 'reset the disks of' },
+  }),
+  snapshot: askFor({
+    title: 'Create a Snapshot of',
+    verb: 'create a snapshot of',
+    does: 'A snapshot saves the disk and memory of a VM, which you can restore later.',
+    confirmText: 'Create',
+    many: { title: 'Create Snapshots of', verb: 'create snapshots of' },
+  }),
 };
+
+/** What the memory snapshot dialog says that the action does. */
+export const MEMORY_SNAPSHOT_DOES =
+  'A memory snapshot saves the memory of a VM to an ELF file in the experiment files.';
 
 // the pending keys of a VLAN change on an interface and a snapshot restore,
 // which spin beside their links rather than on an action button

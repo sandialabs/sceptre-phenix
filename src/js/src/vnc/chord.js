@@ -5,6 +5,7 @@
 // - Tab (or Shift+Tab) leaves the console.
 // - 1–4 move keyboard input to that pane.
 // - F exits fullscreen.
+// - T hides or shows the top bar.
 // - Esc cancels the chord.
 import { readonly, ref } from 'vue';
 
@@ -44,6 +45,7 @@ function consume(event) {
  * @property {(pane: number) => void} [onSelectPane] give keyboard input to
  *   pane 1–4
  * @property {() => void} [onExitFullscreen]
+ * @property {() => void} [onToggleToolbar] hide or show the top bar
  */
 
 /**
@@ -78,6 +80,10 @@ export function createChord(actions = {}) {
     }
     if (event.code === 'KeyF') {
       actions.onExitFullscreen?.();
+      return consume(event);
+    }
+    if (event.code === 'KeyT') {
+      actions.onToggleToolbar?.();
       return consume(event);
     }
     if (event.code === 'Escape' || event.key === 'Escape') {
