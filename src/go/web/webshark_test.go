@@ -55,14 +55,20 @@ func useWebShark(t *testing.T, captures ...mm.Capture) *testMM {
 	return fake
 }
 
-// useCaptureGrants gives the test a registry of capture grants of its own.
+// useCaptureGrants gives the test a registry of capture grants of its own,
+// and ends its grants once the test ends.
 func useCaptureGrants(t *testing.T) {
 	t.Helper()
 
 	original := captureGrants
-	captureGrants = capability.New(maxCaptureGrants, maxCaptureGrantsPerUser, nil)
+	grants := capability.New(maxCaptureGrants, maxCaptureGrantsPerUser, nil)
+	captureGrants = grants
 
-	t.Cleanup(func() { captureGrants = original })
+	t.Cleanup(func() {
+		captureGrants = original
+
+		grants.RevokeWhere(func(capability.Grant) bool { return true })
+	})
 }
 
 // liveCapture is a running capture of test-vm's interface 0, written to a

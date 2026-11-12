@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math/rand/v2"
 	"net"
 	"os"
@@ -47,13 +48,21 @@ type fake struct {
 	received []Command
 	users    []string     // names of the tests in Use, outermost first
 	tbs      []testing.TB // the tests in Use, in the order of users
+
+	listener net.Listener          // nil until the fake starts
+	conns    map[net.Conn]struct{} // the connections being served
+	stopped  bool
+	serving  sync.WaitGroup // the goroutines of the listener and conns
 }
 
 //nolint:gochecknoglobals // mmcli keeps one connection to the fake for the process
 var (
 	startOnce sync.Once
 	errStart  error
-	current   = &fake{mu: sync.Mutex{}, handle: nil, received: nil, users: nil, tbs: nil}
+	current   = &fake{
+		mu: sync.Mutex{}, handle: nil, received: nil, users: nil, tbs: nil,
+		listener: nil, conns: make(map[net.Conn]struct{}), stopped: false, serving: sync.WaitGroup{},
+	}
 
 	// disconnect and truncate mark the replies Disconnect and Truncated return.
 	disconnect = &minicli.Response{Host: "mmtest: disconnect"} //nolint:exhaustruct // a marker, never sent
@@ -248,18 +257,88 @@ func start() error {
 
 	common.MinimegaBase = base //nolint:reassign // mmcli dials the socket under this base
 
+	current.mu.Lock()
+	current.listener = listener
+	current.mu.Unlock()
+
+	current.serving.Add(1)
+
 	go func() {
+		defer current.serving.Done()
+
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
 				return
 			}
 
-			go serve(conn)
+			current.mu.Lock()
+
+			if current.stopped {
+				current.mu.Unlock()
+				_ = conn.Close()
+
+				return
+			}
+
+			current.conns[conn] = struct{}{}
+			current.serving.Add(1)
+			current.mu.Unlock()
+
+			go func() {
+				defer current.serving.Done()
+
+				serve(conn)
+
+				current.mu.Lock()
+				delete(current.conns, conn)
+				current.mu.Unlock()
+			}()
 		}
 	}()
 
 	return nil
+}
+
+// StoppingM runs a package's tests, then stops the fake minimega.
+type StoppingM struct {
+	m *testing.M
+}
+
+// StopAfter returns m in a StoppingM, for a TestMain that looks for goroutines
+// left running once the tests end, such as goleak.VerifyTestMain.
+func StopAfter(m *testing.M) StoppingM {
+	return StoppingM{m: m}
+}
+
+// Run runs the tests, then closes the fake's socket and connections and waits
+// for their goroutines to end. It returns the exit code of the tests.
+func (s StoppingM) Run() int {
+	code := s.m.Run()
+
+	stop()
+
+	return code
+}
+
+// stop closes the fake's socket and connections and waits for their
+// goroutines to end.
+func stop() {
+	current.mu.Lock()
+	current.stopped = true
+	listener := current.listener
+	conns := slices.Collect(maps.Keys(current.conns))
+	current.mu.Unlock()
+
+	if listener != nil {
+		_ = listener.Close()
+	}
+
+	for _, conn := range conns {
+		_ = conn.Close()
+	}
+
+	current.serving.Wait()
 }
 
 // serve answers the commands sent on conn until it is closed.

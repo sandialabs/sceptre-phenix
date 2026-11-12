@@ -3,7 +3,6 @@ package mmcli
 import (
 	"context"
 	"errors"
-	"os"
 	"slices"
 	"strconv"
 	"sync"
@@ -15,6 +14,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
 	"github.com/sandia-minimega/minimega/v2/pkg/miniclient"
+	"go.uber.org/goleak"
 
 	"phenix/util/mm/mmtest"
 	"phenix/util/plog/plogtest"
@@ -30,13 +30,23 @@ const (
 	unchecked      = "vlans add a 5"
 )
 
-// TestMain stops the idle reaper of the process-wide pool once the tests end.
+// TestMain fails the run when a goroutine is still alive after the tests.
 func TestMain(m *testing.M) {
-	code := m.Run()
+	goleak.VerifyTestMain(closingPool{m: mmtest.StopAfter(m)})
+}
+
+// closingPool runs the tests, then stops the idle reaper of the process-wide
+// pool, before goleak looks for goroutines.
+type closingPool struct {
+	m mmtest.StoppingM
+}
+
+func (c closingPool) Run() int {
+	code := c.m.Run()
 
 	readOnlyPool.close()
 
-	os.Exit(code)
+	return code
 }
 
 // fakeClock is the clock of a test pool, which only Advance moves.

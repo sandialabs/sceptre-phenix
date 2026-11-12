@@ -60,25 +60,29 @@ func init() { //nolint:gochecknoinits // background worker
 		dropExperimentForwards(name)
 	})
 
-	go func() {
-		var (
-			ticker       = time.NewTicker(forwardTickerInterval)
-			createTunnel = pubsub.Subscribe("create-tunnel")
-		)
+	go runForwards()
+}
 
-		for {
-			select {
-			case <-ticker.C:
-				reapForwards()
-			case pub := <-createTunnel:
-				tunnel, _ := pub.(app.CreateTunnel)
+// runForwards drops the forwards that ended and creates the ones apps ask
+// for, until the process exits.
+func runForwards() {
+	var (
+		ticker       = time.NewTicker(forwardTickerInterval)
+		createTunnel = pubsub.Subscribe("create-tunnel")
+	)
 
-				// creating asks minimega, so the publisher and the ticker do
-				// not wait on it
-				go createAppForward(tunnel)
-			}
+	for {
+		select {
+		case <-ticker.C:
+			reapForwards()
+		case pub := <-createTunnel:
+			tunnel, _ := pub.(app.CreateTunnel)
+
+			// creating asks minimega, so the publisher and the ticker do
+			// not wait on it
+			go createAppForward(tunnel)
 		}
-	}()
+	}
 }
 
 // dropExperimentForwards forgets a stopped experiment's forwards, and the ones
