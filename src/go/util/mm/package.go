@@ -295,12 +295,6 @@ func MeshShell(host, cmd string) error {
 	return DefaultMM.MeshShell(host, cmd)
 }
 
-// MeshShellResponse runs the shell command on host (the headnode when "") and
-// returns its output; once ctx is done, the command gives up if not yet sent.
-func MeshShellResponse(ctx context.Context, host, cmd string) (string, error) {
-	return DefaultMM.MeshShellResponse(ctx, host, cmd)
-}
-
 // MeshShellRead is MeshShellResponse for a shell command that changes
 // nothing, sent on the read-only connections of mmcli.RunReadOnly.
 func MeshShellRead(ctx context.Context, host, cmd string) (string, error) {

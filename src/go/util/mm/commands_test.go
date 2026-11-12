@@ -351,7 +351,7 @@ func TestOneCommandFunctions(t *testing.T) { //nolint:paralleltest // shares the
 			wantMsg: "exit status 2",
 		},
 		"MeshShellResponse trims the output": {
-			call: func() (any, error) { return MeshShellResponse(t.Context(), "compute1", "hostname") },
+			call: func() (any, error) { return DefaultMM.MeshShellResponse(t.Context(), "compute1", "hostname") },
 			answers: map[string][]*minicli.Response{
 				"mesh send compute1 shell hostname": {mmtest.Text("compute1", "  compute1\n")},
 			},
@@ -359,7 +359,7 @@ func TestOneCommandFunctions(t *testing.T) { //nolint:paralleltest // shares the
 			want: "compute1",
 		},
 		"MeshShellResponse takes the answer over another host's error": {
-			call: func() (any, error) { return MeshShellResponse(t.Context(), "", "hostname") },
+			call: func() (any, error) { return DefaultMM.MeshShellResponse(t.Context(), "", "hostname") },
 			answers: map[string][]*minicli.Response{
 				"shell hostname": {mmtest.Error("compute1", "denied"), mmtest.Text("head", "head\n")},
 			},
@@ -367,7 +367,7 @@ func TestOneCommandFunctions(t *testing.T) { //nolint:paralleltest // shares the
 			want: "head",
 		},
 		"MeshShellResponse without an answer": {
-			call:    func() (any, error) { return MeshShellResponse(t.Context(), "", "hostname") },
+			call:    func() (any, error) { return DefaultMM.MeshShellResponse(t.Context(), "", "hostname") },
 			answers: map[string][]*minicli.Response{"shell hostname": failed("denied")},
 			sent:    []string{bare("shell hostname")},
 			want:    "",

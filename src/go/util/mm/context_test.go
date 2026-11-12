@@ -123,7 +123,7 @@ func TestMeshShellReadAndResponseUseTheirOwnConnections(t *testing.T) { //nolint
 		received := holdReadOnly(t)
 
 		// the fake gives no answer, so only what minimega received counts
-		_, _ = MeshShellResponse(t.Context(), "", "hostname")
+		_, _ = DefaultMM.MeshShellResponse(t.Context(), "", "hostname")
 
 		if got := mmtest.Count(received(), "shell hostname"); got != 1 {
 			t.Errorf("MeshShellResponse(hostname) sent it %d times, want 1", got)
