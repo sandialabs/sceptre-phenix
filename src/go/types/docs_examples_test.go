@@ -19,6 +19,7 @@ import (
 	"phenix/store"
 	"phenix/types"
 	"phenix/types/version"
+	"phenix/util/envsubst"
 )
 
 // exampleDocs are the Markdown files whose YAML config examples must validate.
@@ -135,7 +136,10 @@ func validateExample(node *yaml.Node, doc map[string]any) error {
 		return fmt.Errorf("encoding YAML: %w", err)
 	}
 
-	c, err := store.NewConfigFromYAML(body)
+	// A placeholder gets its default, whatever the environment of the test holds.
+	unset := func(string) (string, bool) { return "", false }
+
+	c, err := store.DecodeConfigYAML(envsubst.Expand(body, unset))
 	if err != nil {
 		return err
 	}

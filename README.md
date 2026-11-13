@@ -95,11 +95,17 @@ phenix workflow apply helloworld
 # Allow restarting the experiment if it's already running
 phenix workflow apply helloworld -f
 
+# Set variables for the ${NAME} placeholders in the configs. -e overrides helloworld/.env
+phenix workflow apply helloworld -e NODES=3 --env-file site.env
+
+# Print the configs with the variables filled in, and send nothing
+phenix workflow render helloworld -e NODES=3
+
 # Docker Compose: the socket is inside the phenix container
 docker exec phenix phenix workflow apply /phenix/topologies/helloworld -f
 ```
 
-See [Workflow](https://phenix.sceptre.dev/latest/workflow/) for the directory layout, the `phenix.yml` reference, more examples and the REST API.
+See [Workflow](https://phenix.sceptre.dev/latest/workflow/) for the directory layout, the variables, the `phenix.yml` reference, more examples and the REST API.
 
 ### Capture Experiment Traffic
 

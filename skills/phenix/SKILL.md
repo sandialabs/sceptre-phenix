@@ -171,7 +171,9 @@ phenix experiment stop my-exp
 `phenix workflow apply <DIR|NAME>` deploys a topology directory through the
 running `phenix ui`: it stages `phenix-injects/`, upserts the configs in
 `phenix-configs/`, and applies the `phenix.yml` workflow config; `-n` is a dry
-run that changes nothing. See [`references/workflow.md`](references/workflow.md).
+run that changes nothing. `-e`, `--env-file` and `<DIR>/.env` set the
+variables for the `${NAME}` placeholders, and `phenix workflow render` prints
+the result. See [`references/workflow.md`](references/workflow.md).
 
 ## Running phenix
 

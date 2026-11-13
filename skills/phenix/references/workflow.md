@@ -17,6 +17,9 @@ phenix workflow apply helloworld -n              # --dry-run: validate everythin
 phenix workflow apply helloworld -f              # --force: allow restarting the running experiment
 phenix workflow apply helloworld --follow-inject-symlinks # follow symlinks in phenix-injects/ and copy as regular files
 phenix workflow apply ./site -b lab-a -c alt.yml # -b, --branch-name or --name: branch name (default: the directory's name; give one, or the same value); --config: workflow config, relative to DIR unless absolute
+phenix workflow apply helloworld -e NODES=3 -e SITE # -e, --env: set a variable. NAME alone copies it from the shell
+phenix workflow apply helloworld --env-file a.env --env-file b.env # read these env files, not helloworld/.env. b.env overrides a.env
+phenix workflow render helloworld -b lab-a -e NODES=3 # print the configs with the variables and the branch name filled in, with no server
 ```
 
 `phenix workflow apply --help` lists more examples. The argument is required;
@@ -25,6 +28,7 @@ otherwise a bare `NAME` resolves to `<base-dir.topologies>/NAME`.
 
 ```text
 helloworld/
+├── .env                # optional variables, NAME=value lines. --env-file replaces it
 ├── phenix.yml          # workflow config; another file name needs -c
 ├── phenix-configs/     # configs, one document per .json, .yaml or .yml file; other and hidden files are skipped
 │   ├── topology.yml
@@ -35,16 +39,64 @@ helloworld/
 
 Every part of the directory is optional, and a step whose input is missing is
 skipped. A directory with none of them is an error. Every file in
-`phenix-configs/` holds one YAML or JSON document, and its `kind` must be
-written out, not given as a `${VAR}` placeholder.
+`phenix-configs/` holds one YAML or JSON document.
 
 `<name>` is the workflow branch name: the directory's name unless `-b` sets
 it. It must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`. The server expands
 `${BRANCH_NAME}` placeholders (for example
-`/phenix/injects/${BRANCH_NAME}/motd`) to it and keeps every other `${VAR}`
-placeholder as written. A config's `kind` and `metadata.name` can use no
-placeholder but `${BRANCH_NAME}`. Configs
+`/phenix/injects/${BRANCH_NAME}/motd`) to it, and only `-b` sets it. The CLI
+fills in every other `${VAR}` placeholder before it sends a file (see
+[Variables](#variables)). Configs
 that hard-code the injects directory need `-b` set to the name they use.
+
+The branch name is not the experiment name. The experiment name is
+`auto.create` in the workflow config. With `auto.create: ${BRANCH_NAME}`,
+`-b` also names the experiment, and each branch name is a separate
+deployment. A fixed `auto.create` ignores `-b`. The server reads
+`auto.create` only when no experiment is mapped to the branch, so neither
+`-b` nor a changed `auto.create` renames an experiment that exists.
+
+## Variables
+
+`phenix workflow apply` and `phenix workflow render` fill in the `${NAME}`
+and `${NAME:default}` placeholders of each file in `phenix-configs/` and of
+the workflow config. They do not change `phenix-injects/`. The value comes
+from the first source that has the variable:
+
+1. `-e NAME=value`, or `-e NAME` to copy the value from the shell. The last
+   value of a repeated name is used.
+2. The env files of `--env-file`, a later file over an earlier file. A
+   relative path starts at the working directory. Without `--env-file`, the
+   file is `<DIR>/.env`, if it exists.
+3. The shell, without the variables whose names start with `PHENIX_`. Name
+   one with `-e NAME` to use it.
+
+The `preflight` step checks every variable before anything changes:
+
+- A placeholder with no value and no default is an error. `${NAME:}` is the
+  optional form.
+- A `-e` variable that no file uses is an error.
+- A value or a default with a line break is an error.
+- `BRANCH_NAME` in `-e` or in an env file is an error: use `-b`.
+- A default that starts with `-` or `?` gives a warning. phenix does not have
+  the Docker Compose forms `${NAME:-default}` and `${NAME:?error}`.
+
+`$${NAME}` keeps the literal text `${NAME}`. Replacement is on the text of
+the file, comments included, before the YAML or JSON is read. An env file
+has `NAME=value` lines, an optional `export` prefix, optional quotes around
+the value, `#` comment lines, and no expansion. The log names each variable
+and its source, and shows values only at `--log.level debug`.
+
+`phenix config create`, `config apply`, `config diff` and
+`experiment create` (for a `-t` or `-s` file) take `-e` and `--env-file`
+with the same rules, but they read no default `.env`, and `BRANCH_NAME` is an
+ordinary variable for them. The REST API takes no variables.
+
+`phenix workflow render <DIR|NAME>` takes `-b`, `-c`, `-e` and `--env-file`.
+It prints each config in upsert order and then the workflow config, each
+after a `# <path>` line, with `---` between files. The text has the
+variables and `${BRANCH_NAME}` filled in, as the server has it after an
+apply. It does not contact the server. Its output can hold secrets.
 
 The names `phenix.yml`, `phenix-configs` and `phenix-injects` are reserved, in
 any letter case. The branch name cannot be one of them, and no entry of
@@ -139,7 +191,7 @@ the auth modes and points to the full route reference.
 
 | Route | Notes |
 |---|---|
-| `POST /workflow/configs/{branch}[?dryRun=true]` | Create or update a config; `${BRANCH_NAME}` expands to `{branch}`. The dry run stores nothing and returns JSON `{action, kind, name, dryRun, pending}`. |
+| `POST /workflow/configs/{branch}[?dryRun=true]` | Create or update a config; `${BRANCH_NAME}` expands to `{branch}`, and every other placeholder is kept as written. A config's `kind` and `metadata.name` can use no placeholder but `${BRANCH_NAME}`. The dry run stores nothing and returns JSON `{action, kind, name, dryRun, pending}`. |
 | `POST /workflow/apply/{branch}[?dryRun=true][&pending=<ref>][&expect=<action>][&tag=key=value]` | Returns JSON `{action, experiment, reason, dryRun, warnings?}`; a dry run of a plan that starts the experiment lists the disk check problems of that start in `warnings` (`the start would fail: ...` for those that would refuse it), and the CLI logs each as a warning. `pending`, only on a dry run, is a config dry run's `pending` value, url-encoded, and names a config the caller stores before the real apply. A plan other than `expect` is a 409 that changes nothing. |
 | `GET /options` | Server-side CLI defaults, plus `base-dir.injects` and `workflow-dry-run`. |
 
@@ -150,6 +202,10 @@ the auth modes and points to the full route reference.
   `base-dir.injects`. Under Docker, run it with `docker exec phenix ...` and
   pass a path under `/phenix` or a bare `NAME` from `/phenix/topologies`; a
   relative path resolves inside the container.
+- **Shell variables do not always reach the command.** `sudo` removes most of
+  the caller's environment, and under `docker exec` the shell is that of the
+  container. Use `-e NAME=value`, an env file, or `docker exec -e`. An env
+  file overrides the shell. `-e NAME` makes the shell value win.
 - **Under `docker exec` the `commit=` tag is left out.** The command runs as
   root on a clone that a host user owns, so git refuses the repository; the
   command warns and applies without the tag. Add the directory to git's
@@ -181,6 +237,8 @@ the auth modes and points to the full route reference.
 | `phenix workflow apply` refuses the server | The server doesn't report `workflow-dry-run` in `GET /options`, or answered with an action the command doesn't know; use the same release for `phenix ui` and the CLI. |
 | `unable to restart experiment <exp>, which is still running` (code `broken_disks`) | The restart's start would fail on a missing disk image or backing file, or an image qemu cannot open, so the server refused before it stopped anything. Fix the file the error names, or set `experiment.disk-check: warn`. |
 | `re-run with -f` | The plan would restart a running experiment. Nothing has changed; re-run with `-f` to allow it. |
+| `variable problems; nothing was changed` | A placeholder has no value and no default, a value has a line break, or no file uses a `-e` variable. The error records before it name the variable, the file and the line. Set the variable with `-e` or an env file, write `${NAME:default}`, or write `$${NAME}` to keep the text. `phenix workflow render` shows the result without the server. |
+| `invalid branch name` | The branch name, from `-b` or the directory's name, must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`. |
 | `phenix server unreachable` | Nothing answered on `--unix-socket`: `phenix ui` isn't running, listens on another socket, or didn't answer in time. In `configs` or `apply`, check the experiment. |
 | `connect: permission denied; run phenix as the user that runs phenix ui` | Your user may not write to the socket. Run the command as the user that runs `phenix ui`, usually root (or through `docker exec` with Compose), or start `phenix ui` with `--unix-socket-gid` set to the ID of a group you are in. Nothing was sent. |
 | `nothing to apply` | The directory has none of `phenix-injects/`, `phenix-configs/` or `phenix.yml`, or only a `phenix-configs/` without a config file; check the path or name. |

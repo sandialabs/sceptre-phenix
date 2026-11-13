@@ -145,6 +145,7 @@ phenix config create </path/to/file.yaml> ...       # create from file(s) or dir
 phenix config create --skip-validation <file>       # skip schema validation
 phenix config apply -f <file|dir> [-f ...] [--dry-run]  # create new configs, update changed ones, keep equal ones
 phenix config diff <file|dir>...                    # unified diff from each stored config to the file; exit 0 same, 1 differs, 2 error
+phenix config create|apply|diff ... -e <NAME=value> --env-file <file>  # variables for the ${NAME} placeholders (see workflow.md, Variables)
 phenix config edit <kind>/<name> [--force]          # open in $EDITOR
 phenix config delete <kind>/<name> ... [--dry-run]  # delete one or more specific configs by kind/name
 phenix config delete 'topology/cm-*' [--dry-run]    # delete each topology whose name matches; quote the pattern
@@ -192,6 +193,7 @@ phenix experiment list [-o table|json|yaml]
 phenix experiment apps                              # list available apps
 phenix experiment schedulers                        # list scheduling algorithms
 phenix experiment create <exp> -t <topology> [-s <scenario>] [flags]
+phenix experiment create <exp> -t <file> -e <NAME=value> --env-file <file>  # variables for the placeholders of a -t or -s file
 phenix experiment edit <exp> [--force]              # --force overrides the running-experiment check
 phenix experiment delete <exp> [-f|--force] [--dry-run]  # -f stops a running experiment before deleting it, forcing the stop
 phenix experiment schedule <exp> <algorithm>         # e.g. round-robin, isolate-experiment, subnet-compute; logs each warning
@@ -307,10 +309,13 @@ phenix workflow apply <DIR|NAME> -f                 # --force: allow restarting 
 phenix workflow apply <DIR|NAME> -b <name>          # --branch-name (or --name): workflow branch name (default: the directory's name)
 phenix workflow apply <DIR|NAME> -c <file>          # --config: workflow config, relative to DIR unless absolute
 phenix workflow apply <DIR|NAME> --follow-inject-symlinks # follow symlinks in phenix-injects/ and copy as regular files
+phenix workflow apply <DIR|NAME> -e <NAME=value>    # --env: set a variable for the ${NAME} placeholders. -e <NAME> copies it from the shell
+phenix workflow apply <DIR|NAME> --env-file <file>  # read variables from env files, and not from <DIR>/.env
+phenix workflow render <DIR|NAME> [-b <name>] [-c <file>] [-e ...] [--env-file ...] # print the configs with the variables filled in, with no server
 ```
 
-The argument, the directory layout, the steps, the workflow config, and the
-troubleshooting table are in [`workflow.md`](workflow.md).
+The argument, the directory layout, the variables, the steps, the workflow
+config, and the troubleshooting table are in [`workflow.md`](workflow.md).
 
 ## `phenix job` — follow the running server's background jobs
 
