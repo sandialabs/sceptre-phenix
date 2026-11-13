@@ -22,8 +22,18 @@ const configVarsHelp = `
   command then changes nothing. Write ${NAME:} for an optional variable and
   $${NAME} for the literal text ${NAME}.`
 
-// errNoConfigFiles is the error of an argument that holds no config file.
-var errNoConfigFiles = errors.New("no JSON or YAML files found")
+var (
+	// errNoConfigFiles is the error of an argument that holds no config file.
+	errNoConfigFiles = errors.New("no JSON or YAML files found")
+
+	// errConfigDirectory is wrapped by the error of config create for an
+	// argument that is a directory.
+	errConfigDirectory = errors.New(`give the configuration files, or use "phenix config apply -f" for a directory`)
+
+	// errNotConfigFile is wrapped by the error of config create for a file
+	// with another extension.
+	errNotConfigFile = errors.New("not a .json, .yaml or .yml file")
+)
 
 // configInput is a config file that a config command reads, with its
 // variables filled in, or the error that stopped the read. For an argument
@@ -88,6 +98,12 @@ func readConfigInputs(args []string, vars *envsubst.Set) ([]configInput, error) 
 			inputs = append(inputs, configInput{path: path, text: text, err: nil, builder: false})
 			files = append(files, envsubst.File{Path: path, Text: text})
 		}
+	}
+
+	// With no file to read, the error of each argument is the cause to
+	// report, and not a -e variable that no file uses.
+	if len(files) == 0 {
+		return inputs, nil
 	}
 
 	files, err := substituteVars(vars, files)

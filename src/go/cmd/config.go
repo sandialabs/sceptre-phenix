@@ -235,13 +235,13 @@ func newConfigCreateCmd() *cobra.Command {
 	desc := `Create a configuration(s)
 
   This subcommand is used to create one or more configurations from JSON or
-  YAML file(s). A directory path can also be given, and all JSON and YAML
-  files in the given directory will be parsed.
+  YAML file(s). Each argument is the path of a file with the extension
+  .json, .yaml or .yml. A directory is an error: give its files, or use
+  "phenix config apply -f" for a directory.
 
   A Builder document (the Builder's JSON or YAML export), a Builder
   template file, a Builder package and a Builder layer set file are not
-  configurations. The command skips such a file in a directory. It refuses
-  such a file that you name on the command line. Use the Builder in the web
+  configurations. The command refuses such a file. Use the Builder in the web
   UI, or the Builder REST API below /api/v1/builder/, for these files. Upload
   a document and publish it to create its topology. Use Import templates to
   add the templates of a template file. Use Upload to open a package. Use
@@ -252,7 +252,7 @@ func newConfigCreateCmd() *cobra.Command {
 
 	example := `
   phenix config create topology.yml scenario.yml
-  phenix config create ./configs
+  phenix config create ./configs/*.yml
   phenix config create topology.yml -e NODES=3 --env-file site.env`
 
 	cmd := &cobra.Command{
@@ -268,6 +268,12 @@ func newConfigCreateCmd() *cobra.Command {
 			skip := mustGet(cmd.Flags().GetBool, "skip-validation")
 			ctx := sigterm.CancelContext(commandContext(cmd))
 
+			for _, arg := range args {
+				if info, err := os.Stat(arg); err == nil && info.IsDir() {
+					return fmt.Errorf("%s is a directory: %w", arg, errConfigDirectory)
+				}
+			}
+
 			vars, err := configVarsFromFlags(cmd)
 			if err != nil {
 				return err
@@ -278,23 +284,21 @@ func newConfigCreateCmd() *cobra.Command {
 				return err
 			}
 
-			// The command stores no config when it cannot read an argument.
-			// A directory with no config file is not an error.
+			// The command stores no config when it cannot read an argument,
+			// or when an argument is not a config file.
 			for _, in := range inputs {
 				switch {
-				case in.err == nil, errors.Is(in.err, errNoConfigFiles):
+				case in.err == nil:
 				case in.builder:
 					return in.err
+				case errors.Is(in.err, errNoConfigFiles):
+					return fmt.Errorf("%s: %w", in.path, errNotConfigFile)
 				default:
 					return configCreateError(in.path, nil, in.err)
 				}
 			}
 
 			for _, in := range inputs {
-				if in.err != nil {
-					continue
-				}
-
 				c, err := createConfigInput(ctx, in, skip)
 				if err != nil {
 					return configCreateError(in.path, in.text, err)
@@ -411,7 +415,7 @@ func builderFileKind(path string) string {
 	return ""
 }
 
-// skipBuilderFile logs that config create skipped the Builder-owned file at
+// skipBuilderFile logs that a config command skipped the Builder-owned file at
 // path, of kind, found in a directory it was given. The line of a Builder
 // document says where to publish it. The other kinds are logged at debug
 // level.

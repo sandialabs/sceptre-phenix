@@ -130,9 +130,10 @@ func TestConfigCommandsShowBuilderDocumentAsMap(t *testing.T) {
 	}
 }
 
-// TestConfigCreateSkipsBuilderFiles checks that config create skips Builder files in a
-// directory with a log line, and refuses each one named on the command line.
-func TestConfigCreateSkipsBuilderFiles(t *testing.T) {
+// TestConfigSkipsBuilderFiles checks that config apply skips Builder files in a
+// directory with a log line, and that config create refuses each one named on
+// the command line.
+func TestConfigSkipsBuilderFiles(t *testing.T) {
 	storetest.UseBolt(t)
 
 	logs := plogtest.Capture(t)
@@ -148,8 +149,8 @@ func TestConfigCreateSkipsBuilderFiles(t *testing.T) {
 		return err
 	}
 
-	if err := run(directory); err != nil {
-		t.Fatalf("config create on the directory returned error: %v", err)
+	if out, err := runConfigTestCommand("apply", "-f", directory); err != nil || out != "topology/pump-station created\n" {
+		t.Fatalf("config apply on the directory = %q, %v, want the one config created", out, err)
 	}
 
 	topologies, err := config.List("topology")
@@ -169,10 +170,6 @@ func TestConfigCreateSkipsBuilderFiles(t *testing.T) {
 		t.Errorf("config.List(scenario) error = %v", err)
 	} else if len(scenarios) != 0 {
 		t.Errorf("config.List(scenario) = %v, want none: a package's Scenario config is not created", scenarios)
-	}
-
-	if created := logs.Records(t, plogtest.Message("configuration created")); len(created) != 1 {
-		t.Errorf("created = %v, want the one config", created)
 	}
 
 	logged := logs.Records(t, plogtest.Message("skipped Builder document. Upload it in the Builder to publish it"))
@@ -211,7 +208,7 @@ func TestConfigCreateSkipsBuilderFiles(t *testing.T) {
 	}{
 		{name: "a JSON document", args: []string{documents[0]}},
 		{name: "a YAML document without validation", args: []string{documents[1], "--skip-validation"}},
-		{name: "a document before a directory", args: []string{documents[0], directory}},
+		{name: "a document before a config file", args: []string{documents[0], filepath.Join(directory, "pump-station.topology.yaml")}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			err := run(test.args...)
@@ -377,7 +374,9 @@ func runConfigTestCommand(args ...string) (string, error) {
 	configCmd := newConfigCmd()
 	deleteCmd := newConfigDeleteCmd()
 	deleteCmd.AddCommand(newConfigDeleteAllCmd())
-	configCmd.AddCommand(newConfigListCmd(), newConfigGetCmd(), newConfigCreateCmd(), newConfigEditCmd(), deleteCmd)
+	configCmd.AddCommand(
+		newConfigListCmd(), newConfigGetCmd(), newConfigCreateCmd(), newConfigApplyCmd(), newConfigEditCmd(), deleteCmd,
+	)
 	root.AddCommand(configCmd)
 	root.SetArgs(append([]string{"config"}, args...))
 
@@ -775,7 +774,8 @@ func TestConfigCreateCmdArguments(t *testing.T) {
 	}{
 		{name: "no file", args: nil, want: "must provide at least one configuration file"},
 		{name: "a missing file", args: []string{missing}, want: "Unable to create configuration from " + missing + " (search error logs for "},
-		{name: "a directory of no configs", args: []string{notes}},
+		{name: "a directory", args: []string{notes}, want: notes + " is a directory: "},
+		{name: "a file that is not a config file", args: []string{filepath.Join(notes, "notes.txt")}, want: filepath.Join(notes, "notes.txt") + ": not a "},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := runConfigTestCommand(append([]string{"create"}, tt.args...)...)

@@ -235,8 +235,8 @@ other than letters, digits, `.`, `_` and `-` becomes one hyphen.
 | Legacy Builder diagram (XML) | The root element `mxGraphModel` (or a bare `root`), or a Topology config with the `builder-xml` annotation | 5 MiB | **Upload** with the source **Legacy Builder diagram or Topology** | None |
 | Topology or Experiment config (JSON or YAML) | `apiVersion` and `kind` | 5 MiB | **Import** with the source **Config file** | See [Schema](../schema.md) |
 
-`phenix config create` refuses the first four files and skips them in a
-directory (see
+`phenix config create` refuses the first four files, and
+`phenix config apply` skips them in a directory (see
 [Builder documents and phenix config create](details/import-upload-download.md#builder-documents-and-phenix-config-create)).
 For the fields of each file, see
 [Builder JSON and YAML](details/import-upload-download.md#builder-json-and-yaml),

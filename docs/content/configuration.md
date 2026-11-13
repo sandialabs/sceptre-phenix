@@ -45,9 +45,12 @@ begin with a capital letter.
     When we say this, we mean passing a YAML or JSON configuration file of any
     type to the `phenix config create` command.
 
-    `phenix config create` also takes a directory, and creates every
-    configuration file below it. It skips a [Builder](builder/index.md)
-    document in a directory, and refuses one named on the command line (see
+    `phenix config create` takes files only: each argument is a `.json`,
+    `.yaml` or `.yml` file, and a directory is an error. Use
+    `phenix config apply -f <directory>` to create or update every
+    configuration file below a directory. `phenix config create` refuses a
+    [Builder](builder/index.md) document, and `phenix config apply` skips one
+    in a directory (see
     [Builder documents and phenix config create](builder/details/import-upload-download.md#builder-documents-and-phenix-config-create)).
 
 The `metadata` section can also hold `annotations`: text values by key, such

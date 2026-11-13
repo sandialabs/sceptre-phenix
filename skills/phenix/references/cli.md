@@ -141,7 +141,7 @@ commands have each flag.
 ```bash
 phenix config list <kind|all> [-o table|json|yaml]  # table of stored configs; JSON/YAML as GET /configs, without the spec
 phenix config get <kind>/<name> [-o yaml|json]      # dump a config
-phenix config create </path/to/file.yaml> ...       # create from file(s) or dir (recursive); validates against its apiVersion's schema
+phenix config create </path/to/file.yaml> ...       # create from file(s), not a directory (use config apply -f); validates against its apiVersion's schema
 phenix config create --skip-validation <file>       # skip schema validation
 phenix config apply -f <file|dir> [-f ...] [--dry-run]  # create new configs, update changed ones, keep equal ones
 phenix config diff <file|dir>...                    # unified diff from each stored config to the file; exit 0 same, 1 differs, 2 error

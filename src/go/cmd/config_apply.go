@@ -135,7 +135,7 @@ func newConfigApplyCmd() *cobra.Command {
   that is not stored, updates each stored configuration that is different,
   and does not change a configuration that is the same. A -f value can be a
   file or a directory. The command reads all JSON and YAML files in a
-  directory and its subdirectories, as config create does.
+  directory and its subdirectories. It skips a Builder file in a directory.
 
   The command applies Topology configurations first, then Scenario, then
   Experiment, then Image and Role configurations, because a scenario and an

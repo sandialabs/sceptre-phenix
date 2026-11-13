@@ -144,6 +144,39 @@ func TestConfigCreateVariables(t *testing.T) { //nolint:paralleltest // replaces
 	}
 }
 
+// config create refuses a directory and a file that is not a JSON or YAML
+// file, and then stores no config of the other arguments.
+func TestConfigCreateTakesConfigFilesOnly(t *testing.T) { //nolint:paralleltest // replaces the store
+	storetest.UseBolt(t)
+
+	fixed := strings.NewReplacer("${CFGVARS_SITE}", "fixed", "${CFGVARS_IMAGE:ubuntu}", "ubuntu").Replace(configVarsTopology)
+	dir := writeConfigFiles(t, map[string]string{"a.yml": fixed, "notes.txt": fixed})
+	valid := filepath.Join(dir, "a.yml")
+
+	for _, tt := range []struct {
+		name string
+		arg  string
+		want error
+	}{
+		{name: "a directory of config files", arg: dir, want: errConfigDirectory},
+		{name: "a directory with no file", arg: t.TempDir(), want: errConfigDirectory},
+		{name: "a file with another extension", arg: filepath.Join(dir, "notes.txt"), want: errNotConfigFile},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, args := range [][]string{{tt.arg}, {valid, tt.arg}, {tt.arg, "-e", "CFGVARS_EXTRA=1"}} {
+				_, _, err := runConfigSubcommand(t, newConfigCreateCmd(), append([]string{"create"}, args...)...)
+				if !errors.Is(err, tt.want) {
+					t.Errorf("config create %q error = %v, want %v", args, err, tt.want)
+				}
+			}
+
+			if _, err := config.Get("topology/fixed"); !errors.Is(err, store.ErrNotExist) {
+				t.Errorf("config.Get(topology/fixed) error = %v, want %v", err, store.ErrNotExist)
+			}
+		})
+	}
+}
+
 // createFileConfigs stores the config of each value that names a file, with
 // its variables filled in, and stores none when a variable has a problem.
 func TestCreateFileConfigsVariables(t *testing.T) { //nolint:paralleltest // replaces the store

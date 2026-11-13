@@ -706,20 +706,21 @@ the editor refuses a layer set file.
 
 ## Builder documents and phenix config create
 
-A Builder document is not a config. `phenix config create` refuses one
-named on the command line, and skips one in a directory:
+A Builder document is not a config. `phenix config create` refuses one.
+`phenix config apply`, which also takes a directory, skips one in a
+directory:
 
 ```console
 $ phenix config create pump-station.builder.json
 Error: pump-station.builder.json is a Builder document, not a configuration. Upload it in the Builder or send it to the Builder REST API (/api/v1/builder/drafts). Then publish it to create its topology
-$ phenix config create examples
+$ phenix config apply -f examples
 2026-10-01 21:51:05.962 INF skipped Builder document. Upload it in the Builder to publish it type=SYSTEM path=examples/pump-station.builder.json
-2026-10-01 21:51:05.994 INF configuration created type=SYSTEM kind=Topology name=pump-station
+topology/pump-station created
 ```
 
 The same is true for a template file, a Builder package and a layer set
-file. `phenix config create` skips one in a directory, with a debug log
-line. It refuses one named on the command line:
+file. `phenix config apply` skips one in a directory, with a debug log
+line. `phenix config create` refuses one:
 
 ```console
 $ phenix config create node-templates.yaml

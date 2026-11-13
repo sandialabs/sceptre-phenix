@@ -51,7 +51,7 @@ Create or update configurations from files
   that is not stored, updates each stored configuration that is different,
   and does not change a configuration that is the same. A -f value can be a
   file or a directory. The command reads all JSON and YAML files in a
-  directory and its subdirectories, as config create does.
+  directory and its subdirectories. It skips a Builder file in a directory.
 
   The command applies Topology configurations first, then Scenario, then
   Experiment, then Image and Role configurations, because a scenario and an
@@ -121,13 +121,13 @@ Create a configuration(s)
 Create a configuration(s)
 
   This subcommand is used to create one or more configurations from JSON or
-  YAML file(s). A directory path can also be given, and all JSON and YAML
-  files in the given directory will be parsed.
+  YAML file(s). Each argument is the path of a file with the extension
+  .json, .yaml or .yml. A directory is an error: give its files, or use
+  "phenix config apply -f" for a directory.
 
   A Builder document (the Builder's JSON or YAML export), a Builder
   template file, a Builder package and a Builder layer set file are not
-  configurations. The command skips such a file in a directory. It refuses
-  such a file that you name on the command line. Use the Builder in the web
+  configurations. The command refuses such a file. Use the Builder in the web
   UI, or the Builder REST API below /api/v1/builder/, for these files. Upload
   a document and publish it to create its topology. Use Import templates to
   add the templates of a template file. Use Upload to open a package. Use
@@ -153,7 +153,7 @@ phenix config create </path/to/filename> ... [flags]
 
 ```text
 phenix config create topology.yml scenario.yml
-phenix config create ./configs
+phenix config create ./configs/*.yml
 phenix config create topology.yml -e NODES=3 --env-file site.env
 ```
 
