@@ -185,20 +185,20 @@ describe('the VM actions', () => {
       'Restart',
       'Shut down',
       'Screenshot',
+      'Capture interface 0',
       'Port forwards',
       'Mount disk',
-      'Capture interface 0',
     ]);
   });
 
-  it('puts the VM buttons, the icon-only panels, Actions, then the layouts', async () => {
+  it('puts the VM buttons, Clipboard, Actions, Keys, View, then the layouts', async () => {
     const wrapper = await mountToolbar();
     const order = [
       '.vnc-vm-actions',
-      '[aria-controls="vnc-panel-keys"]',
       '[aria-controls="vnc-panel-clipboard"]',
-      '[aria-controls="vnc-panel-view"]',
       '.vnc-actions-trigger',
+      '[aria-controls="vnc-panel-keys"]',
+      '[aria-controls="vnc-panel-view"]',
       '.vnc-layouts',
       '[aria-controls="vnc-panel-add"]',
       '.vnc-fullscreen-button',
@@ -223,9 +223,9 @@ describe('the VM actions', () => {
       Restart: 'sync-alt',
       'Shut down': 'power-off',
       Screenshot: 'camera',
+      'Capture interface 0': 'shark-fin',
       'Port forwards': 'arrow-right',
       'Mount disk': 'hdd',
-      'Capture interface 0': 'shark-fin',
     });
   });
 
@@ -296,7 +296,7 @@ describe('the VM actions', () => {
       wrapper
         .findAll('.vnc-panel-button')
         .map((b) => b.attributes('aria-label')),
-    ).toEqual(['Port forwards', 'Keys', 'Clipboard', 'View', 'Add VM']);
+    ).toEqual(['Port forwards', 'Clipboard', 'Keys', 'View', 'Add VM']);
     expect(wrapper.find('[aria-label="Full screen"]').exists()).toBe(true);
   });
 
@@ -488,13 +488,13 @@ describe('the Actions menu', () => {
   const tipOf = (row) =>
     textOf(row.findComponent({ name: 'BTooltip' }).vm.$refs.content);
 
-  it('has an icon and the Actions label', async () => {
+  it('has an icon and the Actions label, with no arrow', async () => {
     const wrapper = await mountToolbar();
     const trigger = wrapper.find('.vnc-actions-trigger');
     expect(textOf(trigger)).toBe('Actions');
     expect(
       trigger.findAll('[data-icon]').map((i) => i.attributes('data-icon')),
-    ).toEqual(['bars', 'caret-down']);
+    ).toEqual(['bars']);
   });
 
   it('lists the actions in groups, one to a row with its icon, the last group in red', async () => {
@@ -764,10 +764,13 @@ describe('the layout picker', () => {
 
 describe('the dropdown panels', () => {
   it.each(['Keys', 'Clipboard', 'View'])(
-    'has an icon-only %s button with its name in a tooltip',
+    'has an icon-only %s button, with no arrow, and its name in a tooltip',
     async (label) => {
       const wrapper = await mountToolbar();
       expect(textOf(panelButton(wrapper, label))).toBe('');
+      expect(panelButton(wrapper, label).findAll('[data-icon]')).toHaveLength(
+        1,
+      );
       const tip = tooltipOf(wrapper, `[aria-label="${label}"]`);
       expect(textOf(tip.vm.$refs.content)).toBe(label);
     },

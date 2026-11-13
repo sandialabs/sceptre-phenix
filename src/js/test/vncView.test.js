@@ -1320,9 +1320,10 @@ describe('the new VM actions of the top bar', () => {
     expect(axios.post).toHaveBeenCalledWith('experiments/demo/vms/web/mount');
   });
 
-  it('lists the keyboard shortcuts in the View panel', async () => {
+  it('lists the keyboard shortcuts in the Keys panel, not the View panel', async () => {
     const wrapper = await connected('/vnc?vm=demo/web');
-    const view = wrapper.find('#vnc-panel-view');
+    expect(wrapper.find('#vnc-panel-view .vnc-shortcuts').exists()).toBe(false);
+    const view = wrapper.find('#vnc-panel-keys');
     expect(
       view
         .findAll('.vnc-shortcuts dt')
@@ -1435,7 +1436,11 @@ describe('hiding the top bar', () => {
     expect(textOf(tip.vm.$refs.content)).toBe(
       'Show the toolbar (Ctrl+] then T)',
     );
-    expect(tip.props('position')).toBe('is-right');
+    // at the place of Hide toolbar, it opens to the left as Hide toolbar does
+    expect(tip.props('position')).toBe('is-left');
+    expect(showButton(wrapper).classes()).toEqual(
+      expect.arrayContaining(['button', 'is-small']),
+    );
     // the panes get the space, and keep their connections
     expect(wrapper.classes()).toContain('is-toolbar-hidden');
     expect(wrapper.findAll('.vnc-pane')).toHaveLength(2);

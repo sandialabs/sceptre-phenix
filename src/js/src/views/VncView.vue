@@ -1,7 +1,7 @@
 <!-- The console page /vnc?vm=exp/vm&vm=…&layout=… (M1, M2a). It shows one to
      four VM consoles in one of the layouts, with the narrow top bar that
      acts on the pane that has keyboard input. The user can hide the top bar;
-     a small button in the top left corner then shows it again. There is no
+     a button at the same place as Hide toolbar then shows it again. There is no
      status bar and no leave-page warning. A pane says when its VM restarts
      for a redeploy or a disk reset, and when its VM was killed. -->
 <script setup>
@@ -748,12 +748,12 @@
       v-if="toolbarHidden"
       label="Show the toolbar (Ctrl+] then T)"
       type="is-dark"
-      position="is-right"
+      position="is-left"
       class="vnc-show-toolbar-tip">
       <button
         ref="showToolbarButton"
         type="button"
-        class="vnc-show-toolbar"
+        class="button is-small vnc-show-toolbar"
         aria-label="Show toolbar"
         @click="setToolbarHidden(false, { focus: true })">
         <b-icon icon="chevron-down" size="is-small" />
@@ -910,8 +910,18 @@
       flex-wrap: wrap;
       gap: 0.4rem;
       align-items: center;
-      padding: 0.3rem 0.6rem;
+      // the right padding keeps room for Hide toolbar: a small button of
+      // 2.5em at 0.75rem, and the gap
+      padding: 0.3rem calc(0.6rem + 1.875rem + 0.4rem) 0.3rem 0.6rem;
       background: $vnc-bar;
+    }
+
+    // Hide toolbar and Show toolbar share this place at the top right, also
+    // when the bar wraps. Hide toolbar stays last in the focus order.
+    .vnc-hide-toolbar-tip {
+      position: absolute;
+      top: 0.3rem;
+      right: 0.6rem;
     }
 
     .vnc-brand {
@@ -1346,41 +1356,34 @@
       text-align: center;
     }
 
+    // Show toolbar and Hide toolbar share this place at the top right
     .vnc-show-toolbar-tip {
       position: absolute;
-      top: 4px;
-      left: 4px;
+      top: 0.3rem;
+      right: 0.6rem;
       z-index: 20;
     }
 
     // dim until the pointer or focus is on it, so it hides little of a screen
     .vnc-show-toolbar {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 24px;
-      height: 24px;
-      padding: 0;
-      color: #fff;
-      cursor: pointer;
-      background: $vnc-bar;
-      border: 1px solid $vnc-line;
-      border-radius: 4px;
       opacity: 0.6;
 
       &:hover,
       &:focus-visible {
         opacity: 1;
       }
-
-      &:focus-visible {
-        outline: 2px solid $vnc-ring;
-      }
     }
 
-    // the header of the top left pane leaves room for Show toolbar
-    &.is-toolbar-hidden .vnc-panes > .vnc-pane:first-child .vnc-pane-header {
-      padding-left: 34px;
+    // the header of the top right pane leaves room for Show toolbar
+    &.is-toolbar-hidden {
+      .vnc-layout--rows > .vnc-pane:first-child,
+      .vnc-layout--cols > .vnc-pane:nth-child(2),
+      .vnc-layout--main-2 > .vnc-pane:nth-child(2),
+      .vnc-layout--grid > .vnc-pane:nth-child(2) {
+        .vnc-pane-header {
+          padding-right: 3rem;
+        }
+      }
     }
   }
 

@@ -17,7 +17,7 @@ export const CHORD_START = 'Ctrl+]';
 
 /**
  * The keys after Ctrl+] and what each does, for the shortcut list of the
- * View panel. Keep it in step with handleKeydown.
+ * Keys panel. Keep it in step with handleKeydown.
  */
 export const CHORD_KEYS = [
   { key: '1–4', does: 'Select that pane' },

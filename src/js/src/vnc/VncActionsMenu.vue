@@ -62,7 +62,6 @@
           size="is-small"
           class="vnc-actions-trigger"
           icon-left="bars"
-          icon-right="caret-down"
           :loading="pending"
           :aria-busy="pending ? 'true' : undefined">
           Actions

@@ -1,8 +1,8 @@
 <!-- The Keys panel of the console top bar (M6a): keys that the browser
-     keeps for itself, Hold buttons for sticky modifier keys, and "Release
-     held keys". -->
+     keeps for itself, Hold buttons for sticky modifier keys, "Release held
+     keys", and the keyboard shortcuts of the console. -->
 <script setup>
-  import { CHORD_HINT } from './chord.js';
+  import { CHORD_KEYS, CHORD_START } from './chord.js';
   import { CTRL_ALT_F, SEND_KEYS } from './keysyms.js';
 
   defineProps({
@@ -71,6 +71,37 @@
         Release held keys
       </b-button>
     </div>
-    <p class="vnc-panel-hint">{{ CHORD_HINT }} the console</p>
+    <h2 id="vnc-shortcuts-title" class="vnc-panel-title">Keyboard shortcuts</h2>
+    <p class="vnc-panel-hint">Press {{ CHORD_START }}, then:</p>
+    <dl class="vnc-shortcuts" aria-labelledby="vnc-shortcuts-title">
+      <template v-for="item in CHORD_KEYS" :key="item.key">
+        <dt>
+          <kbd>{{ item.key }}</kbd>
+        </dt>
+        <dd>{{ item.does }}</dd>
+      </template>
+    </dl>
   </div>
 </template>
+
+<style scoped>
+  .vnc-shortcuts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.2rem 0.6rem;
+    margin: 0;
+    font-size: 0.8rem;
+  }
+
+  .vnc-shortcuts dd {
+    margin: 0;
+  }
+
+  .vnc-shortcuts kbd {
+    padding: 0 0.3rem;
+    color: #fff;
+    background: #1a1d22;
+    border: 1px solid #6b7280;
+    border-radius: 3px;
+  }
+</style>

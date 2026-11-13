@@ -1,7 +1,7 @@
 <!-- The narrow top bar of the console page (M2a). It acts on the pane that
      has keyboard input: links to its experiment and to the details of its
-     VM, the VM action buttons, the Keys, Clipboard and View panels (M6a),
-     the Actions menu, the layout picker, Add VM, full screen, and the
+     VM, the VM action buttons, the Clipboard panel, the Actions menu, the
+     Keys and View panels (M6a), the layout picker, Add VM, full screen, and the
      connection indicator and Hide toolbar at the right end. An action that
      the role or the VM state rules out is greyed out with the reason. The
      page fills the panels through the keys, clipboard, view, forwards and
@@ -79,11 +79,13 @@
   const open = ref(null);
   const actionsMenu = ref(null);
 
+  // the panels in bar order; the Actions menu goes where its entry is.
   // wide: the panel is as wide as its rows of buttons
   const PANELS = [
-    { name: 'keys', label: 'Keys', icon: 'keyboard', caret: true, wide: true },
     { name: 'clipboard', label: 'Clipboard', icon: 'clipboard', wide: true },
-    { name: 'view', label: 'View', icon: 'gear', caret: true },
+    { name: 'actions' },
+    { name: 'keys', label: 'Keys', icon: 'keyboard', wide: true },
+    { name: 'view', label: 'View', icon: 'gear' },
   ];
 
   // the groups of the Actions menu; the last one, in red, kills or
@@ -141,8 +143,8 @@
     };
   }
 
-  // The icon buttons: power, screenshot, port forwards, mount and the
-  // capture button, which stops every capture of the VM while one runs.
+  // The icon buttons: power, screenshot, the capture button, which stops
+  // every capture of the VM while one runs, port forwards and mount.
   const actions = computed(() => {
     const row = props.vmRow;
     if (!row || !hasVm.value) return [];
@@ -155,11 +157,11 @@
     );
     return [
       ...vmButtonStates([...power, 'screenshot'], row, stateOpts()),
-      forwardsButton(),
-      mount,
       capturing.value
         ? { ...captureButton, label: 'Stop captures' }
         : captureButton,
+      forwardsButton(),
+      mount,
     ];
   });
 
@@ -427,44 +429,43 @@
       </template>
     </div>
 
-    <div
-      v-for="panel in PANELS"
-      :key="panel.name"
-      class="vnc-panel-wrap"
-      @keydown.esc="escape">
-      <b-tooltip
-        :label="panel.label"
-        type="is-dark"
-        position="is-bottom"
-        :active="open !== panel.name">
-        <b-button
-          size="is-small"
-          class="vnc-panel-button"
-          :icon-left="panel.icon"
-          :icon-right="panel.caret ? 'caret-down' : undefined"
-          :aria-label="panel.label"
-          :aria-expanded="String(open === panel.name)"
-          :aria-controls="`vnc-panel-${panel.name}`"
-          @click="toggle(panel.name)" />
-      </b-tooltip>
-      <div
-        v-show="open === panel.name"
-        :id="`vnc-panel-${panel.name}`"
-        :class="['vnc-panel', { 'vnc-panel--wide': panel.wide }]"
-        role="dialog"
-        :aria-label="panel.label">
-        <slot :name="panel.name" :open="open === panel.name"></slot>
+    <template v-for="panel in PANELS" :key="panel.name">
+      <template v-if="panel.name === 'actions'">
+        <!-- a function ref: a string ref in v-for gives an array -->
+        <VncActionsMenu
+          v-if="menuGroups.length"
+          :ref="(menu) => (actionsMenu = menu)"
+          :groups="menuGroups"
+          :danger-group="DANGER_GROUP"
+          :pending="menuPending"
+          @open="open = null"
+          @action="(name) => pending || emit('action', name)" />
+      </template>
+      <div v-else class="vnc-panel-wrap" @keydown.esc="escape">
+        <b-tooltip
+          :label="panel.label"
+          type="is-dark"
+          position="is-bottom"
+          :active="open !== panel.name">
+          <b-button
+            size="is-small"
+            class="vnc-panel-button"
+            :icon-left="panel.icon"
+            :aria-label="panel.label"
+            :aria-expanded="String(open === panel.name)"
+            :aria-controls="`vnc-panel-${panel.name}`"
+            @click="toggle(panel.name)" />
+        </b-tooltip>
+        <div
+          v-show="open === panel.name"
+          :id="`vnc-panel-${panel.name}`"
+          :class="['vnc-panel', { 'vnc-panel--wide': panel.wide }]"
+          role="dialog"
+          :aria-label="panel.label">
+          <slot :name="panel.name" :open="open === panel.name"></slot>
+        </div>
       </div>
-    </div>
-
-    <VncActionsMenu
-      v-if="menuGroups.length"
-      ref="actionsMenu"
-      :groups="menuGroups"
-      :danger-group="DANGER_GROUP"
-      :pending="menuPending"
-      @open="open = null"
-      @action="(name) => pending || emit('action', name)" />
+    </template>
 
     <div class="vnc-layouts" role="group" aria-label="Layout">
       <b-tooltip
