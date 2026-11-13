@@ -262,6 +262,7 @@ const NODE_MAPS = {
     [MAP_KEYS_KEYWORD]: [
       'phenix/default-apps',
       'phenix/startup-autotunnel',
+      'phenix/startup-set-hostname',
       'phenix/startup-via-cc',
       'vrouter/enable-ssh',
       'vrouter/vyos-password',

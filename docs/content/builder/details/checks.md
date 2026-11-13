@@ -103,6 +103,7 @@ These devices get fewer warnings:
 | The `vrouter/enable-ssh` annotation of a Vyatta or VyOS router is not an IP address or the name of an interface with an IP address. phenix does not enable SSH. phenix reads this annotation on no other device. | `device.enable-ssh.invalid` | The value of the annotation |
 | An entry of the `phenix/startup-autotunnel` annotation is not `"port"`, `"port:dport"` or `"port:host:dport"`, with ports from 1 to 65535. A `dport` of `VNC`, in any case, permits an empty host. phenix skips each bad entry. phenix opens no tunnel when the value is not a list of texts. | `device.autotunnel.invalid` | The value of the annotation |
 | The `phenix/default-apps` annotation is not `true` or `false`, for example the text `"false"`. phenix runs its default apps. | `device.default-apps.invalid` | The value of the annotation |
+| The `phenix/startup-set-hostname` annotation is not `true` or `false`, for example the text `"false"`. phenix sets the hostname. | `device.set-hostname.invalid` | The value of the annotation |
 
 phenix finds an interface by name in any case: `ETH0` names `eth0`. In the
 Inspector, the values of the `ntp-server` label and the `vrouter/enable-ssh`

@@ -13,6 +13,7 @@ import (
 const (
 	labelNTPServer        = "ntp-server"
 	annotationDefaultApps = "phenix/default-apps"
+	annotationSetHostname = "phenix/startup-set-hostname"
 	annotationAutotunnel  = "phenix/startup-autotunnel"
 	annotationEnableSSH   = "vrouter/enable-ssh"
 )
@@ -502,6 +503,16 @@ func annotationWarnings(node *Node, index int) []Issue {
 			warn(CodeDeviceDefaultAppsInvalid, annotationDefaultApps, fmt.Sprintf(
 				"the phenix/default-apps annotation of %q is not true or false. Thus phenix runs its default apps on "+
 					"the device. To disable them, set the annotation to false, not the text \"false\"",
+				hostname,
+			))
+		}
+	}
+
+	if value, ok := annotations[annotationSetHostname]; ok {
+		if _, isBool := value.(bool); !isBool {
+			warn(CodeDeviceSetHostnameInvalid, annotationSetHostname, fmt.Sprintf(
+				"the phenix/startup-set-hostname annotation of %q is not true or false. Thus phenix sets the device's "+
+					"hostname. To skip setting it, set the annotation to false, not the text \"false\"",
 				hostname,
 			))
 		}

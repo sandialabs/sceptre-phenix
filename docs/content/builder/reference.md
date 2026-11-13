@@ -478,6 +478,7 @@ and have no codes. The warnings of an import or a legacy diagram conversion
 | `device.enable-ssh.invalid` | warning | The vrouter/enable-ssh annotation of a Vyatta or VyOS router is neither an IP address nor the name of an interface with an address. |
 | `device.autotunnel.invalid` | warning | The phenix/startup-autotunnel annotation is not a list of "port", "port:dport" or "port:host:dport" texts. |
 | `device.default-apps.invalid` | warning | The phenix/default-apps annotation is not true or false. |
+| `device.set-hostname.invalid` | warning | The phenix/startup-set-hostname annotation is not true or false. |
 | `interface.id.required` | error | A connection point has no ID. |
 | `interface.id.invalid` | error | A connection point ID is not a UUID. |
 | `interface.id.duplicate` | error | Two connection points have the same ID, ignoring case. |

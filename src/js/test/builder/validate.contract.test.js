@@ -896,6 +896,7 @@ describe('interface VLANs and drive images', () => {
         'vrouter/enable-ssh': 'ETH9',
         'phenix/startup-autotunnel': ['22', 'x'],
         'phenix/default-apps': 'true',
+        'phenix/startup-set-hostname': 'false',
       },
     };
 
@@ -913,6 +914,7 @@ describe('interface VLANs and drive images', () => {
         'vrouter/enable-ssh: "ETH9" is neither an IP address nor an interface of this device. Thus phenix does not enable SSH.',
         'phenix/startup-autotunnel: entry 2 is not "port", "port:dport" or "port:host:dport". Thus phenix does not open that tunnel.',
         'phenix/default-apps: not true or false. Thus phenix runs its default apps. To disable them, type false without quotes.',
+        'phenix/startup-set-hostname: not true or false. Thus phenix sets the hostname. To skip it, type false without quotes.',
       ],
     });
 

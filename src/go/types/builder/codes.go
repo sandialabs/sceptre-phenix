@@ -138,6 +138,7 @@ const (
 	CodeDeviceEnableSSHInvalid     Code = "device.enable-ssh.invalid"
 	CodeDeviceAutotunnelInvalid    Code = "device.autotunnel.invalid"
 	CodeDeviceDefaultAppsInvalid   Code = "device.default-apps.invalid"
+	CodeDeviceSetHostnameInvalid   Code = "device.set-hostname.invalid"
 )
 
 // Codes of the interfaces of a device: its connection points (interface
@@ -576,6 +577,7 @@ var codeRegistry = []CodeInfo{
 	{CodeDeviceAutotunnelInvalid, SeverityWarning, "The phenix/startup-autotunnel annotation is not a list of " +
 		"\"port\", \"port:dport\" or \"port:host:dport\" texts."},
 	{CodeDeviceDefaultAppsInvalid, SeverityWarning, "The phenix/default-apps annotation is not true or false."},
+	{CodeDeviceSetHostnameInvalid, SeverityWarning, "The phenix/startup-set-hostname annotation is not true or false."},
 
 	{CodeInterfaceIDRequired, SeverityError, "A connection point has no ID."},
 	{CodeInterfaceIDInvalid, SeverityError, "A connection point ID is not a UUID."},

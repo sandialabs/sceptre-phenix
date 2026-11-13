@@ -18,7 +18,8 @@
     "device.ntp-server.no-mgmt",
     "device.enable-ssh.invalid",
     "device.autotunnel.invalid",
-    "device.default-apps.invalid"
+    "device.default-apps.invalid",
+    "device.set-hostname.invalid"
   ],
   "blockers": [
     "device.drives.none",
@@ -2336,6 +2337,31 @@
           "path": "nodes[2].device.spec.annotations.phenix/default-apps",
           "message": "the phenix/default-apps annotation of \"host-a\" is not true or false. Thus phenix runs its default apps on the device. To disable them, set the annotation to false, not the text \"false\"",
           "field": "spec.annotations.phenix/default-apps"
+        }
+      ]
+    },
+    {
+      "name": "phenix/startup-set-hostname as text",
+      "set": [
+        {
+          "path": [
+            "nodes",
+            2,
+            "device",
+            "spec",
+            "annotations"
+          ],
+          "value": {
+            "phenix/startup-set-hostname": "false"
+          }
+        }
+      ],
+      "warnings": [
+        {
+          "code": "device.set-hostname.invalid",
+          "path": "nodes[2].device.spec.annotations.phenix/startup-set-hostname",
+          "message": "the phenix/startup-set-hostname annotation of \"host-a\" is not true or false. Thus phenix sets the device's hostname. To skip setting it, set the annotation to false, not the text \"false\"",
+          "field": "spec.annotations.phenix/startup-set-hostname"
         }
       ]
     },
