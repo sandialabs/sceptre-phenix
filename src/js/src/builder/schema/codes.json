@@ -103,6 +103,10 @@
     "severity": "warning",
     "description": "A device has serial interfaces, but phenix sets them up only when its os_type is linux."
   },
+  "device.set-hostname.invalid": {
+    "severity": "warning",
+    "description": "The phenix/startup-set-hostname annotation is not true or false."
+  },
   "device.spec.required": {
     "severity": "error",
     "description": "A device has no spec."

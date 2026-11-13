@@ -101,6 +101,9 @@ describe('inspector schemas', () => {
       expect(spec.properties.annotations[MAP_KEYS_KEYWORD]).toContain(
         'phenix/default-apps',
       );
+      expect(spec.properties.annotations[MAP_KEYS_KEYWORD]).toContain(
+        'phenix/startup-set-hostname',
+      );
     }
 
     expect(minimega.properties.advanced).toMatchObject({

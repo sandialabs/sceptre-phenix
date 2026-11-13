@@ -144,7 +144,7 @@ Start-Sleep -s 5
 
 # FIX: -c needed to ensure case-sensitive comparison of hostnames
 $host_name = hostname
-if ($host_name -ceq "{{ .Node.General.Hostname }}") {
+if ({{ if .SetHostname }}$host_name -ceq "{{ .Node.General.Hostname }}"{{ else }}$true{{ end }}) {
 {{ if .Metadata.domain_controller }}
     if (Phenix-StartupStatusIs('joined-domain')) {
         echo 'Startup script complete!'

@@ -207,6 +207,12 @@ spec:
 The `startup` app does not generate scripts for router nodes or nodes with
 [`phenix/default-apps: false`](#disable-default-apps-for-a-vm).
 
+#### Skipping Hostname Changes
+
+Set the node annotation `phenix/startup-set-hostname: false` on a Topology node
+to keep the guest's existing hostname while still applying timezone, network
+interface, and domain configuration.
+
 ### ntp App
 
 The `ntp` app configures experiment VMs to use a NTP server in the experiment.

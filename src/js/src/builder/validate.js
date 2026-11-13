@@ -3425,6 +3425,7 @@ function addressingWarnings(doc, issues) {
 // The labels and annotations of a node spec that phenix's apps read.
 const NTP_SERVER = 'ntp-server';
 const DEFAULT_APPS = 'phenix/default-apps';
+const SET_HOSTNAME = 'phenix/startup-set-hostname';
 const AUTOTUNNEL = 'phenix/startup-autotunnel';
 const ENABLE_SSH = 'vrouter/enable-ssh';
 
@@ -3836,6 +3837,18 @@ function annotationFindings(spec, hostname, at) {
       DEFAULT_APPS,
       'phenix/default-apps: not true or false. Thus phenix runs its default apps. To disable them, type false without quotes.',
       `the phenix/default-apps annotation of ${goQuoted(hostname)} is not true or false. Thus phenix runs its default apps on the device. To disable them, set the annotation to false, not the text "false"`,
+    );
+  }
+
+  if (
+    Object.hasOwn(annotations, SET_HOSTNAME) &&
+    typeof annotations[SET_HOSTNAME] !== 'boolean'
+  ) {
+    add(
+      'device.set-hostname.invalid',
+      SET_HOSTNAME,
+      'phenix/startup-set-hostname: not true or false. Thus phenix sets the hostname. To skip it, type false without quotes.',
+      `the phenix/startup-set-hostname annotation of ${goQuoted(hostname)} is not true or false. Thus phenix sets the device's hostname. To skip setting it, set the annotation to false, not the text "false"`,
     );
   }
 
