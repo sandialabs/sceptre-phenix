@@ -10,7 +10,7 @@ tooltip reads `details and actions`) and you will be presented with the VM's
 details card. The URL `/experiment/<name>?vm=<vm>` opens the details card of
 that VM.
 
-![VM details for the running hmi-01, with its Windows OS box, power buttons, its screen, resource tiles, storage, a capturing interface, labels, annotations, snapshots and port forwards.](images/vm_details_card.png){: width=800 .center}
+![VM details for the running site-1-hmi, with its Windows OS box, the power buttons and Open console, its live console, resource tiles, storage, a capturing interface, labels, annotations, two snapshots with restore and delete buttons, and a port forward.](images/vm_details_card.png){: width=800 .center}
 
 #### The Header
 
@@ -96,6 +96,8 @@ permission that the role needs, for example
 tile. The server still checks each permission.
 
 ![VM details for the shut-down historian, with Start enabled and Restart and the other actions a stopped VM cannot take grayed out.](images/vm_details_disabled.png){: width=800 .center}
+
+![Power section of the site-1-hmi details card for an Experiment User: the power buttons are grayed out, and the tooltip of Kill reads Your role does not permit this action (vms delete).](images/vm_role_denied.png){: width=600 .center}
 
 #### Tiles
 
@@ -310,7 +312,7 @@ bar of the console page also ask you to confirm. Once a snapshot exists, the
 card's `Snapshots` section lists it, and the play button next to its name
 restores it.
 
-![Create a VM Snapshot dialog that asks to confirm a snapshot of site-1-hmi, with Cancel and Create buttons.](images/vm_snapshot_confirm.png){: width=500 .center}
+![Create a Snapshot of the site-1-hmi VM dialog that tells that a snapshot saves the disk and memory of the VM, with Cancel and Create buttons.](images/vm_snapshot_confirm.png){: width=500 .center}
 
 ### From the Command Line Binary
 
@@ -427,6 +429,7 @@ and these controls:
   `Remove`. Only the user that made a forward can remove it.
   `Add port forward` opens the same dialog as on the experiment page.
   `Tunneler` opens the [Tunneler](tunneler.md) page in a new tab.
+  ![The Port forwards panel under the console top bar: a table with the host port, destination and owner of two port forwards, Remove for the forward of global-admin, Remove grayed out for the forward of analyst@example.com, and the Add port forward and Tunneler buttons.](images/vnc_forwards_panel.png){: width=500 .center}
 * The packet capture button starts a capture on interface 0 when no capture
   of the VM runs. When minimega can write pcapng, a dialog asks for the
   format first. When a capture of the VM runs, the button is
@@ -462,6 +465,8 @@ and these controls:
   all of the page. A small `Show toolbar` button in the top left corner shows
   the bar again. Ctrl+] then T also hides or shows the bar (see
   [The Keyboard Chord](#the-keyboard-chord)). The browser keeps the choice.
+
+![The console top bar with the Actions menu open: Snapshot, Memory snapshot, Backing image and Capture all interfaces, then Insert CD-ROM, then Edit labels and Edit annotations, then Redeploy, Reset disk and Kill in red.](images/vnc_actions_menu.png){: width=500 .center}
 
 An action that the VM state does not allow is grayed out, and its tooltip
 gives the reason. An action that the role cannot do is also grayed out. Its
@@ -548,7 +553,7 @@ keyboard focus. A disabled button tells why in its tooltip. `Pause`,
 `Restart`, `Shut down`, `Kill` and `Snapshot` ask you to confirm. `Start` and
 `Resume` do not ask.
 
-![The VNC tab with the Live and Snapshots switch, the Live tile limit, and live tiles for two running VMs, one paused VM and one VM that is not running](images/vnc_tiles.png)
+![The VNC tab with the Live and Snapshots switch, the Live tile limit, the selection and zoom tools, and tiles with check boxes for two running VMs, one paused VM and one VM that is not running](images/vnc_tiles.png)
 
 * `Live tile limit` sets how many tiles can be live at one time: 4, 8, 16 (the
   default), 24 or 32. The browser keeps the choice. A tile over the limit
@@ -595,7 +600,7 @@ phēnix adds two settings to the minimega script of an experiment:
     on each compute node. When phēnix cannot connect, the console shows
     `phēnix cannot connect to the VNC port of <vm> on <host> (port <n>)`.
 
-![Screenshot of site-1-hmi on its details card, with an Open console label in the corner.](images/vm_console_link.png){: width=400 .center}
+![Live console of site-1-hmi on its details card, between its two banners, with the View only label and the Take control button.](images/vm_console_link.png){: width=400 .center}
 
 #### VNC Banners
 
@@ -896,7 +901,7 @@ Click on the name of a running VM in a started experiment to open its details
 card, then click `Kill` in the `Power` section and confirm. The bar of a live
 tile and the selection toolbar also ask you to confirm.
 
-![Kill the VM dialog that warns that site-1-hmi cannot be restored until the experiment restarts, with Cancel and KILL IT! buttons.](images/vm_kill_confirm.png){: width=500 .center}
+![Kill the site-1-hmi VM dialog that warns that Kill stops the VM at once and removes it until the experiment starts again, with Cancel and Kill buttons.](images/vm_kill_confirm.png){: width=500 .center}
 
 _Note_: if you stop and then start the experiment again, that VM will run again
 per the experiment configuration.
@@ -998,7 +1003,7 @@ replicated, before it is deployed again. Its `Disk` menu works as described in
 [Disk Menu](#disk-menu), and the disk changes only when you pick a different
 one.
 
-![Redeploy the VM dialog for site-1-hmi with 4 CPUs, 8 GB of memory, its disk and the Replicate Original Injection(s) menu, and Cancel and Redeploy buttons.](images/vm_redeploy.png){: width=500 .center}
+![Redeploy the VM dialog for site-1-hmi with 4 CPUs, 8 GiB of memory, its disk and the Replicate Original Injection(s) menu, and Cancel and Redeploy buttons.](images/vm_redeploy.png){: width=500 .center}
 
 ### From the Command Line Binary
 
@@ -1025,7 +1030,7 @@ disabled when the VM is paused or does not have snapshots enabled, with the
 reason in its tooltip, such as `Cannot reset disk: the VM is paused. Resume
 paused VMs first`.
 
-![Reset the VM's Disk dialog that asks to confirm a reset of the disk state of site-1-hmi, with Cancel and Reset buttons.](images/vm_reset_disk_confirm.png){: width=500 .center}
+![Reset the Disk of the site-1-hmi VM dialog that tells that the disk goes back to its state at the start of the experiment, with Cancel and Reset buttons.](images/vm_reset_disk_confirm.png){: width=500 .center}
 
 ### From the Command Line Binary
 

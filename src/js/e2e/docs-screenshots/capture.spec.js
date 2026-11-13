@@ -4,7 +4,12 @@
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { pageDataLoaded } = require('../tests/helpers');
-const { COLORS, standInExperiment } = require('../tests/vnc-support');
+const {
+  COLORS,
+  VMS,
+  standInConsoles,
+  standInExperiment,
+} = require('../tests/vnc-support');
 const fixtures = require('./fixtures.json');
 const vlansCluster = require('../../test/helpers/vlansFixture.json');
 
@@ -111,8 +116,22 @@ async function shootCells(table, locators, name) {
   });
 }
 
+// Waits until every animation that ends has ended, such as a dialog that
+// zooms in, so that the boxes of elements stay where they are.
+async function settled(page) {
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => a.effect?.getComputedTiming().endTime !== Infinity)
+        .map((a) => a.finished.catch(() => {})),
+    ),
+  );
+}
+
 // Draws a red ring around a control, as the docs mark the one to click.
 async function ring(locator) {
+  await settled(locator.page());
   await locator.evaluate((el) => {
     const r = el.getBoundingClientRect();
     const mark = document.createElement('div');
@@ -420,6 +439,81 @@ test('vnc_tiles', async ({ page }) => {
   );
 });
 
+// Opens the console page of web in the stand-in demo experiment, once its
+// screen has drawn, without the toast of the chord hint.
+async function consolePage(page) {
+  await page.goto('/vnc?vm=demo/web');
+  await drawn(page, 'Console of VM web in experiment demo');
+  await page
+    .locator('.toast')
+    .evaluateAll((toasts) => toasts.forEach((t) => t.remove()));
+}
+
+// The top bar of the console page with its Actions menu open.
+test('vnc_actions_menu', async ({ page }) => {
+  await vncExperiment(page);
+  await consolePage(page);
+  await page.locator('.vnc-actions-trigger').click();
+  const menu = page.getByRole('menu', { name: 'VM actions' });
+  await expect(menu).toBeVisible();
+  await settled(page);
+  await shootRegion(
+    page,
+    [page.getByRole('group', { name: 'VM actions' }), menu],
+    'vnc_actions_menu',
+    16,
+  );
+});
+
+// The Port forwards panel of the console top bar: a forward that the user
+// made, which it can remove, and one that another user made. The miniccc
+// agent of web is active, so Add port forward is not greyed out.
+test('vnc_forwards_panel', async ({ page }) => {
+  await vncExperiment(page);
+  const web = VMS.find((vm) => vm.name === 'web');
+  await page.route(
+    (url) => url.pathname === '/api/v1/experiments/demo/vms/web',
+    (route) => route.fulfill({ json: { ...web, ccActive: true } }),
+  );
+  await page.route(
+    (url) => url.pathname.endsWith('/experiments/demo/vms/web/forwards'),
+    (route) =>
+      route.fulfill({
+        json: {
+          listeners: [
+            {
+              exp: 'demo',
+              vm: 'web',
+              srcPort: 18080,
+              dstHost: '127.0.0.1',
+              dstPort: 80,
+              owner: 'global-admin',
+            },
+            {
+              exp: 'demo',
+              vm: 'web',
+              srcPort: 13389,
+              dstHost: '127.0.0.1',
+              dstPort: 3389,
+              owner: 'analyst@example.com',
+            },
+          ],
+        },
+      }),
+  );
+  await consolePage(page);
+  await page.getByRole('button', { name: 'Port forwards' }).click();
+  const panel = page.getByRole('dialog', { name: 'Port forwards' });
+  await expect(panel.getByText('13389')).toBeVisible();
+  await settled(page);
+  await shootRegion(
+    page,
+    [page.getByRole('group', { name: 'VM actions' }), panel],
+    'vnc_forwards_panel',
+    16,
+  );
+});
+
 // The Experiments table, with its totals strip and the Actions column.
 test('experiments_table', async ({ page }) => {
   await open(page, '/experiments');
@@ -721,9 +815,83 @@ async function openRunning(page, height = 1600, shown = undefined, q = '') {
   await expect(vmButton(page, 'site-1-hmi')).toBeVisible();
 }
 
+// The screen of site-1-hmi for its live console: an HMI window with the
+// levels of three tanks, over a desktop with a task bar.
+function hmiScreen(x, y) {
+  if (y >= 456) return [11, 23, 38];
+  if (x < 40 || x >= 600 || y < 32 || y >= 424) return [22, 50, 79];
+  if (y < 64) return [37, 99, 168];
+  const tank = Math.floor((x - 120) / 150);
+  const left = 120 + tank * 150;
+  if (tank < 0 || tank > 2 || x >= left + 100 || y < 120 || y >= 380) {
+    return [229, 235, 243];
+  }
+  if (x < left + 2 || x >= left + 98 || y < 122 || y >= 378) {
+    return [85, 85, 102];
+  }
+  const level = [62, 81, 34][tank];
+  if (y < 380 - (260 * level) / 100) return [255, 255, 255];
+  return [
+    [56, 189, 248],
+    [34, 197, 94],
+    [250, 204, 21],
+  ][tank];
+}
+
+const cardScreen = (vm, x, y) =>
+  vm === 'site-1-hmi' ? hmiScreen(x, y) : desktop(vm, x, y);
+
+// The Experiment User role of api/config/default/experiment-user.yml, for
+// the bennu experiment, as the server gives it at sign-in.
+const bennuNames = ['bennu', 'bennu/*'];
+const EXPERIMENT_USER = {
+  name: 'Experiment User',
+  policies: [
+    [
+      ['experiments', 'experiments/*'],
+      ['list', 'get'],
+    ],
+    [
+      ['vms', 'vms/*'],
+      ['list', 'get', 'patch'],
+    ],
+    [['vms/redeploy'], ['update']],
+    [['vms/captures'], ['create', 'delete']],
+    [['vms/snapshots'], ['list', 'create', 'update']],
+    [['vms/screenshot'], ['create']],
+    [['experiments/files'], ['create']],
+    [['vlans'], ['list', 'get']],
+  ]
+    .map(([resources, verbs]) => ({
+      resources,
+      resourceNames: bennuNames,
+      verbs,
+    }))
+    .concat({ resources: ['hosts'], resourceNames: ['*'], verbs: ['list'] }),
+};
+
+// Signs the page in as a user with role, as a sign-in leaves the session.
+async function signedInAs(page, username, role) {
+  await page.addInitScript(
+    ([user, signedInRole]) => {
+      sessionStorage.setItem('phenix.user', user);
+      sessionStorage.setItem('phenix.token', 'authorized');
+      sessionStorage.setItem('phenix.role', JSON.stringify(signedInRole));
+      sessionStorage.setItem('phenix.auth', 'true');
+    },
+    [username, role],
+  );
+}
+
 // Opens the details card of a VM of the running experiment, once its details,
-// snapshots and port forwards have loaded.
+// snapshots and port forwards have loaded. Its live console connects to a
+// stand-in RFB server.
 async function vmCard(page, name = 'site-1-hmi', height = undefined) {
+  await standInConsoles(page, {
+    experiment: 'bennu',
+    vms: [name],
+    screen: cardScreen,
+  });
   await openRunning(page, height);
   await vmButton(page, name).click();
   const card = page.locator('.modal-card.vm-card');
@@ -780,13 +948,52 @@ test.describe('running experiment', () => {
     await shoot(dialog, 'vm_snapshot_confirm');
   });
 
-  // The screenshot on the details card, which opens the VM's console.
+  // The live console on the details card, with its banners and its bar; a
+  // click on the screen opens the VM's console page.
   test('vm_console_link', async ({ page }) => {
     const card = await vmCard(page);
-    const figure = card.locator('.vm-screenshot');
-    await expect(figure.getByText('Open console')).toBeVisible();
-    await expect(figure.locator('img')).toHaveJSProperty('complete', true);
-    await shoot(figure, 'vm_console_link');
+    await drawn(page, 'Console of VM site-1-hmi in experiment bennu');
+    const preview = card.locator('.vnc-preview');
+    await expect(
+      preview.getByRole('button', { name: 'Take control' }),
+    ).toBeVisible();
+    await shoot(preview, 'vm_console_link');
+  });
+
+  // The whole details card of the running site-1-hmi. The card is 90% of
+  // the window tall, so the window holds its sections and little more.
+  test('vm_details_card', async ({ page }) => {
+    const card = await vmCard(page, 'site-1-hmi', 1080);
+    await drawn(page, 'Console of VM site-1-hmi in experiment bennu');
+    await expect(card.getByText('site-1-hmi_2026-09-29_1430')).toBeVisible();
+    await page.evaluate(() => document.activeElement?.blur());
+    await settled(page);
+    await shoot(card, 'vm_details_card');
+  });
+
+  // The card of the shut-down historian: the actions it cannot take now are
+  // grayed out.
+  test('vm_details_disabled', async ({ page }) => {
+    const card = await vmCard(page, 'historian', 960);
+    await expect(card.locator('.vm-no-screen')).toBeVisible();
+    await page.evaluate(() => document.activeElement?.blur());
+    await settled(page);
+    await shoot(card, 'vm_details_disabled');
+  });
+
+  // Kill grayed out for an Experiment User, whose role cannot delete VMs,
+  // with the tooltip that names the permission.
+  test('vm_role_denied', async ({ page }) => {
+    await signedInAs(page, 'analyst@example.com', EXPERIMENT_USER);
+    const card = await vmCard(page);
+    const power = card
+      .locator('.vm-section')
+      .filter({ has: page.locator('.vm-power-buttons') });
+    await settled(page);
+    await power.locator('.vm-action-kill').hover();
+    const tip = tooltip(page, 'Your role does not permit this action');
+    await expect(tip).toBeVisible();
+    await shootRegion(page, [power, tip], 'vm_role_denied', 0);
   });
 
   // The mount browser, with the vm-mount and file-server features on: the
@@ -898,7 +1105,7 @@ test.describe('running experiment', () => {
       .selectOption('4');
     await dialog
       .getByRole('combobox', { name: 'Memory for VM site-1-hmi' })
-      .selectOption({ label: '8 GB' });
+      .selectOption({ label: '8 GiB' });
     await shoot(dialog, 'vm_redeploy');
   });
 
@@ -973,7 +1180,7 @@ test.describe('running experiment', () => {
     await openRunning(page, 1200);
     for (const name of ['elasticsearch', 'fep']) {
       await page
-        .locator('label.b-checkbox', { hasText: `Select VM ${name}` })
+        .locator('.b-table label.b-checkbox', { hasText: `Select VM ${name}` })
         .click();
     }
     await page.evaluate(() => document.activeElement?.blur());

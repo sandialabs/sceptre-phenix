@@ -63,6 +63,10 @@ does. Set `DOCS_SCREENSHOTS_DEBUG=1` to log each API request and websocket
 message that no sample answers. `console_tab` answers the console requests and
 the console websocket in its own test. `webshark_empty` answers the features
 request and `/webshark/watch` in its own test. The VNC images
-(`vnc_console_split` and `vnc_tiles`) use the stand-in experiment and RFB
-servers of `tests/vnc-support.js`. Other images of WebShark and the State of
-Health graph itself need live data, so they are still taken by hand.
+(`vnc_console_split`, `vnc_tiles`, `vnc_actions_menu` and
+`vnc_forwards_panel`) use the stand-in experiment and RFB servers of
+`tests/vnc-support.js`. The live console on a VM details card uses its RFB
+servers through `standInConsoles`.
+`vm_role_denied` signs in with the Experiment User role. Other images of
+WebShark and the State of Health graph itself need live data, so they are
+still taken by hand.

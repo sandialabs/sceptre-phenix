@@ -1793,7 +1793,7 @@
     }
   },
   "GET /experiments/bennu/vms/site-1-hmi/snapshots": {
-    "snapshots": ["site-1-hmi_2026-09-29_1012"]
+    "snapshots": ["site-1-hmi_2026-09-29_1430", "site-1-hmi_2026-09-29_1012"]
   },
   "GET /experiments/bennu/vms/site-1-hmi/forwards": {
     "listeners": [
@@ -1838,6 +1838,39 @@
     "snapshots": []
   },
   "GET /experiments/bennu/vms/ot-sim-2/forwards": {
+    "listeners": null
+  },
+  "GET /experiments/bennu/vms/historian": {
+    "name": "historian",
+    "host": "compute2",
+    "ipv4": ["10.1.1.30"],
+    "cpus": 2,
+    "ram": 4096,
+    "disk": "/phenix/images/bennu-historian.qc2",
+    "dnb": false,
+    "networks": ["SCADA (101)"],
+    "taps": [],
+    "captures": [],
+    "running": false,
+    "busy": false,
+    "state": "QUIT",
+    "tags": {
+      "role": "historian"
+    },
+    "ccActive": false,
+    "external": false,
+    "snapshot": true,
+    "inject_partition": 1,
+    "os_type": "linux",
+    "uptime": 0,
+    "description": "Process historian for sites 1 and 2",
+    "experiment": "bennu",
+    "annotations": {}
+  },
+  "GET /experiments/bennu/vms/historian/snapshots": {
+    "snapshots": []
+  },
+  "GET /experiments/bennu/vms/historian/forwards": {
     "listeners": null
   },
   "GET /experiments/bennu/vms/site-1-hmi/files": {
