@@ -62,11 +62,16 @@ page needs in `fixtures.json`, or pass a variant to `open()`, as `empty_table`
 does. Set `DOCS_SCREENSHOTS_DEBUG=1` to log each API request and websocket
 message that no sample answers. `console_tab` answers the console requests and
 the console websocket in its own test. `webshark_empty` answers the features
-request and `/webshark/watch` in its own test. The VNC images
+request and `/webshark/watch` in its own test. `jobs_menu` answers
+`GET /jobs` with the jobs in its own test, so that the header of the other
+images shows no jobs. Check that list against the `Job` schema of
+`openapi.yml` when you change it: the Go test reads only `fixtures.json`.
+The VNC images
 (`vnc_console_split`, `vnc_tiles`, `vnc_actions_menu` and
 `vnc_forwards_panel`) use the stand-in experiment and RFB servers of
 `tests/vnc-support.js`. The live console on a VM details card uses its RFB
 servers through `standInConsoles`.
 `vm_role_denied` signs in with the Experiment User role. Other images of
 WebShark and the State of Health graph itself need live data, so they are
-still taken by hand.
+still taken by hand. `name_kind` shows the open list of a native drop-down,
+which a headless browser does not draw, so it is also taken by hand.

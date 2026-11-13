@@ -35,7 +35,7 @@ box, beside the red button that stops the experiment. Its tooltip reads
 `Start Netflow Capture`. Clicking it starts netflow capture on the bridge the
 experiment is configured to use, for all VM network interfaces.
 
-![Running experiment toolbar with the VMs, Files, VNC and Netflow tabs, the Hosts, Labels and Paginate controls, a Find a VM box, and the stop, netflow and column picker buttons.](images/exp_netflow_button.png){: width=800 .center}
+![Running experiment toolbar with the VMs, Files, VNC, Netflow and Captures tabs, the Hosts, Labels and Paginate controls, a Find a VM box, and the stop, netflow, capture and column picker buttons.](images/exp_netflow_button.png){: width=800 .center}
 
 Once the capture is running, the button turns red and its tooltip reads
 `Stop Netflow Capture`. Click it to stop the capture. A capture also stops on

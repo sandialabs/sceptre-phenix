@@ -578,6 +578,111 @@ test('navbar', async ({ page }) => {
   await shoot(page.locator('nav.navbar'), 'navbar');
 });
 
+// The background jobs of GET /jobs, newest first: two running, a file archive
+// of bennu with its zip, and a shutdown that partly succeeded.
+const job = (id, fields) => ({
+  id,
+  kind: 'vms.action',
+  owner: 'admin@example.com',
+  cancelable: true,
+  updated: fields.created,
+  revision: 3,
+  ...fields,
+});
+const BENNU_JOBS = {
+  jobs: [
+    job('j4c1e9a07b3d2f851', {
+      experiment: 'bennu',
+      title: 'Restart 4 VMs',
+      params: { action: 'restart' },
+      status: 'running',
+      progress: { done: 1, total: 4 },
+      items: [
+        { name: 'site-1-hmi', status: 'succeeded' },
+        { name: 'elasticsearch', status: 'running' },
+        { name: 'fep', status: 'pending' },
+        { name: 'web', status: 'pending' },
+      ],
+      created: '2026-09-29T15:46:40Z',
+      started: '2026-09-29T15:46:40Z',
+    }),
+    job('j9b27d4e1c08a6f35', {
+      kind: 'disk.clone',
+      title: 'Clone ubuntu-22.04-base.qc2 to ubuntu-22.04-hmi.qc2',
+      params: {
+        disk: '/phenix/images/ubuntu-22.04-base.qc2',
+        new: '/phenix/images/ubuntu-22.04-hmi.qc2',
+      },
+      status: 'running',
+      progress: {
+        done: 0,
+        total: 1,
+        bytes: 1288490188,
+        bytesTotal: 2040109465,
+      },
+      items: [{ name: 'ubuntu-22.04-hmi.qc2', status: 'running' }],
+      created: '2026-09-29T15:45:12Z',
+      started: '2026-09-29T15:45:12Z',
+    }),
+    job('j2f8a61c5d94e0b7a', {
+      kind: 'files.archive',
+      experiment: 'bennu',
+      title: 'Archive 3 files of bennu',
+      status: 'succeeded',
+      cancelable: false,
+      progress: { done: 3, total: 3, bytes: 53139455, bytesTotal: 53139455 },
+      items: [
+        'ids-sensor_1_20260929154512_7c1d.pcap',
+        'soh-report.json',
+        'historian_0_20260929153001_2b8e.pcap',
+      ].map((name) => ({ name, status: 'succeeded' })),
+      artifact: { name: 'bennu-files.zip', size: 48916582 },
+      created: '2026-09-29T15:41:03Z',
+      started: '2026-09-29T15:41:03Z',
+      finished: '2026-09-29T15:41:09Z',
+    }),
+    job('j7d03b9e2a15c4f68', {
+      experiment: 'bennu',
+      title: 'Shut down 2 VMs',
+      params: { action: 'shutdown' },
+      status: 'partial',
+      cancelable: false,
+      progress: { done: 2, total: 2 },
+      items: [
+        { name: 'historian', status: 'succeeded' },
+        {
+          name: 'ot-sim-2',
+          status: 'failed',
+          error: 'vm ot-sim-2 is locked with status snapshotting',
+          retryable: true,
+        },
+      ],
+      created: '2026-09-29T15:32:18Z',
+      started: '2026-09-29T15:32:18Z',
+      finished: '2026-09-29T15:33:02Z',
+    }),
+  ],
+  total: 4,
+};
+
+// The open jobs menu, with BENNU_JOBS; opening it marks the finished jobs
+// viewed, so the button is no longer colored.
+test('jobs_menu', async ({ page }) => {
+  await open(page, '/experiments', { 'GET /jobs': BENNU_JOBS });
+  await page
+    .getByRole('button', { name: /^Background jobs \(2 jobs running/ })
+    .click();
+  const panel = page.locator('.jobs-menu .dropdown-menu');
+  await expect(panel.getByText('Shut down 2 VMs')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Background jobs (2 jobs running)' }),
+  ).toBeVisible();
+  // off the button, which has a lighter border under the pointer
+  await page.mouse.move(800, 800);
+  await settled(page);
+  await shootRegion(page, [page.locator('.nav-tools'), panel], 'jobs_menu');
+});
+
 // A minimega console session in bennu's namespace, as `phenix mm --attach`
 // prints it, with `vm info` listing the sample VMs that minimega runs.
 function consoleSession() {
@@ -1037,6 +1142,22 @@ test.describe('running experiment', () => {
       has: page.getByRole('button', { name: 'site-1-hmi', exact: true }),
     });
     await shoot(row, 'vm_capture_taps');
+  });
+
+  // The tabs and the toolbar of the running bennu, with the netflow button
+  // right of the stop button.
+  test('exp_netflow_button', async ({ page }) => {
+    await openRunning(page, 900);
+    await expect(
+      page.getByRole('button', { name: 'Start netflow capture' }),
+    ).toBeVisible();
+    await page.evaluate(() => document.activeElement?.blur());
+    await shootRegion(
+      page,
+      [page.locator('.exp-toolbar'), page.locator('.b-tabs > nav.tabs')],
+      'exp_netflow_button',
+      2,
+    );
   });
 
   test('vm_kill_confirm', async ({ page }) => {
