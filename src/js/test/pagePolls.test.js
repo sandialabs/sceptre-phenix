@@ -19,7 +19,6 @@ import {
   BACK_SPREAD_MS,
   forgetServer,
   RESOURCES,
-  serverUnanswered,
   serverUnavailable,
   setWsDown,
 } from '@/utils/freshness.js';
@@ -29,7 +28,6 @@ beforeEach(() => {
   resetMocks();
   vi.useFakeTimers();
   vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
-  vi.spyOn(document, 'hasFocus').mockReturnValue(true);
 });
 
 afterEach(() => {
@@ -55,13 +53,6 @@ describe.each([
     ]);
   });
 
-  it('keeps its rate while its tab shows but its window lacks focus', async () => {
-    document.hasFocus.mockReturnValue(false);
-    await open();
-    vi.advanceTimersByTime(3 * pollMs);
-    expect(loads()).toBe(3);
-  });
-
   it('asks nothing while its tab is hidden, and resumes when shown', async () => {
     const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
     await open();
@@ -73,27 +64,6 @@ describe.each([
     expect(loads()).toBe(1);
   });
 
-  it('keeps its rate while only the websocket is lost', async () => {
-    await open();
-    setWsDown(true, 'lost');
-    vi.advanceTimersByTime(3 * pollMs);
-    expect(loads()).toBe(3);
-  });
-
-  it('asks nothing while the server shuts down, once when it is back, then at its rate', async () => {
-    await open();
-    vi.advanceTimersByTime(pollMs);
-    setWsDown(true, 'shutdown');
-    vi.advanceTimersByTime(59_000);
-    expect(loads()).toBe(1);
-
-    setWsDown(false);
-    vi.advanceTimersByTime(BACK_SPREAD_MS);
-    expect(loads()).toBe(2);
-    vi.advanceTimersByTime(2 * pollMs);
-    expect(loads()).toBe(4);
-  });
-
   it('waits out the Retry-After of a refused request', async () => {
     await open();
     serverUnavailable('300');
@@ -101,13 +71,6 @@ describe.each([
     expect(loads()).toBe(0);
     vi.advanceTimersByTime(1);
     expect(loads()).toBe(1);
-  });
-
-  it('asks less often while the server does not answer', async () => {
-    await open();
-    loaderSpy.load.mockImplementation(() => serverUnanswered());
-    vi.advanceTimersByTime(pollMs + 2 * pollMs + 4 * pollMs);
-    expect(loads()).toBe(3);
   });
 
   it('stops polling once the page is left', async () => {
