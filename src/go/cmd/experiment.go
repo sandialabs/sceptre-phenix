@@ -571,20 +571,17 @@ func newExperimentDeleteCmd() *cobra.Command {
 					continue
 				}
 
-				err := config.Delete("experiment/" + exp.Metadata.Name)
+				err := experiment.Delete(exp.Metadata.Name)
 				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Unable to delete the "+exp.Metadata.Name+" experiment",
-					)
+					msg := "Unable to delete the " + exp.Metadata.Name + " experiment"
+					if errors.Is(err, experiment.ErrDeleteCleanup) {
+						msg = "The " + exp.Metadata.Name + " experiment was deleted, but its files were not all deleted"
+					}
+
+					err := util.HumanizeError(err, "%s", msg)
 					plog.Error(plog.TypeSystem, err.Humanize())
 					failed = append(failed, err)
-
-					continue
 				}
-
-				plog.Info(plog.TypeSystem, "experiment deleted", "exp", exp.Metadata.Name)
 			}
 
 			return deleteFailures(failed, "experiments")

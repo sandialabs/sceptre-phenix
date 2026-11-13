@@ -8,6 +8,7 @@ import (
 	"phenix/store"
 	"phenix/store/storetest"
 	"phenix/util/mm/mmtest"
+	"phenix/util/plog/plogtest"
 )
 
 // deleteFailStore is a BoltDB whose Update fails for the configs named in updateFail, and whose Delete fails for the
@@ -118,6 +119,54 @@ func TestExpCmdDeleteFailures(t *testing.T) { //nolint:paralleltest // replaces 
 				if got := expCmdState(t, name); got != want {
 					t.Errorf("experiment %q left %s %s, want %s", tt.args, name, got, want)
 				}
+			}
+		})
+	}
+}
+
+// TestExpCmdDeleteLogsTheSteps checks that experiment delete deletes through
+// experiment.Delete: it logs the time of each step, and an experiment whose
+// files it could not all delete is gone with an error that says so.
+func TestExpCmdDeleteLogsTheSteps(t *testing.T) { //nolint:paralleltest // replaces the phenix store and minimega
+	tests := []struct {
+		name      string
+		fail      map[string]string
+		humanized string
+	}{
+		{name: "deleted"},
+		{
+			name:      "files not all deleted",
+			fail:      map[string]string{"mesh send all file delete stopped/miniccc_responses": "mesh unreachable"},
+			humanized: "The stopped experiment was deleted, but its files were not all deleted",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := storetest.NewBolt(t)
+			storetest.Use(t, db)
+
+			cfg := vmCmdExperiment(t, "stopped", false)
+			if err := db.Create(&cfg); err != nil {
+				t.Fatalf("store.Create(stopped) error = %v", err)
+			}
+
+			mmtest.Use(t, vmCmdMinimega{fail: tt.fail}.handle)
+
+			logs := plogtest.Capture(t)
+
+			err := expCmdRun("delete", "stopped")
+			if msg := expCmdCheckErr(err, "", tt.humanized); msg != "" {
+				t.Errorf("experiment delete stopped %s", msg)
+			}
+
+			if got := expCmdState(t, "stopped"); got != "deleted" {
+				t.Errorf("experiment delete stopped left it %s, want deleted", got)
+			}
+
+			records := logs.Records(t, plogtest.Message("experiment deleted"))
+			if len(records) != 1 || records[0]["total"] == nil || records[0]["files"] == nil {
+				t.Errorf("experiment delete stopped logged %v, want one experiment deleted record with the step times", records)
 			}
 		})
 	}
