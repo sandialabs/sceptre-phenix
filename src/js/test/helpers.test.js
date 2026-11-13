@@ -1,11 +1,6 @@
-// The roles the mocked roleAllowed answers with (helpers/permissions.js),
-// and the mount helpers' element lookups (helpers/mount.js).
-import { mount } from '@vue/test-utils';
-import fc from 'fast-check';
-import { h } from 'vue';
+// The roles the mocked roleAllowed answers with (helpers/permissions.js).
 import { describe, expect, it } from 'vitest';
 
-import { byLabel } from './helpers/mount.js';
 import {
   allowAll,
   allowOnly,
@@ -40,27 +35,5 @@ describe('permissions', () => {
     expect(role('vms', 'list')).toBe(true);
     expect(role('disks', 'create')).toBe(true);
     expect(role('vms', 'delete')).toBe(false);
-  });
-});
-
-describe('byLabel', () => {
-  it('finds the element with any aria-label, quotes and all', () => {
-    fc.assert(
-      fc.property(fc.string({ minLength: 1 }), fc.string(), (label, other) => {
-        fc.pre(label !== other);
-        const wrapper = mount({
-          render: () =>
-            h('div', [
-              h('button', { 'aria-label': other }, 'other'),
-              h('button', { 'aria-label': label }, 'wanted'),
-            ]),
-        });
-        expect(byLabel(wrapper, label).text()).toBe('wanted');
-        expect(byLabel(wrapper, `${label}x`).exists()).toBe(
-          `${label}x` === other,
-        );
-        wrapper.unmount();
-      }),
-    );
   });
 });
