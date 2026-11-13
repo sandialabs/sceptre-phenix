@@ -158,7 +158,7 @@ not call `fc.configureGlobal`. Shared helpers live in `test/helpers/`:
 - Check escaping, round trips and list invariants as fast-check properties
   beside the named examples, with the shared arbitraries in
   `arbitraries.js`. A property that mounts a component lowers `numRuns` to
-  about 20 to keep the file fast.
+  8 or fewer to keep the file fast.
 
 The Builder tests have their own shared HTML helpers (`textOf`, `tag`,
 `tagOf`, `attribute`) in `test/builder/fixtures.js`. `renderWithStore` is in

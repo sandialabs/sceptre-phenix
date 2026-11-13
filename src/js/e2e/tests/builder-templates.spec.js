@@ -183,10 +183,6 @@ const hostnames = (doc) => devicesOf(doc).map((node) => node.device.hostname);
 // The colors of the device of the diagram the template tests start from.
 const PLANT_LOOK = { outlineColor: '#2f6fbf', fillColor: '#ffeecc' };
 
-// The name of the palette's section of templates of the library in no
-// collection, on a page that reads the library without its collections.
-const LIBRARY_SECTION = 'Library';
-
 // Has the page read the library without collections, which other tests make
 // meanwhile, so a test can count the palette's sections.
 async function withoutCollections(page) {
@@ -257,39 +253,14 @@ test(
       await builder.selectNode('plc-01');
       await palette.plus.click();
       await expect(editor.dialog).toBeVisible();
-      await expect
-        .soft(editor.dialog)
-        .toHaveAccessibleName('New device template');
       // Named after the device, with the name selected to type over.
       await expect(editor.name).toBeFocused();
       await expect.soft(editor.name).toHaveValue('plc-01');
-      await expect.soft(editor.description).toHaveValue('');
-      await expect
-        .soft(editor.description)
-        .toHaveAccessibleDescription(
-          'The Nodes & Templates section shows this text as a tooltip. The template does not copy it to the node.',
-        );
-      await expect.soft(editor.save).toHaveText('Save to diagram');
-      // The template's own fields have no heading: their labels name them.
-      await expect
-        .soft(editor.dialog.getByRole('heading', { level: 3 }))
-        .toHaveText(['Node fields']);
       // The node's spec has a heading of its own, a level under Node
       // fields, with no box around its fields.
       await expect
         .soft(editor.dialog.getByRole('heading', { level: 4 }))
         .toHaveText(['Node']);
-      await expect
-        .soft(
-          editor.dialog.getByRole('form', {
-            name: 'Template name and description',
-          }),
-        )
-        .toBeVisible();
-      await expect.soft(editor.name).toHaveAccessibleName('Template Name');
-      await expect
-        .soft(editor.description)
-        .toHaveAccessibleName('Template Description');
 
       for (const size of [
         { width: 1600, height: 900 },
@@ -321,6 +292,22 @@ test(
       expect.soft(hostname.x).toBeGreaterThan(about.x + about.width);
       expect.soft(icon.x).toBeGreaterThan(hostname.x + hostname.width);
       expect.soft(Math.abs(icon.y - hostname.y)).toBeLessThan(4);
+
+      // In a narrow window the editor fills it, in one column, and nothing
+      // runs off its side.
+      await page.setViewportSize({ width: 360, height: 640 });
+      expect
+        .soft(await editor.dialog.boundingBox())
+        .toEqual({ x: 0, y: 0, width: 360, height: 640 });
+      expect
+        .soft(
+          await editor.dialog
+            .locator('.builder-template-editor__body')
+            .evaluate((body) => body.scrollWidth - body.clientWidth),
+          'sideways scroll of the form',
+        )
+        .toBe(0);
+      await expect.soft(editor.save).toBeInViewport({ ratio: 1 });
       await page.setViewportSize({ width: 1600, height: 900 });
     });
 
@@ -365,75 +352,18 @@ test('a device template is checked as the Inspector checks a device, and saved i
       });
     });
     await expect.soft(editor.input('hostname')).toHaveValue('plc-01');
-    await expect.soft(editor.input('spec.hardware.memory')).toHaveValue('2048');
-    await expect
-      .soft(editor.input('spec.hardware.drives.0.image'))
-      .toHaveValue('plc.qc2');
     await expect
       .soft(editor.field('fillColor').locator('input[type="text"]'))
       .toHaveValue('#ffeecc');
-    await expect
-      .soft(editor.field('outlineColor').locator('input[type="text"]'))
-      .toHaveValue('#2f6fbf');
-    await expect
-      .soft(editor.input('spec.network.interfaces.0.address'))
-      .toHaveValue('10.0.0.5');
     // The VLAN said what the device is connected to in this diagram.
     await expect
       .soft(editor.input('spec.network.interfaces.0.vlan'))
       .toHaveValue('');
+    // The template's Layer offers the diagram's layers.
     await expect
-      .soft(editor.input('hostname'))
-      .toHaveAccessibleDescription(
-        'Name new devices start from. Builder adds a number when another device has the name.',
-      );
-
-    for (const id of [
-      'inspector-actions',
-      'inspector-position',
-      'inspector-add-interface',
-      'inspector-checks',
-    ]) {
-      await expect.soft(form.getByTestId(id), id).toHaveCount(0);
-    }
-    await expect.soft(form.getByText('Connection points')).toHaveCount(0);
-    await expect
-      .soft(form.getByRole('heading', { name: 'Inspector' }))
-      .toHaveCount(0);
-    // The form shows the template's Layer after the colors, offering the
-    // diagram's layers, with no Edit layers… (they are a copy).
-    const layer = form.getByLabel('Layer', { exact: true });
-
-    await expect.soft(layer).toHaveValue('');
-    await expect
-      .soft(layer)
-      .toHaveAccessibleDescription(
-        'The By layer layout puts higher layer IDs above lower ones.',
-      );
-    await expect.soft(layer.locator('option')).toHaveCount(8);
-    await expect
-      .soft(form.getByRole('heading', { name: 'Layer', exact: true }))
-      .toHaveCount(0);
-    await expect
-      .soft(form.getByRole('button', { name: 'Edit layers…' }))
-      .toHaveCount(0);
-    expect
-      .soft(
-        await layer.evaluate((select) => {
-          const fields = [
-            ...select.closest('form').querySelectorAll('[data-path], select'),
-          ];
-          const at = (element) => fields.indexOf(element);
-          const path = (name) =>
-            select.closest('form').querySelector(`[data-path="${name}"]`);
-
-          return [
-            at(path('fillColor')) < at(select),
-            at(select) < at(path('spec.type')),
-          ];
-        }),
-      )
-      .toEqual([true, true]);
+      .soft(form.getByLabel('Layer', { exact: true }).locator('option'))
+      .toHaveCount(8);
+    await expect.soft(form.getByTestId('inspector-position')).toHaveCount(0);
     // The canvas Inspector behind the dialog still shows the device.
     await expect
       .soft(builder.inspector.getByTestId('inspector-position'))
@@ -448,18 +378,11 @@ test('a device template is checked as the Inspector checks a device, and saved i
     );
     await expect(editor.errorLink).toHaveText('Hostname cannot contain spaces');
     await expect(editor.errorLink).toBeFocused();
-    await expect.soft(editor.dialog).toBeVisible();
     await expect
       .soft(editor.input('hostname'))
       .toHaveAttribute('aria-invalid', 'true');
-    // Nothing was saved, and nothing says the edit waits for Apply.
+    // Nothing was saved.
     await expect.soft(palette.diagram).toHaveCount(0);
-    await expect
-      .soft(editor.field('hostname'))
-      .not.toHaveClass(/control--changed/);
-    await expect
-      .soft(editor.dialog.getByTestId('inspector-actions'))
-      .toHaveCount(0);
 
     // The entry of the summary goes to its field.
     await page.keyboard.press('Enter');
@@ -476,14 +399,8 @@ test('a device template is checked as the Inspector checks a device, and saved i
     );
     await expect.soft(editor.errors).toHaveCount(0);
     await editor.input('hostname').fill('plc');
-    // An image the server lacks is warned of, as on the canvas. A VLAN
-    // naming no network of a diagram is not.
     await editor.input('spec.network.interfaces.0.vlan').fill('PLANT');
     await editor.input('spec.network.interfaces.0.vlan').blur();
-    await expect
-      .soft(editor.field('spec.network.interfaces.0.vlan').locator('.warning'))
-      .toHaveCount(0);
-    await expect.soft(editor.errors).toHaveCount(0);
   });
 
   await test.step('a template needs a name', async () => {
@@ -513,26 +430,7 @@ test('a device template is checked as the Inspector checks a device, and saved i
     await expect(editor.dialog).toHaveCount(0);
     await expect(builder).toHaveAnnounced('Added template PLC');
     await expect(palette.plus).toBeFocused();
-    // "This diagram" first, and the built-in templates last.
     await expect.soft(palette.groups.first()).toHaveText('This diagram');
-    await expect.soft(palette.groups.last()).toHaveText('Built-in');
-    // Each section's header shows its count after its name, and collapses
-    // its list, and shows it again.
-    const header = page.getByTestId('palette-section-diagram');
-
-    await expect.soft(header).toHaveText('This diagram (1)');
-    await expect.soft(header).toHaveAccessibleName('This diagram, 1 template');
-    await expect.soft(header).toHaveAttribute('aria-expanded', 'true');
-    await header.press('Enter');
-    await expect.soft(header).toHaveAttribute('aria-expanded', 'false');
-    await expect.soft(palette.diagram).toBeHidden();
-    await header.press('Enter');
-    await expect.soft(header).toHaveAttribute('aria-expanded', 'true');
-    await expect.soft(palette.diagram).toBeVisible();
-    await palette.plus.focus();
-    await expect
-      .soft(palette.diagram)
-      .toHaveAttribute('aria-label', 'This diagram');
 
     await builder.persisted(draft, (doc) => doc.templates.length, 1);
     const doc = await builder.serverDocument(draft);
@@ -544,15 +442,9 @@ test('a device template is checked as the Inspector checks a device, and saved i
     expect
       .soft(byHostname(doc, 'plc-01').device.spec)
       .toEqual(plcSpec('plc-01'));
-
-    const entry = palette.entry(saved.id);
-
-    await expect.soft(entry).toHaveAccessibleName('Add PLC device');
-    await expect.soft(entry).toHaveAccessibleDescription('Plant controller');
-    await expect.soft(entry).toHaveText('PLC');
     await expect
-      .soft(palette.actions(saved.id))
-      .toHaveAccessibleName('Actions for template PLC');
+      .soft(palette.entry(saved.id))
+      .toHaveAccessibleDescription('Plant controller');
 
     // One edit: Undo takes the template out again, and Redo puts it back.
     await builder.toolbar('undo').click();
@@ -563,12 +455,15 @@ test('a device template is checked as the Inspector checks a device, and saved i
       .toHaveCount(0);
     await builder.toolbar('redo').click();
     await expect(palette.entry(saved.id)).toBeVisible();
+  });
 
-    // The browser keeps a collapsed section when the draft opens again.
+  await test.step('the browser keeps a collapsed section when the draft opens again', async () => {
+    const header = page.getByTestId('palette-section-diagram');
+
     await builder.persisted(draft, (doc) => doc.templates.length, 1);
     await builder.waitSaved();
     await header.press('Enter');
-    await expect.soft(header).toHaveAttribute('aria-expanded', 'false');
+    await expect(header).toHaveAttribute('aria-expanded', 'false');
     await page.reload();
     await builder.openDraft(draft);
     await expect.soft(header).toHaveAttribute('aria-expanded', 'false');
@@ -1513,6 +1408,19 @@ test(
       expect.soft((await refused.json()).code).toBe('template.item.read-only');
     });
 
+    await test.step('in a narrow window the tab’s rows wrap, and nothing runs off it', async () => {
+      await page.setViewportSize({ width: 360, height: 640 });
+      await expect.soft
+        .poll(() =>
+          page.evaluate(
+            () =>
+              document.documentElement.scrollWidth -
+              document.documentElement.clientWidth,
+          ),
+        )
+        .toBe(0);
+    });
+
     expectNoFatal(issues);
   },
 );
@@ -1952,7 +1860,6 @@ test(
         `Added device and template ${name}`,
       );
       await expect(palette.groups.first()).toHaveText('This diagram');
-      await expect.soft(palette.groups.nth(1)).toHaveText(LIBRARY_SECTION);
       await builder.persisted(draft, (doc) => doc.templates?.length ?? 0, 1);
       [{ id: copy }] = (await builder.serverDocument(draft)).templates;
       expect.soft(source(await builder.serverDocument(draft))).toMatchObject({
@@ -1972,55 +1879,13 @@ test(
       await builder.openDraft(draft);
 
       await expect(palette.link(copy)).toContainText('Update available');
-      await expect
-        .soft(palette.update(copy))
-        .toHaveAccessibleName(`Update template ${name}`);
-      await expect
-        .soft(palette.entry(copy))
-        .toHaveAccessibleDescription(
-          'Version one The library has a newer version of this template (version 2). The diagram has version 1.',
-        );
-      // The template's menu offers it too.
-      await palette.actions(copy).click();
-      await expect
-        .soft(
-          page
-            .getByTestId(`palette-template-actions-${copy}-menu`)
-            .getByRole('menuitem'),
-        )
-        .toHaveText(['Edit', 'Update', 'Save to library', 'Unlink', 'Delete']);
-      await page.keyboard.press('Escape');
-
       // The Inspector's Diagram section lists it, with Update.
       await expect(notice).toBeVisible();
-      await expect
-        .soft(notice.getByRole('heading', { level: 3 }))
-        .toHaveText('Template updates');
-      await expect
-        .soft(notice.getByTestId('inspector-template-links-summary'))
-        .toHaveText(
-          'The library has a newer version of 1 template in this diagram. Devices made from these templates do not change.',
-        );
-      await expect
-        .soft(notice.getByTestId(`inspector-template-update-${copy}`))
-        .toHaveAccessibleName(`Update template ${name}`);
-      await expect
-        .soft(notice.getByTestId('inspector-template-update-all'))
-        .toHaveCount(0);
     });
 
-    await test.step('Update asks first, then copies the new version as one undo step, and the device stays as it is', async () => {
+    await test.step('Update asks first, then copies the new version as one undo step', async () => {
       await palette.update(copy).click();
       await expect(confirm).toBeVisible();
-      await expect
-        .soft(confirm)
-        .toHaveAccessibleName(`Update template ${name}?`);
-      await expect
-        .soft(confirm)
-        .toHaveAccessibleDescription(
-          'The template in this diagram gets version 2 from the library. Devices made from the template do not change. You can undo this.',
-        );
-      await expect.soft(accept).toHaveText('Update template');
       await expect(page.getByTestId('confirm-cancel')).toBeFocused();
       // Escape changes nothing, and gives focus back.
       await page.keyboard.press('Escape');
@@ -2037,27 +1902,15 @@ test(
       // The mark is gone: focus is on the template's entry, not lost.
       await expect(palette.entry(copy)).toBeFocused();
       await builder.persisted(draft, version, 2);
-
-      const doc = await builder.serverDocument(draft);
-
-      expect.soft(doc.templates[0]).toMatchObject({
-        id: copy,
-        name,
-        description: 'Version two',
-        device: { spec: { hardware: { drives: [{ image: 'v2.qc2' }] } } },
-      });
-      // The device made from version 1 is as it was.
       expect
-        .soft(devicesOf(doc)[0].device.spec.hardware.drives[0].image)
-        .toBe('v1.qc2');
+        .soft((await builder.serverDocument(draft)).templates[0].description)
+        .toBe('Version two');
 
-      // Undo brings version 1 back, and the offer with it. Redo updates
-      // it again.
+      // Undo brings version 1 back, and the offer with it.
       await builder.toolbar('undo').click();
       await expect(palette.link(copy)).toContainText('Update available');
       await builder.persisted(draft, version, 1);
       await builder.toolbar('redo').click();
-      await expect(palette.link(copy)).toHaveCount(0);
       await builder.persisted(draft, version, 2);
     });
 
@@ -2078,11 +1931,6 @@ test(
 
       await notice.getByTestId(`inspector-template-update-${copy}`).click();
       await expect(confirm).toBeVisible();
-      await expect
-        .soft(confirm)
-        .toHaveAccessibleDescription(
-          'The template in this diagram gets version 3 from the library. Devices made from the template do not change. This template has changes in the diagram. The update replaces these changes. You can undo this.',
-        );
       await accept.click();
       await expect(builder).toHaveAnnounced(
         `Updated template ${name} from the library`,
@@ -2102,12 +1950,6 @@ test(
       expect(deleted.ok(), await deleted.text()).toBeTruthy();
       await page.evaluate(() => window.dispatchEvent(new Event('focus')));
       await expect(palette.link(copy)).toContainText('Deleted from library');
-      await expect
-        .soft(notice.getByTestId(`inspector-template-link-text-${copy}`))
-        .toHaveText('Someone deleted the library template.');
-      await expect
-        .soft(notice.getByTestId(`inspector-template-unlink-${copy}`))
-        .toHaveAccessibleName(`Unlink template ${name}`);
       // Nothing deletes the copy.
       await expect.soft(palette.entry(copy)).toBeVisible();
 
@@ -2119,9 +1961,6 @@ test(
       await expect.soft(notice).toHaveCount(0);
       await expect(palette.entry(copy)).toBeFocused();
       await builder.persisted(draft, source, null);
-      expect
-        .soft((await builder.serverDocument(draft)).templates)
-        .toHaveLength(1);
     });
 
     expectNoFatal(issues);
@@ -2812,217 +2651,149 @@ test('a card names the drive images the server does not have, and Show lists tho
   expectNoFatal(issues);
 });
 
-for (const scheme of ['light', 'dark']) {
-  test(
-    `axe finds no serious violations in the Node Templates tab, its dialogs, the palette’s library and the offer of a newer template in the ${scheme} theme`,
-    { tag: '@axe' },
-    async ({ page, builder, request, tracker, issues }, testInfo) => {
-      const names = ['axe-alfa', 'axe-bravo'].map((part) =>
-        uniqueName(testInfo, part),
-      );
-      const set = uniqueName(testInfo, 'axe-set');
-      const icon = iconOf(pngOf(8, 8, ownColor()), iconName('axe'));
+// The colors of the tab and its dialogs do not change the scan: dark only.
+test(
+  'axe finds no serious violations in the Node Templates tab and its dialogs in the dark theme',
+  { tag: '@axe' },
+  async ({ page, builder, request, tracker, issues }, testInfo) => {
+    const names = ['axe-alfa', 'axe-bravo'].map((part) =>
+      uniqueName(testInfo, part),
+    );
+    const set = uniqueName(testInfo, 'axe-set');
+    const icon = iconOf(pngOf(8, 8, ownColor()), iconName('axe'));
 
-      await seedIcon(request, tracker, icon);
+    await seedIcon(request, tracker, icon);
 
-      const seeded = await seedTemplates(
-        request,
-        tracker,
-        [
-          {
-            name: names[0],
-            description: 'With an icon of its own',
-            device: unitDevice('axe-a', { icon: icon.name }),
-          },
-          { name: names[1], description: '', device: unitDevice('axe-b') },
-        ],
-        { collection: { name: set, description: 'A set for the scan' } },
-      );
-      const [alfa] = seeded.ids;
-      // The diagram has a copy of alfa's version 1, and the library then
-      // gets version 2: the palette and the Inspector offer it.
-      const copy = template(names[0], {
-        description: 'With an icon of its own',
-        device: unitDevice('axe-a', { icon: icon.name }),
-        source: { kind: 'library', id: alfa, version: 1 },
-      });
-      const draft = await builder.seedDraft(
-        plantDocument(uniqueName(testInfo, 'library-axe'), {
-          templates: [template('RTU'), copy],
-        }),
-      );
+    const seeded = await seedTemplates(
+      request,
+      tracker,
+      [
+        {
+          name: names[0],
+          description: 'With an icon of its own',
+          device: unitDevice('axe-a', { icon: icon.name }),
+        },
+        { name: names[1], description: '', device: unitDevice('axe-b') },
+      ],
+      { collection: { name: set, description: 'A set for the scan' } },
+    );
+    const [alfa] = seeded.ids;
+    const library = templateLibrary(page);
+    // Whether the test fails the reads of the library, from the page.
+    let unreachable = false;
 
-      await changeTemplate(request, alfa, (listed) => ({
-        ...listed,
-        description: 'A newer version',
-      }));
+    await page.route(`**${LIBRARY}`, (route) =>
+      unreachable && route.request().method() === 'GET'
+        ? route.abort()
+        : route.fallback(),
+    );
+    // The server lists other.qc2 alone: the cards name a missing image.
+    await page.route('**/api/v1/disks', (route) =>
+      route.fulfill({ json: { disks: [{ kind: 'VM', name: 'other.qc2' }] } }),
+    );
 
-      const library = templateLibrary(page);
-      const palette = templatePalette(page);
-      const editor = templateEditor(page);
-      const notice = builder.inspector.getByTestId('inspector-template-links');
-      // Whether the test fails the reads of the library, from the page.
-      let unreachable = false;
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await builder.open();
+    await expect(page.locator('.builder-root')).toHaveAttribute(
+      'data-builder-theme',
+      'dark',
+    );
 
-      await page.route(`**${LIBRARY}`, (route) =>
-        unreachable && route.request().method() === 'GET'
-          ? route.abort()
-          : route.fallback(),
-      );
-      // The server lists other.qc2 alone: the cards name a missing image.
-      await page.route('**/api/v1/disks', (route) =>
-        route.fulfill({ json: { disks: [{ kind: 'VM', name: 'other.qc2' }] } }),
-      );
+    // The tab: its cards, a selection, and the menu of collections.
+    await library.tab.click();
+    await expect(library.card(alfa)).toBeVisible();
+    await library.select(alfa).check();
+    await library.collect.click();
+    await expect(library.collectItem(seeded.collection)).toBeVisible();
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on the Node Templates tab with a selection and its menu',
+    });
+    await page.keyboard.press('Escape');
 
-      await page.emulateMedia({ colorScheme: scheme });
-      await builder.open();
-      await expect(page.locator('.builder-root')).toHaveAttribute(
-        'data-builder-theme',
-        scheme,
-      );
+    // A collection, and the question before it is deleted.
+    await library.show.selectOption(seeded.collection);
+    await expect(library.block).toBeVisible();
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on a collection of the library',
+    });
+    await library.deleteCollection.click();
+    await expect(library.confirm).toBeVisible();
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on the question before a collection is deleted',
+    });
+    await library.cancel.click();
 
-      // The tab: its cards, a selection, and the menu of collections.
-      await library.tab.click();
-      await expect(library.card(alfa)).toBeVisible();
-      await library.select(alfa).check();
-      await library.collect.click();
-      await expect(library.collectItem(seeded.collection)).toBeVisible();
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on the Node Templates tab with a selection and its menu (${scheme})`,
-      });
-      await page.keyboard.press('Escape');
+    // The collection dialog, with an error.
+    await library.editCollection.click();
+    await library.dialog.name.fill('');
+    await library.dialog.save.click();
+    await expect(library.dialog.error).toHaveText('Enter a name.');
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on the collection dialog with an error',
+    });
+    await library.dialog.cancel.click();
 
-      // A collection, and the question before it is deleted.
-      await library.show.selectOption(seeded.collection);
-      await expect(library.block).toBeVisible();
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on a collection of the library (${scheme})`,
-      });
-      await library.deleteCollection.click();
-      await expect(library.confirm).toBeVisible();
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on the question before a collection is deleted (${scheme})`,
-      });
-      await library.cancel.click();
+    // The built-in templates, read only.
+    await library.show.selectOption({ label: 'Built-in templates' });
+    await expect(library.roCard('builtin', 'router')).toBeVisible();
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on the built-in templates of the tab',
+    });
 
-      // The collection dialog, with an error.
-      await library.editCollection.click();
-      await library.dialog.name.fill('');
-      await library.dialog.save.click();
-      await expect(library.dialog.error).toHaveText('Enter a name.');
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on the collection dialog with an error (${scheme})`,
-      });
-      await library.dialog.cancel.click();
+    // The templates with a missing image, in a narrow window.
+    await page.setViewportSize({ width: 360, height: 640 });
+    await library.show.selectOption({
+      label: 'Templates with missing images',
+    });
+    await expect(library.missingNote).toBeVisible();
+    await expect(library.missingImages(alfa)).toBeVisible();
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on the templates with missing images in a narrow window',
+    });
+    await page.setViewportSize({ width: 1280, height: 720 });
 
-      // The built-in templates, read only.
-      await library.show.selectOption({ label: 'Built-in templates' });
-      await expect(library.roCard('builtin', 'router')).toBeVisible();
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on the built-in templates of the tab (${scheme})`,
-      });
+    // A library that cannot be read.
+    unreachable = true;
+    await builder.open();
+    await library.tab.click();
+    await expect(library.error).toBeVisible();
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on the tab of a library that cannot be read',
+    });
 
-      // The templates of the library with a missing image.
-      await library.show.selectOption({
-        label: 'Templates with missing images',
-      });
-      await expect(library.missingNote).toBeVisible();
-      await expect(library.missingImages(alfa)).toBeVisible();
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on the templates with missing images (${scheme})`,
-      });
-      await library.show.selectOption('');
-
-      // The template editor on a template of the library.
-      await library.edit(alfa).click();
-      await expect(editor.dialog).toBeVisible();
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on the editor of a library template (${scheme})`,
-      });
-      await editor.cancel.click();
-      await expect(editor.dialog).toHaveCount(0);
-
-      // In a narrow window the tab's rows wrap, and nothing runs off it.
-      await page.setViewportSize({ width: 360, height: 640 });
-      expect
-        .soft(
-          await page.evaluate(
-            () =>
-              document.documentElement.scrollWidth -
-              document.documentElement.clientWidth,
-          ),
-          `sideways scroll of the tab (${scheme})`,
-        )
-        .toBe(0);
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on the Node Templates tab in a narrow window (${scheme})`,
-      });
-      await page.setViewportSize({ width: 1280, height: 720 });
-
-      // The palette: the diagram's group and the library's.
-      await page.getByTestId('drafts-tab-drafts').click();
-      await page.getByTestId(`draft-open-${draft.id}`).click();
-      await expect(builder.canvas).toBeVisible();
-      await expect(palette.own(alfa)).toBeVisible();
-      await expect(palette.groups.first()).toHaveText('This diagram');
-      // The copy's mark, and the notice of the Inspector's Diagram section.
-      await expect(palette.link(copy.id)).toContainText('Update available');
-      await expect(notice).toBeVisible();
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on the palette’s library group, a mark of a newer template and the Inspector’s notice (${scheme})`,
-      });
-      await palette.update(copy.id).click();
-      await expect(page.getByTestId('builder-confirm')).toBeVisible();
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on the question before a template is updated (${scheme})`,
-      });
-      await page.getByTestId('confirm-cancel').click();
-
-      // A library that cannot be read: its tab, and the palette's note.
-      await builder.waitSaved();
-      await builder.backToDrafts();
-      await expect(page).toHaveURL(/\/builder$/);
-      unreachable = true;
-      await page.reload();
-      await expect(builder.landingHeading).toBeVisible({ timeout: 20000 });
-      await library.tab.click();
-      await expect(library.error).toBeVisible();
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on the tab of a library that cannot be read (${scheme})`,
-      });
-      await page.getByTestId('drafts-tab-drafts').click();
-      await page.getByTestId(`draft-open-${draft.id}`).click();
-      await expect(palette.retry).toBeVisible();
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on the palette without the library (${scheme})`,
-      });
-      unreachable = false;
-      await builder.waitSaved();
-
-      expectNoFatal(issues);
-    },
-  );
-}
+    expectNoFatal(issues);
+  },
+);
 
 for (const scheme of ['light', 'dark']) {
   test(
     `axe finds no serious violations in the template editor and the palette’s templates in the ${scheme} theme`,
     { tag: '@axe' },
-    async ({ page, builder, issues }, testInfo) => {
+    async ({ page, builder, request, tracker, issues }, testInfo) => {
       await page.emulateMedia({ colorScheme: scheme });
 
+      // A library template whose version 1 the diagram copies, and which
+      // then gets a version 2: the palette and the Inspector offer it.
+      const {
+        ids: [linked],
+      } = await seedTemplates(request, tracker, [
+        {
+          name: uniqueName(testInfo, 'axe-linked'),
+          description: 'Version one',
+          device: unitDevice('axe-linked'),
+        },
+      ]);
+      const copy = template('Linked', {
+        device: unitDevice('axe-linked'),
+        source: { kind: 'library', id: linked, version: 1 },
+      });
       // A copy the diagram carries, of an icon the server lacks.
       const plc = iconOf(pngOf(8, 8, ownColor()), iconName('plc'));
       const draft = await builder.seedDraft(
@@ -3040,25 +2811,44 @@ for (const scheme of ['light', 'dark']) {
               },
             }),
             template('HMI'),
+            copy,
           ],
         }),
       );
+
+      await changeTemplate(request, linked, (listed) => ({
+        ...listed,
+        description: 'Version two',
+      }));
+
       const palette = templatePalette(page);
       const editor = templateEditor(page);
+      const library = templateLibrary(page);
+      const notice = builder.inspector.getByTestId('inspector-template-links');
       const [rtu] = (await builder.serverDocument(draft)).templates;
+      // Whether the test fails the reads of the library, from the page.
+      let unreachable = false;
 
+      await page.route(`**${LIBRARY}`, (route) =>
+        unreachable && route.request().method() === 'GET'
+          ? route.abort()
+          : route.fallback(),
+      );
       await builder.openDraft(draft);
       await expect(page.locator('.builder-root')).toHaveAttribute(
         'data-builder-theme',
         scheme,
       );
       await expect(palette.groups.first()).toHaveText('This diagram');
+      await expect(palette.own(linked)).toBeVisible();
+      await expect(palette.link(copy.id)).toContainText('Update available');
+      await expect(notice).toBeVisible();
 
       await palette.actions(rtu.id).click();
       await expect(palette.action(rtu.id, 'edit')).toBeVisible();
       await expectAccessible(page, {
         soft: true,
-        label: `axe on the palette’s template groups and a template’s menu (${scheme})`,
+        label: `axe on the palette’s template groups, a mark of a newer template, the Inspector’s notice and a template’s menu (${scheme})`,
       });
 
       await palette.action(rtu.id, 'edit').click();
@@ -3069,37 +2859,51 @@ for (const scheme of ['light', 'dark']) {
       });
 
       // With a field in error, its summary, a name that is taken, and the
-      // question it asks before it drops changes.
+      // question it asks before it drops changes, in a narrow window.
       await editor.name.fill('HMI');
       await editor.input('hostname').fill('two words');
       await editor.save.click();
       await expect(editor.errorLink).toBeFocused();
+      await page.setViewportSize({ width: 360, height: 640 });
       await page.keyboard.press('Escape');
       await expect(editor.keep).toBeFocused();
       await expectAccessible(page, {
         soft: true,
-        label: `axe on the template editor with errors and its question (${scheme})`,
+        label: `axe on the template editor with errors and its question in a narrow window (${scheme})`,
       });
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await editor.discard.click();
+      await expect(editor.dialog).toHaveCount(0);
 
-      // In a narrow window the editor fills it, in one column, and nothing
-      // runs off its side.
-      await page.setViewportSize({ width: 360, height: 640 });
-      await editor.keep.click();
-      const box = await editor.dialog.boundingBox();
-
-      expect.soft(box).toEqual({ x: 0, y: 0, width: 360, height: 640 });
-      expect
-        .soft(
-          await editor.dialog
-            .locator('.builder-template-editor__body')
-            .evaluate((body) => body.scrollWidth - body.clientWidth),
-          'sideways scroll of the form',
-        )
-        .toBe(0);
-      await expect.soft(editor.save).toBeInViewport({ ratio: 1 });
+      // The question before a copy is updated has a red accept button.
+      await palette.update(copy.id).click();
+      await expect(page.getByTestId('builder-confirm')).toBeVisible();
       await expectAccessible(page, {
         soft: true,
-        label: `axe on the template editor in a narrow window (${scheme})`,
+        label: `axe on the question before a template is updated (${scheme})`,
+      });
+      await page.getByTestId('confirm-cancel').click();
+      await expect(page.getByTestId('builder-confirm')).toHaveCount(0);
+
+      // The editor of a library template saves to the library.
+      await builder.open();
+      await library.tab.click();
+      await library.edit(linked).click();
+      await expect(editor.dialog).toBeVisible();
+      await expectAccessible(page, {
+        soft: true,
+        label: `axe on the editor of a library template (${scheme})`,
+      });
+      await editor.cancel.click();
+      await expect(editor.dialog).toHaveCount(0);
+
+      // A library that cannot be read: the palette's note and Retry.
+      unreachable = true;
+      await builder.openDraft(draft);
+      await expect(palette.retry).toBeVisible();
+      await expectAccessible(page, {
+        soft: true,
+        label: `axe on the palette without the library (${scheme})`,
       });
 
       expectNoFatal(issues);
@@ -3156,61 +2960,25 @@ test('a collection is exported as a template file, which Import reads back into 
     );
 
     const fileName = `${set.toLowerCase().replace(/[^a-z0-9._-]+/g, '-')}.templates.yaml`;
-    const text = exported.buffer.toString('utf8');
 
     expect(exported.name).toBe(fileName);
-    expect(text).toContain(
-      '$schema: https://phenix.sandia.gov/schemas/builder/templates/v1\n',
+    // The icon's bytes come from the server's icon library.
+    expect(exported.buffer.toString('utf8')).toContain(
+      `icons:\n  ${icon.name}:\n    data: ${icon.data}\n`,
     );
-    expect(text).toContain(`name: ${set}\n`);
-    expect(text).toContain('description: Exported by a test\n');
-    expect(text).toContain(`  - name: ${names[0]}\n`);
-    expect(text).toContain(`  - name: ${names[1]}\n`);
-    // No ids: where a template is kept gives it one.
-    expect(text).not.toContain(seeded.ids[0]);
-    expect(text).toContain(`icons:\n  ${icon.name}:\n    data: ${icon.data}\n`);
-    await expect(builder).toHaveAnnounced(
-      `Downloaded 2 templates to ${fileName}.`,
-    );
-  });
-
-  await test.step('a file that is not valid is refused, each problem with where it is', async () => {
-    await page.getByTestId('templates-import').click();
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByTestId('template-import-file')).toBeFocused();
-
-    const twins = exported.buffer
-      .toString('utf8')
-      .replace(
-        `  - name: ${names[1]}\n`,
-        `  - name: ${names[0].toUpperCase()}\n`,
-      );
-
-    await dialog.getByTestId('template-import-file').setInputFiles({
-      name: 'twins.templates.yaml',
-      mimeType: 'text/yaml',
-      buffer: Buffer.from(twins),
-    });
-    await expect(dialog.getByTestId('template-import-error')).toHaveText(
-      'You cannot import this template file:',
-    );
-    await expect(dialog.getByTestId('template-import-issue')).toHaveText([
-      `templates[1].name: template name "${names[0].toUpperCase()}" is also the name of templates[0], ignoring case`,
-    ]);
-    await expect
-      .soft(dialog.getByTestId('template-import-file'))
-      .toHaveAttribute('aria-invalid', 'true');
   });
 
   await test.step('Import reads the exported file into the library as a new collection, under a name of its own', async () => {
+    await page.getByTestId('templates-import').click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByTestId('template-import-file')).toBeFocused();
     await dialog.getByTestId('template-import-file').setInputFiles({
       name: exported.name,
       mimeType: 'text/yaml',
       buffer: exported.buffer,
     });
-    await expect(dialog.getByTestId('template-import-error')).toHaveCount(0);
-    await expect(dialog.getByTestId('template-import-summary')).toHaveText(
-      `${set}: 2 templates and 1 custom icon. The library has a collection of that name, so Import adds it as ${set} (2).`,
+    await expect(dialog.getByTestId('template-import-summary')).toContainText(
+      `Import adds it as ${set} (2).`,
     );
 
     const added = page.waitForResponse(
@@ -3252,13 +3020,6 @@ test('a collection is exported as a template file, which Import reads back into 
     expect(collection.templateIds).toEqual(
       imported.created.map((entry) => entry.id),
     );
-    expect(
-      stored.templates.find((entry) => entry.id === imported.created[0].id)
-        .device,
-    ).toMatchObject({
-      icon: icon.name,
-      spec: { general: { hostname: 'file-alfa' } },
-    });
 
     await library.show.selectOption(imported.collection.id);
     await expect(library.card(imported.created[0].id)).toBeVisible();

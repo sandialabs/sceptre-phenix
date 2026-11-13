@@ -396,128 +396,79 @@ describe("a device's look is applied without Apply", () => {
     return { iconKey, outlineColor, fillColor };
   };
 
-  test('a fill color chosen in the form is on the device at once, named in Undo', async () => {
-    const { doc, alpha } = sampleDocument();
-    const { wrapper, store, settle } = await openInspector(
-      doc,
-      alpha,
-      (data) => {
-        data.fillColor = '#2f6fbf';
-      },
-    );
-    const version = store.historyVersion;
-
-    expect(lookOf(store, alpha).fillColor).toBe('#2f6fbf');
-    expect(store.history.undoLabel()).toBe(
-      'Changed the fill color of Device alpha to #2f6fbf',
-    );
-    // Nothing is left for Apply or a save to apply.
-    expect(actionsShown(wrapper)).toBe(false);
-    expect(settle()).toBe('');
-    expect(store.historyVersion).toBe(version);
-
-    store.undo();
-
-    expect('fillColor' in findNode(store.doc, alpha.id).device).toBe(false);
-  });
-
-  test('an outline color, and a color removed, each say so', async () => {
-    const { doc, alpha } = sampleDocument();
-    const outlined = await openInspector(doc, alpha, (data) => {
-      data.outlineColor = '#A3273F';
-    });
-
-    expect(lookOf(outlined.store, alpha).outlineColor).toBe('#A3273F');
-    expect(outlined.store.history.undoLabel()).toBe(
+  // Each row is an edit of the form's data and the Undo step it makes. A
+  // value of undefined empties the field, which then has no key in the form.
+  const looks = [
+    [
+      { fillColor: '#1f7a5a' },
+      'Changed the fill color of Device alpha to #1f7a5a',
+    ],
+    [
+      { outlineColor: '#A3273F' },
       'Changed the outline color of Device alpha to #A3273F',
-    );
+    ],
+    [{ fillColor: undefined }, 'Removed the fill color of Device alpha'],
+    [{ iconKey: 'router' }, 'Changed the icon of Device alpha to Router'],
+    // The custom icon's copy leaves the document with it.
+    [{ icon: undefined }, 'Removed the custom icon of Device alpha'],
+    // The dialog's choice is a name (see InspectorIconControl), which the
+    // icon library resolves, maybe later: the document carries no copy.
+    [
+      { icon: 'not-uploaded' },
+      'Changed the custom icon of Device alpha to not-uploaded',
+    ],
+  ];
 
-    const filled = updateNode(doc, alpha.id, {
-      device: { fillColor: '#2f6fbf' },
-    });
-    // An emptied field has no key in the form.
-    const emptied = await openInspector(filled, alpha, (data) => {
-      delete data.fillColor;
-    });
-
-    expect('fillColor' in findNode(emptied.store.doc, alpha.id).device).toBe(
-      false,
-    );
-    expect(emptied.store.history.undoLabel()).toBe(
-      'Removed the fill color of Device alpha',
-    );
-  });
-
-  test('an icon is still applied at once, under its own name', async () => {
+  test('each look field is on the device at once, as one Undo step named for it', async () => {
     const { doc, alpha } = sampleDocument();
-    const { store } = await openInspector(doc, alpha, (data) => {
-      data.iconKey = 'router';
-    });
-
-    expect(lookOf(store, alpha).iconKey).toBe('router');
-    expect(store.history.undoLabel()).toBe(
-      'Changed the icon of Device alpha to Router',
-    );
-  });
-
-  // The dialog's choice is a name (see InspectorIconControl), which the
-  // icon library resolves: the document carries no copy for it.
-  test('a custom icon chosen in its dialog is on the device at once, by its name', async () => {
-    const { doc, alpha } = sampleDocument();
-    const { wrapper, store, settle } = await openInspector(
-      doc,
-      alpha,
-      (data) => {
-        data.icon = 'plc';
-      },
-    );
-    const device = () => findNode(store.doc, alpha.id).device;
-
-    expect(device().icon).toBe('plc');
-    expect('icons' in store.doc).toBe(false);
-    expect(store.history.undoLabel()).toBe(
-      'Changed the custom icon of Device alpha to plc',
-    );
-    expect(store.announcement).toBe(
-      'Changed the custom icon of Device alpha to plc',
-    );
-    // Nothing is left for Apply or a save to apply.
-    expect(actionsShown(wrapper)).toBe(false);
-    expect(settle()).toBe('');
-
-    store.undo();
-
-    expect('icon' in device()).toBe(false);
-  });
-
-  test('a custom icon removed says so, and its copy leaves the document', async () => {
-    const { doc, alpha } = sampleDocument();
-    const using = {
-      ...updateNode(doc, alpha.id, { device: { icon: 'plc' } }),
+    const styled = {
+      ...updateNode(doc, alpha.id, {
+        device: { fillColor: '#2f6fbf', icon: 'plc' },
+      }),
       icons: { plc: { data: ICON_DATA } },
     };
-    // An emptied field has no key in the form.
-    const { store } = await openInspector(using, alpha, (data) => {
-      delete data.icon;
-    });
-
-    expect('icon' in findNode(store.doc, alpha.id).device).toBe(false);
-    expect('icons' in store.doc).toBe(false);
-    expect(store.history.undoLabel()).toBe(
-      'Removed the custom icon of Device alpha',
+    const { wrapper, store, settle } = await openInspector(
+      styled,
+      alpha,
+      () => {},
     );
-  });
+    const device = () => findNode(store.doc, alpha.id).device;
+    const before = device();
 
-  // The device names an icon the server may get later: its node draws the
-  // built-in icon meanwhile.
-  test('a name nothing resolves is the device’s all the same', async () => {
-    const { doc, alpha } = sampleDocument();
-    const { store } = await openInspector(doc, alpha, (data) => {
-      data.icon = 'not-uploaded';
-    });
+    for (const [change, label] of looks) {
+      const data = formData(wrapper);
+      const step = store.history.index;
 
-    expect(findNode(store.doc, alpha.id).device.icon).toBe('not-uploaded');
-    expect('icons' in store.doc).toBe(false);
+      for (const [key, value] of Object.entries(change)) {
+        if (value === undefined) {
+          delete data[key];
+        } else {
+          data[key] = value;
+        }
+      }
+      await sendFormData(wrapper, data);
+
+      for (const [key, value] of Object.entries(change)) {
+        expect(device()[key], label).toBe(value);
+        expect(key in device(), label).toBe(value !== undefined);
+      }
+      if ('icon' in change) {
+        expect('icons' in store.doc, label).toBe(false);
+      }
+      expect(store.history.index, label).toBe(step + 1);
+      expect(store.history.undoLabel()).toBe(label);
+      expect(store.announcement).toBe(label);
+      // Nothing is left for Apply or a save to apply.
+      expect(actionsShown(wrapper), label).toBe(false);
+      expect(settle(), label).toBe('');
+      expect(store.history.index, label).toBe(step + 1);
+
+      store.undo();
+      expect(device(), label).toEqual(before);
+      // Undo clears the selection.
+      store.select({ nodes: [alpha.id] });
+      await flushPromises();
+    }
   });
 
   test('the field and the dialog see the diagram’s copies, then the icon library’s icons', async () => {
@@ -720,253 +671,268 @@ describe('the look of every kind is applied without Apply', () => {
     return { ...opened, label: () => opened.store.history.undoLabel() };
   }
 
-  test("a switch's colors, its network's color and line style, and its icon size", async () => {
-    const { doc, sw } = sampleDocument();
-    const { wrapper, store, settle, label } = await changed(doc, sw, {
-      fillColor: '#6b6f18',
-      outlineColor: '#a3273f',
-      color: '#123456',
-      iconSize: 'large',
-      lineStyle: 'dotted',
-    });
+  // The sample, with a node of `spec` added or its element `name` chosen.
+  const added = (spec) => () => addNode(sampleDocument().doc, spec);
+  const sample = (name) => () => {
+    const opened = sampleDocument();
 
-    expect(findNode(store.doc, sw.id).switch).toEqual({
-      ...sw.switch,
-      outlineColor: '#a3273f',
-      fillColor: '#6b6f18',
-      iconSize: 'large',
-    });
-    expect(store.doc.networks[0].color).toBe('#123456');
-    // The network's line style is in the look too.
-    expect(store.doc.networks[0].lineStyle).toBe('dotted');
-    expect(label()).toBe('Changed the edge color of Network EXP to #123456');
-    expect(actionsShown(wrapper)).toBe(false);
-    expect(settle()).toBe('');
+    return { doc: opened.doc, node: opened[name] };
+  };
+  const nodeOf = (kind) => (doc, node) => findNode(doc, node.id)[kind];
+  const edgeOf = (doc, node) => doc.edges.find((entry) => entry.id === node.id);
 
-    // The look was one edit, so one Undo takes it back.
-    store.undo();
-    expect(findNode(store.doc, sw.id).switch).toEqual(sw.switch);
-    expect(store.doc.networks[0].color).toBe(doc.networks[0].color);
-    expect('lineStyle' in store.doc.networks[0]).toBe(false);
-  });
-
-  test("a switch's line style alone is one Undo step, and its name waits for Apply", async () => {
-    const { doc, sw } = sampleDocument();
-    const { wrapper, store, settle, label } = await changed(doc, sw, {
-      name: 'LAN',
-      lineStyle: 'dash-dot',
-    });
-
-    expect(store.doc.networks[0].lineStyle).toBe('dash-dot');
-    expect(store.doc.networks[0].name).toBe('EXP');
-    expect(label()).toBe('Changed the line style of Network EXP to Dash-dot');
-    expect(actionsShown(wrapper)).toBe(true);
-    expect(settle()).toBe('');
-    expect(store.doc.networks[0].name).toBe('LAN');
-
-    store.undo();
-    store.undo();
-    expect(store.doc.networks[0]).toEqual(doc.networks[0]);
-  });
-
-  test("a connection's label, color and line style", async () => {
-    const { doc, edge } = sampleDocument();
-    const { wrapper, store, label } = await changed(doc, edge, {
-      label: 'uplink',
-    });
-    const now = () => store.doc.edges.find((entry) => entry.id === edge.id);
-
-    expect(now().label).toBe('uplink');
-    expect(label()).toMatch(/^Changed the label of Connection .* to "uplink"$/);
-    expect(actionsShown(wrapper)).toBe(false);
-
-    const styled = await changed(doc, edge, {
-      color: '#a3273f',
-      lineStyle: 'dashed',
-    });
-    const styledEdge = styled.store.doc.edges.find(
-      (entry) => entry.id === edge.id,
-    );
-
-    expect(styledEdge).toMatchObject({ color: '#a3273f', lineStyle: 'dashed' });
-    expect(styled.label()).toMatch(/^Changed the color of Connection /);
-    styled.store.undo();
-    expect(
-      styled.store.doc.edges.find((entry) => entry.id === edge.id),
-    ).toEqual(edge);
-  });
-
-  test("a line's label, color and line style, not its points", async () => {
-    const { doc } = sampleDocument();
-    const { doc: drawn, node } = addNode(doc, {
-      kind: 'line',
-      position: { x: 40, y: 40 },
-    });
-    const { wrapper, store, settle, label } = await changed(drawn, node, {
-      label: 'Uplink',
-      color: '#2f6fbf',
-      lineStyle: 'dotted',
-    });
-    const line = () => findNode(store.doc, node.id).line;
-
-    expect(line()).toMatchObject({
-      label: 'Uplink',
-      color: '#2f6fbf',
-      lineStyle: 'dotted',
-    });
-    expect(line().points).toEqual(node.line.points);
-    expect(label()).toBe('Changed the label of Line to "Uplink"');
-    expect(actionsShown(wrapper)).toBe(false);
-    expect(settle()).toBe('');
-
-    // The three fields were one change, so one Undo takes them back.
-    store.undo();
-    expect(findNode(store.doc, node.id).line).toEqual(node.line);
-
-    // A color that is not #rrggbb has an error, and waits.
-    const refused = await changed(drawn, node, { color: 'red' });
-
-    expect('color' in findNode(refused.store.doc, node.id).line).toBe(false);
-    expect(actionsShown(refused.wrapper)).toBe(true);
-  });
-
-  test("a group's color, border pattern, icon and icon size", async () => {
-    const { doc } = sampleDocument();
-    const { doc: grouped, node } = addNode(doc, {
-      kind: 'group',
-      title: 'Site',
-      icon: 'plc',
-    });
-    const { wrapper, store, settle, label } = await changed(grouped, node, {
-      title: 'Plant',
-      color: '#2f6fbf',
-      borderStyle: 'double',
-      iconKey: 'firewall',
-      icon: undefined,
-      iconSize: 'large',
-    });
-    const group = () => findNode(store.doc, node.id).group;
-
-    expect(group()).toMatchObject({
-      color: '#2f6fbf',
-      borderStyle: 'double',
-      iconKey: 'firewall',
-      iconSize: 'large',
-    });
-    expect(group().icon).toBeFalsy();
-    expect(group().title).toBe('Site');
-    expect(label()).toBe('Changed the color of Group to #2f6fbf');
-    // The title waits for Apply.
-    expect(actionsShown(wrapper)).toBe(true);
-    expect(settle()).toBe('');
-    expect(group().title).toBe('Plant');
-  });
-
-  test("a note's color, a shape's colors and border, and an icon drawing's icon", async () => {
-    const { doc } = sampleDocument();
-    const note = addNode(doc, { kind: 'note', text: 'Hello' });
-    const noted = await changed(note.doc, note.node, { color: '#fff3bf' });
-
-    expect(findNode(noted.store.doc, note.node.id).note.color).toBe('#fff3bf');
-    expect(noted.label()).toBe('Changed the color of Note to #fff3bf');
-
-    const shape = addNode(doc, { kind: 'shape' });
-    const shaped = await changed(shape.doc, shape.node, {
-      fillColor: '#eef3fb',
-      borderStyle: 'dashed',
-      label: 'DMZ',
-    });
-
-    expect(findNode(shaped.store.doc, shape.node.id).shape).toMatchObject({
-      fillColor: '#eef3fb',
-      borderStyle: 'dashed',
-    });
-    expect(findNode(shaped.store.doc, shape.node.id).shape.label).toBeFalsy();
-    expect(actionsShown(shaped.wrapper)).toBe(true);
-
-    const icon = addNode(doc, { kind: 'icon', iconKey: 'router' });
-    const iconed = await changed(icon.doc, icon.node, { icon: 'plc' });
-
+  // Each row: an element, a change made in the form, what carries the look,
+  // and what the change does there at once (look) and after Apply (waits).
+  const kinds = [
+    {
+      what: "a switch's colors, its network's color and line style, and its icon size",
+      make: sample('sw'),
+      change: {
+        fillColor: '#6b6f18',
+        outlineColor: '#a3273f',
+        color: '#123456',
+        iconSize: 'large',
+        lineStyle: 'dotted',
+      },
+      carrier: (doc, node) => ({
+        switch: findNode(doc, node.id).switch,
+        network: doc.networks[0],
+      }),
+      look: {
+        switch: {
+          outlineColor: '#a3273f',
+          fillColor: '#6b6f18',
+          iconSize: 'large',
+        },
+        network: { color: '#123456', lineStyle: 'dotted' },
+      },
+      // Nothing else is written onto the switch, such as the network's color.
+      exact: (doc, node) => [
+        findNode(doc, node.id).switch,
+        {
+          ...node.switch,
+          outlineColor: '#a3273f',
+          fillColor: '#6b6f18',
+          iconSize: 'large',
+        },
+      ],
+      label: 'Changed the edge color of Network EXP to #123456',
+    },
+    {
+      what: "a switch's line style alone, with its name waiting",
+      make: sample('sw'),
+      change: { name: 'LAN', lineStyle: 'dash-dot' },
+      carrier: (doc) => doc.networks[0],
+      look: { lineStyle: 'dash-dot' },
+      label: 'Changed the line style of Network EXP to Dash-dot',
+      waits: { name: 'LAN' },
+    },
+    {
+      what: "a connection's label",
+      make: sample('edge'),
+      change: { label: 'uplink' },
+      carrier: edgeOf,
+      look: { label: 'uplink' },
+      label: /^Changed the label of Connection .* to "uplink"$/,
+    },
+    {
+      what: "a connection's color and line style",
+      make: sample('edge'),
+      change: { color: '#a3273f', lineStyle: 'dashed' },
+      carrier: edgeOf,
+      look: { color: '#a3273f', lineStyle: 'dashed' },
+      label: /^Changed the color of Connection /,
+    },
+    {
+      what: "a line's label, color and line style, not its points",
+      make: added({ kind: 'line', position: { x: 40, y: 40 } }),
+      change: { label: 'Uplink', color: '#2f6fbf', lineStyle: 'dotted' },
+      carrier: nodeOf('line'),
+      look: { label: 'Uplink', color: '#2f6fbf', lineStyle: 'dotted' },
+      label: 'Changed the label of Line to "Uplink"',
+      kept: ['points'],
+    },
+    {
+      what: "a group's color, border pattern, icon and icon size",
+      make: added({ kind: 'group', title: 'Site', icon: 'plc' }),
+      change: {
+        title: 'Plant',
+        color: '#2f6fbf',
+        borderStyle: 'double',
+        iconKey: 'firewall',
+        icon: undefined,
+        iconSize: 'large',
+      },
+      carrier: nodeOf('group'),
+      look: {
+        color: '#2f6fbf',
+        borderStyle: 'double',
+        iconKey: 'firewall',
+        iconSize: 'large',
+      },
+      falsy: ['icon'],
+      label: 'Changed the color of Group to #2f6fbf',
+      waits: { title: 'Plant' },
+    },
+    {
+      what: "a note's color",
+      make: added({ kind: 'note', text: 'Hello' }),
+      change: { color: '#fff3bf' },
+      carrier: nodeOf('note'),
+      look: { color: '#fff3bf' },
+      label: 'Changed the color of Note to #fff3bf',
+    },
+    {
+      what: "a shape's colors and border",
+      make: added({ kind: 'shape' }),
+      change: { fillColor: '#eef3fb', borderStyle: 'dashed', label: 'DMZ' },
+      carrier: nodeOf('shape'),
+      look: { fillColor: '#eef3fb', borderStyle: 'dashed' },
+      label: 'Changed the fill color of Rectangle to #eef3fb',
+      waits: { label: 'DMZ' },
+    },
     // Exactly one icon: the custom one in place of the key.
-    expect(findNode(iconed.store.doc, icon.node.id).icon).toMatchObject({
-      icon: 'plc',
-    });
-    expect(findNode(iconed.store.doc, icon.node.id).icon.iconKey).toBeFalsy();
-    expect(iconed.label()).toBe('Changed the custom icon of Icon to plc');
-    expect(actionsShown(iconed.wrapper)).toBe(false);
-  });
+    {
+      what: "an icon drawing's custom icon",
+      make: added({ kind: 'icon', iconKey: 'router' }),
+      change: { icon: 'plc' },
+      carrier: nodeOf('icon'),
+      look: { icon: 'plc' },
+      falsy: ['iconKey'],
+      label: 'Changed the custom icon of Icon to plc',
+    },
+    // Choosing a built-in icon over a custom one changes both keys in one
+    // change of the form's data (see InspectorIconControl).
+    {
+      what: "a device's built-in icon in place of its custom icon",
+      make: () => {
+        const { doc, alpha } = sampleDocument();
+        const custom = updateNode(doc, alpha.id, {
+          device: { iconKey: 'linux', icon: 'plc' },
+        });
 
-  // Choosing a built-in icon over a custom one changes both keys in one
-  // change of the form's data (see InspectorIconControl).
-  test('a built-in icon in place of a custom icon is one Undo step', async () => {
-    const { doc, alpha } = sampleDocument();
-    const custom = updateNode(doc, alpha.id, {
-      device: { iconKey: 'linux', icon: 'plc' },
-    });
-    const { wrapper, store, label } = await changed(custom, alpha, {
-      iconKey: 'firewall',
-      icon: undefined,
-    });
-    const device = () => findNode(store.doc, alpha.id).device;
+        return { doc: custom, node: alpha };
+      },
+      change: { iconKey: 'firewall', icon: undefined },
+      carrier: nodeOf('device'),
+      look: { iconKey: 'firewall' },
+      falsy: ['icon'],
+      label: 'Changed the icon of Device alpha to Firewall',
+    },
+  ];
 
-    expect(device().iconKey).toBe('firewall');
-    expect(device().icon).toBeFalsy();
-    expect(label()).toBe('Changed the icon of Device alpha to Firewall');
-    expect(actionsShown(wrapper)).toBe(false);
+  test.each(kinds)(
+    '$what is one Undo step',
+    async ({
+      make,
+      change,
+      carrier,
+      look,
+      falsy = [],
+      kept = [],
+      label,
+      waits,
+      exact,
+    }) => {
+      const { doc, node } = make();
+      const { wrapper, store, settle } = await changed(doc, node, change);
+      const now = () => carrier(store.doc, node);
+      const before = carrier(doc, node);
+      const steps = waits ? 2 : 1;
 
-    store.undo();
-    expect(device()).toMatchObject({ iconKey: 'linux', icon: 'plc' });
-    // What is left to undo is the draft as it was loaded.
-    expect(label()).toBe('');
-  });
+      expect(now()).toMatchObject(look);
+      if (exact) {
+        const [actual, expected] = exact(store.doc, node);
 
-  // A Line style stepped to with keys is held, as Icon size is (see
-  // icon-size.test.js), and applied as one step once the choice is made.
+        expect(actual).toEqual(expected);
+      }
+      for (const key of falsy) {
+        expect(now()[key], key).toBeFalsy();
+      }
+      if (label instanceof RegExp) {
+        expect(store.history.undoLabel()).toMatch(label);
+      } else {
+        expect(store.history.undoLabel()).toBe(label);
+      }
+      const applied = store.history.index;
+
+      expect(actionsShown(wrapper)).toBe(Boolean(waits));
+      for (const key of [...kept, ...Object.keys(waits ?? {})]) {
+        expect(now()[key], key).toEqual(before[key]);
+      }
+
+      expect(settle()).toBe('');
+      expect(now()).toMatchObject({ ...look, ...waits });
+      expect(store.history.index).toBe(applied + steps - 1);
+
+      for (let step = 0; step < steps; step++) {
+        store.undo();
+      }
+      // What is left to undo is the draft as it was loaded.
+      expect(store.history.undoLabel()).toBe('');
+      expect(now()).toEqual(before);
+    },
+  );
+
+  // A Line style or Border pattern stepped to with keys is held, as Icon size
+  // is (see icon-size.test.js), and applied as one step once the choice is made.
   test.each([
     [
-      "a connection's",
-      'edge',
+      "a connection's line style",
+      sample('edge'),
+      edgeOf,
+      'lineStyle',
       ['dashed', 'dotted'],
       /^Changed the line style of Connection .* to Dotted$/,
     ],
     [
-      "a switch's",
-      'sw',
+      "a switch's line style",
+      sample('sw'),
+      (doc) => doc.networks[0],
+      'lineStyle',
       ['solid', 'dashed'],
       /^Changed the line style of Network EXP to Dashed$/,
     ],
+    [
+      "a group's border pattern",
+      added({ kind: 'group', title: 'Site' }),
+      nodeOf('group'),
+      'borderStyle',
+      ['dashed', 'dotted'],
+      /^Changed the border pattern of Group to Dotted$/,
+    ],
   ])(
-    '%s line style stepped to with keys is applied on Enter',
-    async (_, which, steps, named) => {
-      const sample = sampleDocument();
-      const { wrapper, store, label } = await changed(
-        sample.doc,
-        sample[which],
-        {},
-      );
-      const select = fieldAt(wrapper, 'lineStyle');
-      // What carries the line style: the connection, or the switch's network.
-      const styled = () =>
-        which === 'edge'
-          ? store.doc.edges.find((entry) => entry.id === sample.edge.id)
-          : store.doc.networks[0];
+    '%s stepped to with keys is applied on Enter',
+    async (_, make, carrier, path, steps, named) => {
+      const { doc, node } = make();
+      const { wrapper, store, label } = await changed(doc, node, {});
+      const select = fieldAt(wrapper, path);
+      const styled = () => carrier(store.doc, node);
       const before = styled();
 
       for (const step of steps) {
         await select.trigger('keydown', { key: 'ArrowDown' });
         await select.setValue(step);
       }
-      expect('lineStyle' in styled()).toBe(false);
+      expect(styled()[path]).toBe(before[path]);
       expect(actionsShown(wrapper)).toBe(false);
 
       await select.trigger('keydown', { key: 'Enter' });
-      expect(styled().lineStyle).toBe(steps.at(-1));
+      expect(styled()[path]).toBe(steps.at(-1));
       expect(label()).toMatch(named);
 
       store.undo();
       expect(styled()).toEqual(before);
     },
   );
+
+  test("a line's color that is no #rrggbb has an error, and waits", async () => {
+    const { doc, node } = added({ kind: 'line', position: { x: 40, y: 40 } })();
+    const { wrapper, store } = await changed(doc, node, { color: 'red' });
+
+    expect('color' in findNode(store.doc, node.id).line).toBe(false);
+    expect(actionsShown(wrapper)).toBe(true);
+  });
 
   // Text typed in a look field brings up no Apply. Escape puts back the text
   // committed last, and is the field's own.

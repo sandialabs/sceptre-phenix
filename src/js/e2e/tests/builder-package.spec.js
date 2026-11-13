@@ -291,7 +291,6 @@ test.describe('Builder packages', () => {
         await expect(
           dialog.getByTestId('download-package-warnings'),
         ).toContainText(`Scenario config ${title}-none does not exist`);
-        await expect(dialog.getByTestId('download-package-save')).toBeFocused();
         await expectAccessible(page, {
           include: 'dialog[open]',
           label: 'Download diagram',
@@ -311,111 +310,148 @@ test.describe('Builder packages', () => {
         include: 'dialog[open]',
         label: 'Upload diagram',
       });
-      await upload.getByTestId('upload-package-cancel').click();
-      await expect(upload).toBeHidden();
 
       expectNoFatal(issues);
     },
   );
 
   test(
-    'a config that cannot be created is shown before the draft opens, the other is still created, and the dialog stays open meanwhile',
+    'the Upload dialog passes an axe scan while it creates configs',
     { tag: '@axe' },
     async ({ page, builder, issues }, testInfo) => {
-      const title = uniqueName(testInfo, 'package-fail');
-      const refused = `${title}-refused`;
-      const created = `${title}-created`;
-      const pkg = packageOf(packageDocument(title, [refused, created]), [
-        scenarioConfig(refused, 'ntp'),
-        scenarioConfig(created, 'ntp'),
+      const title = uniqueName(testInfo, 'package-busy-axe');
+      const scenario = `${title}-sc`;
+      const pkg = packageOf(packageDocument(title, [scenario]), [
+        scenarioConfig(scenario, 'ntp'),
       ]);
       const creation = gate();
-      const drafts = watchDraftCreates(page);
 
-      // The config the upload creates is removed after the test.
-      builder.tracker.config('Scenario', created);
-
-      // The server refuses the first config, and holds the second until the
-      // test lets it through.
+      // The server holds the config, then refuses it: nothing is created.
       await page.route(
         (url) => url.pathname === `${API}/configs`,
         async (route) => {
-          const request = route.request();
-
-          if (request.method() !== 'POST') {
+          if (route.request().method() !== 'POST') {
             return route.fallback();
-          }
-
-          if (request.postDataJSON()?.metadata?.name === refused) {
-            return route.fulfill({
-              status: 403,
-              json: { message: `creating ${refused} not allowed` },
-            });
           }
 
           await creation.held;
 
-          return route.fallback();
+          return route.fulfill({ status: 403, json: { message: 'refused' } });
         },
       );
       const dialog = await uploadPackage(page, builder, title, pkg);
-      const cancel = dialog.getByTestId('upload-package-cancel');
 
-      for (const name of [refused, created]) {
-        await dialog
-          .getByTestId(`upload-package-create-scenario-${name}`)
-          .check();
-      }
-
+      await dialog
+        .getByTestId(`upload-package-create-scenario-${scenario}`)
+        .check();
       await dialog.getByTestId('upload-package-continue').click();
-
-      await test.step('while the configs are created, Cancel and closing the dialog do nothing', async () => {
-        const progress = dialog.getByTestId('upload-package-progress');
-
-        await expect(progress).toHaveText('Creating 2 configs on this server…');
-        await expect(cancel).toHaveAttribute('aria-disabled', 'true');
-        await expect(cancel).toHaveAttribute(
-          'aria-describedby',
-          'upload-package-progress',
-        );
-        await expectAccessible(page, {
-          include: 'dialog[open]',
-          label: 'Upload diagram',
-        });
-
-        // Playwright clicks no aria-disabled button by itself: Cancel is
-        // pressed by force, and by its keyboard path.
-        await cancel.click({ force: true });
-        await cancel.focus();
-        await page.keyboard.press('Enter');
-        await page.keyboard.press('Escape');
-        await dialog.getByRole('button', { name: 'Close dialog' }).click();
-        await expect(dialog).toBeVisible();
-        await expect(progress).toBeVisible();
+      await expect(dialog.getByTestId('upload-package-progress')).toBeVisible();
+      await expectAccessible(page, {
+        include: 'dialog[open]',
+        label: 'Upload diagram, creating configs',
       });
 
       creation.release();
-
-      await test.step('the refusal is shown before the draft opens, and the other config is created', async () => {
-        const warnings = dialog.getByTestId('upload-warnings');
-
-        await expect(warnings).toContainText(refused);
-        await expect(warnings.locator('li')).toHaveCount(1);
-        expect(drafts).toHaveLength(0);
-        expect(await builder.config('Scenario', created)).not.toBeNull();
-        expect(await builder.config('Scenario', refused)).toBeNull();
-
-        const opened = waitForApi(page, 'POST', '/builder/drafts');
-
-        await dialog.getByTestId('upload-continue').click();
-        expect((await opened).status()).toBe(201);
-        await expect(builder.canvas).toBeVisible();
-        await expect(dialog).toBeHidden();
-      });
+      await expect(dialog.getByTestId('upload-warnings')).toBeVisible();
 
       expectNoFatal(issues);
     },
   );
+
+  test('a config that cannot be created is shown before the draft opens, the other is still created, and the dialog stays open meanwhile', async ({
+    page,
+    builder,
+    issues,
+  }, testInfo) => {
+    const title = uniqueName(testInfo, 'package-fail');
+    const refused = `${title}-refused`;
+    const created = `${title}-created`;
+    const pkg = packageOf(packageDocument(title, [refused, created]), [
+      scenarioConfig(refused, 'ntp'),
+      scenarioConfig(created, 'ntp'),
+    ]);
+    const creation = gate();
+    const drafts = watchDraftCreates(page);
+
+    // The config the upload creates is removed after the test.
+    builder.tracker.config('Scenario', created);
+
+    // The server refuses the first config, and holds the second until the
+    // test lets it through.
+    await page.route(
+      (url) => url.pathname === `${API}/configs`,
+      async (route) => {
+        const request = route.request();
+
+        if (request.method() !== 'POST') {
+          return route.fallback();
+        }
+
+        if (request.postDataJSON()?.metadata?.name === refused) {
+          return route.fulfill({
+            status: 403,
+            json: { message: `creating ${refused} not allowed` },
+          });
+        }
+
+        await creation.held;
+
+        return route.fallback();
+      },
+    );
+    const dialog = await uploadPackage(page, builder, title, pkg);
+    const cancel = dialog.getByTestId('upload-package-cancel');
+
+    for (const name of [refused, created]) {
+      await dialog
+        .getByTestId(`upload-package-create-scenario-${name}`)
+        .check();
+    }
+
+    await dialog.getByTestId('upload-package-continue').click();
+
+    await test.step('while the configs are created, Cancel and closing the dialog do nothing', async () => {
+      const progress = dialog.getByTestId('upload-package-progress');
+
+      await expect(progress).toHaveText('Creating 2 configs on this server…');
+      await expect(cancel).toHaveAttribute('aria-disabled', 'true');
+      await expect(cancel).toHaveAttribute(
+        'aria-describedby',
+        'upload-package-progress',
+      );
+
+      // Playwright clicks no aria-disabled button by itself: Cancel is
+      // pressed by force, and by its keyboard path.
+      await cancel.click({ force: true });
+      await cancel.focus();
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Escape');
+      await dialog.getByRole('button', { name: 'Close dialog' }).click();
+      await expect(dialog).toBeVisible();
+      await expect(progress).toBeVisible();
+    });
+
+    creation.release();
+
+    await test.step('the refusal is shown before the draft opens, and the other config is created', async () => {
+      const warnings = dialog.getByTestId('upload-warnings');
+
+      await expect(warnings).toContainText(refused);
+      await expect(warnings.locator('li')).toHaveCount(1);
+      expect(drafts).toHaveLength(0);
+      expect(await builder.config('Scenario', created)).not.toBeNull();
+      expect(await builder.config('Scenario', refused)).toBeNull();
+
+      const opened = waitForApi(page, 'POST', '/builder/drafts');
+
+      await dialog.getByTestId('upload-continue').click();
+      expect((await opened).status()).toBe(201);
+      await expect(builder.canvas).toBeVisible();
+      await expect(dialog).toBeHidden();
+    });
+
+    expectNoFatal(issues);
+  });
 
   test('Cancel on the list of what a package needs leaves the open draft as it is', async ({
     page,

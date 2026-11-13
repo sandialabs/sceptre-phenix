@@ -1,10 +1,19 @@
 // @vitest-environment node
-// The app's styles, read from compiled main.scss and the components' <style>
-// blocks: happy-dom lays nothing out, so these tests read the rules.
+// The app's styles, read from compiled main.scss, the components' <style>
+// blocks and builder.css: happy-dom lays nothing out, so these tests read the rules.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+import {
+  colorChannels,
+  contrastRatio,
+  iconInk,
+  needsCasing,
+} from '@/builder/colors.js';
+import { LIGHT_COLORS } from '@/builder/drawio.js';
+import { DEFAULT_NETWORK_COLORS } from '@/builder/model.js';
 
 import {
   componentDeclarations,
@@ -520,6 +529,236 @@ describe('NetflowCaptures dialog', () => {
   it('centers each row vertically on its download buttons', () => {
     expect(style('.netflow-captures-table td')).toEqual({
       'vertical-align': 'middle',
+    });
+  });
+});
+
+// The Builder's style sheet, builder.css: its theme tokens and the rules
+// that draw the nodes and connections on the canvas.
+describe('Builder canvas', () => {
+  const css = readFileSync(
+    join(import.meta.dirname, '..', 'src/builder/builder.css'),
+    'utf8',
+  );
+
+  // A selected node gets is-selected: a border and inner ring in the
+  // selection color, which keeps 3:1 against its background in each theme.
+  describe('a selected node', () => {
+    const CSS = css.replace(/\/\*[\s\S]*?\*\//g, '');
+
+    // The custom properties a rule block sets, by name.
+    function tokensOf(selector) {
+      const start = CSS.indexOf(`${selector} {`);
+      const body = CSS.slice(start, CSS.indexOf('}', start));
+
+      return Object.fromEntries(
+        [...body.matchAll(/(--bx-[\w-]+):\s*([^;]+);/g)].map(
+          ([, name, value]) => [name, value.trim()],
+        ),
+      );
+    }
+
+    // The body of the rule with exactly this selector list, spaces collapsed.
+    function ruleBody(selector) {
+      const rule = [...CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)].find(
+        ([, list]) => list.replace(/\s+/g, ' ').trim() === selector,
+      );
+
+      return rule?.[2].replace(/\s+/g, ' ').trim();
+    }
+
+    const LIGHT = tokensOf('.builder-root');
+    const DARK = {
+      ...LIGHT,
+      ...tokensOf(".builder-root[data-builder-theme='dark']"),
+    };
+
+    it('the style sheet draws no badge on a selected node', () => {
+      expect(CSS).not.toMatch(/is-selected[^{}]*::after/);
+      expect(CSS).not.toContain('has-resize-frame');
+    });
+
+    it.each([
+      ['light', LIGHT],
+      ['dark', DARK],
+    ])(
+      'in the %s theme, the selection color is the accent mixed with 10%% white and keeps 3:1',
+      (theme, tokens) => {
+        const accent = colorChannels(tokens['--bx-accent']);
+        const ring = colorChannels(tokens['--bx-selected-ring']);
+
+        accent.slice(0, 3).forEach((channel, index) => {
+          expect(
+            Math.abs(ring[index] - (channel * 0.9 + 255 * 0.1)),
+            theme,
+          ).toBeLessThanOrEqual(1);
+        });
+
+        for (const behind of [
+          '--bx-bg',
+          '--bx-grid',
+          '--bx-surface',
+          '--bx-bg-alt',
+          '--bx-selected-bg',
+        ]) {
+          expect(
+            contrastRatio(tokens['--bx-selected-ring'], tokens[behind]),
+            `${theme} ${behind}`,
+          ).toBeGreaterThanOrEqual(3);
+        }
+      },
+    );
+
+    it('the ring and the stroke of a selection are 10% wider than 2px and 4px', () => {
+      expect(LIGHT['--bx-selected-ring-width']).toBe('2.2px');
+      expect(LIGHT['--bx-selected-stroke']).toBe('4.4px');
+    });
+
+    it('every kind of node draws its selection in the selection color', () => {
+      const ring =
+        'inset 0 0 0 var(--bx-selected-ring-width) var(--bx-selected-ring)';
+
+      expect(ruleBody('.builder-node.is-selected')).toContain(
+        'border-color: var(--bx-selected-ring);',
+      );
+      expect(ruleBody('.builder-node.is-selected')).toContain(ring);
+      expect(ruleBody('.builder-node.is-selected')).toContain(
+        'background: var(--bx-selected-bg);',
+      );
+      // A shape and an icon remove the shadow of a node, so they draw the
+      // ring again, without the shadow. They keep the selection fill.
+      const drawing = ruleBody(
+        '.builder-node--shape.is-selected, .builder-node--icon.is-selected',
+      );
+
+      expect(drawing).toContain('border-color: var(--bx-selected-ring);');
+      expect(drawing).toContain(ring);
+      expect(drawing).not.toContain('--bx-shadow');
+      expect(drawing).not.toContain('background');
+      expect(ruleBody('.builder-canvas .builder-edge.is-selected')).toBe(
+        'stroke-width: var(--bx-selected-stroke);',
+      );
+    });
+
+    it('in forced colors, a selected node has a Highlight border', () => {
+      const forced = CSS.slice(CSS.indexOf('@media (forced-colors: active)'));
+
+      expect(forced.replace(/\s+/g, ' ')).toContain(
+        '.builder-node.is-selected { border-color: Highlight; }',
+      );
+    });
+  });
+
+  // The icon is in the outline color, apart from the text, and keeps 3:1
+  // against what it is drawn over in each theme, or takes the text color.
+  describe('a node’s icon color', () => {
+    // Each theme's value of a token: the light theme's first.
+    const token = (name) =>
+      [...css.matchAll(new RegExp(`${name}: (#[0-9a-f]{6});`, 'gi'))].map(
+        (match) => match[1],
+      );
+    const [surface, selected, canvas, grid, text] = [
+      '--bx-surface',
+      '--bx-selected-bg',
+      '--bx-bg-alt',
+      '--bx-grid',
+      '--bx-text',
+    ].map(token);
+
+    it('is the theme’s accent color without an outline, 3:1 on every node ground', () => {
+      const icon = token('--bx-accent');
+
+      expect(icon).toHaveLength(2);
+      [0, 1].forEach((theme) => {
+        for (const ground of [surface, selected, canvas, grid]) {
+          expect(contrastRatio(icon[theme], ground[theme])).toBeGreaterThan(3);
+        }
+        // Apart from the text: not the text's color.
+        expect(icon[theme]).not.toBe(text[theme]);
+      });
+      expect(iconInk('')).toEqual({ light: false, dark: false });
+      expect(iconInk('var(--bx-net-3)')).toEqual({ light: false, dark: false });
+    });
+  });
+
+  describe('network colors', () => {
+    // The hue, in degrees, and the saturation of a #rrggbb color.
+    function hsl(hex) {
+      const [r, g, b] = hex
+        .slice(1)
+        .match(/../g)
+        .map((pair) => parseInt(pair, 16) / 255);
+      const [max, min] = [Math.max(r, g, b), Math.min(r, g, b)];
+      const delta = max - min;
+      const sector =
+        delta === 0
+          ? 0
+          : max === r
+            ? (g - b) / delta
+            : max === g
+              ? (b - r) / delta + 2
+              : (r - g) / delta + 4;
+
+      return {
+        hue: (sector * 60 + 360) % 360,
+        saturation: delta === 0 ? 0 : delta / (1 - Math.abs(max + min - 1)),
+      };
+    }
+
+    // Plum was drawn in slate: --bx-net-7 was a grey.
+    it("each theme's network token is its suggested color's hue, and keeps 3:1", () => {
+      // The light theme's, then the dark theme's.
+      const tokens = [...css.matchAll(/--bx-net-(\d): (#[0-9a-f]{6});/gi)];
+
+      expect(tokens).toHaveLength(2 * DEFAULT_NETWORK_COLORS.length);
+      tokens.forEach(([, index, value], at) => {
+        const theme = at < DEFAULT_NETWORK_COLORS.length ? 'light' : 'dark';
+        const token = hsl(value);
+        const suggested = hsl(DEFAULT_NETWORK_COLORS[index]);
+        const apart = Math.abs(token.hue - suggested.hue);
+
+        expect(Math.min(apart, 360 - apart), value).toBeLessThan(25);
+        expect(token.saturation, value).toBeGreaterThan(0.3);
+        expect(needsCasing(value)[theme], value).toBe(false);
+      });
+    });
+  });
+
+  // The rules that draw them: a selected node keeps its accent border, a
+  // filled one its fill, and every line of text on a fill takes the ink.
+  describe('node fills and outlines', () => {
+    it('the stylesheet draws a fill and an outline from the custom properties', () => {
+      const flat = css.replace(/\s+/g, ' ');
+
+      expect(flat).toContain(
+        '.builder-node--outlined { border-color: var(--bx-node-outline); }',
+      );
+      expect(flat).toContain(
+        '.builder-node--filled, .builder-node--filled.is-selected { background: var(--bx-node-fill); color: var(--bx-node-ink); }',
+      );
+      expect(flat).toMatch(
+        /\.builder-node--filled :is\( \.builder-node__kind, \.builder-node__meta, \.builder-node__comment, \.builder-node__origin \) \{ color: inherit; \}/,
+      );
+      // After the rule for a selected node, which it has to outrank for the
+      // fill and must not for the border.
+      expect(flat.indexOf('.builder-node--filled,')).toBeGreaterThan(
+        flat.indexOf('.builder-node.is-selected {'),
+      );
+      expect(flat).toContain(
+        ".builder-node--group[data-border='double'] { border-style: double; border-width: 4px; }",
+      );
+    });
+  });
+
+  // The draw.io download draws in the light theme's colors.
+  describe('the draw.io download', () => {
+    it('keeps the light colors of builder.css', () => {
+      const block = css.slice(css.indexOf('.builder-root {'));
+      const lightBlock = block.slice(0, block.indexOf('}'));
+
+      for (const [token, color] of Object.entries(LIGHT_COLORS)) {
+        expect(lightBlock, token).toMatch(new RegExp(`${token}: ${color};`));
+      }
     });
   });
 });

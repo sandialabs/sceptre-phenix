@@ -4,6 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
+import { nextTick } from 'vue';
 
 import BuilderCommandPalette from '@/components/builder/BuilderCommandPalette.vue';
 import {
@@ -12,9 +13,11 @@ import {
   setShortcut,
 } from '@/builder/keymap.js';
 import { RECENT_STORAGE_KEY } from '@/builder/recent.js';
+import { COUNT_DELAY_MS } from '@/builder/announce.js';
 
 import { context } from './command-context.js';
-import { memoryStorage, sampleDocument } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
+import { sampleDocument } from './fixtures.js';
 
 beforeEach(() => {
   setPlatform('other');
@@ -23,6 +26,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   setPlatform(null);
   loadShortcutSettings(memoryStorage());
   localStorage.clear();
@@ -73,8 +77,15 @@ async function press(field, key, mods = {}) {
   await field.trigger('keydown', { key, ...mods });
 }
 
+async function countAfterPause(wrapper) {
+  await vi.advanceTimersByTimeAsync(COUNT_DELAY_MS);
+  await nextTick();
+  return wrapper.get('[data-testid="command-palette-count"]').text();
+}
+
 describe('the command palette', () => {
   test('opens with focus in its search field, on the first command, by group', async () => {
+    vi.useFakeTimers();
     const { wrapper, field } = open({ store: { canUndo: true } });
 
     expect(document.activeElement).toBe(field.element);
@@ -103,14 +114,14 @@ describe('the command palette', () => {
     expect(highlighted(wrapper)).toBe('Keyboard shortcuts');
 
     // The count waits for typing to pause.
-    await vi.waitFor(() =>
-      expect(
-        wrapper.get('[data-testid="command-palette-count"]').text(),
-      ).toMatch(/^\d+ results$/),
+    expect(wrapper.get('[data-testid="command-palette-count"]').text()).toBe(
+      '',
     );
+    expect(await countAfterPause(wrapper)).toMatch(/^\d+ results$/);
   });
 
   test('typing filters the options, and the highlight goes back to the first', async () => {
+    vi.useFakeTimers();
     const { wrapper, field } = open();
 
     await field.setValue('zoom');
@@ -133,11 +144,7 @@ describe('the command palette', () => {
     expect(wrapper.find('[data-testid="command-palette-empty"]').exists()).toBe(
       true,
     );
-    await vi.waitFor(() =>
-      expect(wrapper.get('[data-testid="command-palette-count"]').text()).toBe(
-        'No results',
-      ),
-    );
+    expect(await countAfterPause(wrapper)).toBe('No results');
   });
 
   test('Up and Down move the highlight and wrap, and Page Up and Page Down move between groups', async () => {

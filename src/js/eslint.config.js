@@ -2,10 +2,41 @@ import js from '@eslint/js';
 import pluginVue from 'eslint-plugin-vue';
 import skipFormatting from '@vue/eslint-config-prettier/skip-formatting';
 import globals from 'globals';
+import { readFileSync } from 'node:fs';
 
 // a toast.open(...) call, as in this.$buefy.toast.open, buefy?.toast.open or toast.open
 const TOAST_OPEN =
   "CallExpression[callee.property.name='open']:matches([callee.object.property.name='toast'], [callee.object.name='toast'])";
+
+// Toast durations come from utils/toast.js, and errors are never toasts:
+// they open as notifications that stay until dismissed (utils/errorNotif.js).
+const TOAST_RULES = [
+  {
+    selector: `${TOAST_OPEN} > ObjectExpression Property:matches([key.name='duration'], [key.value='duration']) > :matches(Literal[value=type(number)], BinaryExpression, UnaryExpression)`,
+    message:
+      'Do not give a toast a number duration. Use the default, or LONG_TOAST_DURATION from utils/toast.js.',
+  },
+  {
+    selector: `${TOAST_OPEN} > ObjectExpression :matches(Literal[value=/is-danger/], TemplateElement[value.raw=/is-danger/])`,
+    message:
+      'Do not show an error as an is-danger toast. Use showError from utils/errorNotif.js.',
+  },
+];
+
+// The first word of each code in the Builder's issue registry, such as
+// "device" in device.ntp-server.invalid.
+const CODE_SUBJECTS = [
+  ...new Set(
+    Object.keys(
+      JSON.parse(
+        readFileSync(
+          new URL('./src/builder/schema/codes.json', import.meta.url),
+          'utf8',
+        ),
+      ),
+    ).map((code) => code.split('.')[0]),
+  ),
+].join('|');
 
 export default [
   {
@@ -82,22 +113,24 @@ export default [
     },
   },
   {
-    // Toast durations come from utils/toast.js, and errors are never toasts:
-    // they open as notifications that stay until dismissed (utils/errorNotif.js).
     // .ts files are not checked: no TypeScript parser is installed.
     files: ['src/**/*.{js,vue}'],
     rules: {
+      'no-restricted-syntax': ['error', ...TOAST_RULES],
+    },
+  },
+  {
+    // Codes are written in quotes so validate.contract.test.js can check them.
+    // This block replaces the one above, so it repeats TOAST_RULES.
+    files: ['src/builder/validate.js', 'src/builder/decode.js'],
+    rules: {
       'no-restricted-syntax': [
         'error',
+        ...TOAST_RULES,
         {
-          selector: `${TOAST_OPEN} > ObjectExpression Property:matches([key.name='duration'], [key.value='duration']) > :matches(Literal[value=type(number)], BinaryExpression, UnaryExpression)`,
+          selector: `TemplateLiteral > TemplateElement:first-child[value.raw=/^(${CODE_SUBJECTS})\\.[a-z0-9.-]*$/]`,
           message:
-            'Do not give a toast a number duration. Use the default, or LONG_TOAST_DURATION from utils/toast.js.',
-        },
-        {
-          selector: `${TOAST_OPEN} > ObjectExpression :matches(Literal[value=/is-danger/], TemplateElement[value.raw=/is-danger/])`,
-          message:
-            'Do not show an error as an is-danger toast. Use showError from utils/errorNotif.js.',
+            'Do not build an issue code in a template string. Write the full code from schema/codes.json in quotes, because the test that checks codes against the registry reads only quoted codes.',
         },
       ],
     },

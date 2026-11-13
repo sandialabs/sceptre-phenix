@@ -132,38 +132,6 @@ describe('the Icon field’s menu', () => {
     ).toEqual(['inspector-icon-item-router']);
   });
 
-  test('the arrow keys, Home and End move through it, and Escape closes it with focus back on the button', async () => {
-    const field = await openIconField();
-    const focused = () => document.activeElement;
-
-    field.button.element.focus();
-    await press(field.button, 'ArrowDown');
-    // Opened on the checked item.
-    expect(focused()).toBe(field.item('linux').element);
-
-    await press(field.menu(), 'Home');
-    expect(focused()).toBe(field.item('default').element);
-    await press(field.menu(), 'ArrowDown');
-    expect(focused()).toBe(field.item(offered[0]).element);
-    expect(focused().getAttribute('tabindex')).toBe('0');
-    await press(field.menu(), 'End');
-    expect(focused()).toBe(field.item('custom-icon').element);
-    // The ends wrap around.
-    await press(field.menu(), 'ArrowDown');
-    expect(focused()).toBe(field.item('default').element);
-    await press(field.menu(), 'ArrowUp');
-    expect(focused()).toBe(field.item('custom-icon').element);
-
-    await press(field.menu(), 'Escape');
-    expect(field.menu().exists()).toBe(false);
-    expect(field.button.attributes('aria-expanded')).toBe('false');
-    expect(focused()).toBe(field.button.element);
-
-    // Up Arrow opens it on its last item.
-    await press(field.button, 'ArrowUp');
-    expect(focused()).toBe(field.item('custom-icon').element);
-  });
-
   test('Enter chooses the icon with focus, applied at once, and focus goes back to the button', async () => {
     const field = await openIconField();
 

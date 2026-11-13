@@ -35,7 +35,8 @@ import {
 import { shortcutGroups } from '@/builder/shortcuts.js';
 import { useBuilderStore } from '@/builder/store.js';
 
-import { memoryStorage, sampleDocument, tags, testId } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
+import { sampleDocument, tags, testId } from './fixtures.js';
 import { renderWithStore } from './render.js';
 
 // A store with what the forms use. connect and setParent change the document

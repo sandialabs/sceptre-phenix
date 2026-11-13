@@ -140,11 +140,27 @@ describe('what publishing changes', () => {
     ).toBeTruthy();
   });
 
-  test('while it is read again, keeps the last answer shown, marked busy', async () => {
+  // The pause, the busy mark and stale answers are in publish-preview.test.js.
+  // Here the form drives them, and an older answer comes after a newer ask.
+  test('a form change keeps the last answer shown, marked busy, asks once typing pauses and shows only the latest answer', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 
-    const answers = [deferred(), deferred()];
+    const answers = [
+      deferred(),
+      deferred(),
+      deferred(),
+      deferred(),
+      deferred(),
+    ];
+    const answerOf = (name) => ({
+      changes: changesTo(name),
+      errorIssues: [],
+      warningIssues: [],
+    });
     const { wrapper, store } = open({
+      setup: (builder) => {
+        builder.doc = { ...builder.doc, scenarios: ['plant-ntp', 'plant-dns'] };
+      },
       previewPublish: () =>
         answers[store.previewPublish.mock.calls.length - 1].promise,
     });
@@ -154,109 +170,62 @@ describe('what publishing changes', () => {
     await flushPromises();
     expect(section(wrapper).attributes('aria-busy')).toBe('false');
 
-    await byId(wrapper, 'publish-name').setValue('lab-2');
+    await byId(wrapper, 'publish-mode-experiment').setValue();
+    await byId(wrapper, 'publish-name').setValue('plant');
+    await byId(wrapper, 'publish-experiment').setValue('run-1');
+    await byId(wrapper, 'publish-scenario-select').setValue('plant-dns');
 
-    // Busy at once, while the pause in typing runs, and while it is read.
-    for (const wait of [0, PREVIEW_DELAY_MS]) {
-      vi.advanceTimersByTime(wait);
-      await flushPromises();
+    expect(section(wrapper).attributes('aria-busy')).toBe('true');
+    expect(section(wrapper).text()).toContain('Updates Topology config lab');
+    expect(section(wrapper).text()).not.toContain(
+      'Calculating what publishing changes',
+    );
 
-      expect(section(wrapper).attributes('aria-busy')).toBe('true');
-      expect(section(wrapper).text()).toContain('Updates Topology config lab');
-      expect(section(wrapper).text()).not.toContain(
-        'Calculating what publishing changes',
-      );
-    }
-
-    expect(store.previewPublish).toHaveBeenCalledTimes(2);
-    answers[1].resolve({
-      changes: changesTo('lab-2'),
-      errorIssues: [],
-      warningIssues: [],
-    });
+    vi.advanceTimersByTime(PREVIEW_DELAY_MS - 1);
     await flushPromises();
+    expect(store.previewPublish).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    await flushPromises();
+    expect(store.previewPublish).toHaveBeenLastCalledWith({
+      mode: 'topology-experiment',
+      topology: { name: 'plant', action: 'create' },
+      scenario: { name: 'plant-dns' },
+      experiment: { name: 'run-1', action: 'create' },
+    });
 
+    // A newer form is read before the older answer comes.
+    await byId(wrapper, 'publish-experiment').setValue('run-2');
+    vi.advanceTimersByTime(PREVIEW_DELAY_MS);
+    await flushPromises();
+    expect(store.previewPublish).toHaveBeenCalledTimes(3);
+
+    answers[1].resolve(answerOf('older'));
+    await flushPromises();
+    expect(section(wrapper).attributes('aria-busy')).toBe('true');
+    expect(section(wrapper).text()).not.toContain('Topology config older');
+
+    answers[2].resolve(answerOf('latest'));
+    await flushPromises();
     expect(section(wrapper).attributes('aria-busy')).toBe('false');
-    expect(section(wrapper).text()).toContain('Updates Topology config lab-2');
-  });
+    expect(section(wrapper).text()).toContain('Updates Topology config latest');
 
-  test('the topology, experiment and scenario are read once typing pauses, and only the latest answer shows, whichever comes first', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-
-    for (const latestFirst of [true, false]) {
-      const answers = [deferred(), deferred(), deferred()];
-      const { wrapper, store } = open({
-        setup: (builder) => {
-          builder.doc = {
-            ...builder.doc,
-            scenarios: ['plant-ntp', 'plant-dns'],
-          };
-        },
-        previewPublish: () =>
-          answers[store.previewPublish.mock.calls.length - 1].promise,
-      });
-
-      await flushPromises();
-      answers[0].resolve({ changes, errorIssues: [], warningIssues: [] });
-      await flushPromises();
-
-      await byId(wrapper, 'publish-mode-experiment').setValue();
-      await byId(wrapper, 'publish-name').setValue('plant');
-      await byId(wrapper, 'publish-experiment').setValue('run-1');
-      await byId(wrapper, 'publish-scenario-select').setValue('plant-dns');
-
-      // Each change restarts the pause: nothing is asked until it ends.
-      vi.advanceTimersByTime(PREVIEW_DELAY_MS - 1);
-      await flushPromises();
-      expect(store.previewPublish).toHaveBeenCalledTimes(1);
-      vi.advanceTimersByTime(1);
-      await flushPromises();
-      expect(store.previewPublish).toHaveBeenCalledTimes(2);
-      expect(store.previewPublish).toHaveBeenLastCalledWith({
-        mode: 'topology-experiment',
-        topology: { name: 'plant', action: 'create' },
-        scenario: { name: 'plant-dns' },
-        experiment: { name: 'run-1', action: 'create' },
-      });
-
-      // A newer form is read before the older answer comes.
-      await byId(wrapper, 'publish-experiment').setValue('run-2');
+    // The latest answer comes first: the older one that comes after is dropped.
+    for (const run of ['run-3', 'run-4']) {
+      await byId(wrapper, 'publish-experiment').setValue(run);
       vi.advanceTimersByTime(PREVIEW_DELAY_MS);
       await flushPromises();
-      expect(store.previewPublish).toHaveBeenCalledTimes(3);
-
-      const older = {
-        changes: changesTo('older'),
-        errorIssues: [],
-        warningIssues: [],
-      };
-      const latest = {
-        changes: changesTo('latest'),
-        errorIssues: [],
-        warningIssues: [],
-      };
-      const order = latestFirst
-        ? [() => answers[2].resolve(latest), () => answers[1].resolve(older)]
-        : [() => answers[1].resolve(older), () => answers[2].resolve(latest)];
-
-      order[0]();
-      await flushPromises();
-      expect(
-        section(wrapper).attributes('aria-busy'),
-        `latest first: ${latestFirst}`,
-      ).toBe(latestFirst ? 'false' : 'true');
-      expect(section(wrapper).text()).not.toContain('Topology config older');
-
-      order[1]();
-      await flushPromises();
-      expect(section(wrapper).attributes('aria-busy')).toBe('false');
-      expect(section(wrapper).text()).toContain(
-        'Updates Topology config latest',
-      );
-      expect(section(wrapper).text()).not.toContain('Topology config older');
-
-      wrapper.unmount();
     }
+    expect(store.previewPublish).toHaveBeenCalledTimes(5);
+
+    answers[4].resolve(answerOf('newest'));
+    await flushPromises();
+    expect(section(wrapper).attributes('aria-busy')).toBe('false');
+    expect(section(wrapper).text()).toContain('Updates Topology config newest');
+
+    answers[3].resolve(answerOf('stale'));
+    await flushPromises();
+    expect(section(wrapper).text()).toContain('Updates Topology config newest');
+    expect(section(wrapper).text()).not.toContain('Topology config stale');
   });
 
   test('a refusal is listed as errors, with no changes', async () => {

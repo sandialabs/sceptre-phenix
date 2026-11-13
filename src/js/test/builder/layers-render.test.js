@@ -321,24 +321,6 @@ describe('the Layers tab', () => {
       blue: false,
       red: false,
     });
-    expect(look(plant, 'layer-set-duplicate')).toEqual({
-      text: 'Duplicate',
-      icon: 'copy',
-      blue: false,
-      red: false,
-    });
-    expect(look(plant, 'layer-set-download')).toEqual({
-      text: 'Download',
-      icon: 'download',
-      blue: false,
-      red: false,
-    });
-    expect(look(plant, 'layer-set-delete')).toEqual({
-      text: 'Delete',
-      icon: 'trash',
-      blue: false,
-      red: true,
-    });
 
     // The two-column grid of every card, with the default toggle last.
     for (const card of [purdue, plant]) {

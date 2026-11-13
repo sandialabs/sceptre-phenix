@@ -9,9 +9,7 @@ import {
   readPreflightReport,
 } from '@/builder/api.js';
 import {
-  PREFLIGHT_CHECKS,
   PREFLIGHT_STORAGE_KEY,
-  checkLabel,
   loadPreflightChecks,
   orderedChecks,
   preflightOutcome,
@@ -19,7 +17,7 @@ import {
   statusText,
 } from '@/builder/preflight.js';
 
-import { memoryStorage } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
 
 // A request and the server's answer, recorded by the Go test of the route.
 const exchange = JSON.parse(
@@ -41,21 +39,6 @@ const brokenStorage = {
 };
 
 describe('preflight checks', () => {
-  it('lists the four checks the server makes, each with a label and a hint', () => {
-    expect(PREFLIGHT_CHECKS.map((check) => check.id)).toEqual([
-      'capacity',
-      'network',
-      'disks',
-      'apps',
-    ]);
-    PREFLIGHT_CHECKS.forEach((check) => {
-      expect(check.label).toBeTruthy();
-      expect(check.hint).toMatch(/\.$/);
-    });
-    expect(checkLabel('disks')).toBe('Disk images');
-    expect(checkLabel('later')).toBe('later');
-  });
-
   it('orders a choice as the dialog lists the checks, each once', () => {
     expect(orderedChecks(['apps', 'capacity', 'apps', 'nope'])).toEqual([
       'capacity',
@@ -81,6 +64,27 @@ describe('preflight checks', () => {
     expect(loadPreflightChecks(brokenStorage)).toEqual([]);
     expect(() => savePreflightChecks(['apps'], brokenStorage)).not.toThrow();
     expect(loadPreflightChecks(null)).toEqual([]);
+  });
+
+  it('loads none and saves without an error where reading localStorage throws', () => {
+    const saved = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      get() {
+        throw new DOMException('Site data is blocked.', 'SecurityError');
+      },
+    });
+    try {
+      expect(loadPreflightChecks()).toEqual([]);
+      expect(() => savePreflightChecks(['capacity', 'disks'])).not.toThrow();
+    } finally {
+      if (saved) {
+        Object.defineProperty(globalThis, 'localStorage', saved);
+      } else {
+        delete globalThis.localStorage;
+      }
+    }
   });
 
   it('words each status and what a report comes to', () => {

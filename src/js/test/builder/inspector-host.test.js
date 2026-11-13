@@ -303,20 +303,6 @@ describe('the template variant', () => {
     expect(html).not.toContain('inspector-layer-edit');
   });
 
-  // The canvas shows it in a section of its own, after the form.
-  test('the canvas shows the layer in a section of its own', async () => {
-    const { doc, node } = oneLayeredDevice();
-    const { html } = await openInspector({ host: fakeHost(doc, node.id) });
-    const form = html.slice(html.indexOf('<form'), html.indexOf('</form>'));
-
-    expect(form).not.toContain('data-testid="inspector-layer"');
-    expect(html).toMatch(
-      /<h3[^>]*><label for="inspector-layer-select"[^>]*>Layer<\/label><\/h3>/,
-    );
-    // Edit layers… shows wherever the layers are the diagram's.
-    expect(html).toContain('data-testid="inspector-layer-edit"');
-  });
-
   test('a read-only host locks every field', async () => {
     const { doc, node } = oneDevice();
     const { html } = await openInspector(

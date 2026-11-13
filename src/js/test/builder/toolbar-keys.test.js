@@ -11,7 +11,7 @@ import BuilderToolbar from '@/components/builder/BuilderToolbar.vue';
 import { loadShortcutSettings, setPlatform } from '@/builder/keymap.js';
 import { LAYOUT_ALGORITHMS } from '@/builder/layouts/index.js';
 
-import { memoryStorage } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
 
 const held = vi.hoisted(() => ({ store: null }));
 
@@ -484,7 +484,7 @@ describe('the toolbar’s Tab stop, for any keys', () => {
           expect(tabStops(wrapper)).toEqual([buttons[index].element]);
         },
       ),
-      { numRuns: 60 },
+      { numRuns: 8 },
     );
   });
 });

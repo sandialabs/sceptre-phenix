@@ -1,11 +1,13 @@
-// @vitest-environment node
+// @vitest-environment happy-dom
 // Upload and Import of a legacy Builder diagram, rendered on the server: the
 // source Upload offers, the warnings, and how Import marks such a topology.
+// The XML hint of Upload is checked in a mounted dialog.
 
 import { describe, expect, test } from 'vitest';
 import { createSSRApp, h } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import { createPinia } from 'pinia';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import ImportDialog from '@/components/builder/dialogs/ImportDialog.vue';
 import ImportWarnings from '@/components/builder/dialogs/ImportWarnings.vue';
@@ -72,6 +74,56 @@ describe('the Upload dialog', () => {
       /data-testid="upload-status"[^>]*>(<!--[^>]*-->)*<\/p>/,
     );
     expect(tag(html, 'id="upload-error"')).toContain('role="alert"');
+  });
+});
+
+// A Builder document is never XML: the sources that read one say where a
+// legacy diagram goes, on the field that holds it.
+describe('the Upload dialog, given XML', () => {
+  const XML_HINT =
+    'This is possibly a legacy Builder diagram (XML). ' +
+    'Select "Legacy Builder diagram or Topology" to convert it.';
+
+  test('File and Paste text point it at the legacy source, and make no draft', async () => {
+    const wrapper = mount(UploadDialog, {
+      attachTo: document.body,
+      global: { plugins: [createPinia()] },
+    });
+    const error = () => wrapper.get('[data-testid="upload-error"]').text();
+    const submit = async () => {
+      await wrapper.get('[data-testid="upload-submit"]').trigger('click');
+      await flushPromises();
+    };
+    const file = wrapper.get('[data-testid="upload-file"]');
+
+    Object.defineProperty(file.element, 'files', {
+      configurable: true,
+      value: [
+        new File(['<mxGraphModel><root/></mxGraphModel>'], 'diagram.xml', {
+          type: 'text/xml',
+        }),
+      ],
+    });
+    await file.trigger('change');
+    await flushPromises();
+    await submit();
+
+    expect(error()).toBe(XML_HINT);
+    expect(file.attributes('aria-invalid')).toBe('true');
+    expect(document.activeElement).toBe(file.element);
+
+    await wrapper.get('input[value="text"]').setValue();
+
+    const text = wrapper.get('[data-testid="upload-text"]');
+
+    await text.setValue('\n  <mxGraphModel><root/></mxGraphModel>');
+    await submit();
+
+    expect(error()).toBe(XML_HINT);
+    expect(text.attributes('aria-invalid')).toBe('true');
+    expect(document.activeElement).toBe(text.element);
+    expect(wrapper.emitted('uploaded')).toBeUndefined();
+    expect(wrapper.emitted('close')).toBeUndefined();
   });
 });
 
@@ -165,8 +217,9 @@ describe('the Import dialog', () => {
     const options = [
       ...select
         .slice(0, select.indexOf('</select>'))
-        .matchAll(/<option value="([^"]*)"[^>]*>([^<]*)</g),
-    ].map((match) => [match[1], match[2].trim()]);
+        // The DOM render writes an empty value as a bare attribute.
+        .matchAll(/<option value(?:="([^"]*)")?[^>]*>([^<]*)</g),
+    ].map((match) => [match[1] ?? '', match[2].trim()]);
 
     // The value stays the name the server is asked for.
     expect(options).toEqual([

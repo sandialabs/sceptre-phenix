@@ -1372,9 +1372,6 @@ test(
 
       await enter.click();
       await expect.soft(nav).toBeHidden();
-      await expect
-        .soft(page.getByRole('button', { name: 'Exit focus mode' }))
-        .toBeVisible();
       await expect.soft(builder).toHaveAnnounced('Focus mode on');
       await fills('focus mode');
 
@@ -1408,38 +1405,31 @@ test(
       await canvas.focus();
       await page.keyboard.press('ControlOrMeta+Shift+F');
       await expect.soft(nav).toBeVisible();
-      await expect.soft(enter).toBeVisible();
       await expect.soft(canvas).toBeFocused();
       await page.keyboard.press('ControlOrMeta+Shift+F');
       await expect.soft(nav).toBeHidden();
       await expect.soft(canvas).toBeFocused();
 
-      // It stays on as the drafts replace the editor. Their header has
-      // the same button, and the keys work there too.
+      // It stays on as the drafts replace the editor, whose header has the
+      // same button.
       const onDrafts = page.getByTestId('drafts-focus-mode');
       await page.getByTestId('editor-back').click();
       await expect(builder.landingHeading).toBeVisible();
       await expect.soft(nav).toBeHidden();
-      await expect.soft(onDrafts).toHaveAccessibleName('Exit focus mode');
       await fills('focus mode on the drafts');
-      await page.keyboard.press('ControlOrMeta+Shift+F');
+      await onDrafts.click();
       await expect.soft(nav).toBeVisible();
-      await expect.soft(onDrafts).toHaveAccessibleName('Focus mode');
 
       // Turned on from the drafts, it stays on as a draft opens, and the
       // editor's button ends it.
       await onDrafts.click();
       await expect.soft(nav).toBeHidden();
       await expect.soft(onDrafts).toBeFocused();
-      await expect.soft(builder).toHaveAnnounced('Focus mode on');
       await page.getByTestId(`draft-open-${draft.id}`).click();
       await expect(builder.canvas).toBeVisible();
       await expect.soft(nav).toBeHidden();
-      const inEditor = page.getByTestId('editor-focus-mode');
-      await expect.soft(inEditor).toHaveAccessibleName('Exit focus mode');
-      await inEditor.click();
+      await page.getByTestId('editor-focus-mode').click();
       await expect.soft(nav).toBeVisible();
-      await expect.soft(inEditor).toHaveAccessibleName('Focus mode');
     });
 
     expectNoFatal(issues);
@@ -1847,7 +1837,7 @@ test('Show coordinates puts rulers in Position units along the canvas edges', as
 
   // axe skips aria-hidden text, so the contrast is measured here.
   for (const theme of ['light', 'dark']) {
-    await test.step(`the rulers are legible, and axe finds no serious violations (${theme})`, async () => {
+    await test.step(`the rulers are legible (${theme})`, async () => {
       await page.emulateMedia({ colorScheme: theme });
       await expect(page.locator('.builder-root')).toHaveAttribute(
         'data-builder-theme',
@@ -1869,10 +1859,6 @@ test('Show coordinates puts rulers in Position units along the canvas edges', as
           .soft(ratio, `${theme}: contrast of a ${axis} ruler tick`)
           .toBeGreaterThanOrEqual(3);
       }
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe with rulers (${theme})`,
-      });
     });
   }
 
@@ -1918,3 +1904,42 @@ test('Show coordinates puts rulers in Position units along the canvas edges', as
 
   expectNoFatal(issues);
 });
+
+// The rulers have colors of their own: both themes. Show coordinates is a
+// setting of the browser, so the page starts with it on.
+test(
+  'axe finds no serious violations on the canvas with rulers in each theme',
+  { tag: '@axe' },
+  async ({ page, builder, issues }) => {
+    await page.addInitScript(() =>
+      localStorage.setItem(
+        'phenix.builder.settings',
+        JSON.stringify({ showCoordinates: true }),
+      ),
+    );
+    const draft = await builder.seedDraft(
+      labDocument('Rulers axe', { hostnames: ['server'] }),
+    );
+
+    await builder.openDraft(draft);
+    await expect(page.getByTestId('canvas-ruler-x')).toBeVisible();
+    // A selected node puts its span marks on both rulers.
+    await builder.canvasItem('server').click();
+    await expect(
+      page.getByTestId('canvas-ruler-x').locator('.builder-ruler__span'),
+    ).toBeVisible();
+    for (const theme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: theme });
+      await expect(page.locator('.builder-root')).toHaveAttribute(
+        'data-builder-theme',
+        theme,
+      );
+      await expectAccessible(page, {
+        soft: true,
+        label: `axe with rulers (${theme})`,
+      });
+    }
+
+    expectNoFatal(issues);
+  },
+);

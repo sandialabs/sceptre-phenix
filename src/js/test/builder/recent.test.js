@@ -8,7 +8,7 @@ import {
   rememberCommand,
 } from '@/builder/recent.js';
 
-import { memoryStorage } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
 
 function throwing() {
   const fail = () => {

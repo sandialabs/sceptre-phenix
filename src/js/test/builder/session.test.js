@@ -64,7 +64,7 @@ import { useBuilderStore } from '@/builder/store.js';
 import { THEME_STORAGE_KEY } from '@/builder/theme.js';
 import { usePhenixStore } from '@/store.js';
 
-import { memoryStorage } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();

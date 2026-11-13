@@ -16,7 +16,8 @@ import {
 } from '@/builder/keymap.js';
 import { useBuilderStore } from '@/builder/store.js';
 
-import { memoryStorage, sampleDocument } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
+import { sampleDocument } from './fixtures.js';
 
 beforeEach(() => {
   setPlatform('mac');

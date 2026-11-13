@@ -9,7 +9,7 @@ import { createPinia } from 'pinia';
 
 import PublishDialog from '@/components/builder/dialogs/PublishDialog.vue';
 import { connect } from '@/builder/model.js';
-import { CONFIG_NAME_RULE } from '@/builder/publish.js';
+import { configNameHint } from '@/builder/publish.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument, tags, textOf } from './fixtures.js';
@@ -169,18 +169,73 @@ describe('the Publish dialog in the editor', () => {
   });
 });
 
-describe('the topology name’s hints', () => {
-  // The diagram imported from topology lab, which the server has, so the dialog
-  // offers to update it under the diagram's topology name.
-  const imported = (store) => {
-    store.doc = {
-      ...store.doc,
-      metadata: { ...store.doc.metadata, name: 'lab' },
-      source: { kind: 'topology', name: 'lab' },
-    };
-    store.sources = { ...store.sources, topologies: ['lab'] };
+// The diagram imported from topology lab, which the server has, so the dialog
+// offers to update it under the diagram's topology name.
+const topologyImported = (store) => {
+  store.doc = {
+    ...store.doc,
+    metadata: { ...store.doc.metadata, name: 'lab' },
+    source: { kind: 'topology', name: 'lab' },
   };
+  store.sources = { ...store.sources, topologies: ['lab'] };
+};
 
+// A diagram imported from experiment exp, which the server has, so the
+// dialog offers to update it.
+const experimentImported = (store) => {
+  store.doc = {
+    ...store.doc,
+    metadata: { ...store.doc.metadata, name: 'core' },
+    source: { kind: 'experiment', name: 'exp', topology: 'core' },
+  };
+  store.sources = { ...store.sources, experiments: ['exp', 'other'] };
+};
+const experiment = (name) => ({
+  mode: 'topology-experiment',
+  experimentName: name,
+});
+
+describe('an update of a config that exists', () => {
+  test.each([
+    {
+      kind: 'topology',
+      id: 'publish-topology-action-hint',
+      setup: topologyImported,
+      form: null,
+      words: 'A topology with this name exists. Publishing updates it.',
+      buttons: ['Cancel', 'Update topology'],
+    },
+    {
+      kind: 'experiment',
+      id: 'publish-experiment-hint',
+      setup: experimentImported,
+      form: experiment('exp'),
+      words: 'An experiment with this name exists. Publishing updates it.',
+      buttons: ['Cancel', 'Create topology and update experiment'],
+    },
+  ])(
+    'of the $kind warns: a sign before the words, on a yellow ground',
+    async ({ id, setup, form, words, buttons }) => {
+      const html = await render({}, { setup, form });
+      const hint = element(html, id);
+      const [classes] = hint.match(/^<p [^>]*class="([^"]*)"/).slice(1);
+
+      expect(textOf(hint)).toBe(words);
+      expect(classes.split(' ').sort()).toEqual([
+        'builder-hint',
+        'builder-hint--warning',
+      ]);
+      // The sign is decorative: the words say it.
+      expect(hint).toMatch(
+        /<svg[^>]*class="builder-icon builder-icon--warning"[^>]*aria-hidden="true"/,
+      );
+      expect(hint.indexOf('<svg')).toBeLessThan(hint.indexOf(words));
+      expect(actions(html)).toEqual(buttons);
+    },
+  );
+});
+
+describe('the topology name’s hints', () => {
   test('a new topology is said plainly, with no warning', async () => {
     const html = await render();
     const hint = element(html, 'publish-topology-action-hint');
@@ -190,29 +245,8 @@ describe('the topology name’s hints', () => {
     expect(hint).not.toContain('<svg');
   });
 
-  test('an update warns: a sign before the same words, on a yellow ground', async () => {
-    const html = await render({}, { setup: imported });
-    const hint = element(html, 'publish-topology-action-hint');
-
-    expect(textOf(hint)).toBe(
-      'A topology with this name exists. Publishing updates it.',
-    );
-    const [classes] = hint.match(/^<p [^>]*class="([^"]*)"/).slice(1);
-
-    expect(classes.split(' ').sort()).toEqual([
-      'builder-hint',
-      'builder-hint--warning',
-    ]);
-    // The sign is decorative: the words say it.
-    expect(hint).toMatch(
-      /<svg[^>]*class="builder-icon builder-icon--warning"[^>]*aria-hidden="true"/,
-    );
-    expect(hint.indexOf('<svg')).toBeLessThan(hint.indexOf('A topology'));
-    expect(actions(html)).toEqual(['Cancel', 'Update topology']);
-  });
-
   test('a valid name shows no naming rule, and is described by its hint alone', async () => {
-    const html = await render({}, { setup: imported });
+    const html = await render({}, { setup: topologyImported });
     const [field] = tags(html, 'input').filter((tag) =>
       tag.includes('data-testid="publish-name"'),
     );
@@ -220,7 +254,6 @@ describe('the topology name’s hints', () => {
     expect(field).toContain('value="lab"');
     expect(field).toContain('aria-describedby="publish-topology-action-hint"');
     expect(html).not.toContain('publish-name-rule');
-    expect(html).not.toContain('Names can use only');
   });
 });
 
@@ -236,50 +269,11 @@ function input(html, testId) {
 }
 
 describe('the experiment name’s hints', () => {
-  // A diagram imported from experiment exp, which the server has, so the
-  // dialog offers to update it.
-  const imported = (store) => {
-    store.doc = {
-      ...store.doc,
-      metadata: { ...store.doc.metadata, name: 'core' },
-      source: { kind: 'experiment', name: 'exp', topology: 'core' },
-    };
-    store.sources = { ...store.sources, experiments: ['exp', 'other'] };
-  };
-  const experiment = (name) => ({
-    mode: 'topology-experiment',
-    experimentName: name,
-  });
-
-  test('an update warns as the topology’s does: a sign before the same words, on a yellow ground', async () => {
-    const html = await render({}, { setup: imported, form: experiment('exp') });
-    const hint = element(html, 'publish-experiment-hint');
-
-    expect(textOf(hint)).toBe(
-      'An experiment with this name exists. Publishing updates it.',
-    );
-    const [classes] = hint.match(/^<p [^>]*class="([^"]*)"/).slice(1);
-
-    expect(classes.split(' ').sort()).toEqual([
-      'builder-hint',
-      'builder-hint--warning',
-    ]);
-    // The sign is decorative: the words say it.
-    expect(hint).toMatch(
-      /<svg[^>]*class="builder-icon builder-icon--warning"[^>]*aria-hidden="true"/,
-    );
-    expect(hint.indexOf('<svg')).toBeLessThan(hint.indexOf('An experiment'));
-    expect(actions(html)).toEqual([
-      'Cancel',
-      'Create topology and update experiment',
-    ]);
-  });
-
   test('a new experiment, and one this diagram cannot update, carry no warning', async () => {
     for (const name of ['new-exp', 'other']) {
       const html = await render(
         {},
-        { setup: imported, form: experiment(name) },
+        { setup: experimentImported, form: experiment(name) },
       );
       const hint = element(html, 'publish-experiment-hint');
 
@@ -291,21 +285,22 @@ describe('the experiment name’s hints', () => {
   test('an invalid name shows why with the rule, and a valid one neither', async () => {
     const bad = await render(
       {},
-      { setup: imported, form: experiment('my exp/1') },
+      { setup: experimentImported, form: experiment('my exp/1') },
     );
 
     expect(textOf(element(bad, 'publish-experiment-rule'))).toBe(
-      'This name is not valid: it contains a space and characters that ' +
-        `a name cannot contain: "/". ${CONFIG_NAME_RULE}`,
+      configNameHint('my exp/1'),
     );
     expect(input(bad, 'publish-experiment')).toContain(
       'aria-describedby="publish-experiment-hint publish-experiment-rule"',
     );
 
-    const good = await render({}, { setup: imported, form: experiment('exp') });
+    const good = await render(
+      {},
+      { setup: experimentImported, form: experiment('exp') },
+    );
 
     expect(good).not.toContain('publish-experiment-rule');
-    expect(good).not.toContain('Names can use only');
     expect(input(good, 'publish-experiment')).toContain(
       'aria-describedby="publish-experiment-hint"',
     );

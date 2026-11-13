@@ -197,28 +197,6 @@ export function experimentNodeSpec() {
   };
 }
 
-// A Storage kept in memory, as localStorage is. `entries` holds what it
-// stores.
-export function memoryStorage(initial = {}) {
-  const entries = new Map(Object.entries(initial));
-
-  return {
-    entries,
-    get length() {
-      return entries.size;
-    },
-    key: (index) => [...entries.keys()][index] ?? null,
-    getItem: (key) => (entries.has(key) ? entries.get(key) : null),
-    setItem: (key, value) => {
-      entries.set(key, String(value));
-    },
-    removeItem: (key) => {
-      entries.delete(key);
-    },
-    clear: () => entries.clear(),
-  };
-}
-
 // Each opening tag of `name` in rendered HTML. `skipDialogs` leaves out those
 // inside a <dialog>.
 export function tags(html, name, { skipDialogs = false } = {}) {

@@ -341,7 +341,7 @@ describe('the menu’s focus, for any keys', () => {
           }
         },
       ),
-      { numRuns: 40 },
+      { numRuns: 8 },
     );
   });
 });

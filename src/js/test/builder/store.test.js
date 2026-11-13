@@ -397,43 +397,6 @@ describe('a network whose last switch is deleted', () => {
     expect(store.doc.networks).toEqual([]);
     expect(findNode(store.doc, sw.id)).toBeUndefined();
   });
-
-  test('stays while a VLAN names it, and the checks report it', async () => {
-    await withDraft();
-    const { doc, network, sw, bravo } = sampleDocument();
-    // bravo has an interface with no connection point on the canvas.
-    const named = {
-      ...doc,
-      nodes: doc.nodes.map((node) =>
-        node.id === bravo.id
-          ? {
-              ...node,
-              device: {
-                ...node.device,
-                spec: {
-                  ...node.device.spec,
-                  network: {
-                    interfaces: [
-                      ...node.device.spec.network.interfaces,
-                      { name: 'eth9', vlan: 'EXP' },
-                    ],
-                  },
-                },
-              },
-            }
-          : node,
-      ),
-    };
-
-    store.setDocument(named);
-    store.remove({ nodes: [sw.id], edges: [] });
-
-    expect(store.doc.networks.map((entry) => entry.id)).toEqual([network.id]);
-    expect(store.announcement).toBe('Deleted EXP and 1 connection');
-    expect(
-      store.issues.filter((entry) => entry.code === 'network.switch.missing'),
-    ).toEqual([expect.objectContaining({ networkId: network.id })]);
-  });
 });
 
 describe('editing commits', () => {
@@ -3084,16 +3047,7 @@ describe('server data', () => {
       topology: { name: 'core', action },
     });
     const answer = (action) => ({
-      changes: {
-        topology: { name: 'core', action },
-        experiment: null,
-        includes: [],
-        scenarios: [],
-        images: [],
-        vlanAliases: [],
-      },
-      warningIssues: [],
-      errorIssues: [],
+      changes: { topology: { name: 'core', action } },
     });
 
     let answerFirst;

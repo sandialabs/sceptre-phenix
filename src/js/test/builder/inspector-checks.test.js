@@ -169,47 +169,28 @@ describe('address warnings', () => {
       manual: { proto: 'manual', address: '10.0.0.5', mask: 24, mac },
       qinq: { proto: 'static', address: '10.0.0.5', mask: 24, qinq: true },
     };
-    const doc = {
-      ...result.doc,
-      nodes: result.doc.nodes.map((node) => {
-        if (node.id === result.alpha.id) {
-          const copy = JSON.parse(JSON.stringify(node));
+    const doc = JSON.parse(JSON.stringify(result.doc));
+    const specOf = (node) =>
+      doc.nodes.find((item) => item.id === node.id).device.spec;
+    const bravo = specOf(result.bravo);
 
-          copy.device.spec.network.interfaces = Object.values(kinds).map(
-            (fields, index) => ({
-              name: `eth${index}`,
-              type: 'ethernet',
-              vlan: 'EXP',
-              ...fields,
-            }),
-          );
-
-          return copy;
-        }
-
-        if (node.id === result.bravo.id) {
-          const copy = JSON.parse(JSON.stringify(node));
-
-          copy.device.spec = {
-            ...copy.device.spec,
-            external: true,
-            type: 'HIL',
-          };
-          copy.device.spec.network.interfaces = [
-            { name: 'eth0', vlan: 'EXP', ...kinds.static },
-          ];
-
-          return copy;
-        }
-
-        return node;
+    specOf(result.alpha).network.interfaces = Object.values(kinds).map(
+      (fields, index) => ({
+        name: `eth${index}`,
+        type: 'ethernet',
+        vlan: 'EXP',
+        ...fields,
       }),
-    };
+    );
+    Object.assign(bravo, { external: true, type: 'HIL' });
+    bravo.network.interfaces = [{ name: 'eth0', vlan: 'EXP', ...kinds.static }];
+
     const warned = {};
 
     for (const node of [result.alpha, result.bravo]) {
-      const { spec } = doc.nodes.find((item) => item.id === node.id).device;
-      const warnings = deviceFieldWarnings(doc, spec, { nodeId: node.id });
+      const warnings = deviceFieldWarnings(doc, specOf(node), {
+        nodeId: node.id,
+      });
       const html = await renderInspector(doc, { nodes: [node.id] });
 
       warned[node.device.hostname] = Object.keys(warnings).sort();

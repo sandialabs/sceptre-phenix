@@ -18,13 +18,6 @@ function hex(buffer) {
 }
 
 describe('content digests', () => {
-  test('object keys are serialized in sorted order, like Go', () => {
-    expect(canonicalJSON({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');
-    expect(canonicalJSON({ a: { d: 1, c: [1, { f: 2, e: 3 }] } })).toBe(
-      '{"a":{"c":[1,{"e":3,"f":2}],"d":1}}',
-    );
-  });
-
   test('object keys are sorted by code point, as Go sorts them', () => {
     // UTF-16 order puts an emoji before fullwidth forms. Go sorts by code point.
     // The expected digests are the ones builder.ContentDigest computes.
@@ -67,22 +60,6 @@ describe('content digests', () => {
     expect(isDigest('')).toBe(false);
     expect(contentDigestSync(null)).toBe('');
     expect(contentDigestSync(undefined)).toBe('');
-  });
-
-  test('the digest matches SHA-256 across padding boundaries', async () => {
-    // Lengths around the 55/56 and 64 byte block boundaries, and multi-block.
-    for (const length of [0, 1, 55, 56, 63, 64, 65, 119, 120, 1000]) {
-      const bytes = new Uint8Array(length).map(
-        (_, index) => (index * 31) % 256,
-      );
-      const expected = hex(await webcrypto.subtle.digest('SHA-256', bytes));
-
-      expect(sha256Hex(bytes), `length ${length}`).toBe(expected);
-    }
-
-    expect(sha256Hex(new TextEncoder().encode('abc'))).toBe(
-      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
-    );
   });
 
   test('the digest is the SHA-256 of the canonical JSON', async () => {
@@ -129,7 +106,13 @@ describe('content digest properties', () => {
           createHash('sha256').update(bytes).digest('hex'),
         );
       }),
-      { numRuns: 200 },
+      {
+        numRuns: 200,
+        // Lengths around the 55/56 and 64 byte block boundaries, and multi-block.
+        examples: [0, 1, 55, 56, 63, 64, 65, 119, 120, 1000].map((length) => [
+          new Uint8Array(length).map((_, index) => (index * 31) % 256),
+        ]),
+      },
     );
   });
 

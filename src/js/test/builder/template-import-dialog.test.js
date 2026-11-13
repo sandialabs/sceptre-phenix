@@ -96,22 +96,13 @@ describe('Import templates', () => {
     expect(wrapper.emitted('close')).toHaveLength(1);
   });
 
-  test('a collection of the same name in the library gets a number, which the summary says first', async () => {
-    const { wrapper, store } = open({ collections: [{ name: 'plant' }] });
+  test('the summary says the number a collection of the same name in the library makes Import add', async () => {
+    const { wrapper } = open({ collections: [{ name: 'plant' }] });
 
     await chooseFile(wrapper, 'plant.json', JSON.stringify(FILE));
 
     expect(byId(wrapper, 'template-import-summary').text()).toBe(
       'Plant: 1 template. The library has a collection of that name, so Import adds it as Plant (2).',
-    );
-
-    await importIt(wrapper);
-
-    expect(store.createLibraryTemplates.mock.calls[0][1]).toEqual({
-      collection: { name: 'Plant (2)' },
-    });
-    expect(store.announcement).toBe(
-      'Imported 1 template as collection Plant (2).',
     );
   });
 

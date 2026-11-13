@@ -46,7 +46,8 @@ import {
 import { nextPosition } from '@/components/builder/paletteDnd.js';
 
 import { PLATFORMS, context } from './command-context.js';
-import { memoryStorage, sampleDocument } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
+import { sampleDocument } from './fixtures.js';
 
 beforeEach(() => {
   loadShortcutSettings(memoryStorage());
@@ -1145,23 +1146,10 @@ describe('running', () => {
   test('a device is on the network its VLAN names, in case as the server folds it', () => {
     const { doc, bravo, network } = sampleDocument();
 
-    doc.networks = doc.networks.map((entry) =>
-      entry.id === network.id ? { ...entry, name: 'ΣΑΣ' } : entry,
-    );
-    doc.nodes = doc.nodes.map((entry) =>
-      entry.id === bravo.id
-        ? {
-            ...entry,
-            device: {
-              ...entry.device,
-              spec: {
-                ...entry.device.spec,
-                network: { interfaces: [{ name: 'eth0', vlan: 'σασ' }] },
-              },
-            },
-          }
-        : entry,
-    );
+    doc.networks.find((entry) => entry.id === network.id).name = 'ΣΑΣ';
+    doc.nodes.find((entry) => entry.id === bravo.id).device.spec.network = {
+      interfaces: [{ name: 'eth0', vlan: 'σασ' }],
+    };
 
     const choice = nodeChoices(doc).find((entry) => entry.id === bravo.id);
 

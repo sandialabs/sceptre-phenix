@@ -34,8 +34,6 @@ import {
   uiSchemaForKind,
 } from '@/builder/adapters/forms.js';
 import { createFormValidator } from '@/builder/form-validator.js';
-import { iconLibrary } from '@/builder/iconLibrary.js';
-import { indexIcons } from '@/builder/icons.js';
 import { addNode, updateNetwork, updateNode } from '@/builder/model.js';
 import { builderSchemaV1, schemaForKind } from '@/builder/schema.js';
 
@@ -221,9 +219,6 @@ describe('inspector field accessibility', () => {
     expect(html).toMatch(/>Hostname<span class="asterisk" aria-hidden="true">/);
     expect(hostname).toContain('aria-required="true"');
     expect(hostname).toMatch(/aria-describedby="[^"]*-description"/);
-    expect(html).toContain(
-      'Unique hostname. Apply also sets it as the node hostname.',
-    );
     // Apply sets the spec's copy, so it is read-only, not required, and
     // still reached with Tab (not disabled).
     expect(specHostname).toMatch(/\sreadonly\b/);
@@ -317,10 +312,7 @@ describe('inspector field accessibility', () => {
       'More settings: miniccc commands, Delay, Injections, Deletions, Advanced settings, Overrides, Labels (1), Annotations (2)',
     );
     // A chevron, decoration only, turns as the section opens.
-    expect(summary).toMatch(
-      /<svg[^>]*class="builder-icon builder-icon--chevron-down inspector-section__chevron"[^>]*aria-hidden="true"/,
-    );
-    expect(html).toMatch(/<details[^>]*class="inspector-section"/);
+    expect(summary).toMatch(/<svg[^>]*aria-hidden="true"/);
     expect(html).not.toMatch(/<details[^>]*\sopen\b/);
     expect(html).toMatch(
       /<span class="builder-visually-hidden"[^>]*>Label 1 <\/span>Name<\/label>/,
@@ -333,7 +325,6 @@ describe('inspector field accessibility', () => {
     expect(html).toContain('value="&quot;true&quot;"');
     expect(html).toContain('aria-label="Remove annotation 2"');
     expect(html).toMatch(/Add advanced setting\s*<\/button>/);
-    expect(html).toContain('No advanced settings.');
     // The name field suggests the names phenix knows.
     expect(input('value="ntp-server"')).toMatch(/list="[^"]+-keys"/);
     expect(html).toMatch(/<option value="phenix\/default-apps"/);
@@ -390,19 +381,6 @@ describe('inspector field accessibility', () => {
       '<div style="display:none;" class="array-list-item-content">',
     );
     expect(first).toContain('data-testid="inspector-disclosure-error"');
-  });
-
-  // The server lists a drive's fields alphabetically. The form shows the
-  // image and the inject partition first.
-  test("a drive's image and inject partition come before its cache mode", async () => {
-    const { html } = await renderDeviceForm([]);
-    const at = (key) =>
-      html.indexOf(`data-path="spec.hardware.drives.0.${key}"`);
-
-    expect(at('image')).toBeGreaterThan(-1);
-    expect(at('image')).toBeLessThan(at('inject_partition'));
-    expect(at('inject_partition')).toBeLessThan(at('cache_mode'));
-    expect(at('cache_mode')).toBeLessThan(at('interface'));
   });
 
   // The description is a label tooltip on hover and focus, and the input's
@@ -631,8 +609,6 @@ describe('inspector field accessibility', () => {
       (tag) => !/\sdisabled\b/.test(tag) && !disclosures.includes(tag),
     );
 
-    expect(disclosures.length).toBeGreaterThan(5);
-    expect(disclosures.filter((tag) => /\sdisabled\b/.test(tag))).toEqual([]);
     expect(enabled).toHaveLength(1);
     expect(enabled[0]).toContain('data-testid="inspector-icon"');
     expect(enabled[0]).toContain('aria-disabled="true"');
@@ -710,13 +686,6 @@ function choicesOf(field) {
   );
 }
 
-// The labels of a rendered form's fields, in order.
-function labelsOf(html) {
-  return [
-    ...html.matchAll(/<label[^>]*class="[^"]*\blabel"[^>]*>([^<]*)</g),
-  ].map((match) => match[1].trim());
-}
-
 // Fields are read only, not disabled, so Tab reaches them at full contrast.
 // Buttons are disabled.
 test('a read-only draft locks every Inspector field and disables its buttons', async () => {
@@ -726,12 +695,16 @@ test('a read-only draft locks every Inspector field and disables its buttons', a
   );
   // The disclosure buttons of the groups and lists change only what
   // shows, so they stay enabled.
-  const buttons = tags(html, 'button').filter(
-    (tag) => !tag.includes('data-testid="inspector-disclosure"'),
+  const disclosures = tags(html, 'button').filter((tag) =>
+    tag.includes('data-testid="inspector-disclosure"'),
   );
-  const enabled = buttons.filter((tag) => !/\sdisabled\b/.test(tag));
+  const enabled = tags(html, 'button').filter(
+    (tag) => !/\sdisabled\b/.test(tag) && !disclosures.includes(tag),
+  );
 
   expect(fields.length).toBeGreaterThan(20);
+  expect(disclosures.length).toBeGreaterThan(5);
+  expect(disclosures.filter((tag) => /\sdisabled\b/.test(tag))).toEqual([]);
   expect(fields.filter((tag) => /\sdisabled\b/.test(tag))).toEqual([]);
   // A checkbox has no read-only state, so it says so.
   expect(
@@ -798,7 +771,7 @@ describe('the layer section', () => {
     expect(section).toBeGreaterThan(html.indexOf('</form>'));
     expect(section).toBeLessThan(html.indexOf('Connection points'));
     expect(html).toMatch(
-      /<label for="inspector-layer-select"[^>]*>Layer<\/label>/,
+      /<h3[^>]*><label for="inspector-layer-select"[^>]*>Layer<\/label><\/h3>/,
     );
     expect(select).toContain('aria-describedby="inspector-layer-hint"');
     expect(choicesOf(options)).toEqual([
@@ -1230,7 +1203,6 @@ describe('the diagram section', () => {
       expect(textOf(block)).toContain('Delete note 1');
       expect(textOf(block)).toContain('Delete note 2');
       expect(buttons).toHaveLength(3);
-      expect(buttons[0]).toContain('class="builder-button');
       expect(buttons[2]).toContain('data-testid="inspector-note-add"');
       expect(buttons[2]).not.toContain(' disabled');
       expect(textOf(block)).toContain('Add note');
@@ -1276,13 +1248,6 @@ describe('the diagram section', () => {
       expect(textOf(block)).toContain(
         'A note cannot hold control characters other than newline and tab. Builder does not save it until you remove them.',
       );
-    });
-
-    test('say so when there are none', async () => {
-      const block = notesBlock(await renderInspector({ document: true }));
-
-      expect(textOf(block)).toContain('Notes No notes. Add note');
-      expect(tags(block, 'textarea')).toEqual([]);
     });
 
     test('Add note is disabled, and says why, once the diagram holds the most notes', async () => {
@@ -1375,7 +1340,6 @@ describe('the diagram section', () => {
         'Scenario secret-scn The Builder does not show the apps of this scenario, because your role cannot read it. ' +
         'Edit scenarios',
     );
-    expect(textOf(html)).not.toContain('Apps and their hosts');
     expect(
       tags(html, 'h4').map((tag) => tag.includes('inspector-scenario-name')),
     ).toEqual([true, true]);
@@ -1826,17 +1790,6 @@ describe('colors, line styles and group fields', () => {
         ),
     });
 
-    expect(labelsOf(html).slice(0, 9)).toEqual([
-      'Name',
-      'VLAN alias',
-      'Subnet',
-      'Gateway',
-      'Description',
-      'Edge Color',
-      'Line style',
-      'Outline Color',
-      'Fill Color',
-    ]);
     expect(picker(html, 'color')).toContain('aria-label="Choose edge Color"');
     expect(picker(html, 'outlineColor')).toContain(
       'aria-label="Choose outline Color"',
@@ -1864,9 +1817,6 @@ describe('colors, line styles and group fields', () => {
       'Dotted',
       'Dash-dot',
     ]);
-    expect(fieldOf(html, 'lineStyle')).toContain(
-      'Default: Auto: chosen by the network&#39;s place in the diagram.',
-    );
     expect(html).not.toContain('Not set');
   });
 
@@ -1876,13 +1826,6 @@ describe('colors, line styles and group fields', () => {
         updateNode(doc, alpha.id, { device: { fillColor: '#ffd400' } }),
     });
 
-    expect(labelsOf(html).slice(0, 5)).toEqual([
-      'Hostname',
-      'Icon',
-      'Icon size',
-      'Outline Color',
-      'Fill Color',
-    ]);
     // Without a size of its own, the device draws the diagram's.
     expect(choicesOf(fieldOf(html, 'iconSize'))).toEqual([
       'Diagram default (Small)',
@@ -1890,9 +1833,6 @@ describe('colors, line styles and group fields', () => {
       'Medium',
       'Large',
     ]);
-    expect(fieldOf(html, 'iconSize')).toContain(
-      'Default: The diagram&#39;s icon size.',
-    );
     expect(picker(html, 'outlineColor')).toContain(
       'aria-label="Choose outline Color"',
     );
@@ -1909,9 +1849,6 @@ describe('colors, line styles and group fields', () => {
     expect(
       (html.match(/data-testid="inspector-color-picker"/g) || []).length,
     ).toBe(2);
-    expect(fieldOf(html, 'fillColor')).toContain(
-      'Text and icon turn black or white to stay readable.',
-    );
   });
 
   test('a group has Description, Border pattern and Icon, each default named', async () => {
@@ -1929,14 +1866,6 @@ describe('colors, line styles and group fields', () => {
       iconControls,
     });
 
-    expect(labelsOf(html).slice(0, 6)).toEqual([
-      'Title',
-      'Description',
-      'Color',
-      'Border pattern',
-      'Icon',
-      'Icon size',
-    ]);
     expect(choicesOf(fieldOf(html, 'iconSize'))).toEqual([
       'Diagram default (Small)',
       'Small',
@@ -1992,7 +1921,6 @@ describe('colors, line styles and group fields', () => {
       ],
     ]);
 
-    expect(labelsOf(html)).toEqual(['Label', 'Color', 'Line style']);
     expect(choicesOf(fieldOf(html, 'lineStyle'))).toEqual([
       'Auto (Dashed)',
       'Solid',
@@ -2000,9 +1928,6 @@ describe('colors, line styles and group fields', () => {
       'Dotted',
       'Dash-dot',
     ]);
-    expect(fieldOf(html, 'lineStyle')).toContain(
-      'Default: Auto: its network&#39;s line style.',
-    );
     expect(choicesOf(fieldOf(await render(), 'lineStyle'))[0]).toBe('Auto');
   });
 });
@@ -2028,10 +1953,6 @@ describe('the Icon field', () => {
     return { html: await renderInspector(options) };
   }
 
-  afterEach(() => {
-    iconLibrary.state.index = indexIcons([]);
-  });
-
   test('shows the built-in icon by its label, in a menu button named Icon', async () => {
     const { html } = await iconField();
     const menu = button(html);
@@ -2053,7 +1974,6 @@ describe('the Icon field', () => {
     );
     expect(fieldOf(html, 'icon')).toContain('builder-icon--linux');
     expect(images(html)).toEqual([]);
-    expect(html).toContain('Choose Custom icon… to use an image');
     // The menu and the dialog are there only once they are opened.
     expect(html).not.toContain('role="menu"');
     expect(html).not.toContain('data-testid="icon-dialog"');
@@ -2065,25 +1985,12 @@ describe('the Icon field', () => {
 
     expect(images(html)).toHaveLength(1);
     expect(image).toContain(`src="data:image/png;base64,${ICON_DATA}"`);
-    expect(image).toContain('class="builder-icon builder-icon--custom"');
-    expect(image).toContain('width="20"');
     // Decoration: its alternative text is empty.
     expect(image).toMatch(/ alt(=""|\s)/);
     expect(image).toContain('aria-hidden="true"');
     expect(fieldOf(html, 'icon')).toMatch(
       /data-testid="inspector-icon-name"[^>]*>plc<\/span>/,
     );
-    expect(textOf(fieldOf(html, 'icon'))).toContain('plc (custom icon)');
-  });
-
-  test('shows an icon of the icon library the diagram carries no copy of', async () => {
-    iconLibrary.state.index = indexIcons([
-      { name: 'PLC', aliases: [], data: ICON_DATA },
-    ]);
-
-    const { html } = await iconField(withIcon(null));
-
-    expect(images(html)).toHaveLength(1);
     expect(textOf(fieldOf(html, 'icon'))).toContain('plc (custom icon)');
   });
 

@@ -931,7 +931,7 @@ test.describe('keyboard-only authoring', () => {
   );
 });
 
-// --- axe scans in both themes -------------------------------------------------
+// --- axe scans -------------------------------------------------------------
 
 // A diagram of the legacy Builder with nothing drawn in it, which converts
 // with one warning.
@@ -1050,9 +1050,9 @@ function headerControls(page) {
   };
 }
 
-// The axe scans in the theme `scheme`, one test and draft per surface. They
-// carry @axe and run only in the Chromium axe job of CI.
-function axeScans(scheme) {
+// The axe scans and contrast checks of the surfaces with colors of their own,
+// in the theme `scheme`. They carry @axe and run only in the Chromium axe job.
+function colorScans(scheme) {
   const tag = ['@axe'];
 
   test(
@@ -1107,378 +1107,6 @@ function axeScans(scheme) {
   );
 
   test(
-    'the header goes in Tab order, the save state sits beside Draft History, and the name has a pencil and a field',
-    { tag },
-    async ({ page, builder, issues }) => {
-      await newDraftIn(page, builder, scheme);
-      const {
-        back,
-        help,
-        name,
-        edit,
-        reset,
-        commands,
-        theme,
-        shortcuts,
-        checks,
-        settings,
-        focusMode,
-        countButton,
-      } = headerControls(page);
-
-      await test.step('the header has the Drafts button, the name and its pencil, the counts, the checks, Reset view, Commands, the theme, Shortcuts, Settings, the Help link of the landing and Focus mode', async () => {
-        // Tab goes left to right through the header, the counts one stop. The
-        // order is the same in either theme.
-        if (scheme === 'light') {
-          await back.focus();
-          for (const next of [
-            edit,
-            countButton(0),
-            checks,
-            reset,
-            commands,
-            theme,
-            shortcuts,
-            settings,
-            help,
-            focusMode,
-          ]) {
-            await page.keyboard.press('Tab');
-            await expect.soft(next).toBeFocused();
-          }
-        }
-        // The save state is in the toolbar, just after Draft History on its
-        // row: text, which neither Tab nor the toolbar's arrow keys stop at.
-        const history = builder.toolbar('history');
-        const saved = await builder.saveState.boundingBox();
-        const before = await history.boundingBox();
-        expect
-          .soft(saved.x - (before.x + before.width), 'save state after history')
-          .toBeGreaterThanOrEqual(0);
-        expect
-          .soft(saved.x - (before.x + before.width), 'save state by history')
-          .toBeLessThan(16);
-        expect
-          .soft(
-            Math.abs(
-              saved.y + saved.height / 2 - (before.y + before.height / 2),
-            ),
-            'save state on history’s row',
-          )
-          .toBeLessThan(4);
-        await expect
-          .soft(builder.saveState.locator('xpath=self::p'))
-          .toHaveCount(1);
-        await expect.soft(builder.saveState).not.toHaveAttribute('tabindex');
-
-        // The name is text, the pencil after it is named for what it does
-        // and described by the name, and a tooltip says what it does.
-        await expect.soft(name).toHaveText(/^Untitled topology( \d+)?$/);
-        const title = (await name.textContent()).trim();
-        await expect.soft(edit).toHaveAccessibleDescription(title);
-        await edit.hover();
-        await expect
-          .soft(page.getByTestId('header-tooltip'))
-          .toHaveText('Edit diagram name');
-        const target = await edit.boundingBox();
-        expect.soft(target.width, 'pencil width').toBeGreaterThanOrEqual(24);
-        expect.soft(target.height, 'pencil height').toBeGreaterThanOrEqual(24);
-
-        // The pencil shows a field with the name selected. Escape keeps the
-        // name, Enter saves it, and focus goes back to the pencil.
-        const field = page.getByRole('textbox', { name: 'Diagram name' });
-        await edit.press('Enter');
-        await expect.soft(field).toBeFocused();
-        await expect.soft(field).toHaveValue(title);
-        expect
-          .soft(
-            await field.evaluate((input) => [
-              input.selectionStart,
-              input.selectionEnd,
-            ]),
-            'the name is selected',
-          )
-          .toEqual([0, title.length]);
-        await expect
-          .soft(page.locator('label[for="builder-doc-name"]'))
-          .toHaveClass(/builder-visually-hidden/);
-        await field.press('End');
-        await field.pressSequentially(' draft');
-        await field.press('Escape');
-        await expect.soft(edit).toBeFocused();
-        await expect.soft(field).toHaveCount(0);
-        await expect.soft(name).toHaveText(title);
-        await expect.soft(builder).toHaveAnnounced('Diagram name not changed.');
-        await edit.press('Enter');
-        await field.fill(`${title} with a name long enough to be cut off`);
-        await field.press('Enter');
-        await expect.soft(edit).toBeFocused();
-        await expect.soft(builder).toHaveAnnounced('Renamed diagram');
-        // A long name is cut off with an ellipsis, and stays whole in the
-        // text, the pencil's description and the tooltips.
-        const long = `${title} with a name long enough to be cut off`;
-        await expect.soft(name).toHaveText(long);
-        await expect.soft(edit).toHaveAccessibleDescription(long);
-        expect
-          .soft(
-            await name.evaluate(
-              (text) =>
-                getComputedStyle(text).textOverflow === 'ellipsis' &&
-                text.scrollWidth > text.clientWidth,
-            ),
-            'the long name is cut off',
-          )
-          .toBe(true);
-        await expect
-          .soft(page.getByTestId('header-tooltip'))
-          .toHaveText(`Edit diagram name: ${long}`);
-        // The pointer, left where the pencil was, may be over the longer
-        // name now: it moves off, then onto the name.
-        await page.mouse.move(0, 0);
-        await name.hover();
-        await expect.soft(page.getByTestId('header-tooltip')).toHaveText(long);
-        // Emptied, it shows a muted Untitled diagram.
-        await edit.click();
-        await field.fill('');
-        await field.press('Enter');
-        await expect.soft(name).toHaveText('Untitled diagram');
-        await expect.soft(name).toHaveClass(/is-empty/);
-        await expectReadable(name, 'Untitled diagram');
-        await edit.click();
-        await field.fill(title);
-        await field.press('Enter');
-        await expect.soft(name).toHaveText(title);
-      });
-      expectNoFatal(issues);
-    },
-  );
-
-  if (scheme === 'light') {
-    test(
-      'the header’s counts are buttons in one Tab stop, with tooltips, that the arrow keys, Home and End move between',
-      { tag },
-      async ({ page, builder, issues }) => {
-        await newDraftIn(page, builder, scheme);
-        const { counts, countsTip, count, countButton } = headerControls(page);
-
-        await test.step('the counts of a blank diagram', async () => {
-          // A count's tooltip, on hover and on focus, says what it selects. The
-          // list keeps one Tab stop.
-          await count(3).hover();
-          await expect.soft(countsTip).toHaveText('0 connections');
-          await countButton(0).focus();
-          await expect.soft(countsTip).toHaveText('0 devices');
-          await page.keyboard.press('ArrowRight');
-          await expect.soft(countButton(1)).toBeFocused();
-          await expect.soft(countsTip).toHaveText('0 switches');
-          await page.keyboard.press('End');
-          await expect.soft(countsTip).toHaveText('0 notes');
-          // The counts are in a box, which holds a count's focus ring. A
-          // count is large enough to press (WCAG 2.5.8).
-          await expect.soft(counts).toHaveCSS('border-top-style', 'solid');
-          const room = await countButton(5).evaluate((item) => {
-            const own = item.getBoundingClientRect();
-            const box = item.closest('ul').getBoundingClientRect();
-            const style = getComputedStyle(item);
-            const reach =
-              parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
-
-            return {
-              ring: Math.min(
-                own.top - reach - box.top,
-                box.bottom - own.bottom - reach,
-                box.right - own.right - reach,
-              ),
-              size: Math.min(own.width, own.height),
-            };
-          });
-          expect
-            .soft(room.ring, 'focus ring inside the counts box')
-            .toBeGreaterThan(1);
-          expect.soft(room.size, 'a count’s size').toBeGreaterThanOrEqual(24);
-          await page.keyboard.press('ArrowRight');
-          await expect.soft(countButton(0)).toBeFocused();
-          await expect.soft(counts.locator('[tabindex="0"]')).toHaveCount(1);
-          await page.keyboard.press('Escape');
-          await expect.soft(countsTip).toHaveCount(0);
-        });
-        expectNoFatal(issues);
-      },
-    );
-  }
-
-  test(
-    'the header’s Drafts, checks, Shortcuts, Commands, theme, Settings, Help and Focus mode say what they do, give their keys and are readable',
-    { tag },
-    async ({ page, builder, issues }) => {
-      await newDraftIn(page, builder, scheme);
-      const {
-        back,
-        help,
-        checks,
-        counts,
-        reset,
-        commands,
-        theme,
-        shortcuts,
-        settings,
-        focusMode,
-      } = headerControls(page);
-
-      await test.step('Shortcuts, Commands, the theme, Settings, Help and Focus mode', async () => {
-        // Shortcuts shows its key as a key cap, named Shortcuts and described
-        // by the key. It opens the sheet and gets focus back.
-        await expect.soft(shortcuts.locator('kbd')).toHaveText(['?']);
-        await expect.soft(shortcuts.locator('kbd')).toBeVisible();
-        await expect.soft(shortcuts).toHaveAccessibleDescription('?');
-        await shortcuts.focus();
-        await expect
-          .soft(page.getByTestId('header-tooltip'))
-          .toHaveText('Keyboard shortcuts (?)');
-        await page.keyboard.press('Enter');
-        await expect.soft(page.getByTestId('shortcuts-dialog')).toBeVisible();
-        await page.keyboard.press('Escape');
-        await expect.soft(shortcuts).toBeFocused();
-        // Commands shows the palette's key. The theme button shows the theme
-        // in use, and its name and tooltip say what a press changes it to.
-        await expect.soft(commands).toHaveAccessibleName('Commands');
-        await expect
-          .soft(commands)
-          .toHaveAttribute(
-            'aria-keyshortcuts',
-            process.platform === 'darwin' ? 'Meta+K' : 'Control+K',
-          );
-        await expect.soft(commands.locator('kbd')).toHaveCount(2);
-        await commands.focus();
-        await expect
-          .soft(page.getByTestId('header-tooltip'))
-          .toHaveText(/^Command palette \(/);
-        await page.keyboard.press('Enter');
-        await expect.soft(page.getByTestId('commands-dialog')).toBeVisible();
-        await page.keyboard.press('Escape');
-        await expect.soft(commands).toBeFocused();
-        const next = scheme === 'dark' ? 'Light' : 'Dark';
-        await expect
-          .soft(theme)
-          .toHaveAccessibleName(`Theme: System. Switch to ${next} theme.`);
-        await expect.soft(theme).toHaveText('System');
-        // At this width it shows only its icon, so its tooltip names it too.
-        // With room for its label, the tooltip says only what a press does.
-        await theme.hover();
-        await expect
-          .soft(page.getByTestId('header-tooltip'))
-          .toHaveText(`Theme: System. Switch to ${next} theme`);
-        const initial = page.viewportSize();
-        await page.setViewportSize({ width: 2560, height: initial.height });
-        await page.mouse.move(0, 0);
-        await theme.hover();
-        await expect
-          .soft(page.getByTestId('header-tooltip'))
-          .toHaveText(`Switch to ${next} theme`);
-        await page.setViewportSize(initial);
-        // The pointer leaves the controls, so the tooltip hides.
-        await page.mouse.move(0, 0);
-        await expect(page.getByTestId('header-tooltip')).toHaveCount(0);
-        // Settings' and Help's tooltips name them too, and Settings' gives
-        // its key.
-        const settingsKeys =
-          process.platform === 'darwin' ? '⌥⇧S' : 'Alt+Shift+S';
-        await settings.hover();
-        await expect
-          .soft(page.getByTestId('header-tooltip'))
-          .toHaveText(`Builder settings (${settingsKeys})`);
-        await expect
-          .soft(settings)
-          .toHaveAttribute('aria-keyshortcuts', 'Alt+Shift+S');
-        await expect.soft(settings).toHaveAccessibleDescription(settingsKeys);
-        await help.focus();
-        await expect
-          .soft(page.getByTestId('header-tooltip'))
-          .toHaveText('Help (opens in a new tab)');
-        // The label stays on one line, also at the window's right edge.
-        expect
-          .soft(
-            await page.getByTestId('header-tooltip').evaluate((tip) => {
-              const range = document.createRange();
-
-              range.selectNodeContents(tip);
-
-              return new Set(
-                [...range.getClientRects()].map((rect) => Math.round(rect.top)),
-              ).size;
-            }),
-            'Help tooltip lines',
-          )
-          .toBe(1);
-
-        // Focus mode, an icon named by its tooltip, keeps focus as a press
-        // turns it into Exit focus mode.
-        await focusMode.focus();
-        await expect
-          .soft(page.getByTestId('header-tooltip'))
-          .toHaveText(/^Focus mode: hide the navigation bar/);
-        await expect
-          .soft(focusMode)
-          .toHaveAccessibleDescription(/^Hide the navigation bar/);
-        await expect
-          .soft(focusMode)
-          .toHaveAttribute(
-            'aria-keyshortcuts',
-            /^(Shift\+Meta|Control\+Shift)\+F$/,
-          );
-        await page.keyboard.press('Enter');
-        const exit = page.getByRole('button', { name: 'Exit focus mode' });
-        await expect.soft(exit).toBeFocused();
-        await expect.soft(page.locator('.navbar')).toBeHidden();
-        await expect
-          .soft(page.getByTestId('header-tooltip'))
-          .toHaveText(/^Exit focus mode: show the navigation bar again/);
-        await expectReadable(exit, 'Exit focus mode');
-        await page.keyboard.press('Enter');
-        await expect.soft(focusMode).toBeFocused();
-        await expect.soft(page.locator('.navbar')).toBeVisible();
-
-        await expect.soft(back.locator('svg.builder-icon')).toHaveCount(1);
-        // The Drafts button and the checks button keep their names. Their
-        // tooltips, which are also their descriptions, say what they do.
-        const draftsTip =
-          'Return to the Drafts page. The Builder saves your work automatically, so you do not lose it.';
-        await expect.soft(back).toHaveAccessibleDescription(draftsTip);
-        await back.focus();
-        await expect
-          .soft(page.getByTestId('header-tooltip'))
-          .toHaveText(draftsTip);
-        const checksTip =
-          'Diagram checks: the errors and warnings in this diagram. Select to see the list.';
-        await expect.soft(checks).toHaveAccessibleName(/ in this diagram$/);
-        await expect.soft(checks).toHaveAccessibleDescription(checksTip);
-        await checks.hover();
-        await expect
-          .soft(page.getByTestId('header-tooltip'))
-          .toHaveText(checksTip);
-        await page.mouse.move(0, 0);
-        await expect
-          .soft(help)
-          .toHaveAttribute(
-            'href',
-            'https://phenix.sceptre.dev/latest/builder/',
-          );
-        await expect.soft(help).toHaveAttribute('target', '_blank');
-        await expect.soft(help).toHaveAttribute('rel', /\bnoopener\b/);
-        await expectReadable(back, 'Drafts');
-        await expectReadable(help, 'editor Help link');
-        await expectReadable(reset, 'Reset view');
-        await expectReadable(commands, 'Commands');
-        await expectReadable(theme, 'theme button');
-        await expectReadable(shortcuts, 'Shortcuts');
-        await expectReadable(counts, 'counts');
-        await expectReadable(builder.saveState, 'save state');
-      });
-      expectNoFatal(issues);
-    },
-  );
-
-  test(
     'the editor of a connected device has no text colored like its background, and passes axe with the System theme',
     { tag },
     async ({ page, builder, issues }) => {
@@ -1500,6 +1128,161 @@ function axeScans(scheme) {
       expectNoFatal(issues);
     },
   );
+
+  test(
+    'the header’s controls, the muted name of an unnamed diagram and Exit focus mode are readable',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await newDraftIn(page, builder, scheme);
+      const {
+        back,
+        help,
+        name,
+        edit,
+        counts,
+        reset,
+        commands,
+        theme,
+        shortcuts,
+        focusMode,
+      } = headerControls(page);
+
+      await test.step('the header’s controls', async () => {
+        await expectReadable(back, 'Drafts');
+        await expectReadable(help, 'editor Help link');
+        await expectReadable(reset, 'Reset view');
+        await expectReadable(commands, 'Commands');
+        await expectReadable(theme, 'theme button');
+        await expectReadable(shortcuts, 'Shortcuts');
+        await expectReadable(counts, 'counts');
+        await expectReadable(builder.saveState, 'save state');
+      });
+
+      await test.step('the muted name of an unnamed diagram', async () => {
+        const field = page.getByRole('textbox', { name: 'Diagram name' });
+        await edit.click();
+        await field.fill('');
+        await field.press('Enter');
+        await expect(name).toHaveClass(/is-empty/);
+        await expectReadable(name, 'Untitled diagram');
+      });
+
+      await test.step('Exit focus mode, focused', async () => {
+        const exit = page.getByRole('button', { name: 'Exit focus mode' });
+        await focusMode.focus();
+        await page.keyboard.press('Enter');
+        await expect(exit).toBeFocused();
+        await expectReadable(exit, 'Exit focus mode');
+      });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'a diagram with shapes, icons and lines passes axe with a line and with a rectangle selected',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await newDraftIn(page, builder, scheme);
+
+      await test.step('axe finds no serious violations in a diagram with shapes, icons and lines', async () => {
+        for (const item of ['rectangle', 'circle', 'icon', 'line']) {
+          await builder.palette(item).click();
+        }
+        await expect(items(builder)).toHaveCount(4);
+        // The new line is selected: its points have their handles.
+        await expect(page.getByTestId('line-point-1')).toBeVisible();
+        await expectAccessible(page, {
+          soft: true,
+          label: `axe on a diagram with a selected line (${scheme})`,
+        });
+        // A selected rectangle has the handles that resize it.
+        await builder.selectNode('Rectangle');
+        await expect(
+          page.locator('.vue-flow__resize-control').first(),
+        ).toBeVisible();
+        await expectAccessible(page, {
+          soft: true,
+          label: `axe on a diagram with a selected rectangle (${scheme})`,
+        });
+      });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'the Auto-group message, the drafts landing’s theme button, Help link and header rings, and the Configs tag’s focus ring keep their contrast',
+    { tag },
+    async ({ page, builder, issues }, testInfo) => {
+      await connectedDraftIn(page, builder, scheme);
+
+      await test.step('the Auto-group by name pattern dialog with its message', async () => {
+        await builder.toolbar('auto-group').press('ArrowUp');
+        await page.keyboard.press('Enter');
+        const field = builder.dialog.getByRole('textbox', {
+          name: 'Name pattern',
+        });
+        await field.fill('(');
+        await page.keyboard.press('Enter');
+        await expect(
+          builder.dialog.getByTestId('group-pattern-error'),
+        ).toHaveText(/^That is not a valid regular expression\./);
+        await expectReadable(
+          builder.dialog,
+          `Auto-group by name pattern dialog (${scheme})`,
+        );
+        await page.keyboard.press('Escape');
+        await expect(builder.dialog).toHaveCount(0);
+      });
+
+      await test.step('the drafts landing', async () => {
+        // The landing's theme button shows the theme chosen in the editor.
+        await chooseTheme(page, scheme);
+        await builder.backToDrafts();
+        await expectReadable(page.getByTestId('drafts-theme'), 'drafts theme');
+        await expectReadable(
+          page.getByRole('link', { name: 'Help (opens in a new tab)' }),
+          'Help link',
+        );
+        await expectHeaderRing(
+          page,
+          page.getByTestId('nav-builder'),
+          'nav link',
+        );
+        await expectHeaderRing(page, page.getByTestId('nav-logout'), 'Logout');
+      });
+
+      await test.step('the Configs page’s Builder tag', async () => {
+        const name = uniqueName(testInfo, 'ring-built');
+        await publishTopology(builder.request, builder.tracker, name);
+        await openConfigs(page);
+        const link = page.locator(`[data-config-builder="Topology/${name}"]`);
+        await expect(link).toBeVisible();
+        // Keyboard focus shows on the tag, in a ring that stands out from
+        // the row behind it (WCAG 1.4.11).
+        await link.focus();
+        expect
+          .soft(
+            await link.evaluate(
+              (element) => getComputedStyle(element).outlineStyle,
+            ),
+            'tag focus outline',
+          )
+          .toBe('solid');
+        const [ring] = await contrast(link, 'outlineColor');
+        expect
+          .soft(ring.ratio, `tag focus ring: ${JSON.stringify(ring)}`)
+          .toBeGreaterThanOrEqual(3);
+      });
+      expectNoFatal(issues);
+    },
+  );
+}
+
+// The axe scans of the dialogs, panels and the drafts landing, which have no
+// colors of their own, so they are scanned in the dark theme only.
+function structuralScans() {
+  const scheme = 'dark';
+  const tag = ['@axe'];
 
   test(
     'each editor dialog passes axe and keeps focus inside itself',
@@ -1698,7 +1481,6 @@ function axeScans(scheme) {
           soft: true,
           label: `axe on ${surface}`,
         });
-        await expectReadable(builder.dialog, surface);
         expect
           .soft(await focusableBehindDialog(page), `${surface}: page behind`)
           .toEqual([]);
@@ -1716,177 +1498,6 @@ function axeScans(scheme) {
       expectNoFatal(issues);
     },
   );
-
-  // The same in either theme, so checked in the light one.
-  if (scheme === 'light') {
-    test(
-      'a click outside a dialog closes it; a drag across its edge does not',
-      { tag },
-      async ({ page, builder, issues }) => {
-        await connectedDraftIn(page, builder, scheme);
-
-        // Every Builder dialog shares this through BuilderDialog.
-        await test.step('a click outside a dialog closes it; a drag across its edge does not', async () => {
-          const opener = builder.toolbar('scenario');
-          await opener.press('Enter');
-          await expect(builder.dialog).toBeVisible();
-          // The Scenarios dialog's controls are named by their labels.
-          await expect
-            .soft(
-              builder.dialog.getByRole('group', {
-                name: 'Scenarios of this diagram',
-              }),
-            )
-            .toBeVisible();
-          await expect
-            .soft(builder.dialog.getByTestId('scenario-file'))
-            .toHaveAccessibleName('Upload a scenario (YAML or JSON)');
-          await expect
-            .soft(
-              builder.dialog.getByRole('group', {
-                name: 'Upload a scenario (YAML or JSON)',
-              }),
-            )
-            .toBeVisible();
-
-          // The drag ends in a click on the dialog, outside its box.
-          const outside = await backdropPoint(builder.dialog);
-          const legend = await builder.dialog
-            .locator('legend', { hasText: 'Scenarios of this diagram' })
-            .boundingBox();
-          const inside = { x: legend.x + 2, y: legend.y + legend.height / 2 };
-          await page.mouse.move(inside.x, inside.y);
-          await page.mouse.down();
-          await page.mouse.move(outside.x, outside.y, { steps: 5 });
-          await page.mouse.up();
-          await expect.soft(builder.dialog, 'after a drag out').toBeVisible();
-
-          // A press outside released inside ends in a click on the dialog too.
-          await page.mouse.down();
-          await page.mouse.move(inside.x, inside.y, { steps: 5 });
-          await page.mouse.up();
-          await expect.soft(builder.dialog, 'after a drag in').toBeVisible();
-
-          await page.mouse.click(outside.x, outside.y);
-          await expect(builder.dialog).toHaveCount(0);
-          await expect
-            .soft(opener, 'focus returns to the opener')
-            .toBeFocused();
-        });
-        expectNoFatal(issues);
-      },
-    );
-  }
-
-  test(
-    'the editor passes axe with its theme chosen explicitly',
-    { tag },
-    async ({ page, builder, issues }) => {
-      await connectedDraftIn(page, builder, scheme);
-
-      await test.step(`editor, ${scheme} chosen explicitly`, async () => {
-        await chooseTheme(page, scheme, { soft: true });
-        await expect
-          .soft(root(page))
-          .toHaveAttribute('data-builder-theme', scheme);
-        await expectAccessible(page, {
-          soft: true,
-          label: `axe on editor (${scheme}, explicit)`,
-        });
-      });
-      expectNoFatal(issues);
-    },
-  );
-
-  // The same in either theme, so checked in the light one.
-  if (scheme === 'light') {
-    test(
-      'the toolbar is one Tab stop that arrow keys, Home and End move through',
-      { tag },
-      async ({ page, builder, issues }) => {
-        await connectedDraftIn(page, builder, scheme);
-
-        await test.step('the toolbar is one Tab stop that arrow keys, Home and End move through', async () => {
-          const buttons = page
-            .getByRole('toolbar', { name: 'Builder actions' })
-            .getByRole('button');
-          const tabStops = buttons.and(page.locator('[tabindex="0"]'));
-
-          await expect.soft(tabStops).toHaveCount(1);
-          await builder.toolbar('copy').focus();
-          await page.keyboard.press('ArrowRight');
-          await expect.soft(builder.toolbar('paste')).toBeFocused();
-          await page.keyboard.press('ArrowLeft');
-          await expect.soft(builder.toolbar('copy')).toBeFocused();
-          await page.keyboard.press('Home');
-          await expect.soft(builder.toolbar('undo')).toBeFocused();
-          await page.keyboard.press('End');
-          await expect.soft(buttons.last()).toBeFocused();
-          await expect.soft(tabStops).toHaveCount(1);
-          await expect.soft(tabStops).toBeFocused();
-          // Draft History ends it, after Minimap. The save state after it is
-          // text the arrow keys pass by.
-          const history = builder.toolbar('history');
-          await expect.soft(history).toBeFocused();
-          await expect.soft(history).toHaveAccessibleName('Draft History');
-          await page.keyboard.press('ArrowRight');
-          await expect.soft(builder.toolbar('undo')).toBeFocused();
-          await page.keyboard.press('ArrowLeft');
-          await expect.soft(history).toBeFocused();
-          expect
-            .soft(
-              await history.evaluate(
-                (button) => button.previousElementSibling?.dataset.testid,
-              ),
-              'the button before Draft History',
-            )
-            .toBe('toolbar-minimap');
-          // Minimap and Draft History make the last group. Add connection and
-          // Move to group are not in the toolbar.
-          expect
-            .soft(
-              await history.evaluate((button) =>
-                [...button.parentElement.querySelectorAll('button')].map(
-                  (each) => each.dataset.testid,
-                ),
-              ),
-              'the buttons of the last group',
-            )
-            .toEqual(['toolbar-minimap', 'toolbar-history']);
-          await expect.soft(builder.toolbar('connect')).toHaveCount(0);
-          await expect.soft(builder.toolbar('regroup')).toHaveCount(0);
-          await expect
-            .soft(
-              buttons.filter({ hasText: /^\s*(Commands|System|Light|Dark)/ }),
-            )
-            .toHaveCount(0);
-
-          // The menu buttons are in the sequence. Down opens a menu, whose
-          // items are not in it, and Escape closes the menu onto its button.
-          await builder.toolbar('ungroup').focus();
-          await page.keyboard.press('ArrowRight');
-          await expect.soft(builder.toolbar('auto-group')).toBeFocused();
-          await page.keyboard.press('ArrowRight');
-          await expect.soft(builder.toolbar('layout')).toBeFocused();
-          await page.keyboard.press('ArrowDown');
-          await expect
-            .soft(page.getByRole('menuitemradio', { name: 'Network cards' }))
-            .toBeFocused();
-          await page.keyboard.press('Escape');
-          await expect.soft(builder.toolbar('layout')).toBeFocused();
-          await expect.soft(page.getByRole('menu')).toHaveCount(0);
-          await expect.soft(tabStops).toHaveCount(1);
-
-          for (const { action } of DIALOGS.filter((d) => !d.inspector)) {
-            await expect
-              .soft(builder.toolbar(action))
-              .toHaveAttribute('aria-haspopup', 'dialog');
-          }
-        });
-        expectNoFatal(issues);
-      },
-    );
-  }
 
   test(
     'the layout menu passes axe',
@@ -1906,75 +1517,6 @@ function axeScans(scheme) {
         });
         await page.keyboard.press('Escape');
         await expect.soft(builder.toolbar('layout')).toBeFocused();
-      });
-      expectNoFatal(issues);
-    },
-  );
-
-  if (scheme === 'light') {
-    test(
-      'toolbar Ungroup moves focus to a member on the canvas, and toolbar Delete to the canvas',
-      { tag },
-      async ({ page, builder, issues }) => {
-        await connectedDraftIn(page, builder, scheme);
-
-        await test.step('toolbar Ungroup moves focus to a member on the canvas, and toolbar Delete to the canvas', async () => {
-          await builder.selectNode('node');
-          await builder.toolbar('group').press('Enter');
-          await expect(items(builder)).toHaveCount(3);
-          await builder.toolbar('ungroup').press('Enter');
-          await expect(items(builder)).toHaveCount(2);
-          await expect
-            .soft(item(builder, 'node'), 'after Ungroup')
-            .toBeFocused();
-
-          await builder.selectNode('node');
-          // Delete looks like the toolbar's other buttons: the danger colors
-          // are for the confirmations that ask before something is lost.
-          const look = (action) =>
-            builder.toolbar(action).evaluate((element) => {
-              const { borderTopColor, color } = getComputedStyle(element);
-
-              return { borderTopColor, color };
-            });
-          expect
-            .soft(await look('delete'), 'Delete is styled as Copy is')
-            .toEqual(await look('copy'));
-          await builder.toolbar('delete').press('Enter');
-          await expect(items(builder)).toHaveCount(1);
-          await expect.soft(builder.canvas, 'after Delete').toBeFocused();
-        });
-        expectNoFatal(issues);
-      },
-    );
-  }
-
-  test(
-    'a diagram with shapes, icons and lines passes axe with a line and with a rectangle selected',
-    { tag },
-    async ({ page, builder, issues }) => {
-      await newDraftIn(page, builder, scheme);
-
-      await test.step('axe finds no serious violations in a diagram with shapes, icons and lines', async () => {
-        for (const item of ['rectangle', 'circle', 'icon', 'line']) {
-          await builder.palette(item).click();
-        }
-        await expect(items(builder)).toHaveCount(4);
-        // The new line is selected: its points have their handles.
-        await expect(page.getByTestId('line-point-1')).toBeVisible();
-        await expectAccessible(page, {
-          soft: true,
-          label: `axe on a diagram with a selected line (${scheme})`,
-        });
-        // A selected rectangle has the handles that resize it.
-        await builder.selectNode('Rectangle');
-        await expect(
-          page.locator('.vue-flow__resize-control').first(),
-        ).toBeVisible();
-        await expectAccessible(page, {
-          soft: true,
-          label: `axe on a diagram with a selected rectangle (${scheme})`,
-        });
       });
       expectNoFatal(issues);
     },
@@ -2027,7 +1569,6 @@ function axeScans(scheme) {
         await expect
           .soft(page.getByTestId('drafts-theme'))
           .toHaveAccessibleName(`Theme: ${theme}. Switch to System theme.`);
-        await expectReadable(page.getByTestId('drafts-theme'), 'drafts theme');
         await expect
           .soft(page.getByTestId('drafts-import'))
           .toHaveText('Import');
@@ -2055,7 +1596,6 @@ function axeScans(scheme) {
           );
         await expect.soft(help).toHaveAttribute('target', '_blank');
         await expect.soft(help).toHaveAttribute('rel', /\bnoopener\b/);
-        await expectReadable(help, 'Help link');
         // Settings opens the Builder's settings here too, and gets focus
         // back from them.
         const settings = page.getByTestId('drafts-settings');
@@ -2070,8 +1610,6 @@ function axeScans(scheme) {
           .toHaveCount(0);
         const nav = page.getByTestId('nav-builder');
         await expect.soft(nav).toHaveAccessibleName('Builder');
-        await expectHeaderRing(page, nav, 'nav link');
-        await expectHeaderRing(page, page.getByTestId('nav-logout'), 'Logout');
         await expectAccessible(page, {
           soft: true,
           label: `axe on drafts landing (${scheme})`,
@@ -2080,90 +1618,6 @@ function axeScans(scheme) {
       expectNoFatal(issues);
     },
   );
-
-  // The same in either theme, so checked in the light one.
-  if (scheme === 'light') {
-    test(
-      'drafts tabs follow the APG tabs pattern',
-      { tag },
-      async ({ page, builder, issues }) => {
-        await openWithScheme(page, builder, scheme);
-
-        await test.step('drafts tabs follow the APG tabs pattern', async () => {
-          const tab = (id) => page.getByTestId(`drafts-tab-${id}`);
-
-          // The last tab is Icons.
-          await tab('drafts').focus();
-          await page.keyboard.press('End');
-          await expect.soft(tab('icons')).toBeFocused();
-          await expect
-            .soft(tab('icons'))
-            .toHaveAttribute('aria-selected', 'true');
-          // Icons stands after Node Templates and Layers.
-          await page.keyboard.press('ArrowLeft');
-          await expect.soft(tab('layers')).toBeFocused();
-          await page.keyboard.press('ArrowLeft');
-          await expect.soft(tab('templates')).toBeFocused();
-          await page.keyboard.press('End');
-          await page.keyboard.press('Home');
-          await expect.soft(tab('drafts')).toBeFocused();
-          await expect
-            .soft(tab('drafts'))
-            .toHaveAttribute('aria-selected', 'true');
-
-          // The command palette opens on the landing too.
-          await page.keyboard.press('ControlOrMeta+k');
-          await expect.soft(page.getByTestId('commands-dialog')).toBeVisible();
-          await page.keyboard.press('Escape');
-          await expect.soft(tab('drafts')).toBeFocused();
-
-          // Choosing a tab changes no tab's text: bold selected text once
-          // widened the tab and pushed the others along.
-          const labels = () =>
-            page.getByRole('tab').evaluateAll((tabs) =>
-              tabs.map((tab) => {
-                const range = document.createRange();
-                range.selectNodeContents(tab.firstChild);
-                const { fontSize, fontWeight } = getComputedStyle(tab);
-                const { width, height } = tab.getBoundingClientRect();
-
-                return [
-                  tab.firstChild.textContent.trim(),
-                  range.getBoundingClientRect().width.toFixed(1),
-                  fontSize,
-                  fontWeight,
-                  height.toFixed(1),
-                  width > 0,
-                ].join(' ');
-              }),
-            );
-          const before = await labels();
-          await page.keyboard.press('ArrowRight');
-          await expect
-            .soft(tab('published'))
-            .toHaveAttribute('aria-selected', 'true');
-          expect
-            .soft(await labels(), 'tabs after choosing another')
-            .toEqual(before);
-          await page.keyboard.press('Home');
-
-          // A panel with nothing focusable in it is a Tab stop itself.
-          const unreachable = await page
-            .getByRole('tabpanel', { includeHidden: true })
-            .evaluateAll((panels) =>
-              panels
-                .filter(
-                  (panel) =>
-                    !panel.querySelector('button') && panel.tabIndex !== 0,
-                )
-                .map((panel) => panel.id),
-            );
-          expect.soft(unreachable, 'empty tab panels').toEqual([]);
-        });
-        expectNoFatal(issues);
-      },
-    );
-  }
 
   test(
     'the Import dialog passes axe, keeps focus inside itself, and passes with every option and a refused name',
@@ -2268,19 +1722,6 @@ function axeScans(scheme) {
           .toHaveAccessibleName(
             `builder: open Topology ${name} in the Builder`,
           );
-        // Keyboard focus shows on the tag, in a ring that stands out from
-        // the row behind it (WCAG 1.4.11).
-        await tag.focus();
-        expect
-          .soft(
-            await tag.evaluate((link) => getComputedStyle(link).outlineStyle),
-            'tag focus outline',
-          )
-          .toBe('solid');
-        const [ring] = await contrast(tag, 'outlineColor');
-        expect
-          .soft(ring.ratio, `tag focus ring: ${JSON.stringify(ring)}`)
-          .toBeGreaterThanOrEqual(3);
         await expectAccessible(page, {
           include: `tr:has([data-config-builder="Topology/${name}"])`,
           soft: true,
@@ -2329,9 +1770,629 @@ function axeScans(scheme) {
   );
 }
 
-for (const scheme of ['light', 'dark']) {
-  test.describe(`axe scans in the ${scheme} theme`, () => axeScans(scheme));
+// The keyboard and focus checks of the editor and the drafts landing. They
+// are the same in either theme, so they run in the light one only.
+function keyboardChecks() {
+  const scheme = 'light';
+  const tag = ['@axe'];
+
+  test(
+    'the header goes in Tab order, the save state sits beside Draft History, and the name has a pencil and a field',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await newDraftIn(page, builder, scheme);
+      const {
+        back,
+        help,
+        name,
+        edit,
+        reset,
+        commands,
+        theme,
+        shortcuts,
+        checks,
+        settings,
+        focusMode,
+        countButton,
+      } = headerControls(page);
+
+      await test.step('the header has the Drafts button, the name and its pencil, the counts, the checks, Reset view, Commands, the theme, Shortcuts, Settings, the Help link of the landing and Focus mode', async () => {
+        // Tab goes left to right through the header, the counts one stop.
+        await back.focus();
+        for (const next of [
+          edit,
+          countButton(0),
+          checks,
+          reset,
+          commands,
+          theme,
+          shortcuts,
+          settings,
+          help,
+          focusMode,
+        ]) {
+          await page.keyboard.press('Tab');
+          await expect.soft(next).toBeFocused();
+        }
+        // The save state is in the toolbar, just after Draft History on its
+        // row: text, which neither Tab nor the toolbar's arrow keys stop at.
+        const history = builder.toolbar('history');
+        const saved = await builder.saveState.boundingBox();
+        const before = await history.boundingBox();
+        expect
+          .soft(saved.x - (before.x + before.width), 'save state after history')
+          .toBeGreaterThanOrEqual(0);
+        expect
+          .soft(saved.x - (before.x + before.width), 'save state by history')
+          .toBeLessThan(16);
+        expect
+          .soft(
+            Math.abs(
+              saved.y + saved.height / 2 - (before.y + before.height / 2),
+            ),
+            'save state on history’s row',
+          )
+          .toBeLessThan(4);
+        await expect
+          .soft(builder.saveState.locator('xpath=self::p'))
+          .toHaveCount(1);
+        await expect.soft(builder.saveState).not.toHaveAttribute('tabindex');
+
+        // The name is text, the pencil after it is named for what it does
+        // and described by the name, and a tooltip says what it does.
+        await expect.soft(name).toHaveText(/^Untitled topology( \d+)?$/);
+        const title = (await name.textContent()).trim();
+        await expect.soft(edit).toHaveAccessibleDescription(title);
+        await edit.hover();
+        await expect
+          .soft(page.getByTestId('header-tooltip'))
+          .toHaveText('Edit diagram name');
+        const target = await edit.boundingBox();
+        expect.soft(target.width, 'pencil width').toBeGreaterThanOrEqual(24);
+        expect.soft(target.height, 'pencil height').toBeGreaterThanOrEqual(24);
+
+        // The pencil shows a field with the name selected. Escape keeps the
+        // name, Enter saves it, and focus goes back to the pencil.
+        const field = page.getByRole('textbox', { name: 'Diagram name' });
+        await edit.press('Enter');
+        await expect.soft(field).toBeFocused();
+        await expect.soft(field).toHaveValue(title);
+        expect
+          .soft(
+            await field.evaluate((input) => [
+              input.selectionStart,
+              input.selectionEnd,
+            ]),
+            'the name is selected',
+          )
+          .toEqual([0, title.length]);
+        await expect
+          .soft(page.locator('label[for="builder-doc-name"]'))
+          .toHaveClass(/builder-visually-hidden/);
+        await field.press('End');
+        await field.pressSequentially(' draft');
+        await field.press('Escape');
+        await expect.soft(edit).toBeFocused();
+        await expect.soft(field).toHaveCount(0);
+        await expect.soft(name).toHaveText(title);
+        await expect.soft(builder).toHaveAnnounced('Diagram name not changed.');
+        await edit.press('Enter');
+        await field.fill(`${title} with a name long enough to be cut off`);
+        await field.press('Enter');
+        await expect.soft(edit).toBeFocused();
+        await expect.soft(builder).toHaveAnnounced('Renamed diagram');
+        // A long name is cut off with an ellipsis, and stays whole in the
+        // text, the pencil's description and the tooltips.
+        const long = `${title} with a name long enough to be cut off`;
+        await expect.soft(name).toHaveText(long);
+        await expect.soft(edit).toHaveAccessibleDescription(long);
+        expect
+          .soft(
+            await name.evaluate(
+              (text) =>
+                getComputedStyle(text).textOverflow === 'ellipsis' &&
+                text.scrollWidth > text.clientWidth,
+            ),
+            'the long name is cut off',
+          )
+          .toBe(true);
+        await expect
+          .soft(page.getByTestId('header-tooltip'))
+          .toHaveText(`Edit diagram name: ${long}`);
+        // The pointer, left where the pencil was, may be over the longer
+        // name now: it moves off, then onto the name.
+        await page.mouse.move(0, 0);
+        await name.hover();
+        await expect.soft(page.getByTestId('header-tooltip')).toHaveText(long);
+        // Emptied, it shows a muted Untitled diagram.
+        await edit.click();
+        await field.fill('');
+        await field.press('Enter');
+        await expect.soft(name).toHaveText('Untitled diagram');
+        await expect.soft(name).toHaveClass(/is-empty/);
+        await edit.click();
+        await field.fill(title);
+        await field.press('Enter');
+        await expect.soft(name).toHaveText(title);
+      });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'the header’s counts are buttons in one Tab stop, with tooltips, that the arrow keys, Home and End move between',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await newDraftIn(page, builder, scheme);
+      const { counts, countsTip, count, countButton } = headerControls(page);
+
+      await test.step('the counts of a blank diagram', async () => {
+        // A count's tooltip, on hover and on focus, says what it selects. The
+        // list keeps one Tab stop.
+        await count(3).hover();
+        await expect.soft(countsTip).toHaveText('0 connections');
+        await countButton(0).focus();
+        await expect.soft(countsTip).toHaveText('0 devices');
+        await page.keyboard.press('ArrowRight');
+        await expect.soft(countButton(1)).toBeFocused();
+        await expect.soft(countsTip).toHaveText('0 switches');
+        await page.keyboard.press('End');
+        await expect.soft(countsTip).toHaveText('0 notes');
+        // The counts are in a box, which holds a count's focus ring. A
+        // count is large enough to press (WCAG 2.5.8).
+        await expect.soft(counts).toHaveCSS('border-top-style', 'solid');
+        const room = await countButton(5).evaluate((item) => {
+          const own = item.getBoundingClientRect();
+          const box = item.closest('ul').getBoundingClientRect();
+          const style = getComputedStyle(item);
+          const reach =
+            parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+
+          return {
+            ring: Math.min(
+              own.top - reach - box.top,
+              box.bottom - own.bottom - reach,
+              box.right - own.right - reach,
+            ),
+            size: Math.min(own.width, own.height),
+          };
+        });
+        expect
+          .soft(room.ring, 'focus ring inside the counts box')
+          .toBeGreaterThan(1);
+        expect.soft(room.size, 'a count’s size').toBeGreaterThanOrEqual(24);
+        await page.keyboard.press('ArrowRight');
+        await expect.soft(countButton(0)).toBeFocused();
+        await expect.soft(counts.locator('[tabindex="0"]')).toHaveCount(1);
+        await page.keyboard.press('Escape');
+        await expect.soft(countsTip).toHaveCount(0);
+      });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'the header’s Drafts, checks, Shortcuts, Commands, theme, Settings, Help and Focus mode say what they do and give their keys',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await newDraftIn(page, builder, scheme);
+      const {
+        back,
+        help,
+        checks,
+        commands,
+        theme,
+        shortcuts,
+        settings,
+        focusMode,
+      } = headerControls(page);
+
+      await test.step('Shortcuts, Commands, the theme, Settings, Help and Focus mode', async () => {
+        // Shortcuts shows its key as a key cap, named Shortcuts and described
+        // by the key. It opens the sheet and gets focus back.
+        await expect.soft(shortcuts.locator('kbd')).toHaveText(['?']);
+        await expect.soft(shortcuts.locator('kbd')).toBeVisible();
+        await expect.soft(shortcuts).toHaveAccessibleDescription('?');
+        await shortcuts.focus();
+        await expect
+          .soft(page.getByTestId('header-tooltip'))
+          .toHaveText('Keyboard shortcuts (?)');
+        await page.keyboard.press('Enter');
+        await expect.soft(page.getByTestId('shortcuts-dialog')).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect.soft(shortcuts).toBeFocused();
+        // Commands shows the palette's key. The theme button shows the theme
+        // in use, and its name and tooltip say what a press changes it to.
+        await expect.soft(commands).toHaveAccessibleName('Commands');
+        await expect
+          .soft(commands)
+          .toHaveAttribute(
+            'aria-keyshortcuts',
+            process.platform === 'darwin' ? 'Meta+K' : 'Control+K',
+          );
+        await expect.soft(commands.locator('kbd')).toHaveCount(2);
+        await commands.focus();
+        await expect
+          .soft(page.getByTestId('header-tooltip'))
+          .toHaveText(/^Command palette \(/);
+        await page.keyboard.press('Enter');
+        await expect.soft(page.getByTestId('commands-dialog')).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect.soft(commands).toBeFocused();
+        const next = 'Dark';
+        await expect
+          .soft(theme)
+          .toHaveAccessibleName(`Theme: System. Switch to ${next} theme.`);
+        await expect.soft(theme).toHaveText('System');
+        // At this width it shows only its icon, so its tooltip names it too.
+        // With room for its label, the tooltip says only what a press does.
+        await theme.hover();
+        await expect
+          .soft(page.getByTestId('header-tooltip'))
+          .toHaveText(`Theme: System. Switch to ${next} theme`);
+        const initial = page.viewportSize();
+        await page.setViewportSize({ width: 2560, height: initial.height });
+        await page.mouse.move(0, 0);
+        await theme.hover();
+        await expect
+          .soft(page.getByTestId('header-tooltip'))
+          .toHaveText(`Switch to ${next} theme`);
+        await page.setViewportSize(initial);
+        // The pointer leaves the controls, so the tooltip hides.
+        await page.mouse.move(0, 0);
+        await expect(page.getByTestId('header-tooltip')).toHaveCount(0);
+        // Settings' and Help's tooltips name them too, and Settings' gives
+        // its key.
+        const settingsKeys =
+          process.platform === 'darwin' ? '⌥⇧S' : 'Alt+Shift+S';
+        await settings.hover();
+        await expect
+          .soft(page.getByTestId('header-tooltip'))
+          .toHaveText(`Builder settings (${settingsKeys})`);
+        await expect
+          .soft(settings)
+          .toHaveAttribute('aria-keyshortcuts', 'Alt+Shift+S');
+        await expect.soft(settings).toHaveAccessibleDescription(settingsKeys);
+        await help.focus();
+        await expect
+          .soft(page.getByTestId('header-tooltip'))
+          .toHaveText('Help (opens in a new tab)');
+        // The label stays on one line, also at the window's right edge.
+        expect
+          .soft(
+            await page.getByTestId('header-tooltip').evaluate((tip) => {
+              const range = document.createRange();
+
+              range.selectNodeContents(tip);
+
+              return new Set(
+                [...range.getClientRects()].map((rect) => Math.round(rect.top)),
+              ).size;
+            }),
+            'Help tooltip lines',
+          )
+          .toBe(1);
+
+        // Focus mode, an icon named by its tooltip, keeps focus as a press
+        // turns it into Exit focus mode.
+        await focusMode.focus();
+        await expect
+          .soft(page.getByTestId('header-tooltip'))
+          .toHaveText(/^Focus mode: hide the navigation bar/);
+        await expect
+          .soft(focusMode)
+          .toHaveAccessibleDescription(/^Hide the navigation bar/);
+        await expect
+          .soft(focusMode)
+          .toHaveAttribute(
+            'aria-keyshortcuts',
+            /^(Shift\+Meta|Control\+Shift)\+F$/,
+          );
+        await page.keyboard.press('Enter');
+        const exit = page.getByRole('button', { name: 'Exit focus mode' });
+        await expect.soft(exit).toBeFocused();
+        await expect.soft(page.locator('.navbar')).toBeHidden();
+        await expect
+          .soft(page.getByTestId('header-tooltip'))
+          .toHaveText(/^Exit focus mode: show the navigation bar again/);
+        await page.keyboard.press('Enter');
+        await expect.soft(focusMode).toBeFocused();
+        await expect.soft(page.locator('.navbar')).toBeVisible();
+
+        await expect.soft(back.locator('svg.builder-icon')).toHaveCount(1);
+        // The Drafts button and the checks button keep their names. Their
+        // tooltips, which are also their descriptions, say what they do.
+        const draftsTip =
+          'Return to the Drafts page. The Builder saves your work automatically, so you do not lose it.';
+        await expect.soft(back).toHaveAccessibleDescription(draftsTip);
+        await back.focus();
+        await expect
+          .soft(page.getByTestId('header-tooltip'))
+          .toHaveText(draftsTip);
+        const checksTip =
+          'Diagram checks: the errors and warnings in this diagram. Select to see the list.';
+        await expect.soft(checks).toHaveAccessibleName(/ in this diagram$/);
+        await expect.soft(checks).toHaveAccessibleDescription(checksTip);
+        await checks.hover();
+        await expect
+          .soft(page.getByTestId('header-tooltip'))
+          .toHaveText(checksTip);
+        await page.mouse.move(0, 0);
+        await expect
+          .soft(help)
+          .toHaveAttribute(
+            'href',
+            'https://phenix.sceptre.dev/latest/builder/',
+          );
+        await expect.soft(help).toHaveAttribute('target', '_blank');
+        await expect.soft(help).toHaveAttribute('rel', /\bnoopener\b/);
+      });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'a click outside a dialog closes it; a drag across its edge does not',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await connectedDraftIn(page, builder, scheme);
+
+      // Every Builder dialog shares this through BuilderDialog.
+      await test.step('a click outside a dialog closes it; a drag across its edge does not', async () => {
+        const opener = builder.toolbar('scenario');
+        await opener.press('Enter');
+        await expect(builder.dialog).toBeVisible();
+        // The Scenarios dialog's controls are named by their labels.
+        await expect
+          .soft(
+            builder.dialog.getByRole('group', {
+              name: 'Scenarios of this diagram',
+            }),
+          )
+          .toBeVisible();
+        await expect
+          .soft(builder.dialog.getByTestId('scenario-file'))
+          .toHaveAccessibleName('Upload a scenario (YAML or JSON)');
+        await expect
+          .soft(
+            builder.dialog.getByRole('group', {
+              name: 'Upload a scenario (YAML or JSON)',
+            }),
+          )
+          .toBeVisible();
+
+        // The drag ends in a click on the dialog, outside its box.
+        const outside = await backdropPoint(builder.dialog);
+        const legend = await builder.dialog
+          .locator('legend', { hasText: 'Scenarios of this diagram' })
+          .boundingBox();
+        const inside = { x: legend.x + 2, y: legend.y + legend.height / 2 };
+        await page.mouse.move(inside.x, inside.y);
+        await page.mouse.down();
+        await page.mouse.move(outside.x, outside.y, { steps: 5 });
+        await page.mouse.up();
+        await expect.soft(builder.dialog, 'after a drag out').toBeVisible();
+
+        // A press outside released inside ends in a click on the dialog too.
+        await page.mouse.down();
+        await page.mouse.move(inside.x, inside.y, { steps: 5 });
+        await page.mouse.up();
+        await expect.soft(builder.dialog, 'after a drag in').toBeVisible();
+
+        await page.mouse.click(outside.x, outside.y);
+        await expect(builder.dialog).toHaveCount(0);
+        await expect.soft(opener, 'focus returns to the opener').toBeFocused();
+      });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'the toolbar is one Tab stop that arrow keys, Home and End move through',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await connectedDraftIn(page, builder, scheme);
+
+      await test.step('the toolbar is one Tab stop that arrow keys, Home and End move through', async () => {
+        const buttons = page
+          .getByRole('toolbar', { name: 'Builder actions' })
+          .getByRole('button');
+        const tabStops = buttons.and(page.locator('[tabindex="0"]'));
+
+        await expect.soft(tabStops).toHaveCount(1);
+        await builder.toolbar('copy').focus();
+        await page.keyboard.press('ArrowRight');
+        await expect.soft(builder.toolbar('paste')).toBeFocused();
+        await page.keyboard.press('ArrowLeft');
+        await expect.soft(builder.toolbar('copy')).toBeFocused();
+        await page.keyboard.press('Home');
+        await expect.soft(builder.toolbar('undo')).toBeFocused();
+        await page.keyboard.press('End');
+        await expect.soft(buttons.last()).toBeFocused();
+        await expect.soft(tabStops).toHaveCount(1);
+        await expect.soft(tabStops).toBeFocused();
+        // Draft History ends it, after Minimap. The save state after it is
+        // text the arrow keys pass by.
+        const history = builder.toolbar('history');
+        await expect.soft(history).toBeFocused();
+        await expect.soft(history).toHaveAccessibleName('Draft History');
+        await page.keyboard.press('ArrowRight');
+        await expect.soft(builder.toolbar('undo')).toBeFocused();
+        await page.keyboard.press('ArrowLeft');
+        await expect.soft(history).toBeFocused();
+        expect
+          .soft(
+            await history.evaluate(
+              (button) => button.previousElementSibling?.dataset.testid,
+            ),
+            'the button before Draft History',
+          )
+          .toBe('toolbar-minimap');
+        // Minimap and Draft History make the last group. Add connection and
+        // Move to group are not in the toolbar.
+        expect
+          .soft(
+            await history.evaluate((button) =>
+              [...button.parentElement.querySelectorAll('button')].map(
+                (each) => each.dataset.testid,
+              ),
+            ),
+            'the buttons of the last group',
+          )
+          .toEqual(['toolbar-minimap', 'toolbar-history']);
+        await expect.soft(builder.toolbar('connect')).toHaveCount(0);
+        await expect.soft(builder.toolbar('regroup')).toHaveCount(0);
+        await expect
+          .soft(buttons.filter({ hasText: /^\s*(Commands|System|Light|Dark)/ }))
+          .toHaveCount(0);
+
+        // The menu buttons are in the sequence. Down opens a menu, whose
+        // items are not in it, and Escape closes the menu onto its button.
+        await builder.toolbar('ungroup').focus();
+        await page.keyboard.press('ArrowRight');
+        await expect.soft(builder.toolbar('auto-group')).toBeFocused();
+        await page.keyboard.press('ArrowRight');
+        await expect.soft(builder.toolbar('layout')).toBeFocused();
+        await page.keyboard.press('ArrowDown');
+        await expect
+          .soft(page.getByRole('menuitemradio', { name: 'Network cards' }))
+          .toBeFocused();
+        await page.keyboard.press('Escape');
+        await expect.soft(builder.toolbar('layout')).toBeFocused();
+        await expect.soft(page.getByRole('menu')).toHaveCount(0);
+        await expect.soft(tabStops).toHaveCount(1);
+
+        for (const { action } of DIALOGS.filter((d) => !d.inspector)) {
+          await expect
+            .soft(builder.toolbar(action))
+            .toHaveAttribute('aria-haspopup', 'dialog');
+        }
+      });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'toolbar Ungroup moves focus to a member on the canvas, and toolbar Delete to the canvas',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await connectedDraftIn(page, builder, scheme);
+
+      await test.step('toolbar Ungroup moves focus to a member on the canvas, and toolbar Delete to the canvas', async () => {
+        await builder.selectNode('node');
+        await builder.toolbar('group').press('Enter');
+        await expect(items(builder)).toHaveCount(3);
+        await builder.toolbar('ungroup').press('Enter');
+        await expect(items(builder)).toHaveCount(2);
+        await expect.soft(item(builder, 'node'), 'after Ungroup').toBeFocused();
+
+        await builder.selectNode('node');
+        // Delete looks like the toolbar's other buttons: the danger colors
+        // are for the confirmations that ask before something is lost.
+        const look = (action) =>
+          builder.toolbar(action).evaluate((element) => {
+            const { borderTopColor, color } = getComputedStyle(element);
+
+            return { borderTopColor, color };
+          });
+        expect
+          .soft(await look('delete'), 'Delete is styled as Copy is')
+          .toEqual(await look('copy'));
+        await builder.toolbar('delete').press('Enter');
+        await expect(items(builder)).toHaveCount(1);
+        await expect.soft(builder.canvas, 'after Delete').toBeFocused();
+      });
+      expectNoFatal(issues);
+    },
+  );
+
+  test(
+    'drafts tabs follow the APG tabs pattern',
+    { tag },
+    async ({ page, builder, issues }) => {
+      await openWithScheme(page, builder, scheme);
+
+      await test.step('drafts tabs follow the APG tabs pattern', async () => {
+        const tab = (id) => page.getByTestId(`drafts-tab-${id}`);
+
+        // The last tab is Icons.
+        await tab('drafts').focus();
+        await page.keyboard.press('End');
+        await expect.soft(tab('icons')).toBeFocused();
+        await expect
+          .soft(tab('icons'))
+          .toHaveAttribute('aria-selected', 'true');
+        // Icons stands after Node Templates and Layers.
+        await page.keyboard.press('ArrowLeft');
+        await expect.soft(tab('layers')).toBeFocused();
+        await page.keyboard.press('ArrowLeft');
+        await expect.soft(tab('templates')).toBeFocused();
+        await page.keyboard.press('End');
+        await page.keyboard.press('Home');
+        await expect.soft(tab('drafts')).toBeFocused();
+        await expect
+          .soft(tab('drafts'))
+          .toHaveAttribute('aria-selected', 'true');
+
+        // The command palette opens on the landing too.
+        await page.keyboard.press('ControlOrMeta+k');
+        await expect.soft(page.getByTestId('commands-dialog')).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect.soft(tab('drafts')).toBeFocused();
+
+        // Choosing a tab changes no tab's text: bold selected text once
+        // widened the tab and pushed the others along.
+        const labels = () =>
+          page.getByRole('tab').evaluateAll((tabs) =>
+            tabs.map((tab) => {
+              const range = document.createRange();
+              range.selectNodeContents(tab.firstChild);
+              const { fontSize, fontWeight } = getComputedStyle(tab);
+              const { width, height } = tab.getBoundingClientRect();
+
+              return [
+                tab.firstChild.textContent.trim(),
+                range.getBoundingClientRect().width.toFixed(1),
+                fontSize,
+                fontWeight,
+                height.toFixed(1),
+                width > 0,
+              ].join(' ');
+            }),
+          );
+        const before = await labels();
+        await page.keyboard.press('ArrowRight');
+        await expect
+          .soft(tab('published'))
+          .toHaveAttribute('aria-selected', 'true');
+        expect
+          .soft(await labels(), 'tabs after choosing another')
+          .toEqual(before);
+        await page.keyboard.press('Home');
+
+        // A panel with nothing focusable in it is a Tab stop itself.
+        const unreachable = await page
+          .getByRole('tabpanel', { includeHidden: true })
+          .evaluateAll((panels) =>
+            panels
+              .filter(
+                (panel) =>
+                  !panel.querySelector('button') && panel.tabIndex !== 0,
+              )
+              .map((panel) => panel.id),
+          );
+        expect.soft(unreachable, 'empty tab panels').toEqual([]);
+      });
+      expectNoFatal(issues);
+    },
+  );
 }
+
+for (const scheme of ['light', 'dark']) {
+  test.describe(`axe scans in the ${scheme} theme`, () => colorScans(scheme));
+}
+test.describe('axe scans in the dark theme only', structuralScans);
+test.describe('keyboard and focus checks in the light theme', keyboardChecks);
 
 // A diagram at `iconSize` (text beside Medium and Large icons) with a
 // smallest group, scanned in both themes.
@@ -2443,16 +2504,6 @@ test(
           // The group of the least size lays its text out beside the icon
           // too.
           await expect.soft(builder.node('Edge', 'group')).toHaveClass(sized);
-
-          // Keyboard: the select takes focus, and is named and described.
-          await select.focus();
-          await expect.soft(select).toBeFocused();
-          await expect.soft(select).toHaveAccessibleName('Icon size');
-          await expect
-            .soft(select)
-            .toHaveAccessibleDescription(
-              'Devices, switches and groups draw their icons at this size, unless one has a size of its own.',
-            );
 
           await expectAccessible(page, {
             soft: true,

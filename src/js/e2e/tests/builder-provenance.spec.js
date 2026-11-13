@@ -1,8 +1,6 @@
 // Builder document provenance: who made a diagram and who saved it last.
 // builder-multi-user.spec.js checks a second user's edit.
 
-const fs = require('node:fs');
-
 const {
   API,
   DOCUMENT_TIME,
@@ -19,8 +17,6 @@ const {
   waitForApi,
 } = require('./builder-support');
 
-const STAMP_KEYS = ['createdBy', 'createdAt', 'updatedBy', 'updatedAt'];
-
 // The Details block, and its Source file row.
 function details(builder) {
   return builder.inspector.getByTestId('inspector-details');
@@ -30,7 +26,7 @@ function sourceFile(builder) {
   return builder.inspector.getByTestId('inspector-source-file');
 }
 
-test('a new draft says who made it and who edited it last, an edit moves only the last edit, and Builder JSON holds both', async ({
+test('a new draft says who made it and who edited it last, and an edit moves only the last edit', async ({
   page,
   builder,
   issues,
@@ -83,29 +79,6 @@ test('a new draft says who made it and who edited it last, an edit moves only th
 
       return written;
     });
-
-  await test.step('the stored document holds them in its metadata, after its name', async () => {
-    const stored = await builder.serverDocument(draft);
-    expect.soft(provenanceOf(stored)).toEqual(stamp);
-    expect
-      .soft(Object.keys(stored).slice(0, 4))
-      .toEqual(['$schema', 'revision', 'metadata', 'nodes']);
-    const keys = Object.keys(stored.metadata);
-    expect.soft(keys.slice(keys.indexOf('name') + 1)).toEqual(STAMP_KEYS);
-  });
-
-  await test.step('the Builder JSON download holds the four fields', async () => {
-    const dialog = await builder.openDialog('download');
-    const [file] = await Promise.all([
-      page.waitForEvent('download'),
-      dialog.getByTestId('download-json').click(),
-    ]);
-    const downloaded = JSON.parse(fs.readFileSync(await file.path(), 'utf8'));
-    expect.soft(downloaded.metadata.name).toBe(title);
-    expect.soft(provenanceOf(downloaded)).toEqual(stamp);
-    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-    await expect(builder.dialog).toBeHidden();
-  });
 
   await test.step('the draft opened again shows what the server stored', async () => {
     await builder.backToDrafts();

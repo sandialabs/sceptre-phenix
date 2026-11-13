@@ -132,7 +132,7 @@ describe('the cards of a tab', () => {
     expect(announced(wrapper).at(-1)).toBe('0 of 3 selected.');
   });
 
-  test('a checkbox selects its card, Shift a range, and Select all every card, then none; the selection outlives a change of tab', async () => {
+  test('a checkbox selects its card, and Shift a range; the selection outlives a change of tab, and Select all clears it', async () => {
     const wrapper = landing();
 
     await get(wrapper, 'card-select-d1').setValue(true);
@@ -143,16 +143,14 @@ describe('the cards of a tab', () => {
     expect(countOf(wrapper, 'drafts')).toBe('3 of 3 selected');
     expect(get(wrapper, 'card-select-d2').element.checked).toBe(true);
 
-    await get(wrapper, 'bulk-all-drafts').setValue(false);
-    expect(countOf(wrapper, 'drafts')).toBe('0 of 3 selected');
-    expect(announced(wrapper).at(-1)).toBe('0 of 3 selected.');
-    await get(wrapper, 'bulk-all-drafts').setValue(true);
-    expect(announced(wrapper).at(-1)).toBe('3 of 3 selected.');
-
     await tab(wrapper, 'published').trigger('click');
     expect(countOf(wrapper, 'published')).toBe('0 of 2 selected');
     await tab(wrapper, 'drafts').trigger('click');
     expect(countOf(wrapper, 'drafts')).toBe('3 of 3 selected');
+
+    await get(wrapper, 'bulk-all-drafts').setValue(false);
+    expect(countOf(wrapper, 'drafts')).toBe('0 of 3 selected');
+    expect(announced(wrapper).at(-1)).toBe('0 of 3 selected.');
   });
 });
 

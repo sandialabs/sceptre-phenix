@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// The address while a draft is open: a draft opened from its card puts its
-// id in the address, so a reload reopens it.
+// The address while a draft is open, and a Builder view left while it still
+// reads its lists: the link that opened it is then not followed.
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
@@ -19,6 +19,12 @@ const router = vi.hoisted(() => ({
   push: vi.fn(),
   resolve: vi.fn(),
 }));
+const route = vi.hoisted(() => ({
+  name: 'builder',
+  fullPath: '/builder',
+  query: {},
+  meta: { title: 'Builder' },
+}));
 
 vi.mock('@/store.js', () => ({
   usePhenixStore: () => phenix,
@@ -28,12 +34,7 @@ vi.mock('@/router', () => ({
   pageTitle: (...parts) => [...parts.filter(Boolean), 'phēnix'].join(' - '),
 }));
 vi.mock('vue-router', () => ({
-  useRoute: () => ({
-    name: 'builder',
-    fullPath: '/builder',
-    query: {},
-    meta: { title: 'Builder' },
-  }),
+  useRoute: () => route,
   useRouter: () => router,
   onBeforeRouteLeave: () => {},
 }));
@@ -87,6 +88,8 @@ async function mountBuilder() {
 
 afterEach(() => {
   router.replace.mockClear();
+  route.fullPath = '/builder';
+  route.query = {};
 });
 
 describe('the address of an open draft', () => {
@@ -113,5 +116,66 @@ describe('the address of an open draft', () => {
     await flushPromises();
 
     expect(router.replace).not.toHaveBeenCalled();
+  });
+});
+
+// Mounts the Builder at /builder?topology=plant. The schema comes when the
+// returned function is called. Other lists come at once and name topology
+// plant, so its link opens Import.
+function mountLinkedBuilder() {
+  route.fullPath = '/builder?topology=plant';
+  route.query = { topology: 'plant' };
+
+  const pinia = createPinia();
+  const store = useBuilderStore(pinia);
+  let listSchema;
+
+  vi.spyOn(store, 'fetchSchema').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        listSchema = resolve;
+      }),
+  );
+  vi.spyOn(store, 'fetchSources').mockImplementation(async () => {
+    store.sources = { ...store.sources, topologies: ['plant'] };
+  });
+  for (const action of [
+    'fetchDrafts',
+    'fetchDocuments',
+    'fetchTemplates',
+    'fetchLayerSets',
+  ]) {
+    vi.spyOn(store, action).mockResolvedValue();
+  }
+
+  const wrapper = mount(Builder, {
+    attachTo: document.body,
+    global: { plugins: [pinia] },
+  });
+
+  return { wrapper, store, listSchema: () => listSchema() };
+}
+
+describe('the Builder and its link', () => {
+  test('follows the link once the lists arrive', async () => {
+    const { listSchema } = mountLinkedBuilder();
+
+    await flushPromises();
+    listSchema();
+    await flushPromises();
+
+    expect(router.replace).toHaveBeenCalledWith({ query: {} });
+  });
+
+  test('left while it reads its lists, does not follow the link', async () => {
+    const { wrapper, store, listSchema } = mountLinkedBuilder();
+
+    await flushPromises();
+    wrapper.unmount();
+    listSchema();
+    await flushPromises();
+
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(store.error).toBeFalsy();
   });
 });

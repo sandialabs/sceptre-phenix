@@ -10,6 +10,7 @@ import { nodeColors } from '@/builder/colors.js';
 import { decodeDocument, parseDocument } from '@/builder/decode.js';
 import { iconRefs } from '@/builder/icons.js';
 import { mergeDocuments } from '@/builder/merge.js';
+import { MATCH_CONFLICTS } from '@/builder/layerMatchers.js';
 import {
   LAYER_SET_FILE_SCHEMA_URI,
   MAX_LAYER_SET_FILE_BYTES,
@@ -87,9 +88,32 @@ describe('the limits of layer sets', () => {
 
     expect(layerSet.properties.name.maxLength).toBe(MAX_LAYER_SET_NAME_BYTES);
     expect(layerSetSource.properties.id.maxLength).toBe(MAX_LAYER_SET_ID_BYTES);
-    expect(layerSetSource.properties.id.pattern).toBe('^[A-Za-z0-9_.:-]+$');
-    expect(bundle.$defs.matchConflict.enum).toEqual(['', 'lowest', 'highest']);
-    expect(MAX_LAYER_SET_FILE_BYTES).toBe(4 << 20);
+    expect(bundle.$defs.matchConflict.enum).toEqual(['', ...MATCH_CONFLICTS]);
+
+    const idPattern = new RegExp(layerSetSource.properties.id.pattern);
+
+    fc.assert(
+      fc.property(
+        fc.string({ unit: fc.constantFrom(...'aZ09_.:- /é') }),
+        (id) => {
+          expect(isLayerSetId(id)).toBe(
+            idPattern.test(id) && id.length <= MAX_LAYER_SET_ID_BYTES,
+          );
+        },
+      ),
+    );
+  });
+
+  test('a layer set file holds at most 4 MiB', () => {
+    const file = '{"name": "A"}';
+    const padded = (bytes) => file.padEnd(bytes, ' ');
+
+    expect(parseLayerSetFile(padded(MAX_LAYER_SET_FILE_BYTES + 1)).error).toBe(
+      'The file is larger than the 4 MiB limit.',
+    );
+    expect(parseLayerSetFile(padded(MAX_LAYER_SET_FILE_BYTES)).error).not.toBe(
+      'The file is larger than the 4 MiB limit.',
+    );
   });
 
   test('a layer set ID is 1 to 128 letters, digits, ., _, : or -', () => {

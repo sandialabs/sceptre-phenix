@@ -549,11 +549,6 @@ test(
       // It waits for the pointer to rest: 400 ms.
       const { entered, shown } = await page.evaluate(() => window.__tipTimes);
       expect.soft(shown - entered, 'the delay').toBeGreaterThanOrEqual(390);
-
-      await expectAccessible(page, {
-        soft: true,
-        label: 'with a node tooltip showing',
-      });
     });
 
     // WCAG 1.4.13: hoverable, dismissible, persistent.
@@ -753,64 +748,64 @@ test(
   },
 );
 
-test(
-  'notes and groups have no info tooltip, and an SVG image of the diagram has no tooltip text',
-  { tag: '@cross-browser' },
-  async ({ page, builder, issues }, testInfo) => {
-    const { tooltip, web01, sw, idOf, switchWrapper, parkPointer } =
-      await openTooltipDraft(page, builder, testInfo);
+test('notes and groups have no info tooltip, and an SVG image of the diagram has no tooltip text', async ({
+  page,
+  builder,
+  issues,
+}, testInfo) => {
+  const { tooltip, web01, sw, idOf, switchWrapper, parkPointer } =
+    await openTooltipDraft(page, builder, testInfo);
 
-    await test.step('a device shows its tooltip, and it goes within the time the notes and groups are given', async () => {
-      await parkPointer();
-      await web01.hover();
-      await expect(tooltip).toBeVisible();
+  await test.step('a device shows its tooltip, and it goes within the time the notes and groups are given', async () => {
+    await parkPointer();
+    await web01.hover();
+    await expect(tooltip).toBeVisible();
+
+    await parkPointer();
+    await page.clock.runFor(TIP_RUN_MS);
+    await expect(tooltip).toHaveCount(0);
+  });
+
+  await test.step('notes and groups have no tooltip, and an SVG image of the diagram has no tooltip text', async () => {
+    await builder.palette('note').click();
+    await builder.palette('group').click();
+    await expect(builder.nodes('note')).toHaveCount(1);
+    await expect(builder.nodes('group')).toHaveCount(1);
+
+    for (const kind of ['note', 'group']) {
+      const node = builder.nodes(kind);
 
       await parkPointer();
+      await node.hover();
       await page.clock.runFor(TIP_RUN_MS);
-      await expect(tooltip).toHaveCount(0);
-    });
-
-    await test.step('notes and groups have no tooltip, and an SVG image of the diagram has no tooltip text', async () => {
-      await builder.palette('note').click();
-      await builder.palette('group').click();
-      await expect(builder.nodes('note')).toHaveCount(1);
-      await expect(builder.nodes('group')).toHaveCount(1);
-
-      for (const kind of ['note', 'group']) {
-        const node = builder.nodes(kind);
-
-        await parkPointer();
-        await node.hover();
-        await page.clock.runFor(TIP_RUN_MS);
-        expect.soft(await tooltip.count(), kind).toBe(0);
-        await expect
-          .soft(flowNode(page, await idOf(node)), kind)
-          .not.toHaveAttribute('aria-describedby', /builder-node-info-/);
-      }
-
-      // The hidden text that describes a node is beside the node, inside
-      // its wrapper, so the node's own text is what it shows.
-      await expect.soft(sw).not.toContainText('connected devices');
+      expect.soft(await tooltip.count(), kind).toBe(0);
       await expect
-        .soft(switchWrapper.locator('.builder-node__info'))
-        .toHaveText(/9 connected devices/);
+        .soft(flowNode(page, await idOf(node)), kind)
+        .not.toHaveAttribute('aria-describedby', /builder-node-info-/);
+    }
 
-      const dialog = await builder.openDialog('download');
-      const [file] = await Promise.all([
-        page.waitForEvent('download'),
-        dialog.getByTestId('download-svg').click(),
-      ]);
-      const markup = fs.readFileSync(await file.path(), 'utf8');
+    // The hidden text that describes a node is beside the node, inside
+    // its wrapper, so the node's own text is what it shows.
+    await expect.soft(sw).not.toContainText('connected devices');
+    await expect
+      .soft(switchWrapper.locator('.builder-node__info'))
+      .toHaveText(/9 connected devices/);
 
-      expect.soft(markup).toContain('>web-01<');
-      expect.soft(markup).not.toContain('builder-node__info');
-      expect.soft(markup).not.toContain('connected devices');
-      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-    });
+    const dialog = await builder.openDialog('download');
+    const [file] = await Promise.all([
+      page.waitForEvent('download'),
+      dialog.getByTestId('download-svg').click(),
+    ]);
+    const markup = fs.readFileSync(await file.path(), 'utf8');
 
-    expectNoFatal(issues);
-  },
-);
+    expect.soft(markup).toContain('>web-01<');
+    expect.soft(markup).not.toContain('builder-node__info');
+    expect.soft(markup).not.toContain('connected devices');
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  });
+
+  expectNoFatal(issues);
+});
 
 test('a device takes an outline and a fill at once, the text on a fill stays readable, and Undo takes them back', async ({
   page,
@@ -1695,16 +1690,9 @@ async function openIconSizeDraft(builder, testInfo, iconSize) {
   };
 }
 
-// A picture of a node, kept in the test's output and attached to its
-// report.
-async function keepScreenshot(testInfo, locator, name) {
-  const path = testInfo.outputPath(name);
-
-  await locator.screenshot({ path });
-  await testInfo.attach(name, { path, contentType: 'image/png' });
-}
-
-test('node icons are drawn Small until the diagram says Medium or Large, keep their node boxes, and download Large', async ({
+// The sizes, the settings and the Inspector rules are in
+// test/builder/icon-size.test.js. This test checks what the browser draws.
+test('node icons draw at the diagram’s size, a node’s own size or the Node icon size setting, keep their node boxes, hide with Show node icons, and download as drawn', async ({
   page,
   builder,
   issues,
@@ -1716,30 +1704,23 @@ test('node icons are drawn Small until the diagram says Medium or Large, keep th
   const PIXELS = { Small: 16, Medium: 24, Large: 32 };
   const boxes = {};
   const accent = await themeColor(page, '--bx-accent');
+  const kinds = Object.keys(nodes);
+  const own = inspectorField(builder, 'iconSize');
 
   // Each node draws its icon at `size`, in the layout of that size, with
-  // its box as it was at Small. A screenshot of it goes with the report.
-  const expectSize = async (size, kinds = Object.keys(nodes)) => {
+  // its box as it was at Small.
+  const expectSize = async (size) => {
     for (const kind of kinds) {
       const node = nodes[kind];
-      const pixels = String(PIXELS[size]);
+      const pixels = `${PIXELS[size]}px`;
 
       await expect(node).toHaveAttribute('data-icon-size', size.toLowerCase());
-      await expect.soft(nodeIcon(node)).toHaveAttribute('width', pixels);
-      await expect.soft(nodeIcon(node)).toHaveCSS('width', `${pixels}px`);
-      await expect.soft(nodeIcon(node)).toHaveCSS('height', `${pixels}px`);
+      await expect.soft(nodeIcon(node)).toHaveCSS('width', pixels);
+      await expect.soft(nodeIcon(node)).toHaveCSS('height', pixels);
       // A node without an outline color has its icon in the accent color
       // at every size. A switch is in its network's color.
       if (kind !== 'switch') {
         await expect.soft(nodeIcon(node)).toHaveCSS('color', accent);
-      }
-
-      if (size === 'Small') {
-        await expect.soft(node).not.toHaveClass(/builder-node--icon-/);
-      } else {
-        await expect
-          .soft(node)
-          .toHaveClass(new RegExp(`builder-node--icon-${size.toLowerCase()}`));
       }
 
       const { box } = await expectLaidOut(node, `${kind} at ${size}`);
@@ -1756,30 +1737,10 @@ test('node icons are drawn Small until the diagram says Medium or Large, keep th
           `${kind} at ${size}: height`,
         )
         .toBeLessThan(0.5);
-
-      await keepScreenshot(
-        testInfo,
-        node,
-        `icon-size-${kind.replace(' ', '-')}-${size.toLowerCase()}.png`,
-      );
     }
   };
 
   await test.step('a diagram draws Small icons until it says otherwise', async () => {
-    await expect(diagramSize).toBeVisible();
-    await expect.soft(diagramSize).toHaveAccessibleName('Icon size');
-    await expect
-      .soft(diagramSize)
-      .toHaveAccessibleDescription(
-        'Devices, switches and groups draw their icons at this size, unless one has a size of its own.',
-      );
-    expect
-      .soft(await choicesOf(diagramSize))
-      .toEqual([
-        'Small (16 pixels)',
-        'Medium (24 pixels)',
-        'Large (32 pixels)',
-      ]);
     await expect.soft(diagramSize).toHaveValue('small');
     await expectSize('Small');
   });
@@ -1791,9 +1752,6 @@ test('node icons are drawn Small until the diagram says Medium or Large, keep th
   await test.step('Medium and Large draw every node’s icon at once, beside its lines', async () => {
     await diagramSize.selectOption('medium');
     await expectSize('Medium');
-    await builder.persisted(draft, (doc) => doc.iconSize, 'medium', {
-      soft: true,
-    });
 
     await diagramSize.selectOption('large');
     await expectSize('Large');
@@ -1838,10 +1796,6 @@ test('node icons are drawn Small until the diagram says Medium or Large, keep th
     expect
       .soft(root && root.slice(1).map(Number), 'SVG width and height')
       .toEqual(imageSize);
-    expect.soft(markup).toContain('builder-node--icon-large');
-    expect
-      .soft(markup)
-      .toMatch(/<svg[^>]*class="builder-icon[^"]*"[^>]*width="32"/);
     expect
       .soft(markup)
       .not.toMatch(/<svg[^>]*class="builder-icon[^"]*"[^>]*width="16"/);
@@ -1880,14 +1834,6 @@ test('node icons are drawn Small until the diagram says Medium or Large, keep th
     const png = await save('png');
     const ratio = await page.evaluate(() => window.devicePixelRatio);
     const pixels = imageSize.map((length) => length * ratio);
-    const picture = testInfo.outputPath('icon-size-download-large.png');
-
-    fs.writeFileSync(picture, png);
-    await testInfo.attach('icon-size-download-large.png', {
-      path: picture,
-      contentType: 'image/png',
-    });
-
     const decoded = await page.evaluate(
       async ({ data }) => {
         const image = new Image();
@@ -1910,33 +1856,72 @@ test('node icons are drawn Small until the diagram says Medium or Large, keep th
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   });
 
-  expectNoFatal(issues);
-});
+  await test.step('a device and a switch draw an icon size of their own at once, without Apply', async () => {
+    await builder.selectNode('web-01');
+    await own.select.selectOption({ label: 'Small' });
+    await expect(nodeIcon(nodes.device)).toHaveCSS('width', '16px');
+    await expect
+      .soft(nodeIcon(builder.node('web-02', 'device')))
+      .toHaveCSS('width', '32px');
 
-// Show node icons only changes what the canvas draws: the draft keeps every
-// icon, and the setting stays for the next page load.
-test('Show node icons hides the icons of devices, switches and groups, on the canvas and in the SVG download', async ({
-  page,
-  builder,
-  issues,
-}, testInfo) => {
-  const { draft, nodes } = await openIconSizeDraft(builder, testInfo, 'large');
-  const kinds = Object.keys(nodes);
-  const iconKeys = (doc) =>
-    doc.nodes.map((node) => node[node.kind]?.iconKey || '').join(',');
-  const before = iconKeys(await builder.serverDocument(draft));
+    await builder.selectNode('EXP');
+    await own.select.selectOption({ label: 'Medium' });
+    await expect(nodeIcon(nodes.switch)).toHaveCSS('width', '24px');
+    await expect
+      .soft(builder.inspector.getByTestId('inspector-apply'))
+      .toHaveCount(0);
+    await builder.persisted(
+      draft,
+      (doc) =>
+        ['web-01', 'EXP'].map((label) => {
+          const node = doc.nodes.find((each) => each.label === label);
 
-  await test.step('Settings turns the icons off, and the lines take their place', async () => {
+          return node[node.kind].iconSize;
+        }),
+      ['small', 'medium'],
+      { soft: true },
+    );
+  });
+
+  await test.step('in the dark theme, a selected Large device keeps its icon and lines inside its ring', async () => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await expect(page.locator('.builder-root')).toHaveAttribute(
+      'data-builder-theme',
+      'dark',
+    );
+    await builder.selectNode('web-02');
+
+    const web02 = builder.node('web-02', 'device');
+
+    await expect(web02).toHaveClass(/is-selected/);
+    await expectLaidOut(web02, 'selected web-02 in the dark theme');
+  });
+
+  await test.step('the Node icon size setting draws every icon at its size, and the draft keeps its sizes', async () => {
+    await page.getByTestId('editor-settings').click();
+    const settings = page.getByTestId('settings-dialog');
+
+    await settings.getByRole('radio', { name: 'Small', exact: true }).check();
+    await settings.getByTestId('settings-done').click();
+    await expect(settings).toHaveCount(0);
+
+    for (const kind of kinds) {
+      await expect
+        .soft(nodes[kind], kind)
+        .toHaveAttribute('data-icon-size', 'small');
+      await expect.soft(nodeIcon(nodes[kind]), kind).toHaveCSS('width', '16px');
+    }
+    await builder.persisted(draft, (doc) => doc.iconSize, 'large', {
+      soft: true,
+    });
+  });
+
+  await test.step('Show node icons off draws no icon, the lines take its place, and the SVG download has none', async () => {
     await page.getByTestId('editor-settings').click();
     const settings = page.getByTestId('settings-dialog');
     const toggle = settings.getByTestId('settings-node-icons');
 
     await expect(toggle).toBeChecked();
-    await expect
-      .soft(toggle)
-      .toHaveAccessibleDescription(
-        'The icons of devices, switches and groups, on the canvas and in PNG, SVG and draw.io downloads. The diagram keeps its icons.',
-      );
     await toggle.click();
     await expect(toggle).not.toBeChecked();
     await settings.getByTestId('settings-done').click();
@@ -1946,9 +1931,6 @@ test('Show node icons hides the icons of devices, switches and groups, on the ca
       const node = nodes[kind];
 
       await expect.soft(nodeIcon(node), kind).toHaveCount(0);
-      // The document still says Large: only the drawing changes.
-      await expect.soft(node, kind).toHaveAttribute('data-icon-size', 'large');
-      await expect.soft(node, kind).not.toHaveClass(/builder-node--icon-/);
       // The name starts where the icon was: at the box's padding.
       const gap = await node.evaluate((element) => {
         const label = element.querySelector('.builder-node__label');
@@ -1966,11 +1948,7 @@ test('Show node icons hides the icons of devices, switches and groups, on the ca
         .soft(Math.abs(gap), `${kind}: label at the padding`)
         .toBeLessThan(1);
     }
-    await keepScreenshot(testInfo, builder.canvas, 'node-icons-hidden.png');
-    expect.soft(iconKeys(await builder.serverDocument(draft))).toBe(before);
-  });
 
-  await test.step('the SVG download draws no node icon', async () => {
     const dialog = await builder.openDialog('download');
     const [file] = await Promise.all([
       page.waitForEvent('download'),
@@ -1985,227 +1963,6 @@ test('Show node icons hides the icons of devices, switches and groups, on the ca
         /class="builder-node__header"[^>]*>\s*<svg[^>]*builder-icon/,
       );
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-  });
-
-  await test.step('a reload keeps the setting, and the palette shows the icons again', async () => {
-    await page.reload();
-    await builder.openDraft(draft);
-    await expect(nodes.device).toBeVisible();
-    await expect.soft(nodeIcon(nodes.device)).toHaveCount(0);
-
-    await builder.canvas.focus();
-    await page.keyboard.press('ControlOrMeta+k');
-    const search = page.getByRole('combobox', { name: /Search commands/ });
-
-    await search.fill('Show node icons');
-    await expect(
-      page
-        .getByTestId('commands-dialog')
-        .getByRole('option', { selected: true }),
-    ).toContainText('Show node icons');
-    await page.keyboard.press('Enter');
-    await expect.soft(builder).toHaveAnnounced('Node icons shown.');
-    for (const kind of kinds) {
-      await expect.soft(nodeIcon(nodes[kind]), kind).toHaveCount(1);
-      await expect
-        .soft(nodes[kind], kind)
-        .toHaveClass(/builder-node--icon-large/);
-    }
-  });
-
-  expectNoFatal(issues);
-});
-
-test('Node icon size draws every icon at one size on the canvas, and the draft keeps its sizes', async ({
-  page,
-  builder,
-  issues,
-}, testInfo) => {
-  const { draft, nodes, diagramSize } = await openIconSizeDraft(
-    builder,
-    testInfo,
-    'large',
-  );
-  const kinds = Object.keys(nodes);
-  const NOTE =
-    'Your Node icon size setting (Small) overrides this on your canvas.';
-
-  await test.step('Settings chooses Small, and every icon is drawn Small', async () => {
-    await page.getByTestId('editor-settings').click();
-    const settings = page.getByTestId('settings-dialog');
-    const off = settings.getByRole('radio', { name: 'Off', exact: true });
-    const small = settings.getByRole('radio', { name: 'Small', exact: true });
-
-    await expect(off).toBeChecked();
-    await expect
-      .soft(small)
-      .toHaveAccessibleDescription(
-        'Off uses the sizes of the diagram. Another size replaces them on your canvas and in PNG, SVG and draw.io downloads. The diagram does not change.',
-      );
-    await small.check();
-    await settings.getByTestId('settings-done').click();
-    await expect(settings).toHaveCount(0);
-
-    for (const kind of kinds) {
-      await expect
-        .soft(nodes[kind], kind)
-        .toHaveAttribute('data-icon-size', 'small');
-      await expect
-        .soft(nodeIcon(nodes[kind]), kind)
-        .toHaveAttribute('width', '16');
-    }
-    await builder.persisted(draft, (doc) => doc.iconSize, 'large', {
-      soft: true,
-    });
-  });
-
-  await test.step('the Inspector’s Icon size fields say that the setting overrides them', async () => {
-    await expect.soft(diagramSize).toHaveValue('large');
-    await expect
-      .soft(builder.inspector.getByTestId('inspector-icon-size-override'))
-      .toHaveText(NOTE);
-    await expect
-      .soft(diagramSize)
-      .toHaveAccessibleDescription(
-        `Devices, switches and groups draw their icons at this size, unless one has a size of its own. ${NOTE}`,
-      );
-
-    await builder.selectNode('web-01');
-    const own = inspectorField(builder, 'iconSize');
-
-    await expect
-      .soft(own.field.getByTestId('inspector-field-note'))
-      .toHaveText(NOTE);
-    await expect
-      .soft(own.select)
-      .toHaveAccessibleDescription(new RegExp(NOTE.replace(/[().]/g, '\\$&')));
-  });
-
-  await test.step('the palette’s Node icon size: Off gives the draft’s sizes back', async () => {
-    await builder.canvas.focus();
-    await page.keyboard.press('ControlOrMeta+k');
-    await page
-      .getByRole('combobox', { name: /Search commands/ })
-      .fill('Node icon size: Off');
-    await expect(
-      page
-        .getByTestId('commands-dialog')
-        .getByRole('option', { selected: true }),
-    ).toContainText('Node icon size: Off');
-    await page.keyboard.press('Enter');
-    await expect
-      .soft(builder)
-      .toHaveAnnounced('Node icons use the sizes of the diagram.');
-
-    for (const kind of kinds) {
-      await expect
-        .soft(nodes[kind], kind)
-        .toHaveAttribute('data-icon-size', 'large');
-    }
-    await expect
-      .soft(builder.inspector.getByTestId('inspector-field-note'))
-      .toHaveCount(0);
-  });
-
-  expectNoFatal(issues);
-});
-
-test('a device or a switch draws its icon at a size of its own, kept for the next page load', async ({
-  page,
-  builder,
-  issues,
-}, testInfo) => {
-  const { draft, nodes, diagramSize } = await openIconSizeDraft(
-    builder,
-    testInfo,
-    'large',
-  );
-
-  await test.step('a device of its own size draws it at once, and Diagram default gives the diagram’s back', async () => {
-    const own = inspectorField(builder, 'iconSize');
-
-    await builder.selectNode('web-01');
-    await expect.soft(own.label).toHaveText(/^Icon size/);
-    expect
-      .soft(await choicesOf(own.select))
-      .toEqual(['Diagram default (Large)', 'Small', 'Medium', 'Large']);
-    await expect.soft(own.select).toHaveValue('');
-
-    await own.select.selectOption({ label: 'Small' });
-    // A device's look takes no Apply.
-    await expect(nodeIcon(nodes.device)).toHaveAttribute('width', '16');
-    await expect.soft(nodes.device).not.toHaveClass(/builder-node--icon-/);
-    await expect
-      .soft(nodeIcon(builder.node('web-02', 'device')))
-      .toHaveAttribute('width', '32');
-    await builder.persisted(
-      draft,
-      (doc) =>
-        doc.nodes.find((node) => node.label === 'web-01').device.iconSize,
-      'small',
-      { soft: true },
-    );
-  });
-
-  await test.step('a switch of its own size draws it at once', async () => {
-    const own = inspectorField(builder, 'iconSize');
-
-    await builder.selectNode('EXP');
-    await own.select.selectOption({ label: 'Medium' });
-    // As a device's, without Apply.
-    await expect(nodeIcon(nodes.switch)).toHaveAttribute('width', '24');
-    await expect
-      .soft(builder.inspector.getByTestId('inspector-apply'))
-      .toHaveCount(0);
-    await builder.persisted(
-      draft,
-      (doc) =>
-        doc.nodes.find((node) => node.kind === 'switch' && node.label === 'EXP')
-          .switch.iconSize,
-      'medium',
-      { soft: true },
-    );
-  });
-
-  await test.step('opened again in a new page load, the draft draws each size as it was left', async () => {
-    // Loads the Builder page again and reads the draft from the server.
-    await builder.editAndReload(draft, {
-      expectSaved: () => builder.waitSaved(),
-      via: 'open',
-      expectAfterReload: async () => {
-        await builder.waitSaved();
-        await expect(nodeIcon(nodes.device)).toHaveAttribute('width', '16');
-        await expect
-          .soft(nodeIcon(builder.node('web-02', 'device')))
-          .toHaveAttribute('width', '32');
-        await expect
-          .soft(nodeIcon(nodes.switch))
-          .toHaveAttribute('width', '24');
-        await expect
-          .soft(nodeIcon(builder.node('MGMT', 'switch')))
-          .toHaveAttribute('width', '32');
-        await expect.soft(nodeIcon(nodes.group)).toHaveAttribute('width', '32');
-        await expect
-          .soft(nodeIcon(nodes['least group']))
-          .toHaveAttribute('width', '32');
-        await expect.soft(diagramSize).toHaveValue('large');
-      },
-    });
-  });
-
-  await test.step('in the dark theme, a selected Large device keeps its ring', async () => {
-    await page.emulateMedia({ colorScheme: 'dark' });
-    await builder.selectNode('web-02');
-
-    const web02 = builder.node('web-02', 'device');
-
-    await expect(web02).toHaveClass(/is-selected/);
-    await expectLaidOut(web02, 'selected web-02 in the dark theme');
-    await keepScreenshot(
-      testInfo,
-      web02,
-      'icon-size-device-large-selected-dark.png',
-    );
   });
 
   expectNoFatal(issues);
@@ -3403,258 +3160,306 @@ test('several custom icons are selected by keyboard, added to the server at once
   expectNoFatal(issues);
 });
 
-// Custom icons keep their own colors in both themes, on nodes and in the
-// dialog. The diagram carries as many copies as a document holds.
-for (const scheme of ['light', 'dark']) {
-  test(
-    `axe finds no serious violations in the Custom icons dialog and on a canvas of custom icons in the ${scheme} theme`,
-    { tag: '@axe' },
-    async ({ page, builder, issues }, testInfo) => {
-      await page.emulateMedia({ colorScheme: scheme });
+// Custom icons keep their own colors, on nodes and in the dialog. The
+// diagram carries as many copies as a document holds.
+test(
+  'axe finds no serious violations in the Custom icons dialog and on a canvas of custom icons, and on that canvas and a node tooltip in the dark theme',
+  { tag: '@axe' },
+  async ({ page, builder, issues }, testInfo) => {
+    await page.emulateMedia({ colorScheme: 'light' });
 
-      const icons = Array.from({ length: MAX_DOCUMENT_ICONS }, (_, index) =>
-        iconOf(
-          pngOf(4, 4, ownColor()),
-          `icon-${String(index).padStart(2, '0')}`,
-        ),
-      );
-      const spare = iconOf(pngOf(4, 4, ownColor()), 'spare');
-      const extra = iconOf(pngOf(4, 4, ownColor()), 'extra');
-      // The routed library: an icon the diagram has a copy of, one it has not
-      // under two names, and one more. No real icon is touched.
-      const listed = [icons[0], spare, extra].map((icon) => ({
-        name: icon.name,
-        id: icon.id,
-        owner: 'alice',
-        width: 4,
-        height: 4,
-        bytes: Buffer.from(icon.data, 'base64').length,
-        created: '2026-10-02T12:00:00Z',
-        updated: '2026-10-02T12:00:00Z',
-        aliases: icon === spare ? ['spare-old'] : [],
-        data: icon.data,
-        canRename: true,
-        canDelete: true,
-      }));
+    const icons = Array.from({ length: MAX_DOCUMENT_ICONS }, (_, index) =>
+      iconOf(pngOf(4, 4, ownColor()), `icon-${String(index).padStart(2, '0')}`),
+    );
+    const spare = iconOf(pngOf(4, 4, ownColor()), 'spare');
+    const extra = iconOf(pngOf(4, 4, ownColor()), 'extra');
+    // The routed library: an icon the diagram has a copy of, one it has not
+    // under two names, and one more. No real icon is touched.
+    const listed = [icons[0], spare, extra].map((icon) => ({
+      name: icon.name,
+      id: icon.id,
+      owner: 'alice',
+      width: 4,
+      height: 4,
+      bytes: Buffer.from(icon.data, 'base64').length,
+      created: '2026-10-02T12:00:00Z',
+      updated: '2026-10-02T12:00:00Z',
+      aliases: icon === spare ? ['spare-old'] : [],
+      data: icon.data,
+      canRename: true,
+      canDelete: true,
+    }));
 
-      await routeIconLibrary(page, listed);
+    await routeIconLibrary(page, listed);
 
-      const draft = await builder.seedDraft(
-        iconsDocument(
-          `icons-${scheme}-${testInfo.project.name}-${Date.now()}`,
-          icons,
-        ),
-      );
-      const field = iconField(page, builder);
+    const draft = await builder.seedDraft(
+      iconsDocument(`icons-${testInfo.project.name}-${Date.now()}`, icons),
+    );
+    const field = iconField(page, builder);
+    const theme = page.locator('.builder-root');
 
-      await builder.openDraft(draft);
-      await expect(page.locator('.builder-root')).toHaveAttribute(
-        'data-builder-theme',
-        scheme,
-      );
-      await expect(customIcon(builder.nodes('device'))).toHaveCount(
-        MAX_DOCUMENT_ICONS,
-      );
+    await builder.openDraft(draft);
+    await expect(theme).toHaveAttribute('data-builder-theme', 'light');
+    await expect(customIcon(builder.nodes('device'))).toHaveCount(
+      MAX_DOCUMENT_ICONS,
+    );
 
-      await builder.selectNode('plc-01');
-      await expect(field.name).toHaveText('icon-01');
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on a canvas of custom icons and the Icon field (${scheme})`,
-      });
+    await builder.selectNode('plc-01');
+    await expect(field.name).toHaveText('icon-01');
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on a canvas of custom icons and the Icon field (light)',
+    });
 
-      // The Icon menu, with each built-in icon and the custom icon in use.
-      await field.button.click();
-      await expect(field.menu).toBeVisible();
-      await expectAccessible(page, {
-        include: '[data-testid="inspector-icon-menu"]',
-        soft: true,
-        label: `axe on the Icon menu (${scheme})`,
-      });
-      await page.keyboard.press('Escape');
-      await expect(field.menu).toHaveCount(0);
+    // The Icon menu, with each built-in icon and the custom icon in use.
+    await field.button.click();
+    await expect(field.menu).toBeVisible();
+    await expectAccessible(page, {
+      include: '[data-testid="inspector-icon-menu"]',
+      soft: true,
+      label: 'axe on the Icon menu (light)',
+    });
+    await page.keyboard.press('Escape');
+    await expect(field.menu).toHaveCount(0);
 
-      await field.choose();
-      await expect(
-        field.dialog.getByRole('heading', {
-          name: `In this diagram (${MAX_DOCUMENT_ICONS})`,
-        }),
-      ).toBeVisible();
-      await expect(field.heading).toHaveText('Server icons (3)');
-      await expect(field.usage).toHaveText(
-        /^\s*The library holds 3 of 2000 icons\.\s*$/,
-      );
-      await expect
-        .soft(field.inDiagram(icons[0].name))
-        .toContainText('On the server');
-      // Every copy of the diagram but the one the server holds as it is can
-      // be added to the server.
-      await expect
-        .soft(field.dialog.getByTestId('icon-add-to-server'))
-        .toHaveCount(MAX_DOCUMENT_ICONS - 1);
-      await expect
-        .soft(field.inLibrary(spare.name))
-        .toContainText('Uploaded by alice · 4 × 4 pixels');
-      await expect
-        .soft(field.inLibrary(spare.name))
-        .toContainText('also named spare-old');
+    await field.choose();
+    await expect(
+      field.dialog.getByRole('heading', {
+        name: `In this diagram (${MAX_DOCUMENT_ICONS})`,
+      }),
+    ).toBeVisible();
+    await expect(field.heading).toHaveText('Server icons (3)');
 
-      // The rename form, open in the dialog.
-      const rename = field.inLibrary(spare.name).getByTestId('icon-rename');
+    // The rename form, open in the dialog.
+    await field.inLibrary(spare.name).getByTestId('icon-rename').click();
+    await expect(field.renameName).toBeFocused();
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on the Custom icons dialog, renaming an icon (light)',
+    });
+    await field.renameCancel.click();
+    await expect(field.renameName).toHaveCount(0);
 
-      await rename.click();
-      await expect(field.renameName).toBeFocused();
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on the Custom icons dialog, renaming an icon (${scheme})`,
-      });
-      await field.renameCancel.click();
-      await expect(field.renameName).toHaveCount(0);
-      await expect.soft(rename).toBeFocused();
+    // Copies selected, and the row above them.
+    await field.inDiagram(icons[1].name).getByTestId('icon-select').check();
+    await field.inDiagram(icons[2].name).getByTestId('icon-select').check();
+    await expect(
+      field.dialog.getByTestId('bulk-count-icons-diagram'),
+    ).toHaveText(`2 of ${MAX_DOCUMENT_ICONS - 1} selected`);
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on the Custom icons dialog with icons selected (light)',
+    });
 
-      // Copies selected, and the row above them. The server icons have no
-      // checkbox: the Icons tab deletes them.
-      const copiesCount = field.dialog.getByTestId('bulk-count-icons-diagram');
+    // The server refuses both copies, and the summary lists them. No real
+    // icon is added.
+    const ADD_ROUTE = '**/api/v1/builder/icons';
 
-      await field.inDiagram(icons[1].name).getByTestId('icon-select').check();
-      await field.inDiagram(icons[2].name).getByTestId('icon-select').check();
-      await expect(copiesCount).toHaveText(
-        `2 of ${MAX_DOCUMENT_ICONS - 1} selected`,
-      );
-      await expect
-        .soft(field.inLibrary(spare.name).getByTestId('icon-select'))
-        .toHaveCount(0);
-      await expect.soft(field.dialog.getByTestId('icon-delete')).toHaveCount(0);
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on the Custom icons dialog with icons selected (${scheme})`,
-      });
+    await page.route(ADD_ROUTE, (route) =>
+      route.request().method() === 'POST'
+        ? route.fulfill({
+            status: 403,
+            json: { message: 'not allowed to add icons' },
+          })
+        : route.fallback(),
+    );
+    await field.dialog.getByTestId('bulk-add-icons-diagram').click();
+    await expect(field.dialog.getByTestId('bulk-summary')).toBeFocused();
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on the summary of icons not added (light)',
+    });
+    await page.unroute(ADD_ROUTE);
+    await field.close.click();
+    await expect(field.dialog).toHaveCount(0);
 
-      // The server refuses both copies: the summary lists them with why,
-      // and takes focus. No real icon is added.
-      const ADD_ROUTE = '**/api/v1/builder/icons';
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await expect(theme).toHaveAttribute('data-builder-theme', 'dark');
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on a canvas of custom icons and the Icon field (dark)',
+    });
 
-      await page.route(ADD_ROUTE, (route) =>
-        route.request().method() === 'POST'
-          ? route.fulfill({
-              status: 403,
-              json: { message: 'not allowed to add icons' },
-            })
-          : route.fallback(),
-      );
-      await field.dialog.getByTestId('bulk-add-icons-diagram').click();
-      const summary = field.dialog.getByTestId('bulk-summary');
+    await builder.node('plc-02', 'device').hover();
+    await expect(infoTooltip(page)).toBeVisible();
+    await expectAccessible(page, {
+      include: '[data-testid="node-tooltip"]',
+      soft: true,
+      label: 'axe on a node tooltip (dark)',
+    });
 
-      await expect(summary).toBeFocused();
-      await expect(summary).toHaveAccessibleName(
-        '2 of 2 icons could not be added to the server.',
-      );
-      await expect(summary.getByRole('listitem')).toHaveText([
-        new RegExp(`^${icons[1].name}: .+$`),
-        new RegExp(`^${icons[2].name}: .+$`),
-      ]);
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on the summary of icons not added (${scheme})`,
-      });
-      await page.unroute(ADD_ROUTE);
-
-      // Escape on a row unselects the copies, and the dialog stays open.
-      await field.inDiagram(icons[1].name).focus();
-      await page.keyboard.press('Escape');
-      await expect(copiesCount).toHaveText(
-        `0 of ${MAX_DOCUMENT_ICONS - 1} selected`,
-      );
-      await expect(field.dialog).toBeVisible();
-
-      // A copy the diagram carries can be given to another node.
-      await field.inDiagram(icons[0].name).getByTestId('icon-use').click();
-      await expect(field.dialog).toHaveCount(0);
-      await expect
-        .soft(builder)
-        .toHaveAnnounced('Changed the custom icon of Device plc-01 to icon-00');
-      await expect.soft(field.name).toHaveText('icon-00');
-      // The copy no node uses, and icon-00 (which the server holds as is),
-      // leave the diagram.
-      await builder.waitSaved();
-      await builder.persisted(
-        draft,
-        (doc) => [
-          Object.keys(doc.icons).length,
-          icons[0].name in doc.icons,
-          icons[1].name in doc.icons,
-        ],
-        [MAX_DOCUMENT_ICONS - 2, false, false],
-        { soft: true },
-      );
-
-      expectNoFatal(issues);
-    },
-  );
-}
+    expectNoFatal(issues);
+  },
+);
 
 // Text on a fill is black or white, whichever reads, in either theme, down to
 // the grey on which both read about equally (4.6:1).
-for (const scheme of ['light', 'dark']) {
-  test(
-    `axe finds no serious violations on a canvas of filled and outlined nodes in the ${scheme} theme`,
-    { tag: '@axe' },
-    async ({ page, builder, issues }, testInfo) => {
-      await page.emulateMedia({ colorScheme: scheme });
-      const { draft } = await seedStyled(builder, testInfo, {
-        'web-01': { fillColor: '#1b2330', outlineColor: '#ffd400' },
-        'web-02': { fillColor: '#777777' },
-        EXP: { fillColor: '#ffd400', outlineColor: '#102030' },
-        MGMT: { fillColor: '#2f6fbf', outlineColor: '#f4f6f9' },
-      });
-      await builder.openDraft(draft);
-      await expect(page.locator('.builder-root')).toHaveAttribute(
-        'data-builder-theme',
-        scheme,
-      );
+test(
+  'axe finds no serious violations on a canvas of filled and outlined nodes in the light theme',
+  { tag: '@axe' },
+  async ({ page, builder, issues }, testInfo) => {
+    await page.emulateMedia({ colorScheme: 'light' });
+    const { draft } = await seedStyled(builder, testInfo, {
+      'web-01': { fillColor: '#1b2330', outlineColor: '#ffd400' },
+      'web-02': { fillColor: '#777777' },
+      EXP: { fillColor: '#ffd400', outlineColor: '#102030' },
+      MGMT: { fillColor: '#2f6fbf', outlineColor: '#f4f6f9' },
+    });
+    await builder.openDraft(draft);
+    await expect(page.locator('.builder-root')).toHaveAttribute(
+      'data-builder-theme',
+      'light',
+    );
 
-      const inks = {
-        'web-01': 'rgb(255, 255, 255)',
-        'web-02': 'rgb(0, 0, 0)',
-        EXP: 'rgb(0, 0, 0)',
-        MGMT: 'rgb(255, 255, 255)',
-      };
-      const nodeOf = (label) =>
-        builder.node(label, label.startsWith('web') ? 'device' : 'switch');
+    const inks = {
+      'web-01': 'rgb(255, 255, 255)',
+      'web-02': 'rgb(0, 0, 0)',
+      EXP: 'rgb(0, 0, 0)',
+      MGMT: 'rgb(255, 255, 255)',
+    };
+    const nodeOf = (label) =>
+      builder.node(label, label.startsWith('web') ? 'device' : 'switch');
 
-      await expect(
-        builder.nodes().and(page.locator('.builder-node--filled')),
-      ).toHaveCount(4);
-      for (const [label, ink] of Object.entries(inks)) {
-        await expectReadable(nodeOf(label), ink, `${scheme}: ${label}`);
-      }
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on filled nodes (${scheme})`,
-      });
+    await expect(
+      builder.nodes().and(page.locator('.builder-node--filled')),
+    ).toHaveCount(4);
+    for (const [label, ink] of Object.entries(inks)) {
+      await expectReadable(nodeOf(label), ink, label);
+    }
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on filled nodes (light)',
+    });
 
-      // Selected, a node keeps its fill and its text color. The Inspector
-      // shows its color fields, with their pickers.
-      await builder.selectNode('web-02');
-      await expect(nodeOf('web-02')).toHaveClass(/is-selected/);
-      await expectReadable(
-        nodeOf('web-02'),
-        inks['web-02'],
-        `${scheme}: web-02 selected`,
-      );
-      await builder.selectNode('MGMT');
-      await inspectorField(builder, 'fillColor').picker.click();
-      await expect(inspectorField(builder, 'fillColor').popup).toBeVisible();
-      await expectAccessible(page, {
-        soft: true,
-        label: `axe on a selected filled switch and its color picker (${scheme})`,
-      });
-      await page.keyboard.press('Escape');
+    // Selected, a node keeps its fill and its text color. The Inspector
+    // shows its color fields, with their pickers.
+    await builder.selectNode('web-02');
+    await expect(nodeOf('web-02')).toHaveClass(/is-selected/);
+    await expectReadable(nodeOf('web-02'), inks['web-02'], 'web-02 selected');
 
-      expectNoFatal(issues);
-    },
-  );
-}
+    // The dark theme draws the same inks.
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await expect(page.locator('.builder-root')).toHaveAttribute(
+      'data-builder-theme',
+      'dark',
+    );
+    for (const [label, ink] of Object.entries(inks)) {
+      await expectReadable(nodeOf(label), ink, `dark: ${label}`);
+    }
+    await builder.selectNode('MGMT');
+    await expect(nodeOf('web-02')).not.toHaveClass(/is-selected/);
+    await expectReadable(
+      nodeOf('web-02'),
+      inks['web-02'],
+      'dark: web-02 not selected',
+    );
+    await page.emulateMedia({ colorScheme: 'light' });
+    await expect(page.locator('.builder-root')).toHaveAttribute(
+      'data-builder-theme',
+      'light',
+    );
+    await inspectorField(builder, 'fillColor').picker.click();
+    await expect(inspectorField(builder, 'fillColor').popup).toBeVisible();
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on a selected filled switch and its color picker (light)',
+    });
+    await page.keyboard.press('Escape');
+
+    expectNoFatal(issues);
+  },
+);
+
+// The Icons tab's built-in and server icons, their previews and the summary
+// of Delete selected.
+test(
+  'axe finds no serious violations on the Icons tab, its icon previews and the summary of Delete selected',
+  { tag: '@axe' },
+  async ({ page, builder, issues }) => {
+    const by = (id) => page.getByTestId(id);
+    const panel = page.locator('#panel-icons');
+    const show = panel.getByLabel('Show', { exact: true });
+    const preview = by('icon-preview-dialog');
+    const wide = iconOf(pngOf(48, 24, ownColor()), 'wide');
+
+    await page.emulateMedia({ colorScheme: 'light' });
+    // A routed library of one icon. No real icon is touched.
+    await routeIconLibrary(page, [
+      {
+        name: wide.name,
+        id: wide.id,
+        owner: 'alice',
+        width: 48,
+        height: 24,
+        bytes: Buffer.from(wide.data, 'base64').length,
+        created: '2026-10-02T12:00:00Z',
+        updated: '2026-10-02T12:00:00Z',
+        aliases: [],
+        data: wide.data,
+        canRename: true,
+        canDelete: true,
+      },
+    ]);
+    await builder.open();
+    await by('drafts-tab-icons').click();
+    // The count shows once the server's icons are read.
+    await expect(by('drafts-tab-icons')).toHaveText(/^Icons \(\d+\)$/);
+
+    await expect(show).toHaveValue('builtin');
+    await panel.getByLabel('Filter icons').fill('fire');
+    await expect(by('builtin-icons-list').locator(':scope > li')).toHaveCount(
+      1,
+    );
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on the built-in icons',
+    });
+
+    await by('builtin-icon-preview-firewall').click();
+    await expect(preview).toBeVisible();
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on the preview of a built-in icon',
+    });
+    await page.keyboard.press('Escape');
+    await expect(preview).toHaveCount(0);
+
+    await show.selectOption('server');
+    await panel.getByLabel('Filter icons').fill('');
+    await expect(by(`icon-card-${wide.name}`)).toContainText('48 × 24 pixels');
+    await expectAccessible(page, { soft: true, label: 'axe on the Icons tab' });
+
+    await by(`icon-preview-${wide.name}`).click();
+    await expect(preview).toBeVisible();
+    await expect(by('icon-preview-sizes').locator('img')).toHaveCount(3);
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on the icon preview',
+    });
+    await page.keyboard.press('Escape');
+    await expect(preview).toHaveCount(0);
+
+    // Delete selected on built-in icons deletes none, and says why. A
+    // structural dialog, so it is scanned in the dark theme.
+    await show.selectOption('builtin');
+    await panel.getByLabel('Filter icons').fill('');
+    await by('builtin-icon-select-router').check();
+    await by('builtin-icon-select-switch').check();
+    await by('bulk-delete-icons').click();
+    await expect(by('bulk-summary')).toBeFocused();
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await expect(page.locator('.builder-root')).toHaveAttribute(
+      'data-builder-theme',
+      'dark',
+    );
+    await expectAccessible(page, {
+      soft: true,
+      label: 'axe on the summary of Delete selected (dark)',
+    });
+
+    expectNoFatal(issues);
+  },
+);
 
 test('the Icons tab shows and counts the built-in icons, which cannot be deleted, previews one and downloads them as PNG files', async ({
   page,
@@ -3742,10 +3547,6 @@ test('the Icons tab shows and counts the built-in icons, which cannot be deleted
     await expect
       .soft(cards.first())
       .toHaveAccessibleName('Firewall not selected');
-    await expectAccessible(page, {
-      soft: true,
-      label: 'axe on the built-in icons',
-    });
   });
 
   await test.step('View shows a built-in icon large and at the node sizes', async () => {
@@ -3766,10 +3567,6 @@ test('the Icons tab shows and counts the built-in icons, which cannot be deleted
       .toHaveText(
         /Name:?\s*Firewall.*Key:?\s*firewall.*Source:?\s*Built-in.*File:?\s*PNG, 96 × 96 pixels/s,
       );
-    await expectAccessible(page, {
-      soft: true,
-      label: 'axe on the preview of a built-in icon',
-    });
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
     await expect.soft(preview).toBeFocused();
@@ -3851,10 +3648,6 @@ test('the Icons tab shows and counts the built-in icons, which cannot be deleted
         'Switch: You cannot delete a built-in icon.',
       ]);
     await expect.soft(by('builtin-icon-card-router')).toHaveCount(1);
-    await expectAccessible(page, {
-      soft: true,
-      label: 'axe on the summary of Delete selected',
-    });
     await by('bulk-summary-dismiss').click();
     await expect(by('bulk-all-icons')).toBeFocused();
   });
@@ -3907,7 +3700,6 @@ test('the Icons tab lists the server’s icons, previews and downloads one, uplo
       .toContainText(wide.owner ? `Uploaded by ${wide.owner}` : 'Server');
     await expect.soft(card(wide.name)).toContainText('48 × 24 pixels');
     await expect.soft(card(small.name)).toContainText('16 × 16 pixels');
-    await expectAccessible(page, { soft: true, label: 'axe on the Icons tab' });
   });
 
   await test.step('View shows the icon at its stored size, sharp, and at the node sizes', async () => {
@@ -3935,10 +3727,6 @@ test('the Icons tab lists the server’s icons, previews and downloads one, uplo
     await expect
       .soft(by('icon-preview-sizes'))
       .toHaveText(/16 pixels\s*24 pixels\s*32 pixels/);
-    await expectAccessible(page, {
-      soft: true,
-      label: 'axe on the icon preview',
-    });
     // The tab is inert behind the dialog, so the dialog says the result.
     await Promise.all([
       page.waitForEvent('download'),

@@ -1,15 +1,27 @@
 // @vitest-environment happy-dom
-// The Inspector's own JSON Forms renderers, mounted in the Inspector and
-// used from the keyboard and the pointer: a field that suggests values
-// (InspectorComboboxControl), lists (InspectorArrayRenderer) and the kind of
-// an interface (InspectorOneOfRenderer).
+// The Inspector's own JSON Forms renderers (combobox, list, interface kind),
+// used from the keyboard and the pointer, alone and once in the Inspector.
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { ref } from 'vue';
 import { flushPromises } from '@vue/test-utils';
 
-import { resetCollapsed } from '@/components/builder/inspector/collapse.js';
+import {
+  INSPECTOR_COLLAPSE,
+  resetCollapsed,
+  useCollapseState,
+} from '@/components/builder/inspector/collapse.js';
+import {
+  INSPECTOR_ANNOUNCE,
+  INSPECTOR_SUGGESTIONS,
+} from '@/components/builder/inspector/control.js';
 
 import { addNode, findNode } from '@/builder/model.js';
+import {
+  builderSchemaV1,
+  schemaForKind,
+  SUGGESTIONS_KEYWORD,
+} from '@/builder/schema.js';
 
 import { sampleDocument } from './fixtures.js';
 import {
@@ -18,6 +30,7 @@ import {
   fieldAt,
   formData,
   keydown,
+  mountControl,
   mountInspector,
   type,
 } from './inspector-mount.js';
@@ -57,19 +70,37 @@ async function apply(wrapper) {
 describe('a field that suggests values (a drive’s image)', () => {
   const IMAGE = 'spec.hardware.drives.0.image';
 
-  async function openImage() {
-    const opened = await openAlpha();
-    const field = fieldAt(opened.wrapper, IMAGE);
+  // The field at `path`, its list and the list's options.
+  function comboboxAt(wrapper, path) {
+    const field = fieldAt(wrapper, path);
     const listbox = () =>
-      opened.wrapper.get(`[id="${field.attributes('aria-controls')}"]`);
+      wrapper.get(`[id="${field.attributes('aria-controls')}"]`);
 
     return {
-      ...opened,
       field,
       listbox,
       options: () => listbox().findAll('[role="option"]'),
       expanded: () => field.attributes('aria-expanded'),
     };
+  }
+
+  // The field alone, suggesting `disks`.
+  async function openImage(disks = DISKS) {
+    const { wrapper } = await mountControl({
+      schema: {
+        type: 'object',
+        properties: {
+          image: {
+            type: 'string',
+            title: 'Image',
+            [SUGGESTIONS_KEYWORD]: 'disks',
+          },
+        },
+      },
+      provides: { [INSPECTOR_SUGGESTIONS]: ref({ disks }) },
+    });
+
+    return { wrapper, ...comboboxAt(wrapper, 'image') };
   }
 
   test('typing filters the suggestions, and the arrow keys move through them', async () => {
@@ -114,7 +145,8 @@ describe('a field that suggests values (a drive’s image)', () => {
   });
 
   test('Enter takes the suggestion in view and closes the list; the edit waits for Apply', async () => {
-    const { wrapper, store, alpha, field, expanded } = await openImage();
+    const { wrapper, store, alpha } = await openAlpha();
+    const { field, expanded } = comboboxAt(wrapper, IMAGE);
     const image = () =>
       findNode(store.doc, alpha.id).device.spec.hardware?.drives?.[0]?.image;
 
@@ -147,7 +179,7 @@ describe('a field that suggests values (a drive’s image)', () => {
     await options()[0].trigger('click');
 
     expect(field.element.value).toBe('win10.qc2');
-    expect(formData(wrapper).spec.hardware.drives[0].image).toBe('win10.qc2');
+    expect(formData(wrapper).image).toBe('win10.qc2');
   });
 
   test('Escape closes the list, keeps the text typed, and goes no further', async () => {
@@ -192,9 +224,7 @@ describe('a field that suggests values (a drive’s image)', () => {
   });
 
   test('with no images known it is a plain text field', async () => {
-    const { doc, alpha } = sampleDocument();
-    const { wrapper } = await mountInspector({ doc, element: alpha });
-    const field = fieldAt(wrapper, IMAGE);
+    const { wrapper, field } = await openImage(null);
 
     expect(field.attributes('role')).toBeUndefined();
     expect(field.attributes('aria-expanded')).toBeUndefined();
@@ -206,21 +236,46 @@ describe('a field that suggests values (a drive’s image)', () => {
 describe('a list', () => {
   const COMMANDS = 'spec.commands';
 
+  // The fields of the items of the list at `path`.
+  const fields = (wrapper, path = 'commands') =>
+    wrapper.findAll(
+      `[data-path="${path}"] > .array-list-item-wrapper :is(input, textarea)`,
+    );
   // The list's items' values, as their fields show them.
   const values = (wrapper) =>
-    wrapper
-      .findAll(
-        `[data-path="${COMMANDS}"] > .array-list-item-wrapper :is(input, textarea)`,
-      )
-      .map((field) => field.element.value);
+    fields(wrapper).map((field) => field.element.value);
   const button = (wrapper, label) => wrapper.get(`[aria-label="${label}"]`);
-  const add = (wrapper) =>
-    wrapper.get(`[data-path="${COMMANDS}"] > .array-list-add`);
+  const add = (wrapper, path = 'commands') =>
+    wrapper.get(`[data-path="${path}"] > .array-list-add`);
+
+  // The list alone, which announces with `announce` and collapses as the
+  // Inspector's lists do.
+  async function openList() {
+    const announce = vi.fn();
+    const { wrapper } = await mountControl({
+      schema: {
+        type: 'object',
+        properties: {
+          commands: {
+            type: 'array',
+            title: 'miniccc commands',
+            items: { type: 'string' },
+          },
+        },
+      },
+      provides: {
+        [INSPECTOR_ANNOUNCE]: announce,
+        [INSPECTOR_COLLAPSE]: useCollapseState('canvas', []),
+      },
+    });
+
+    return { wrapper, announce };
+  }
 
   // Adds a command for each text, typed into the field Add puts focus in.
-  async function addCommands(wrapper, texts) {
+  async function addCommands(wrapper, texts, path = 'commands') {
     for (const text of texts) {
-      await add(wrapper).trigger('click');
+      await add(wrapper, path).trigger('click');
       await flushPromises();
 
       const field = document.activeElement;
@@ -232,28 +287,38 @@ describe('a list', () => {
     }
   }
 
-  test('Add puts a new item at the end, with focus in its field, and says so', async () => {
-    const { wrapper, store } = await openAlpha();
+  test('Add puts a new item at the end, with focus in its field, says so, and Apply takes the items after a move and a remove', async () => {
+    const { wrapper, store, alpha } = await openAlpha();
     const announce = vi.spyOn(store, 'announce');
 
     expect(wrapper.get(`[data-path="${COMMANDS}"]`).text()).toContain(
       'No miniccc commands.',
     );
-    await add(wrapper).trigger('click');
+    await add(wrapper, COMMANDS).trigger('click');
     await flushPromises();
 
-    const [field] = wrapper.findAll(
-      `[data-path="${COMMANDS}"] > .array-list-item-wrapper :is(input, textarea)`,
-    );
+    const [field] = fields(wrapper, COMMANDS);
 
     expect(document.activeElement).toBe(field.element);
     expect(announce).toHaveBeenCalledWith('Added miniccc command 1.');
     expect(actionsShown(wrapper)).toBe(true);
+
+    await field.setValue('one');
+    await field.trigger('change');
+    await addCommands(wrapper, ['two', 'three'], COMMANDS);
+    await button(wrapper, 'Move miniccc command 3 up').trigger('click');
+    await flushPromises();
+    await button(wrapper, 'Remove miniccc command 1').trigger('click');
+    await flushPromises();
+    await apply(wrapper);
+    expect(findNode(store.doc, alpha.id).device.spec.commands).toEqual([
+      'three',
+      'two',
+    ]);
   });
 
-  test('move up and down, and remove, change the items, keep focus in the list, and Apply takes them', async () => {
-    const { wrapper, store, alpha } = await openAlpha();
-    const announce = vi.spyOn(store, 'announce');
+  test('move up and down, and remove, change the items, and keep focus in the list', async () => {
+    const { wrapper, announce } = await openList();
 
     await addCommands(wrapper, ['one', 'two', 'three']);
     expect(values(wrapper)).toEqual(['one', 'two', 'three']);
@@ -299,14 +364,11 @@ describe('a list', () => {
       button(wrapper, 'Remove miniccc command 1').element,
     );
 
-    await apply(wrapper);
-    expect(findNode(store.doc, alpha.id).device.spec.commands).toEqual([
-      'three',
-    ]);
+    expect(formData(wrapper).commands).toEqual(['three']);
   });
 
   test('the last item removed leaves focus on Add', async () => {
-    const { wrapper } = await openAlpha();
+    const { wrapper } = await openList();
 
     await addCommands(wrapper, ['one']);
     await button(wrapper, 'Remove miniccc command 1').trigger('click');
@@ -317,19 +379,13 @@ describe('a list', () => {
   });
 
   test('an item collapses and expands from its header, and keeps its buttons', async () => {
-    const { wrapper } = await openAlpha();
+    const { wrapper } = await openList();
 
     await addCommands(wrapper, ['one']);
-    // The list is in a section that starts closed.
-    wrapper
-      .get(`[data-collapse-path="${COMMANDS}"]`)
-      .element.closest('details').open = true;
 
-    const header = disclosureOf(wrapper, `${COMMANDS}.0`);
+    const header = disclosureOf(wrapper, 'commands.0');
     const content = () =>
-      wrapper.get(
-        `[data-collapse-path="${COMMANDS}.0"] .array-list-item-content`,
-      );
+      wrapper.get('[data-collapse-path="commands.0"] .array-list-item-content');
 
     expect(header.attributes('aria-expanded')).toBe('true');
     await header.trigger('click');
@@ -377,20 +433,39 @@ describe('a list', () => {
 
 describe('the kind of an interface', () => {
   const INTERFACE = 'spec.network.interfaces.0';
+  const { interfaces } = schemaForKind(builderSchemaV1, 'device').properties
+    .spec.properties.network.properties;
 
+  // The kind picker of the interface at `path`, and the question it asks.
+  function kindAt(wrapper, path) {
+    return {
+      picker: () => wrapper.get(`.one-of > [data-path="${path}"] select`),
+      confirm: () => wrapper.find('[data-testid="builder-confirm"]'),
+    };
+  }
+
+  // A filled static interface alone.
   async function openKind() {
-    const opened = await openAlpha();
-    const picker = () =>
-      opened.wrapper.get(`.one-of > [data-path="${INTERFACE}"] select`);
-    const confirm = () =>
-      opened.wrapper.find('[data-testid="builder-confirm"]');
+    const { wrapper } = await mountControl({
+      schema: { type: 'object', properties: { iface: interfaces.items } },
+      data: {
+        iface: {
+          name: 'eth0',
+          type: 'ethernet',
+          proto: 'static',
+          vlan: 'EXP',
+          address: '10.0.0.1',
+          mask: 24,
+        },
+      },
+    });
 
-    return { ...opened, picker, confirm };
+    return { wrapper, ...kindAt(wrapper, 'iface') };
   }
 
   test('switching a filled interface with the pointer asks first; Keep current value keeps it, with focus back on the picker', async () => {
     const { wrapper, picker, confirm } = await openKind();
-    const before = formData(wrapper).spec.network.interfaces[0];
+    const before = formData(wrapper).iface;
 
     expect(picker().element.value).toBe('0');
     await pick(picker(), '2');
@@ -407,12 +482,12 @@ describe('the kind of an interface', () => {
     expect(confirm().exists()).toBe(false);
     expect(picker().element.value).toBe('0');
     expect(document.activeElement).toBe(picker().element);
-    expect(formData(wrapper).spec.network.interfaces[0]).toEqual(before);
+    expect(formData(wrapper).iface).toEqual(before);
   });
 
   test('Escape in the question keeps the kind too', async () => {
     const { wrapper, picker, confirm } = await openKind();
-    const before = formData(wrapper).spec.network.interfaces[0];
+    const before = formData(wrapper).iface;
 
     await pick(picker(), '1');
     await flushPromises();
@@ -421,11 +496,12 @@ describe('the kind of an interface', () => {
 
     expect(confirm().exists()).toBe(false);
     expect(document.activeElement).toBe(picker().element);
-    expect(formData(wrapper).spec.network.interfaces[0]).toEqual(before);
+    expect(formData(wrapper).iface).toEqual(before);
   });
 
   test('Switch and clear switches the kind, and clears the values', async () => {
-    const { wrapper, store, alpha, picker, confirm } = await openKind();
+    const { wrapper, store, alpha } = await openAlpha();
+    const { picker, confirm } = kindAt(wrapper, INTERFACE);
     const before = formData(wrapper).spec.network.interfaces[0];
     const kind = () =>
       findNode(store.doc, alpha.id).device.spec.network.interfaces[0].type;

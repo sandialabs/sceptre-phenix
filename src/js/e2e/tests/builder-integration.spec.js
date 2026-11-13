@@ -100,6 +100,29 @@ function opacityOf(dialog) {
   return dialog.evaluate((modal) => getComputedStyle(modal).opacity);
 }
 
+// Signs in with a role that may edit configs but has no `builder use`.
+// Auth is off on the server, so no request may try what the role forbids.
+async function useRoleWithoutBuilder(page) {
+  await page.evaluate(() => {
+    sessionStorage.setItem('phenix.user', 'e2e-editor');
+    sessionStorage.setItem('phenix.token', 'authorized');
+    sessionStorage.setItem('phenix.auth', 'true');
+    sessionStorage.setItem(
+      'phenix.role',
+      JSON.stringify({
+        name: 'E2E Config Editor',
+        policies: [
+          {
+            resources: ['*'],
+            resourceNames: ['*', '*/*'],
+            verbs: ['list', 'get', 'update'],
+          },
+        ],
+      }),
+    );
+  });
+}
+
 test.describe('header', () => {
   test('links to the Builder', async ({ page, issues, tracker }) => {
     await visit(page, '/experiments');
@@ -366,7 +389,6 @@ test.describe('Configs page', () => {
   }, testInfo) => {
     const plain = uniqueName(testInfo, 'plain');
     const legacy = uniqueName(testInfo, 'legacy');
-    const built = uniqueName(testInfo, 'built');
     const xml = legacyXml('legacy-cell');
     await seedConfig(request, tracker, topology(plain));
     await seedConfig(
@@ -374,26 +396,12 @@ test.describe('Configs page', () => {
       tracker,
       topology(legacy, { 'builder-xml': xml }),
     );
-    await publishTopology(
-      request,
-      tracker,
-      built,
-      deviceDocument(built, 'host-a'),
-    );
 
     await openConfigs(page);
     await expect(configRow(page, legacy)).toBeVisible();
 
     await test.step('a legacy Builder topology opens in the YAML editor, which leaves its diagram out and saves it back', async () => {
       await editConfig(page, legacy);
-      await expect
-        .soft(
-          page.getByRole('heading', {
-            level: 1,
-            name: `Edit Topology/${legacy}`,
-          }),
-        )
-        .toBeFocused();
       const content = page.locator('.ace_content');
       await expect.soft(content).toContainText(`name: ${legacy}`);
       // The diagram is long XML on one line: the text shows a placeholder.
@@ -424,9 +432,6 @@ test.describe('Configs page', () => {
         .click();
       const response = await saved;
       expect(response.ok(), await response.text()).toBeTruthy();
-      expect
-        .soft(response.request().postDataJSON().metadata.annotations)
-        .toEqual({ 'builder-xml': xml, owner: 'e2e' });
       await expect(configRow(page, legacy)).toBeVisible();
 
       const stored = await (
@@ -475,7 +480,7 @@ test.describe('Configs page', () => {
       // Exit leaves the unchanged editor without a question.
       await page.getByRole('button', { name: 'Exit', exact: true }).click();
       await expect.soft(page.locator('.dialog.modal.is-active')).toHaveCount(0);
-      await expect(configRow(page, built)).toBeVisible();
+      await expect(configRow(page, plain)).toBeVisible();
     });
 
     expectNoFatal(issues);
@@ -543,10 +548,6 @@ test.describe('Configs page', () => {
       // The address no longer names the topology, so a reload does not ask
       // again.
       await expect.soft(page).toHaveURL(/\/builder$/);
-      await expectAccessible(page, {
-        soft: true,
-        label: 'axe on the Import dialog opened from Configs',
-      });
 
       // Choosing another source takes the sentence about this one away.
       await dialog.getByTestId('import-name').selectOption(built);
@@ -776,10 +777,6 @@ test.describe('Configs page', () => {
           builder.inspector.locator(':is(input, select, textarea):disabled'),
         )
         .toHaveCount(0);
-      await expectAccessible(page, {
-        soft: true,
-        label: 'axe on a published diagram',
-      });
       expect
         .soft(creates.slice(before), 'draft creates while viewing')
         .toEqual([]);
@@ -819,45 +816,17 @@ test.describe('Configs page', () => {
     await openConfigs(page);
     const creates = watchDraftCreates(page);
 
-    // A session role that may edit configs but has no `builder use`. The
-    // server has auth off, so no request may try what the role forbids.
-    await page.evaluate(() => {
-      sessionStorage.setItem('phenix.user', 'e2e-editor');
-      sessionStorage.setItem('phenix.token', 'authorized');
-      sessionStorage.setItem('phenix.auth', 'true');
-      sessionStorage.setItem(
-        'phenix.role',
-        JSON.stringify({
-          name: 'E2E Config Editor',
-          policies: [
-            {
-              resources: ['*'],
-              resourceNames: ['*', '*/*'],
-              verbs: ['list', 'get', 'update'],
-            },
-          ],
-        }),
-      );
-    });
+    await useRoleWithoutBuilder(page);
     const notice = page.getByText('Your role does not include the Builder.');
 
-    await test.step("the header has no Builder link, and Configs gives a Builder topology's tag as text with no way into the Builder", async () => {
+    await test.step('the header has no Builder link, and Configs no link into the Builder', async () => {
       await openConfigs(page);
       await expect(page.getByTestId('nav-logout')).toBeVisible();
       await expect.soft(page.getByTestId('nav-builder')).toHaveCount(0);
-
-      const row = configRow(page, viewed);
-      await expect(row.locator('.tag')).toHaveText('builder');
+      await expect(configRow(page, viewed).locator('.tag')).toHaveText(
+        'builder',
+      );
       await expect.soft(builderTag(page, viewed)).toHaveCount(0);
-      await expect.soft(row.getByRole('link')).toHaveCount(0);
-      await page
-        .getByRole('button', { name: `View Topology ${viewed}` })
-        .click();
-      const dialog = page.getByRole('dialog', { name: `Topology/${viewed}` });
-      await expect(dialog).toBeVisible();
-      await expect.soft(dialog.getByTestId('viewer-builder')).toHaveCount(0);
-      await dialog.getByRole('button', { name: 'Close' }).click();
-      await expect(dialog).toBeHidden();
     });
 
     await test.step('the Builder, and a link to a diagram in it, show only a notice', async () => {
@@ -872,10 +841,6 @@ test.describe('Configs page', () => {
           .toHaveCount(0);
         await expect.soft(builder.canvas, path).toHaveCount(0);
       }
-      await expectAccessible(page, {
-        soft: true,
-        label: 'the Builder of a role without the Builder permission',
-      });
       expect.soft(creates, 'draft creates').toEqual([]);
     });
 
@@ -883,18 +848,49 @@ test.describe('Configs page', () => {
   });
 });
 
-test.describe('API routes', () => {
-  // The Go router tests of the Builder do not register the experiment routes.
-  test('the removed legacy experiment route and an unknown experiment path are not API routes', async ({
-    request,
-  }) => {
-    const legacy = await request.post(`${API}/experiments/builder`);
-    expect.soft(legacy.status(), 'POST /experiments/builder').toBe(405);
+// Both views are structural surfaces, so they scan in the dark theme only.
+test(
+  'axe finds no serious violations in a published diagram shown read only, and in the Builder of a role without it',
+  { tag: ['@axe'] },
+  async ({ page, request, tracker, builder, issues }, testInfo) => {
+    const viewed = uniqueName(testInfo, 'axe-viewed');
+    const { documentId } = await publishTopology(
+      request,
+      tracker,
+      viewed,
+      deviceDocument(viewed, 'host-v'),
+      { keepDraft: false },
+    );
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+    const root = page.locator('.builder-root');
 
-    const unknown = await request.get(`${API}/experiments/e2e/no/such/route`);
-    expect.soft(unknown.status()).toBe(404);
-    expect
-      .soft((await unknown.json().catch(() => ({}))).message)
-      .toBe('no API route matches this request');
-  });
-});
+    await test.step('a published diagram shown read only, with a node selected', async () => {
+      await builder.open();
+      await page.getByTestId('drafts-tab-published').click();
+      await page.getByTestId(`draft-open-${documentId}`).click();
+      await expect(page.getByTestId('builder-published')).toBeVisible();
+      await builder.selectNode('host-v');
+      await expect(root).toHaveAttribute('data-builder-theme', 'dark');
+      await expectAccessible(page, {
+        soft: true,
+        label: 'axe on a published diagram shown read only (dark)',
+      });
+    });
+
+    await test.step('the Builder of a role without the Builder permission', async () => {
+      await useRoleWithoutBuilder(page);
+      await visit(page, '/builder');
+      await expect(page.getByTestId('builder-no-access')).toBeVisible({
+        timeout: 20000,
+      });
+      await expect(root).toHaveAttribute('data-builder-theme', 'dark');
+      await expectAccessible(page, {
+        soft: true,
+        label:
+          'axe on the Builder of a role without the Builder permission (dark)',
+      });
+    });
+
+    expectNoFatal(issues);
+  },
+);

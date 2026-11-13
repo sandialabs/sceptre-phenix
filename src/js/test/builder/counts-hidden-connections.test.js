@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// The header's connections count while the connections are hidden: it is
-// struck through, says how to show them, and selects nothing.
+// The header's counts: one Tab stop that stays when its count goes away, and
+// a struck-through connections count while the connections are hidden.
 
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { mount } from '@vue/test-utils';
@@ -8,16 +8,17 @@ import { createPinia } from 'pinia';
 
 import BuilderCounts from '@/components/builder/BuilderCounts.vue';
 import { connectionsHiddenText } from '@/builder/commands.js';
+import { setLayers, setNodeLayer } from '@/builder/model.js';
 import { resetSettings, setSetting } from '@/builder/settings.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument } from './fixtures.js';
 
-function mountCounts() {
+function mountCounts(doc = sampleDocument().doc) {
   const pinia = createPinia();
   const store = useBuilderStore(pinia);
 
-  store.doc = sampleDocument().doc;
+  store.doc = doc;
 
   const wrapper = mount(BuilderCounts, {
     attachTo: document.body,
@@ -70,5 +71,31 @@ describe('the connections count', () => {
         .getElementById(links().attributes('aria-describedby'))
         .textContent.trim(),
     ).toBe(connectionsHiddenText());
+  });
+});
+
+describe('the counts’ Tab stop', () => {
+  test('moves to the last count when the layers count goes away', async () => {
+    const { doc, alpha } = sampleDocument();
+    const layered = setNodeLayer(
+      setLayers(doc, [{ id: 1, label: 'Field' }]),
+      alpha.id,
+      1,
+    );
+    const { wrapper, store } = mountCounts(layered);
+    const stops = () =>
+      wrapper
+        .findAll('.builder-counts__button')
+        .filter((button) => button.attributes('tabindex') === '0')
+        .map((button) => button.attributes('data-testid'));
+
+    await wrapper.get('[data-testid="count-layers"]').trigger('focus');
+    expect(stops()).toEqual(['count-layers']);
+
+    store.doc = setNodeLayer(layered, alpha.id, null);
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find('[data-testid="count-layers"]').exists()).toBe(false);
+    expect(stops()).toEqual(['count-notes']);
   });
 });

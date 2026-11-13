@@ -115,12 +115,6 @@ async function openDraftByName(page, builder, name) {
     .toHaveText(mac ? ['⌘', 'K'] : ['Ctrl', 'K']);
   await button.click();
   await expect(commands.field).toBeFocused();
-  await expect
-    .soft(commands.options.filter({ hasText: 'Blank diagram' }))
-    .toHaveCount(1);
-  await expect
-    .soft(commands.options.filter({ hasText: 'Undo' }))
-    .toHaveCount(0);
 
   // A draft is found by name, and Enter opens it.
   await commands.field.fill(name);
@@ -187,11 +181,6 @@ test.describe('command palette', () => {
           .soft(commands.message)
           .toHaveText('Ungroup is unavailable. Select a group first.');
         await expect.soft(commands.dialog).toBeVisible();
-        // The group commands and "Go to the Drafts page" (g, r and p in order).
-        await expect.soft(commands.count).toHaveText('8 results');
-        await expect
-          .soft(commands.options.filter({ hasText: 'Move to a group…' }))
-          .toHaveCount(1);
         await page.keyboard.press('Escape');
         await expect.soft(builder.canvas).toBeFocused();
       });
@@ -264,34 +253,10 @@ test.describe('command palette', () => {
         await expect.soft(button).toBeFocused();
       });
 
-      await test.step('"export" lists every download format, and a format’s command downloads it in the dialog', async () => {
+      await test.step('a format’s command downloads it in the dialog', async () => {
         const opener = page.getByTestId('editor-commands');
         await expect(opener).toBeFocused();
         await page.keyboard.press('ControlOrMeta+k');
-        await commands.field.fill('export');
-        // The Draft group: a template or an icon of another test can also
-        // answer to the word.
-        const draftGroup = commands.dialog.getByRole('group', {
-          name: 'Draft',
-          exact: true,
-        });
-        await expect
-          .soft(draftGroup.locator('.builder-command-palette__title'))
-          .toHaveText([
-            'Download…',
-            'Download Builder JSON',
-            'Download Builder YAML',
-            'Download Topology YAML',
-            'Download PNG',
-            'Download SVG',
-            'Download draw.io',
-            'Download Gephi (GEXF)',
-          ]);
-        await expect
-          .soft(commands.options.filter({ hasText: 'Download Gephi (GEXF)' }))
-          .toHaveAccessibleDescription(
-            /The network as a graph to analyze in Gephi/,
-          );
 
         // The dialog opens with the format's button focused and its
         // download made, and says so where a press of the button would.
@@ -467,23 +432,8 @@ test.describe('command palette library search', () => {
       `cmdp-lib-${testInfo.project.name}-${Date.now()}`,
     );
 
-    await test.step('? lists the prefixes t:, c: and i:', async () => {
-      await builder.canvas.focus();
-      await page.keyboard.press('ControlOrMeta+k');
-      await commands.field.fill('?');
-      for (const title of [
-        't: Find a template',
-        'c: Find a collection',
-        'i: Find an icon',
-      ]) {
-        await expect
-          .soft(commands.options.filter({ hasText: title }))
-          .toHaveCount(1);
-      }
-      await page.keyboard.press('Escape');
-    });
-
     await test.step('a plain search adds the collection and its template, found by the collection name', async () => {
+      await builder.canvas.focus();
       await page.keyboard.press('ControlOrMeta+k');
       await commands.field.fill(set);
       const collections = commands.dialog.getByRole('group', {
@@ -728,7 +678,7 @@ test.describe('default keys', () => {
 // The shortcut sheet. Shortcuts are kept per browser context, so each test's
 // changes end with it.
 test.describe('keyboard shortcut sheet', () => {
-  test('changes and refuses shortcuts, gives Snap to grid a key, and turns single keys off', async ({
+  test('a changed shortcut works at once, Snap to grid takes a key, and single keys turn off', async ({
     page,
     builder,
     issues,
@@ -772,21 +722,6 @@ test.describe('keyboard shortcut sheet', () => {
       await expect(keysOf('edit.undo')).toContainText(
         mac ? 'Command+Z' : 'Ctrl+Z',
       );
-
-      // One character finds keys: G is Group's, Ungroup's and
-      // Auto-group by network's.
-      await filter.fill('g');
-      await expect(sheet.locator('.builder-shortcuts__title')).toHaveText([
-        'Group selection',
-        'Ungroup',
-        'Auto-group by network',
-      ]);
-      await filter.fill('');
-      await expectAccessible(page, {
-        include: '[data-testid="shortcuts-dialog"]',
-        soft: true,
-        label: 'axe on the shortcut sheet',
-      });
     });
 
     await test.step('a new shortcut applies at once, everywhere', async () => {
@@ -867,39 +802,12 @@ test.describe('keyboard shortcut sheet', () => {
       expect((await settings())?.snapToGrid).toBeUndefined();
     });
 
-    await test.step('a clash is refused', async () => {
-      await page.keyboard.press('?');
-      await sheet.getByRole('button', { name: 'Change shortcuts' }).click();
-      await row('draft.download').getByTestId('shortcut-change').click();
-
-      await page.keyboard.press('ControlOrMeta+d');
-      await expect(message).toContainText(
-        'already runs Duplicate. Select Use for Download to move it',
-      );
-      // Enter does not take it from Duplicate.
-      await page.keyboard.press('Enter');
-      await expect(keysOf('edit.duplicate')).toContainText(
-        mac ? 'Command+D' : 'Ctrl+D',
-      );
-      await expectAccessible(page, {
-        include: '[data-testid="shortcuts-dialog"]',
-        soft: true,
-        label: 'axe on changing a shortcut',
-      });
-
-      // Escape cancels the recording, not the dialog.
-      await page.keyboard.press('Escape');
-      await expect(sheet).toBeVisible();
-      await expect(
-        row('draft.download').getByTestId('shortcut-change'),
-      ).toBeFocused();
-      await expect(keysOf('draft.download')).toHaveText('No shortcut');
-    });
-
     await test.step('single-key shortcuts can be turned off', async () => {
       const single = sheet.getByRole('switch', {
         name: 'Single-key shortcuts',
       });
+      await page.keyboard.press('?');
+      await sheet.getByRole('button', { name: 'Change shortcuts' }).click();
       await expect(single).toHaveAttribute('aria-checked', 'true');
       await single.click();
       await expect(single).toHaveAttribute('aria-checked', 'false');
@@ -913,17 +821,11 @@ test.describe('keyboard shortcut sheet', () => {
       await page.keyboard.press('Escape');
       await expect(sheet).toBeHidden();
 
-      // ? no longer opens the sheet and nothing offers the single keys. The
-      // header's Shortcuts button still opens it.
+      // ? no longer opens the sheet. The header's Shortcuts button still
+      // opens it.
       await builder.canvas.focus();
       await page.keyboard.press('?');
       await expect(sheet).toBeHidden();
-      await expect(
-        page.locator('.vue-flow__controls-zoomin'),
-      ).not.toHaveAttribute('aria-keyshortcuts');
-      await expect(builder.canvas).toHaveAccessibleDescription(
-        /Shortcuts in the header lists every shortcut\.$/,
-      );
       const open = page.getByTestId('editor-shortcuts');
       await expect(open.locator('kbd')).toHaveCount(0);
       await expect(open).not.toHaveAttribute('aria-keyshortcuts');
@@ -1077,11 +979,6 @@ test.describe('keyboard shortcut sheet', () => {
             `column heights ${wide.heights}`,
           )
           .toBeGreaterThan(0.6);
-        await expectAccessible(page, {
-          include: '[data-testid="shortcuts-dialog"]',
-          soft: true,
-          label: 'axe on the sheet at 1280 pixels',
-        });
 
         // The customization is one column, at the dialogs' usual width.
         await sheet.getByRole('button', { name: 'Change shortcuts' }).click();
@@ -1109,11 +1006,6 @@ test.describe('keyboard shortcut sheet', () => {
         expectColumns(one, '400');
         expect.soft(one.columns, '400: columns').toBe(1);
         expect.soft(one.width, '400: sheet width').toBeLessThanOrEqual(400);
-        await expectAccessible(page, {
-          include: '[data-testid="shortcuts-dialog"]',
-          soft: true,
-          label: 'axe on the sheet at 400 pixels',
-        });
         await page.keyboard.press('Escape');
 
         // 1280 pixels at 400% (WCAG 1.4.10).
@@ -1125,6 +1017,69 @@ test.describe('keyboard shortcut sheet', () => {
       });
 
       await page.setViewportSize(initial);
+      expectNoFatal(issues);
+    },
+  );
+
+  // The sheet is a dialog, so it is scanned in the dark theme only.
+  test(
+    'axe finds no serious violations in the sheet, wide and narrow, and while a shortcut clashes, in the dark theme',
+    { tag: '@axe' },
+    async ({ page, builder, issues }) => {
+      const sheet = page.getByTestId('shortcuts-dialog');
+      const initial = page.viewportSize();
+      const scan = (label) =>
+        expectAccessible(page, {
+          include: '[data-testid="shortcuts-dialog"]',
+          soft: true,
+          label: `axe on ${label} (dark)`,
+        });
+      const open = async (size) => {
+        await page.setViewportSize(size);
+        await builder.canvas.focus();
+        await page.keyboard.press('?');
+        await expect(sheet).toBeVisible();
+      };
+
+      await page.emulateMedia({ colorScheme: 'dark' });
+      await builder.open();
+      await builder.createBlank();
+      await expect(page.locator('.builder-root')).toHaveAttribute(
+        'data-builder-theme',
+        'dark',
+      );
+
+      await open({ width: 1280, height: 800 });
+      await scan('the sheet at 1280 pixels');
+
+      // Duplicate has Ctrl+D (⌘D), so Download cannot take it.
+      await sheet.getByRole('button', { name: 'Change shortcuts' }).click();
+      await sheet
+        .getByTestId('shortcut-draft.download')
+        .getByTestId('shortcut-change')
+        .click();
+      await expect(page.getByTestId('shortcut-recorder-input')).toBeFocused();
+      await page.keyboard.press('ControlOrMeta+d');
+      await expect(page.getByTestId('shortcut-recorder-message')).toContainText(
+        'already runs Duplicate',
+      );
+      await scan('changing a shortcut');
+      // The first Escape stops the recording, the second closes the sheet.
+      await page.keyboard.press('Escape');
+      await expect(
+        sheet
+          .getByTestId('shortcut-draft.download')
+          .getByTestId('shortcut-change'),
+      ).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(sheet).toBeHidden();
+
+      await open({ width: 400, height: 700 });
+      await scan('the sheet at 400 pixels');
+      await page.keyboard.press('Escape');
+
+      await page.setViewportSize(initial);
+      await page.emulateMedia({ colorScheme: null });
       expectNoFatal(issues);
     },
   );

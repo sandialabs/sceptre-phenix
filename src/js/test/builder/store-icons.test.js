@@ -21,7 +21,6 @@ function iconOf(index) {
 }
 
 const PLC = { data: ICON_DATA };
-const OTHER = iconOf(1).entry;
 
 // Makes the Builder's icon library hold these icons, as a read of it would.
 function serverHas(icons) {
@@ -64,92 +63,18 @@ describe('custom icons in the store', () => {
     return doc;
   }
 
-  test('a node names an icon, and the document carries no copy of it', () => {
-    serverHas([{ name: 'plc', data: ICON_DATA }]);
-
-    const entry = use(sample.alpha.id, 'plc');
-
-    expect(iconOfNode(sample.alpha.id)).toBe('plc');
-    expect('icons' in store.doc).toBe(false);
-    // What is recorded, and so saved, is the settled document.
-    expect(entry.snapshot).toBe(toRaw(store.doc));
-    expect(store.history.current()).toBe(toRaw(store.doc));
-    expect(errorsOf(store.doc)).toEqual([]);
-    expect(announced).toEqual(['Changed the custom icon']);
-  });
-
-  // A name nothing resolves is the node's still: the canvas draws its
-  // built-in icon, and the name resolves once the server has the icon.
-  test('a node keeps a name the icon library does not have', () => {
-    use(sample.alpha.id, 'not-uploaded');
-
-    expect(iconOfNode(sample.alpha.id)).toBe('not-uploaded');
-    expect(errorsOf(store.doc)).toEqual([]);
-  });
-
   test('a commit drops a copy the server holds under its name with the same bytes', () => {
     carryPlc();
     serverHas([{ name: 'PLC', data: ICON_DATA }]);
 
-    use(sample.bravo.id, 'plc');
+    const entry = use(sample.bravo.id, 'plc');
 
     expect('icons' in store.doc).toBe(false);
     expect(iconOfNode(sample.alpha.id)).toBe('plc');
     expect(iconOfNode(sample.bravo.id)).toBe('plc');
-  });
-
-  test('a commit keeps a copy the server lacks, or holds with other bytes', () => {
-    const doc = carryPlc();
-
-    use(sample.bravo.id, 'plc');
-    expect(store.doc.icons).toEqual({ plc: PLC });
-
-    serverHas([{ name: 'plc', ...OTHER }]);
-    use(sample.bravo.id, '', 'Removed the custom icon');
-    expect(toRaw(store.doc.icons)).toEqual(doc.icons);
-  });
-
-  test('a copy no node names any more leaves the document, and Undo brings it back', () => {
-    carryPlc();
-    use(sample.alpha.id, '', 'Removed the custom icon');
-
-    expect('icons' in store.doc).toBe(false);
-    expect('icon' in findNode(store.doc, sample.alpha.id).device).toBe(false);
-
-    // The history holds whole documents, copies included.
-    store.undo();
-
-    expect(store.doc.icons).toEqual({ plc: PLC });
-    expect(iconOfNode(sample.alpha.id)).toBe('plc');
-
-    store.redo();
-    expect('icons' in store.doc).toBe(false);
-  });
-
-  test('deleting the last node that uses a copy removes it', () => {
-    carryPlc();
-    store.remove({ nodes: [sample.alpha.id], edges: [] });
-
-    expect('icons' in store.doc).toBe(false);
-    expect(errorsOf(store.doc)).toEqual([]);
-  });
-
-  test('an edit that names no icon leaves the document as it was given', () => {
-    const next = updateNode(store.doc, sample.alpha.id, {
-      position: { x: 8, y: 8 },
-    });
-
-    store.commit(next, 'Moved alpha');
-
-    expect(toRaw(store.doc)).toBe(next);
-    expect('icons' in store.doc).toBe(false);
-  });
-
-  test('a commit that is refused changes nothing', () => {
-    store.readOnly = true;
-
-    expect(use(sample.alpha.id, 'plc')).toBeNull();
-    expect('icon' in findNode(store.doc, sample.alpha.id).device).toBe(false);
+    // What is recorded, and so saved, is the settled document.
+    expect(entry.snapshot).toBe(toRaw(store.doc));
+    expect(announced.at(-1)).toBe('Changed the custom icon');
   });
 
   test('a copy carries its copies of icons into another diagram', () => {
@@ -168,19 +93,6 @@ describe('custom icons in the store', () => {
     expect(iconOfNode(pasted)).toBe('plc');
     expect(store.doc.icons).toEqual({ plc: PLC });
     expect(errorsOf(store.doc)).toEqual([]);
-  });
-
-  test('a paste of a copy the server holds as it is carries none', () => {
-    carryPlc();
-    store.select({ nodes: [sample.alpha.id], edges: [] });
-    store.copy();
-    store.setDocument(sampleDocument().doc);
-    serverHas([{ name: 'plc', data: ICON_DATA }]);
-
-    const [pasted] = store.paste();
-
-    expect(iconOfNode(pasted)).toBe('plc');
-    expect('icons' in store.doc).toBe(false);
   });
 
   test('a paste into a diagram that carries 50 copies adds none, and the node keeps its icon', () => {

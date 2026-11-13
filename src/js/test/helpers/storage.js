@@ -1,17 +1,23 @@
 // Stand-ins for localStorage.
 
-// Storage that keeps values as strings, as the browser does.
-export function memoryStorage() {
-  const items = new Map();
+// Storage that keeps values as strings, as the browser does. `initial` gives
+// its first items, and `entries` holds what it stores.
+export function memoryStorage(initial = {}) {
+  const entries = new Map(Object.entries(initial));
   return {
+    entries,
     get length() {
-      return items.size;
+      return entries.size;
     },
-    key: (index) => [...items.keys()][index] ?? null,
-    getItem: (key) => (items.has(key) ? items.get(key) : null),
-    setItem: (key, value) => items.set(key, String(value)),
-    removeItem: (key) => items.delete(key),
-    clear: () => items.clear(),
+    key: (index) => [...entries.keys()][index] ?? null,
+    getItem: (key) => (entries.has(key) ? entries.get(key) : null),
+    setItem: (key, value) => {
+      entries.set(key, String(value));
+    },
+    removeItem: (key) => {
+      entries.delete(key);
+    },
+    clear: () => entries.clear(),
   };
 }
 

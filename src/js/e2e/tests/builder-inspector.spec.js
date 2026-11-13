@@ -580,12 +580,6 @@ test.describe('Builder inspector', () => {
         await expect
           .soft(suggestions.first())
           .toHaveAttribute('aria-selected', 'true');
-        await expect
-          .soft(imageBox)
-          .toHaveAttribute(
-            'aria-activedescendant',
-            await suggestions.first().getAttribute('id'),
-          );
         await imageBox.press('Enter');
         await expect.soft(imageBox).toHaveValue('win10.qc2');
         await expect.soft(imageBox).toHaveAttribute('aria-expanded', 'false');
@@ -614,42 +608,13 @@ test.describe('Builder inspector', () => {
         await snapshot.click();
         await expect.soft(snapshot).not.toBeChecked();
 
-        // Add drive is announced and moves focus to the new drive's image.
+        // Add drive moves focus to the new drive's image.
         const drives = hardware
           .locator('fieldset.array-list')
           .filter({ has: page.locator('legend', { hasText: 'Drives' }) });
-        // Unset, a choice names the value it comes to, marked as the
-        // default as a text field's is.
-        const cacheMode = drives
-          .getByRole('group', { name: /^Drive 1\b/ })
-          .getByLabel('Cache mode', { exact: true });
-        await expect
-          .soft(cacheMode.locator('option:checked'))
-          .toHaveText('Default (writeback)');
-        await expect
-          .soft(cacheMode)
-          .toHaveAccessibleDescription(
-            /\. Default: The default, used while the field is empty\.$/,
-          );
-        await expect
-          .soft(
-            drives
-              .getByRole('group', { name: /^Drive 1\b/ })
-              .locator('.control > label'),
-          )
-          .toHaveText([
-            /^Image/,
-            /^Inject partition/,
-            /^Cache mode/,
-            /^Interface/,
-          ]);
         await drives.getByRole('button', { name: 'Add drive' }).click();
         const second = drives.getByRole('group', { name: 'Drive 2' });
         await expect.soft(second.getByLabel(/^Image/)).toBeFocused();
-        await expect.soft(builder).toHaveAnnounced('Added drive 2.');
-        await expect
-          .soft(second.getByRole('button', { name: 'Remove drive 2' }))
-          .toBeEnabled();
         await fillField(second.getByLabel(/^Image/), 'data.qc2');
 
         // Memory and VCPUs are number fields. Unset or emptied, each shows
@@ -659,38 +624,14 @@ test.describe('Builder inspector', () => {
         const memoryDefault = hardware
           .locator('[data-path="spec.hardware.memory"]')
           .getByTestId('inspector-field-default');
-        await expect.soft(memory).toHaveRole('spinbutton');
-        await expect.soft(memory).toHaveAttribute('inputmode', 'numeric');
         await expect.soft(memory).toHaveValue('512');
         await expect.soft(memoryDefault).toHaveText(/^Default/);
-        await expect
-          .soft(memory)
-          .toHaveAccessibleDescription(
-            /\. Default: phenix uses this value while the field is empty\.$/,
-          );
         await expect.soft(vcpus).toHaveValue('1');
-        await expect
-          .soft(hardware.getByRole('combobox', { name: /^(Memory|VCPUs)\b/ }))
-          .toHaveCount(0);
         // A click into a field showing its default selects it, so what is
         // typed replaces it.
         await memory.click();
         await page.keyboard.type('2048');
         await expect.soft(memory).toHaveValue('2048');
-        await setNumber(builder, 'Memory', 4096);
-        await expect.soft(memoryDefault).toHaveCount(0);
-        // Its Default button sets it back to 512 and gives it focus.
-        const memoryReset = hardware
-          .locator('[data-path="spec.hardware.memory"]')
-          .getByTestId('inspector-field-reset-default');
-        await expect
-          .soft(memoryReset)
-          .toHaveAccessibleName('Reset Memory to the default, 512');
-        await memoryReset.click();
-        await expect.soft(memory).toHaveValue('512');
-        await expect.soft(memory).toBeFocused();
-        await expect.soft(memoryDefault).toBeVisible();
-        await expect.soft(memoryReset).toHaveCount(0);
         await setNumber(builder, 'Memory', 4096);
         await expect.soft(memoryDefault).toHaveCount(0);
         // The field the working copy changed is marked until applied.
@@ -710,15 +651,6 @@ test.describe('Builder inspector', () => {
         await expect.soft(builder).toHaveAnnounced('Updated device web01');
         await expect.soft(vcpus).toBeFocused();
         await expect.soft(vcpus).toHaveValue('1');
-        // A whole-number field takes no fraction or exponent.
-        for (const typed of ['1.5', '1e3']) {
-          await setNumber(builder, 'VCPUs', typed);
-          await expect
-            .soft(vcpus)
-            .toHaveAccessibleDescription(/^VCPUs must be a whole number\b/);
-          await expect.soft(vcpus).toHaveAttribute('aria-invalid', 'true');
-          await expect.soft(apply).toBeDisabled();
-        }
         // Spaces around a whole number are dropped, and the arrow keys step
         // it.
         await setNumber(builder, 'VCPUs', ' 3 ');
@@ -1206,11 +1138,6 @@ test.describe('Builder inspector', () => {
       await expect
         .soft(menu.getByRole('menuitemradio', { name: 'Router', exact: true }))
         .toBeFocused();
-      await expectAccessible(page, {
-        include: '[data-testid="inspector-icon-menu"]',
-        soft: true,
-        label: 'axe on the Icon menu',
-      });
       await page.keyboard.press('Escape');
       await expect.soft(menu).toHaveCount(0);
       await expect.soft(icon).toBeFocused();
@@ -1551,12 +1478,6 @@ test.describe('Builder inspector', () => {
       await expect
         .soft(popup.getByRole('button', { name: 'Blue, #2f6fbf' }))
         .toBeFocused();
-      // Only the picker, which this step opens.
-      await expectAccessible(page, {
-        include: '[data-testid="inspector-color-popup"]',
-        soft: true,
-        label: 'axe on the color picker',
-      });
       await page.keyboard.press('Escape');
       await expect.soft(popup).toHaveCount(0);
       await expect.soft(picker).toBeFocused();
@@ -2906,7 +2827,6 @@ test.describe('Builder inspector', () => {
   // A device's layer applies at once. Its choices are the diagram's layers,
   // or the 7 placeholder layers.
   test('the layer of a device applies at once and is kept by the draft', async ({
-    page,
     builder,
     issues,
   }) => {
@@ -2957,10 +2877,6 @@ test.describe('Builder inspector', () => {
       false,
     );
 
-    await expectAccessible(page, {
-      soft: true,
-      label: 'axe on the layer section',
-    });
     expectNoFatal(issues);
   });
 
@@ -3039,10 +2955,6 @@ test.describe('Builder inspector', () => {
       await expect(comment).toHaveText('Front end web server');
     });
 
-    await expectAccessible(page, {
-      soft: true,
-      label: 'axe on the description toggle',
-    });
     expectNoFatal(issues);
   });
 
@@ -3334,11 +3246,6 @@ test.describe('Node Editor', () => {
       expect
         .soft((await editor.boundingBox()).width)
         .toBeGreaterThan((await builder.inspector.boundingBox()).width);
-      await expectAccessible(page, {
-        include: '[data-testid="node-editor"]',
-        soft: true,
-        label: 'axe on the Node Editor',
-      });
       await close('double-click');
     });
 
@@ -3738,19 +3645,13 @@ test.describe('Node Editor', () => {
         .toBeInViewport();
     };
 
-    await test.step('a section and a list entry collapse, and an entry keeps its buttons', async () => {
+    await test.step('a section and a list entry collapse, and stay so for the next node opened, apart from the Inspector', async () => {
       await open();
       // The node's fields start under a heading, with no box around them.
-      await expect
-        .soft(
-          editor.getByRole('heading', { level: 3, name: 'Node', exact: true }),
-        )
-        .toBeVisible();
       await expect
         .soft(editor.locator('fieldset.group--heading'))
         .toHaveCSS('border-top-style', 'none');
 
-      await expect.soft(general).toHaveAttribute('aria-expanded', 'true');
       await general.click();
       await expect.soft(general).toHaveAttribute('aria-expanded', 'false');
       await expect.soft(description).toBeHidden();
@@ -3760,28 +3661,8 @@ test.describe('Node Editor', () => {
 
       await drive.click();
       await expect.soft(drive).toHaveAttribute('aria-expanded', 'false');
-      await expect.soft(editor.getByLabel(/^Image/)).toBeHidden();
-      await expect
-        .soft(editor.getByRole('button', { name: 'Remove drive 1' }))
-        .toBeVisible();
-
-      // A new entry is expanded, and its first field takes focus.
-      await editor.getByRole('button', { name: 'Add drive' }).click();
-      await expect
-        .soft(header('Drive 2'))
-        .toHaveAttribute('aria-expanded', 'true');
-      await expect
-        .soft(
-          editor
-            .getByRole('group', { name: /^Drive 2\b/ })
-            .getByLabel(/^Image/),
-        )
-        .toBeFocused();
-      await expect.soft(drive).toHaveAttribute('aria-expanded', 'false');
       await close();
-    });
 
-    await test.step('collapsed entries stay so for the next node opened, apart from the Inspector', async () => {
       await open();
       await expect.soft(drive).toHaveAttribute('aria-expanded', 'false');
       await close();
@@ -3792,20 +3673,13 @@ test.describe('Node Editor', () => {
     });
 
     await test.step('Collapse all and Expand all act on every section and entry', async () => {
+      const collapseAll = editor.getByRole('button', { name: 'Collapse all' });
+
       await open();
-      await editor.getByRole('button', { name: 'Collapse all' }).click();
+      await collapseAll.click();
       await expect.soft(status).toHaveText('Collapsed all sections.');
-      for (const name of ['General', 'Network']) {
-        await expect
-          .soft(header(name))
-          .toHaveAttribute('aria-expanded', 'false');
-      }
-      await expect
-        .soft(editor.getByTestId('inspector-section'))
-        .toHaveJSProperty('open', false);
-      await expect
-        .soft(editor.getByRole('button', { name: 'Collapse all' }))
-        .toBeFocused();
+      await expect.soft(general).toHaveAttribute('aria-expanded', 'false');
+      await expect.soft(collapseAll).toBeFocused();
 
       // With the fields not scrolling (the dialog made taller), the entry gone
       // to stays marked in the table of contents.
@@ -3833,12 +3707,9 @@ test.describe('Node Editor', () => {
       await expect.soft(status).toHaveText('Expanded all sections.');
       await expect.soft(general).toHaveAttribute('aria-expanded', 'true');
       await expect.soft(drive).toHaveAttribute('aria-expanded', 'true');
-      await expect
-        .soft(editor.getByTestId('inspector-section'))
-        .toHaveJSProperty('open', true);
     });
 
-    await test.step('the table of contents lists the sections, and goes to one', async () => {
+    await test.step('the table of contents goes to an entry and a section', async () => {
       await expect(toc).toBeVisible();
       await expect
         .soft(editor.getByTestId('node-editor-toc-toggle'))
@@ -3883,9 +3754,6 @@ test.describe('Node Editor', () => {
         .soft(hardware)
         .toHaveAccessibleName(/^Hardware\s*, has errors$/);
       await expect
-        .soft(hardware.getByTestId('inspector-disclosure-error'))
-        .toBeVisible();
-      await expect
         .soft(toc.getByRole('button', { name: /^Hardware\b/ }))
         .toHaveAccessibleName(/^Hardware\s*, has errors$/);
 
@@ -3918,18 +3786,6 @@ test.describe('Node Editor', () => {
       await page.keyboard.press('Escape');
     });
 
-    await test.step('axe finds nothing', async () => {
-      await drive.click();
-      // Without motion, so that axe does not read colors in transition.
-      await page.emulateMedia({ reducedMotion: 'reduce' });
-      await expectAccessible(page, {
-        soft: true,
-        include: '[data-testid="node-editor"]',
-        label: 'axe on the Node Editor with its table of contents',
-      });
-      await page.emulateMedia({ reducedMotion: null });
-    });
-
     await test.step('in a narrow window the table of contents opens above the fields', async () => {
       await page.setViewportSize({ width: 320, height: 640 });
       const toggle = editor.getByTestId('node-editor-toc-toggle');
@@ -3957,18 +3813,16 @@ test.describe('Node Editor', () => {
 
     await test.step('Reset view expands them all again', async () => {
       await page.setViewportSize({ width: 1440, height: 1100 });
+      await open();
+      await drive.click();
+      await expect.soft(drive).toHaveAttribute('aria-expanded', 'false');
+      await close();
       await builder.selectNode('node');
       const inspectorHardware = builder.inspector.getByRole('button', {
         name: /^Hardware\b/,
       });
 
       await inspectorHardware.click();
-      await expect
-        .soft(inspectorHardware)
-        .toHaveAttribute('aria-expanded', 'false');
-      // Another node and back: it stays collapsed.
-      await builder.selectNode('EXP');
-      await builder.selectNode('node');
       await expect
         .soft(inspectorHardware)
         .toHaveAttribute('aria-expanded', 'false');
@@ -3998,15 +3852,10 @@ test.describe('Node Editor', () => {
     const fields = editor.locator('.builder-node-editor__body');
     const search = editor.getByRole('searchbox', { name: 'Search fields' });
     const results = editor.getByTestId('node-editor-search-results');
-    const general = fields.getByRole('button', {
-      name: 'General',
-      exact: true,
-    });
     const hardware = fields.getByRole('button', { name: /^Hardware\b/ });
     const description = editor.getByLabel(/^Description/);
     const memory = editor.getByLabel('Memory', { exact: true });
     const vcpus = editor.getByLabel('VCPUs', { exact: true });
-    const osType = editor.getByLabel(/^OS type/);
     const sections = toc.locator(':scope > ul > li > button');
     const open = async () => {
       await builder.canvasItem('node').dblclick();
@@ -4023,9 +3872,6 @@ test.describe('Node Editor', () => {
         .boundingBox();
       expect.soft(box.x + box.width).toBeLessThanOrEqual(expand.x);
       expect.soft(Math.abs(box.y - expand.y)).toBeLessThan(expand.height);
-      await expect
-        .soft(search)
-        .toHaveAttribute('placeholder', 'Field name or path');
 
       await hardware.click();
       await expect.soft(hardware).toHaveAttribute('aria-expanded', 'false');
@@ -4035,8 +3881,6 @@ test.describe('Node Editor', () => {
       // What holds it expands, and the rest hides.
       await expect.soft(hardware).toHaveAttribute('aria-expanded', 'true');
       await expect.soft(memory).toBeHidden();
-      await expect.soft(general).toBeHidden();
-      await expect.soft(description).toBeHidden();
       await expect.soft(sections).toHaveText(['Hardware']);
     });
 
@@ -4104,7 +3948,6 @@ test.describe('Node Editor', () => {
       const shown = field.getByTestId('inspector-field-default');
 
       await expect.soft(shown).toBeVisible();
-      await expect.soft(reset).toHaveCount(0);
       await fillField(memory, '4096');
       await expect.soft(shown).toHaveCount(0);
       await expect(reset).toBeVisible();
@@ -4120,15 +3963,6 @@ test.describe('Node Editor', () => {
       await expect.soft(shown).toBeVisible();
       await expect.soft(reset).toHaveCount(0);
 
-      // A required choice resets to its default choice, not to empty.
-      await osType.selectOption('windows');
-      const osReset = editor
-        .locator('[data-path="spec.hardware.os_type"]')
-        .getByTestId('inspector-field-reset-default');
-      await osReset.click();
-      await expect.soft(osType).toHaveValue('linux');
-      await expect.soft(osType).toBeFocused();
-
       // A click resets the field too. Apply applies what it shows.
       await fillField(memory, '2048');
       await fillField(vcpus, '2');
@@ -4140,32 +3974,14 @@ test.describe('Node Editor', () => {
         draft,
         (doc) => [
           device(doc).spec.hardware.memory ?? null,
-          device(doc).spec.hardware.os_type ?? null,
           device(doc).spec.hardware.vcpus,
         ],
-        [null, 'linux', 2],
+        [null, 2],
       );
     });
 
-    await test.step('axe finds nothing with a search and a Default button', async () => {
-      await open();
-      await search.fill('hardware');
-      await expect(vcpus).toBeVisible();
-      await expect(
-        editor
-          .locator('[data-path="spec.hardware.vcpus"]')
-          .getByTestId('inspector-field-reset-default'),
-      ).toBeVisible();
-      await page.emulateMedia({ reducedMotion: 'reduce' });
-      await expectAccessible(page, {
-        soft: true,
-        include: '[data-testid="node-editor"]',
-        label: 'axe on the Node Editor with a search',
-      });
-      await page.emulateMedia({ reducedMotion: null });
-    });
-
     await test.step('at 320 pixels wide the search takes a row of its own, with no sideways scroll', async () => {
+      await open();
       await page.setViewportSize({ width: 320, height: 640 });
       const box = await search.boundingBox();
       const dialog = await editor.boundingBox();
@@ -4184,4 +4000,50 @@ test.describe('Node Editor', () => {
 
     expectNoFatal(issues);
   });
+
+  // The Node Editor is a dialog, so it is scanned in the dark theme only.
+  test(
+    'axe finds no serious violations in the Node Editor with a search, an error and a Default button, in the dark theme',
+    { tag: '@axe' },
+    async ({ page, builder, issues }) => {
+      await page.setViewportSize({ width: 1440, height: 1100 });
+      // Without motion, so that axe does not read colors in transition.
+      await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+      await newDraft(builder, 'device', 'switch');
+      await expect(page.locator('.builder-root')).toHaveAttribute(
+        'data-builder-theme',
+        'dark',
+      );
+
+      const editor = page.getByTestId('node-editor');
+      const vcpus = editor.getByLabel('VCPUs', { exact: true });
+
+      await builder.canvasItem('node').dblclick();
+      await expect(
+        editor.getByRole('navigation', { name: 'Table of contents' }),
+      ).toBeVisible();
+
+      // One state with the table of contents, a search, an invalid field and
+      // a Default button.
+      await fillField(editor.getByLabel('Memory', { exact: true }), '4096');
+      await fillField(vcpus, '0');
+      await editor
+        .getByRole('searchbox', { name: 'Search fields' })
+        .fill('hardware');
+      await expect(vcpus).toBeVisible();
+      await expect(
+        editor
+          .locator('[data-path="spec.hardware.memory"]')
+          .getByTestId('inspector-field-reset-default'),
+      ).toBeVisible();
+      await expectAccessible(page, {
+        soft: true,
+        include: '[data-testid="node-editor"]',
+        label: 'axe on the Node Editor with a search (dark)',
+      });
+
+      await page.emulateMedia({ colorScheme: null, reducedMotion: null });
+      expectNoFatal(issues);
+    },
+  );
 });

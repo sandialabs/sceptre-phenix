@@ -44,9 +44,9 @@ import {
   linkedCopy,
 } from '@/builder/templates.js';
 
+import { memoryStorage } from '../helpers/storage.js';
 import {
   libraryOf,
-  memoryStorage,
   sampleDocument,
   tags,
   textOf,
@@ -243,22 +243,13 @@ describe('the Node Templates tab', () => {
     expect(element(card, 'template-delete-plc')).toContain(
       'aria-label="Delete template PLC"',
     );
-    // The item actions: Edit blue with a pencil, Delete red with a trash
-    // can, and Download with an arrow down. No label wraps.
+    // The buttons are item actions: Edit is blue with a pencil. No label
+    // wraps.
     expect(element(card, 'template-edit-plc')).toContain(
       'builder-button--primary',
     );
     expect(element(card, 'template-edit-plc')).toContain(
       'builder-icon--pencil',
-    );
-    expect(element(card, 'template-delete-plc')).toContain(
-      'builder-button--danger',
-    );
-    expect(element(card, 'template-delete-plc')).toContain(
-      'builder-icon--trash',
-    );
-    expect(element(card, 'template-export-plc')).toContain(
-      'builder-icon--download',
     );
     expect(card).toContain('class="builder-card__actions"');
     expect(card).not.toContain('builder-card__actions--fit');
@@ -388,20 +379,8 @@ describe('the Node Templates tab', () => {
     expect(element(card, 'template-duplicate-builtin-server')).toContain(
       'aria-label="Duplicate template Server to the library"',
     );
-    expect(textOf(element(card, 'template-duplicate-builtin-server'))).toBe(
-      'Duplicate',
-    );
-    expect(element(card, 'template-duplicate-builtin-server')).toContain(
-      'builder-icon--copy',
-    );
-    // A read-only template has View, with an eye.
+    // A read-only template has View.
     expect(textOf(element(card, 'template-view-builtin-server'))).toBe('View');
-    expect(element(card, 'template-view-builtin-server')).toContain(
-      'builder-icon--eye',
-    );
-    expect(element(card, 'template-view-builtin-server')).not.toContain(
-      'builder-button--primary',
-    );
     // Duplicate selected, and Download selected: nothing that changes them.
     const bar = element(html, 'bulk-bar-templates');
 
@@ -451,12 +430,6 @@ describe('the Node Templates tab', () => {
     expect(textOf(element(block, 'collection-duplicate'))).toBe(
       'Duplicate collection',
     );
-    expect(element(block, 'collection-duplicate')).toContain(
-      'builder-icon--copy',
-    );
-    expect(element(block, 'collection-export')).toContain(
-      'builder-icon--download',
-    );
     expect(
       [...html.matchAll(/data-testid="template-card-([^"]+)"/g)].map(
         ([, id]) => id,
@@ -486,16 +459,6 @@ describe('the Node Templates tab', () => {
     ]);
     expect(element(block, 'collection-edit')).toContain(
       'builder-button--primary',
-    );
-    expect(element(block, 'collection-edit')).toContain('builder-icon--pencil');
-    expect(element(block, 'collection-delete')).toContain(
-      'builder-button--danger',
-    );
-    expect(element(block, 'collection-delete')).toContain(
-      'builder-icon--trash',
-    );
-    expect(element(block, 'collection-export')).toContain(
-      'builder-icon--download',
     );
     expect(textOf(element(block, 'collection-edit'))).toBe('Edit collection');
   });

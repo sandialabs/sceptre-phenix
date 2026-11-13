@@ -28,7 +28,7 @@ import {
   typesCharacter,
 } from '@/builder/keymap.js';
 
-import { memoryStorage } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
 
 const brokenStorage = {
   getItem: () => {

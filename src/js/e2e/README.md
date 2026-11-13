@@ -136,11 +136,13 @@ Tag a test in its declaration: `test('…', { tag: '@cross-browser' }, …)`.
 compatibility only. Give it the tests whose behavior depends on the browser
 engine: pointer drag, drag-and-drop, focus order, file transfer, clipboard,
 IndexedDB, and CSS layout. The `@axe` tag marks the full axe scans: every view
-and dialog, a canvas of filled nodes, custom icons and the template editor,
-each in every theme. Use it on no other test, except the keyboard and focus
-tests in the same `axeScans()` block of `builder-a11y.spec.js`. A
-`@cross-browser` test scans only through `expectAccessible()` or
-`expectTextContrast()`, which do nothing in Firefox.
+and dialog, a canvas of filled nodes, custom icons and the template editor.
+Surfaces with colors of their own (the canvas and its nodes, icons, the
+template editor and palette, layer colors and rulers) are scanned in each
+theme, and the other views and dialogs in the dark theme only. Use the tag on
+no other test, except the keyboard and focus tests in the same `axeScans()`
+block of `builder-a11y.spec.js`. `expectAccessible()` fails in a test without
+the `@axe` tag, and it does nothing in Firefox.
 
 ### Builder specs
 

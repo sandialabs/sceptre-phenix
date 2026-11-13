@@ -45,7 +45,6 @@ describe('a device with no interfaces', () => {
 
   test('Go to from the checks focuses Add interface', async () => {
     const { wrapper, store, node, warning } = await openLonely();
-    const announce = vi.spyOn(store, 'announce');
 
     expect(store.goToIssue({ ...warning, nodeId: node.id })).toBe(true);
     await flushPromises();
@@ -55,11 +54,11 @@ describe('a device with no interfaces', () => {
     );
 
     expect(document.activeElement).toBe(add.element);
-    expect(announce).toHaveBeenCalledWith('Interfaces in device lonely');
   });
 
   test('the Inspector’s own checks have Go to for it', async () => {
-    const { wrapper } = await openLonely();
+    const { wrapper, store } = await openLonely();
+    const announce = vi.spyOn(store, 'announce');
     const goTo = wrapper
       .findAll('[data-testid="inspector-check-go-to"]')
       .find((button) =>
@@ -74,5 +73,6 @@ describe('a device with no interfaces', () => {
       wrapper.get('[data-path="spec.network.interfaces"] .array-list-add')
         .element,
     );
+    expect(announce).toHaveBeenCalledWith('Interfaces in device lonely');
   });
 });

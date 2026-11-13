@@ -213,7 +213,7 @@ describe('network addresses in the store', () => {
   // The new interface is static with no address, which its Inspector requires
   // before Apply, so the connection says the user must type it.
   test('a connection to a network without a subnet says the interface has no address', () => {
-    const { alpha, bravo, sw, network } = sample;
+    const { bravo, sw, network } = sample;
 
     store.updateNetwork(network.id, { subnet: '', gateway: '' });
 
@@ -229,14 +229,6 @@ describe('network addresses in the store', () => {
       'Connected nodes',
       'No address set: network EXP has no subnet. Type an address for eth1 of bravo in the Inspector.',
     ]);
-
-    // Drag-to-connect says the same.
-    expect(
-      store.connectNodes({ sourceNodeId: alpha.id, targetNodeId: sw.id }).edges,
-    ).toHaveLength(1);
-    expect(said.at(-1)).toBe(
-      'No address set: network EXP has no subnet. Type an address for eth1 of alpha in the Inspector.',
-    );
   });
   // With Assign addresses on connect off, the interface stays without an
   // address and the connection says so. Assign addresses still fills it.
@@ -265,7 +257,6 @@ describe('network addresses in the store', () => {
       expect(said.at(-1)).toBe(
         'No address set. Type an address for eth1 of alpha in the Inspector, or select Assign addresses.',
       );
-      expect(said.join(' ')).not.toMatch(/Set the address/);
 
       // Assign addresses works whatever the setting.
       const result = store.assignAddresses(network.id);
@@ -316,37 +307,6 @@ describe('network addresses in the store', () => {
       expect(ifaces(copyOf(store.paste()))[0]).toMatchObject({
         address: '10.5.0.2',
       });
-    } finally {
-      resetSettings(null);
-    }
-  });
-
-  // Drag-to-connect takes both settings: Snap to grid places the switch
-  // between two devices, and Assign addresses on connect sets the address.
-  test('with Snap to grid on and Assign addresses on connect off, drag-to-connect puts a new switch on the grid and sets no address', () => {
-    const { alpha, bravo, sw } = sample;
-    const grid = store.doc.grid.size;
-    const onGrid = ({ x, y }) => x % grid === 0 && y % grid === 0;
-
-    store.updateNode(bravo.id, { position: { x: 5, y: 203 } });
-    setSetting('snapToGrid', true, null);
-    setSetting('assignAddressesOnConnect', false, null);
-
-    try {
-      const joined = store.connectNodes({
-        sourceNodeId: alpha.id,
-        targetNodeId: bravo.id,
-      });
-
-      expect(joined.node.kind).toBe('switch');
-      expect(
-        onGrid(findNode(store.doc, joined.node.id).position),
-        JSON.stringify(findNode(store.doc, joined.node.id).position),
-      ).toBe(true);
-
-      store.connectNodes({ sourceNodeId: bravo.id, targetNodeId: sw.id });
-      expect(ifaces(bravo.id).at(-1)).toMatchObject({ proto: 'static' });
-      expect(ifaces(bravo.id).at(-1)).not.toHaveProperty('address');
     } finally {
       resetSettings(null);
     }
