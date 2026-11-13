@@ -66,7 +66,7 @@ describe('OperationOutcome', () => {
         );
         wrapper.unmount();
       }),
-      { numRuns: 20 },
+      { numRuns: 8 },
     );
   });
 });

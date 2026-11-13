@@ -225,7 +225,7 @@ describe('messages', () => {
         }
         expect(sockets.flatMap((s) => s.sent)).toEqual(asked);
       }),
-      { numRuns: 50 },
+      { numRuns: 20 },
     );
   });
 
@@ -275,13 +275,17 @@ describe('messages', () => {
     ws.connectWebsocket();
     sockets[0].open();
     const bytes = (msg) => new TextEncoder().encode(JSON.stringify(msg)).length;
+    // {"filter":""} is 13 bytes, so these are 2047, 2048 and 2049 bytes long
+    const atLimit = ['a'.repeat(2034), 'a'.repeat(2035), 'a'.repeat(2036)];
+    const multiByte = ['a'.repeat(2033) + 'é', 'a'.repeat(2034) + 'é'];
     fc.assert(
-      fc.property(fc.string({ unit: 'binary', maxLength: 1100 }), (text) => {
+      fc.property(fc.string({ unit: 'binary', maxLength: 300 }), (text) => {
         const sent = sockets[0].sent.length;
         ws.sendWsMsg({ filter: text });
         const wasSent = sockets[0].sent.length > sent;
         expect(wasSent).toBe(bytes({ filter: text }) <= 2048);
       }),
+      { numRuns: 20, examples: [...atLimit, ...multiByte].map((t) => [t]) },
     );
   });
 

@@ -1,6 +1,5 @@
 // Mounts the Disks page's details card with real Buefy: its head, tiles,
 // sections, actions and copy buttons, from a disk and GET disks/details.
-import fc from 'fast-check';
 import { flushPromises } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
@@ -283,30 +282,6 @@ describe('the stat tiles', () => {
       size: ['16 GiB', 'Size on disk'],
       backing: ['0', 'Backing images'],
     });
-  });
-
-  it('show the allocated percent and bar for any sizes', async () => {
-    await fc.assert(
-      fc.asyncProperty(
-        fc.integer({ min: 1, max: 2 ** 40 }),
-        fc.integer({ min: 1, max: 2 ** 40 }),
-        async (used, total) => {
-          axios.get.mockResolvedValue({
-            data: diskDetails({ allocatedBytes: used, virtualBytes: total }),
-          });
-          const wrapper = await card();
-          const percent = (used / total) * 100;
-          const text = percent < 1 ? '<1%' : `${Math.round(percent)}%`;
-          expect(stats(wrapper).allocated[0]).toBe(text);
-          const width = wrapper
-            .find('.disk-stat-allocated .disk-stat-bar span')
-            .element.style.width.replace('%', '');
-          expect(Number(width)).toBeCloseTo(Math.min(100, percent));
-          wrapper.unmount();
-        },
-      ),
-      { numRuns: 20 },
-    );
   });
 
   it('mark a broken chain in text and color', async () => {

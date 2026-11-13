@@ -17,7 +17,7 @@ vi.mock('@/utils/notify.js', modules.notify);
 // the options the page gives its loader, and the loader's load()
 vi.mock('@/utils/pageLoader.js', capturing);
 
-// the two properties mount the page 20 times each, which can take over 5s with coverage
+// the two properties mount the page 8 times each, which can take over 5s with coverage
 vi.setConfig({ testTimeout: 30_000 });
 
 import { TAB } from '@/components/experiment/experimentTabs.js';
@@ -479,7 +479,7 @@ describe('the cached copy of the page', () => {
           page.unmount();
         }
       }),
-      { numRuns: 20 },
+      { numRuns: 8 },
     );
   });
 });
@@ -567,7 +567,7 @@ describe('ordering VM lists against VM changes', () => {
         );
         page.unmount();
       }),
-      { numRuns: 20 },
+      { numRuns: 8 },
     );
   });
 

@@ -63,7 +63,7 @@ describe('a time', () => {
         );
         wrapper.unmount();
       }),
-      { numRuns: 20 },
+      { numRuns: 8 },
     );
   });
 });

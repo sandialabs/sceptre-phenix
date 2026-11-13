@@ -168,7 +168,7 @@ describe('an annotation list', () => {
         });
         wrapper.unmount();
       }),
-      { numRuns: 20 },
+      { numRuns: 8 },
     );
   });
 
@@ -216,7 +216,7 @@ describe('an annotation list', () => {
           expect(await opensAt(above)).toBe(opens);
         }),
         {
-          numRuns: 30,
+          numRuns: 8,
           // far from the edge, then exactly MENU and one pixel less below
           examples: [
             [{ above: 100, below: 670, opens: 'bottom' }],

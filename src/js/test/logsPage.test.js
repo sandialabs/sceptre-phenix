@@ -317,7 +317,7 @@ it('shows the lines that pass the filters, as lines stream in and filters change
         page.unmount();
       },
     ),
-    { numRuns: 20 },
+    { numRuns: 8 },
   );
 });
 

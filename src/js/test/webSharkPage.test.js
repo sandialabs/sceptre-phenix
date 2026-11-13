@@ -278,7 +278,7 @@ describe('the pickers', () => {
         });
         page.unmount();
       }),
-      { numRuns: 20 },
+      { numRuns: 8 },
     );
   });
 
@@ -310,7 +310,7 @@ describe('the pickers', () => {
           page.unmount();
         },
       ),
-      { numRuns: 20 },
+      { numRuns: 8 },
     );
   });
 

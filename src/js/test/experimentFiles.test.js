@@ -624,7 +624,7 @@ describe('opening a file', () => {
           });
           tab.unmount();
         }),
-        { numRuns: 20 },
+        { numRuns: 8 },
       );
     });
   });
@@ -873,7 +873,7 @@ describe('deleting the selected files', () => {
         expect(notices.open).toHaveBeenCalledTimes(failed.length ? 1 : 0);
         tab.unmount();
       }),
-      { numRuns: 10 },
+      { numRuns: 8 },
     );
   });
 

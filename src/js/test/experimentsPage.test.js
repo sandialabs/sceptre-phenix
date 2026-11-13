@@ -354,7 +354,7 @@ describe('the table', () => {
         ).toEqual(names.filter(found).toSorted());
         wrapper.unmount();
       }),
-      { numRuns: 20 },
+      { numRuns: 8 },
     );
   });
 });

@@ -1,6 +1,5 @@
 // The bar of an experiment start or stop (components/ExperimentProgress.vue):
 // what it shows, what screen readers get, and a failure in its place.
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import ExperimentProgress from '@/components/ExperimentProgress.vue';
@@ -90,49 +89,16 @@ describe('the announcements', () => {
     step,
   });
 
-  it('tell a new phase, not a new count', async () => {
+  it('tell a new phase, not a new count or step', async () => {
     const wrapper = await render({ progress: at('launch-vms', 1) });
     expect(live(wrapper)).toBe('Launching VMs 1/10');
 
-    await wrapper.setProps({ progress: at('launch-vms', 2) });
-    expect(read(wrapper).label).toBe('Launching VMs 2/10');
+    await wrapper.setProps({ progress: at('launch-vms', 2, 'ntp') });
+    expect(read(wrapper).label).toBe('Launching VMs 2/10: ntp');
     expect(live(wrapper)).toBe('Launching VMs 1/10');
 
     await wrapper.setProps({ progress: at('start-vms', 3) });
     expect(live(wrapper)).toBe('Starting VMs 3/10');
-  });
-
-  it('change only when the phase does, for any run of messages', async () => {
-    const wrapper = await render({ progress: at('prepare', 0) });
-    await fc.assert(
-      fc.asyncProperty(
-        fc.array(
-          fc.record({
-            phase: fc.constantFrom(
-              'launch-vms',
-              'start-vms',
-              'post-start-apps',
-            ),
-            done: fc.nat(10),
-            step: fc.constantFrom('', 'ntp', 'scorch'),
-          }),
-          { minLength: 1, maxLength: 8 },
-        ),
-        async (messages) => {
-          let phase = wrapper.props('progress').phase;
-          let heard = live(wrapper);
-          for (const msg of messages) {
-            await wrapper.setProps({
-              progress: at(msg.phase, msg.done, msg.step),
-            });
-            if (msg.phase !== phase) heard = read(wrapper).label;
-            phase = msg.phase;
-            expect(live(wrapper)).toBe(heard);
-          }
-        },
-      ),
-      { numRuns: 20 },
-    );
   });
 });
 

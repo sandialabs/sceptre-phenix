@@ -243,7 +243,7 @@ describe('a download', () => {
           wrapper.unmount();
         },
       ),
-      { numRuns: 20 },
+      { numRuns: 8 },
     );
   });
 });

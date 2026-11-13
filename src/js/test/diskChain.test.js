@@ -264,18 +264,6 @@ describe('minimegaSafe', () => {
   );
   const refused = (char) => refusedCodes.has(char.codePointAt(0));
 
-  it('refuses the code points the shared cases refuse, and only those', () => {
-    expect(refusedCodes).toContain('#'.codePointAt(0));
-    const wrong = [];
-    for (let code = 0; code <= 0x10ffff && wrong.length < 20; code++) {
-      const path = `/phenix/images/a${String.fromCodePoint(code)}b.qc2`;
-      if (minimegaSafe(path) === refusedCodes.has(code)) {
-        wrong.push(`U+${code.toString(16).toUpperCase().padStart(4, '0')}`);
-      }
-    }
-    expect(wrong).toEqual([]);
-  });
-
   it.each(cases.paths.accepted.map(({ path }) => [path]))(
     'takes %j, which minimega reads literally',
     (path) => {

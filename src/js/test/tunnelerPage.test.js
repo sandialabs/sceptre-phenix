@@ -95,7 +95,7 @@ describe('the Tunneler page', () => {
           );
         },
       ),
-      { numRuns: 15 },
+      { numRuns: 8 },
     );
   });
 

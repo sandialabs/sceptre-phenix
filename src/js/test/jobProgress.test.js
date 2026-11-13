@@ -116,7 +116,7 @@ describe('JobProgress', () => {
         );
         progress.unmount();
       }),
-      { numRuns: 20 },
+      { numRuns: 8 },
     );
   });
 

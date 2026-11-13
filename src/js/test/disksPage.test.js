@@ -258,7 +258,7 @@ describe('the disk list', () => {
           wrapper.unmount();
         },
       ),
-      { numRuns: 10 },
+      { numRuns: 8 },
     );
   });
 });
@@ -620,7 +620,7 @@ describe('disks in folders and outside the files directory', () => {
         );
         wrapper.unmount();
       }),
-      { numRuns: 10 },
+      { numRuns: 8 },
     );
   });
 

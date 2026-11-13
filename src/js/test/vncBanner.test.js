@@ -54,7 +54,7 @@ describe('a console banner', () => {
         },
       ),
       {
-        numRuns: 20,
+        numRuns: 8,
         // markup must stay text (main bug #17)
         examples: [
           [

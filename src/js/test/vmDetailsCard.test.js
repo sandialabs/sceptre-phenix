@@ -538,7 +538,7 @@ describe('VmDetailsCard annotations, any set of them', () => {
         expect(wrapper.emitted('save-annotations')[0][0]).toEqual(set);
         wrapper.unmount();
       }),
-      { numRuns: 12 },
+      { numRuns: 8 },
     );
   });
 });

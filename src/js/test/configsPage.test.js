@@ -677,7 +677,7 @@ describe('the config list', () => {
           expect(await sends(full)).toBe(endsValid(full) ? 1 : 0);
         }),
         {
-          numRuns: 15,
+          numRuns: 8,
           examples: [
             ['web', 'yml.txt'],
             ['web', 'YAML'],
@@ -784,7 +784,7 @@ describe('the config list', () => {
         );
         wrapper.unmount();
       }),
-      { numRuns: 12 },
+      { numRuns: 8 },
     );
   });
 

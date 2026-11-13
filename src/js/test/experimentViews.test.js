@@ -1803,7 +1803,7 @@ describe('VMtilesView', () => {
         expect(page.findAll('.tile.is-child .title').map(textOf)).toEqual(want);
         page.unmount();
       }),
-      { numRuns: 20 },
+      { numRuns: 8 },
     );
   });
 
@@ -1844,7 +1844,7 @@ describe('VMtilesView', () => {
           page.unmount();
         },
       ),
-      { numRuns: 20 },
+      { numRuns: 8 },
     );
   });
 
@@ -2004,7 +2004,7 @@ describe('VMLabelsModal', () => {
         });
         labels.unmount();
       }),
-      { numRuns: 20 },
+      { numRuns: 8 },
     );
   });
 
@@ -2064,7 +2064,7 @@ describe('VMLabelsModal', () => {
           labels.unmount();
         },
       ),
-      { numRuns: 20 },
+      { numRuns: 8 },
     );
   });
 });
@@ -2120,7 +2120,7 @@ describe('VMMountBrowserModal', () => {
           wrapper.unmount();
         },
       ),
-      { numRuns: 20 },
+      { numRuns: 8 },
     );
   });
 

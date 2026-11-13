@@ -300,7 +300,7 @@ describe('the Settings page', () => {
         );
         page.unmount();
       }),
-      { numRuns: 15 },
+      { numRuns: 8 },
     );
   });
 

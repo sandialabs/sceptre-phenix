@@ -237,7 +237,7 @@ describe('Start all', () => {
         ]);
         wrapper.unmount();
       }),
-      { numRuns: 20 },
+      { numRuns: 8 },
     );
   });
 

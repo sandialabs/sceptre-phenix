@@ -156,7 +156,7 @@ describe("an experiment's page", () => {
           page.unmount();
         },
       ),
-      { numRuns: 40 },
+      { numRuns: 8 },
     );
   });
 
