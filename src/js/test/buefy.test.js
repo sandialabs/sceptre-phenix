@@ -70,12 +70,14 @@ test('finds the views and the b-* tags in their templates', () => {
   expect([...buefyTags(descriptor.template.ast)]).toContain('BTable');
 });
 
-test.each(FILES.map((file) => [relative(SRC, file), file]))(
-  '%s uses only b-* tags that are registered or imported',
-  (_, file) => {
-    expect(unregistered(file)).toEqual([]);
-  },
-);
+test('every view uses only b-* tags that are registered or imported', () => {
+  const missing = Object.fromEntries(
+    FILES.map((file) => [relative(SRC, file), unregistered(file)]).filter(
+      ([, tags]) => tags.length > 0,
+    ),
+  );
+  expect(missing).toEqual({});
+});
 
 test('names the modal close button Close', async () => {
   const modal = await mountComponent({

@@ -3,6 +3,10 @@ import pluginVue from 'eslint-plugin-vue';
 import skipFormatting from '@vue/eslint-config-prettier/skip-formatting';
 import globals from 'globals';
 
+// a toast.open(...) call, as in this.$buefy.toast.open, buefy?.toast.open or toast.open
+const TOAST_OPEN =
+  "CallExpression[callee.property.name='open']:matches([callee.object.property.name='toast'], [callee.object.name='toast'])";
+
 export default [
   {
     name: 'app/files-to-lint',
@@ -75,6 +79,27 @@ export default [
       'no-useless-rename': 'error',
       'no-unused-expressions': 'error',
       'no-unused-labels': 'error',
+    },
+  },
+  {
+    // Toast durations come from utils/toast.js, and errors are never toasts:
+    // they open as notifications that stay until dismissed (utils/errorNotif.js).
+    // .ts files are not checked: no TypeScript parser is installed.
+    files: ['src/**/*.{js,vue}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: `${TOAST_OPEN} > ObjectExpression Property:matches([key.name='duration'], [key.value='duration']) > :matches(Literal[value=type(number)], BinaryExpression, UnaryExpression)`,
+          message:
+            'Do not give a toast a number duration. Use the default, or LONG_TOAST_DURATION from utils/toast.js.',
+        },
+        {
+          selector: `${TOAST_OPEN} > ObjectExpression :matches(Literal[value=/is-danger/], TemplateElement[value.raw=/is-danger/])`,
+          message:
+            'Do not show an error as an is-danger toast. Use showError from utils/errorNotif.js.',
+        },
+      ],
     },
   },
   {
