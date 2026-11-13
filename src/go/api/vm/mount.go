@@ -22,7 +22,6 @@ func init() { //nolint:gochecknoinits // registering experiment lifecycle hooks
 	// this, a forgotten mount can leave a stale FUSE mount on the headnode
 	// that requires a reboot to clear once the backing VM is gone.
 	experiment.RegisterHook("stop", func(_, expName string) { unmountExperiment(expName) })
-	experiment.RegisterHook("delete", func(_, expName string) { unmountExperiment(expName) })
 }
 
 // Mount mounts the filesystem of the given running VM at the phenix mount path
