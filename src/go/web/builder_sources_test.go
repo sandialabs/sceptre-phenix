@@ -385,6 +385,90 @@ func TestBuilderUploadsKeepPlaceholders(t *testing.T) {
 	}
 }
 
+// TestBuilderFileImportKeepsDescriptionPlaceholder asserts that a device
+// description in a config file stays as written in the generated document and
+// in the draft made from that document, as Import from a config file does.
+func TestBuilderFileImportKeepsDescriptionPlaceholder(t *testing.T) {
+	const (
+		placeholder = "${PHENIX_BUILDER_TEST_DESCRIPTION:expanded}"
+		value       = "builder-description-value"
+	)
+
+	// The set variable and the default both show an expansion.
+	t.Setenv("PHENIX_BUILDER_TEST_DESCRIPTION", value)
+
+	content := builderJSON(t, map[string]any{
+		"apiVersion": "phenix.sandia.gov/v1",
+		"kind":       "Topology",
+		"metadata":   map[string]any{"name": "envtopo"},
+		"spec": map[string]any{"nodes": []any{map[string]any{
+			"type":     "VirtualMachine",
+			"general":  map[string]any{"hostname": "envhost", "description": placeholder},
+			"hardware": map[string]any{"os_type": "linux", "drives": []any{map[string]any{"image": "envhost.qc2"}}},
+			"network": map[string]any{"interfaces": []any{map[string]any{
+				"name": "eth0", "vlan": "EXP", "type": "ethernet", "proto": "dhcp",
+			}}},
+		}}},
+	})
+
+	description := func(t *testing.T, what string, data json.RawMessage) string {
+		t.Helper()
+
+		document, err := bdoc.Parse(data)
+		if err != nil {
+			t.Fatalf("bdoc.Parse(the document of %s) error: %v", what, err)
+		}
+
+		for _, node := range document.Nodes {
+			if node.Kind != bdoc.NodeKindDevice || node.Device == nil {
+				continue
+			}
+
+			general, _ := node.Device.Spec["general"].(map[string]any)
+			text, _ := general["description"].(string)
+
+			return text
+		}
+
+		t.Fatalf("the document of %s has no device node", what)
+
+		return ""
+	}
+
+	harness := newBuilderHarness(t)
+
+	var generated struct {
+		Document json.RawMessage `json:"document"`
+	}
+
+	recorder := harness.doDecode(builderRequest{
+		method: http.MethodPost, path: "/builder/generate", user: builderAlice,
+		body: builderJSON(t, map[string]string{"content": content}),
+	}, http.StatusOK, &generated)
+
+	if strings.Contains(recorder.Body.String(), value) {
+		t.Errorf("POST /builder/generate sent the value of PHENIX_BUILDER_TEST_DESCRIPTION, want no value from the server environment")
+	}
+
+	var created, stored builderDraftResponse
+
+	harness.doDecode(builderRequest{
+		method: http.MethodPost, path: "/builder/drafts", user: builderAlice,
+		body: builderJSON(t, map[string]any{"document": generated.Document, "sourceFile": "topology.json"}),
+	}, http.StatusCreated, &created)
+
+	path := "/builder/drafts/" + created.ID
+	harness.doDecode(builderRequest{method: http.MethodGet, path: path, user: builderAlice}, http.StatusOK, &stored)
+
+	got := map[string]string{
+		"generated": description(t, "POST /builder/generate", generated.Document),
+		"stored":    description(t, "GET "+path, stored.Document),
+	}
+	if diff := cmp.Diff(map[string]string{"generated": placeholder, "stored": placeholder}, got); diff != "" {
+		t.Errorf("device descriptions mismatch (-want +got):\n%s", diff)
+	}
+}
+
 // TestBuilderGenerateUploadRequiresCreate asserts an upload needs configs
 // create, the permission of POST /configs, which also takes a config file.
 func TestBuilderGenerateUploadRequiresCreate(t *testing.T) {

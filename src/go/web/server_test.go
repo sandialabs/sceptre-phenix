@@ -87,6 +87,44 @@ func TestRouterServesTheUI(t *testing.T) {
 	}
 }
 
+// The router refuses the removed legacy Builder route, which only matches
+// /experiments/{name}, with 405, and an unknown experiment path with the JSON 404.
+func TestRouterRefusesRemovedAndUnknownExperimentRoutes(t *testing.T) {
+	server := serveAs(t, "alice", adminRole()).URL
+
+	type answer struct {
+		Status  int
+		Message string
+	}
+
+	tests := map[string]struct {
+		method string
+		path   string
+		want   answer
+	}{
+		"removed legacy Builder route": {
+			method: http.MethodPost, path: "/api/v1/experiments/builder",
+			want: answer{Status: http.StatusMethodNotAllowed, Message: "method not allowed"},
+		},
+		"unknown experiment path": {
+			method: http.MethodGet, path: "/api/v1/experiments/e2e/no/such/route",
+			want: answer{Status: http.StatusNotFound, Message: "no API route matches this request"},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			resp := do(t, tt.method, server+tt.path, "")
+			body := readBody(t, resp)
+
+			got := answer{Status: resp.StatusCode, Message: errorMessage(t, resp.StatusCode, body)}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("%s %s mismatch (-want +got):\n%s", tt.method, tt.path, diff)
+			}
+		})
+	}
+}
+
 // OPTIONS is answered with 204, before authentication, without running the
 // route's handler, including on the routes the Unix socket also serves.
 func TestRouterAnswersOptions(t *testing.T) {
