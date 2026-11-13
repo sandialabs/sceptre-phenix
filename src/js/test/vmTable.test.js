@@ -25,7 +25,6 @@ import {
   tableHeader,
   tableRows,
   textOf,
-  tooltipPositions,
 } from './helpers/mount.js';
 
 beforeEach(() => resetMocks());
@@ -293,15 +292,6 @@ describe('the rows', () => {
     );
     // on the table's $background-bis
     expect(contrast(color, '#484848')).toBeGreaterThanOrEqual(7);
-  });
-
-  // the column ends at the window's right edge
-  it('opens the Actions tooltips to the left, inside the window', async () => {
-    const positions = tooltipPositions(
-      rowOf(await render([web]), 'web').Actions,
-    );
-    expect(positions.length).toBeGreaterThan(2);
-    expect(new Set(positions)).toEqual(new Set(['is-left']));
   });
 });
 

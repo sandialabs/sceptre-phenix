@@ -850,14 +850,12 @@ describe("the page's header", () => {
     expect(
       componentDeclarations('src/views/ScorchRuns.vue', '.runs-actions'),
     ).toEqual({ gap: '0.5rem' });
-  });
-
-  // Clear all ends the header at the window's right edge
-  it('opens the Clear all tooltip to the left', async () => {
-    const wrapper = await open([{}]);
-    expect(tooltipPositions(wrapper.get('.runs-header .runs-actions'))).toEqual(
-      ['is-auto', 'is-auto', 'is-left'],
-    );
+    // Clear all ends the header at the window's right edge
+    expect(tooltipPositions(actions)).toEqual([
+      'is-auto',
+      'is-auto',
+      'is-left',
+    ]);
   });
 });
 

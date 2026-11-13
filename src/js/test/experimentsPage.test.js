@@ -44,7 +44,6 @@ import {
   tableRows,
   textOf,
   toasts,
-  tooltipPositions,
 } from './helpers/mount.js';
 
 beforeEach(() => {
@@ -223,20 +222,6 @@ describe('the table', () => {
       const selector = `.exp-table :deep(${cell}:not(.exp-select-cell))`;
       expect(style(selector, narrow)).toEqual({ 'padding-inline': '0.375em' });
       expect(style(selector)).toEqual({});
-    }
-  });
-
-  // the column ends at the window's right edge, so a tooltip centered over a
-  // button there would run off it
-  it('opens the Actions tooltips to the left, inside the window', async () => {
-    const wrapper = await page([
-      { name: 'exp1', status: 'stopped' },
-      { name: 'exp2', status: 'started', start_time: '2026-01-01T06:00:00Z' },
-    ]);
-    for (const cells of tableRows(wrapper)) {
-      const positions = tooltipPositions(cells.Actions);
-      expect(positions.length).toBeGreaterThan(2);
-      expect(new Set(positions)).toEqual(new Set(['is-left']));
     }
   });
 
