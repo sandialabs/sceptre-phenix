@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Import, Upload and Download: each button opens the dialog it names, and each
 // dialog's ids start with that name, so the dialogs' ids never collide.
 

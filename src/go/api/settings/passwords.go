@@ -21,6 +21,14 @@ const (
 	MaxPasswordBytes = 72
 )
 
+// ErrPasswordMinLength is the error for a password minimum length outside
+// MinPasswordMinLen to MaxPasswordMinLen.
+var ErrPasswordMinLength = fmt.Errorf(
+	"minimum password length must be between %d and %d",
+	MinPasswordMinLen,
+	MaxPasswordMinLen,
+)
+
 type PasswordSettings struct {
 	LowercaseReq bool  `json:"lowercase_req"`
 	UppercaseReq bool  `json:"uppercase_req"`
@@ -113,38 +121,34 @@ func GetPasswordSettingsFromList(settings []types.Setting) (PasswordSettings, er
 func UpdatePasswordSettings(newSettings PasswordSettings) error {
 	plog.Debug(plog.TypeSystem, "Updating password settings")
 
-	minLen := newSettings.MinLength
-	if minLen > MaxPasswordMinLen || minLen < MinPasswordMinLen {
-		return fmt.Errorf(
-			"minimum password length must be between %d and %d",
-			MinPasswordMinLen,
-			MaxPasswordMinLen,
-		)
+	// checked before any setting is saved, so a bad length changes none
+	if minLen := newSettings.MinLength; minLen > MaxPasswordMinLen || minLen < MinPasswordMinLen {
+		return ErrPasswordMinLength
 	}
 
 	var err error
 
-	_, err = Update(settingCategoryPassword, "NumberReq", strconv.FormatBool(newSettings.NumberReq))
+	err = Update(settingCategoryPassword, "NumberReq", strconv.FormatBool(newSettings.NumberReq))
 	if err != nil {
 		return fmt.Errorf("error updating Settings.NumberReq: %w", err)
 	}
 
-	_, err = Update(settingCategoryPassword, "SymbolReq", strconv.FormatBool(newSettings.SymbolReq))
+	err = Update(settingCategoryPassword, "SymbolReq", strconv.FormatBool(newSettings.SymbolReq))
 	if err != nil {
 		return fmt.Errorf("error updating Settings.SymbolReq: %w", err)
 	}
 
-	_, err = Update(settingCategoryPassword, "LowercaseReq", strconv.FormatBool(newSettings.LowercaseReq))
+	err = Update(settingCategoryPassword, "LowercaseReq", strconv.FormatBool(newSettings.LowercaseReq))
 	if err != nil {
 		return fmt.Errorf("error updating Settings.LowercaseReq: %w", err)
 	}
 
-	_, err = Update(settingCategoryPassword, "UppercaseReq", strconv.FormatBool(newSettings.UppercaseReq))
+	err = Update(settingCategoryPassword, "UppercaseReq", strconv.FormatBool(newSettings.UppercaseReq))
 	if err != nil {
 		return fmt.Errorf("error updating Settings.UppercaseReq: %w", err)
 	}
 
-	_, err = Update(settingCategoryPassword, "MinLength", formatInt(newSettings.MinLength))
+	err = Update(settingCategoryPassword, "MinLength", formatInt(newSettings.MinLength))
 	if err != nil {
 		return fmt.Errorf("error updating Settings.MinLength: %w", err)
 	}
@@ -202,9 +206,32 @@ func IsPasswordValid(password string) bool {
 }
 
 func GetPasswordSettingsHTML() string {
-	settings, err := GetPasswordSettings()
+	rules, err := PasswordRules()
 	if err != nil {
 		return ""
+	}
+
+	var sb strings.Builder
+
+	sb.WriteString("<ol>")
+
+	for _, rule := range rules {
+		sb.WriteString("<li>")
+		sb.WriteString(rule)
+		sb.WriteString("</li>")
+	}
+
+	sb.WriteString("</ol>")
+
+	return sb.String()
+}
+
+// PasswordRules returns the rules that IsPasswordValid checks a password
+// against, one sentence each, from the stored password settings.
+func PasswordRules() ([]string, error) {
+	settings, err := GetPasswordSettings()
+	if err != nil {
+		return nil, err
 	}
 
 	var rules []string
@@ -228,17 +255,5 @@ func GetPasswordSettingsHTML() string {
 		rules = append(rules, "Password requires a symbol")
 	}
 
-	var sb strings.Builder
-
-	sb.WriteString("<ol>")
-
-	for _, rule := range rules {
-		sb.WriteString("<li>")
-		sb.WriteString(rule)
-		sb.WriteString("</li>")
-	}
-
-	sb.WriteString("</ol>")
-
-	return sb.String()
+	return rules, nil
 }

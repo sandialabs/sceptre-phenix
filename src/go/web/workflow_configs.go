@@ -2,7 +2,6 @@ package web
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,10 +12,11 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"phenix/api/config"
+	"phenix/api/experiment"
 	"phenix/api/workflow"
 	"phenix/store"
-	"phenix/util/common"
-	"phenix/util/plog"
+	"phenix/util/envsubst"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/weberror"
@@ -25,18 +25,7 @@ import (
 // parseDryRun reports whether the dryRun query parameter asks for a dry run.
 // A bare dryRun is refused rather than taken as a real request.
 func parseDryRun(q url.Values) (bool, error) {
-	if !q.Has("dryRun") {
-		return false, nil
-	}
-
-	value := q.Get("dryRun")
-
-	dryRun, err := strconv.ParseBool(value)
-	if err != nil {
-		return false, weberror.NewWebError(err, "invalid dryRun value %q", value)
-	}
-
-	return dryRun, nil
+	return parseBoolQuery(q, "dryRun")
 }
 
 // configName returns the "<kind>/<name>" of a JSON or YAML config body without
@@ -45,14 +34,17 @@ func parseDryRun(q url.Values) (bool, error) {
 func configName(body []byte, typ, branch string) (string, error) {
 	var n int
 
-	src := common.EnvPlaceholder.ReplaceAllStringFunc(string(body), func(match string) string {
-		if common.EnvPlaceholder.FindStringSubmatch(match)[1] == "BRANCH_NAME" {
-			return branch
+	src := envsubst.Replace(body, func(tok envsubst.Token) ([]byte, bool) {
+		switch {
+		case tok.Name != store.BranchNameVar:
+			n++
+
+			return []byte(strconv.Itoa(n)), true
+		case tok.Escaped:
+			return tok.Literal(), true
+		default:
+			return []byte(branch), true
 		}
-
-		n++
-
-		return strconv.Itoa(n)
 	})
 
 	var head struct {
@@ -64,9 +56,9 @@ func configName(body []byte, typ, branch string) (string, error) {
 
 	var err error
 	if typ == mimeJSON {
-		err = json.Unmarshal([]byte(src), &head)
+		err = json.Unmarshal(src, &head)
 	} else {
-		err = yaml.Unmarshal([]byte(src), &head)
+		err = yaml.Unmarshal(src, &head)
 	}
 
 	if err != nil {
@@ -78,7 +70,7 @@ func configName(body []byte, typ, branch string) (string, error) {
 
 // authorizeConfigWrite reports whether the config name exists, once role may
 // update it if it does or create it if it does not.
-func authorizeConfigWrite(ctx context.Context, role rbac.Role, name string) (bool, error) {
+func authorizeConfigWrite(r *http.Request, role rbac.Role, name, branch string) (bool, error) {
 	// NewConfig rejects a kind the store does not hold, such as Workflow, and
 	// a name containing a slash; its nil result would make store.Get panic.
 	tester, err := store.NewConfig(name)
@@ -98,19 +90,15 @@ func authorizeConfigWrite(ctx context.Context, role rbac.Role, name string) (boo
 		exists = false
 	}
 
-	verb, action := "update", "updating"
+	verb, action, audited := actionUpdate, "updating", audit.ConfigUpdate
 	if !exists {
-		verb, action = "create", "creating"
+		verb, action, audited = "create", "creating", audit.ConfigCreate
 	}
 
 	if !role.Allowed("configs", verb, name) {
-		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			action+" config not allowed",
-			"user",
-			user,
-		)
+		user := middleware.UserFromContext(r.Context())
+		audit.Denied(r, audited, action+" config not allowed",
+			audit.Fields{Config: name, Extra: []any{"phenix.workflow.branch", branch}})
 
 		err := weberror.NewWebError(
 			nil,
@@ -147,6 +135,8 @@ func updateOrValidate(name string, cfg *store.Config, dryRun bool) error {
 		return nil
 	}
 
+	cfg.FilesRoot = experiment.BaseDirRoot()
+
 	return config.Update(name, cfg)
 }
 
@@ -160,6 +150,8 @@ func createOrValidate(cfg *store.Config, dryRun bool) (*store.Config, error) {
 	if dryRun {
 		return cfg, nil
 	}
+
+	cfg.FilesRoot = experiment.BaseDirRoot()
 
 	return config.Create(config.CreateFromConfig(cfg), config.CreateWithValidation())
 }

@@ -3,14 +3,18 @@ package store
 import (
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
+	"maps"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
+	"pgregory.net/rapid"
+
+	"phenix/types/version"
+	"phenix/util/envsubst"
 )
 
 func TestNewConfigKindCaseInsensitive(t *testing.T) {
@@ -782,14 +786,27 @@ func TestStoredJSONKeepsAnnotationsAsStrings(t *testing.T) {
 		}
 	}
 
-	// Every field of a config is stored.
-	if got, want := reflect.TypeFor[storedConfig]().NumField(), reflect.TypeFor[Config]().NumField(); got != want {
+	// Every serialized field of a config is stored.
+	if got, want := reflect.TypeFor[storedConfig]().NumField(), jsonFieldCount(reflect.TypeFor[Config]()); got != want {
 		t.Errorf("storedConfig has %d fields, want %d as Config has", got, want)
 	}
 
-	if got, want := reflect.TypeFor[storedMetadata]().NumField(), reflect.TypeFor[ConfigMetadata]().NumField(); got != want {
+	if got, want := reflect.TypeFor[storedMetadata]().NumField(), jsonFieldCount(reflect.TypeFor[ConfigMetadata]()); got != want {
 		t.Errorf("storedMetadata has %d fields, want %d as ConfigMetadata has", got, want)
 	}
+}
+
+// jsonFieldCount is the number of fields of the struct type typ that JSON encodes.
+func jsonFieldCount(typ reflect.Type) int {
+	count := 0
+
+	for i := range typ.NumField() {
+		if typ.Field(i).Tag.Get("json") != "-" {
+			count++
+		}
+	}
+
+	return count
 }
 
 // TestWorkflowIsNotAStoredKind proves the Workflow schema did not make
@@ -816,19 +833,141 @@ func TestWorkflowIsNotAStoredKind(t *testing.T) {
 	}
 }
 
-// TestDecodeConfigKeepsPlaceholders checks that DecodeConfigJSON and
-// DecodeConfigYAML keep each ${NAME} placeholder, and that NewConfigFromYAML
-// and NewConfigFromFile, which the CLI uses, still expand them.
+// Clients cannot set a config's revision: the store assigns it.
+func TestNewConfigClearsRevision(t *testing.T) {
+	body := `{"apiVersion":"phenix.sandia.gov/v1","kind":"Topology","metadata":{"name":"a","revision":7}}`
+
+	c, err := DecodeConfigJSON([]byte(body))
+	if err != nil {
+		t.Errorf("DecodeConfigJSON(revision 7) error = %v", err)
+	} else if c.Metadata.Revision != 0 {
+		t.Errorf("DecodeConfigJSON(revision 7) revision = %d, want 0", c.Metadata.Revision)
+	}
+
+	c, err = NewConfigFromYAML([]byte("apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: a\n  revision: 7\n"))
+	if err != nil {
+		t.Errorf("NewConfigFromYAML(revision 7) error = %v", err)
+	} else if c.Metadata.Revision != 0 {
+		t.Errorf("NewConfigFromYAML(revision 7) revision = %d, want 0", c.Metadata.Revision)
+	}
+}
+
+// genTypesKindSpelling spells a stored kind in any mix of cases.
+func genTypesKindSpelling(kind string) *rapid.Generator[string] {
+	return rapid.Custom(func(t *rapid.T) string {
+		var b strings.Builder
+
+		for _, r := range kind {
+			if rapid.Bool().Draw(t, "upper") {
+				b.WriteString(strings.ToUpper(string(r)))
+			} else {
+				b.WriteString(strings.ToLower(string(r)))
+			}
+		}
+
+		return b.String()
+	})
+}
+
+// NewConfig and ConfigFullName agree on which names are configs: a stored kind in any case,
+// "/", and a name with no "/" in it. Both name the config by its canonical kind.
+func TestConfigNameProperties(t *testing.T) {
+	t.Parallel()
+
+	kinds := slices.Sorted(maps.Keys(version.StoredVersion))
+
+	rapid.Check(t, func(t *rapid.T) {
+		kind := rapid.SampledFrom(kinds).Draw(t, "kind")
+		spelled := genTypesKindSpelling(kind).Draw(t, "spelled")
+
+		if rapid.IntRange(0, 4).Draw(t, "unknown") == 0 {
+			kind, spelled = "", spelled+rapid.SampledFrom([]string{"s", "x", "_"}).Draw(t, "suffix")
+		}
+
+		name := rapid.StringMatching(`[a-z/-]{0,4}`).Draw(t, "name")
+		full := spelled + "/" + name
+
+		want := ""
+		if kind != "" && !strings.Contains(name, "/") {
+			want = kind + "/" + name
+		}
+
+		if got := ConfigFullName(full); got != want {
+			t.Fatalf("ConfigFullName(%q) = %q, want %q", full, got, want)
+		}
+
+		if want != "" {
+			if got := ConfigFullName(spelled, name); got != kind+"/"+name {
+				t.Fatalf("ConfigFullName(%q, %q) = %q, want %q", spelled, name, got, kind+"/"+name)
+			}
+		}
+
+		c, err := NewConfig(full)
+		if (err == nil) != (want != "") {
+			t.Fatalf("NewConfig(%q) error = %v, want error %t", full, err, want == "")
+		}
+
+		if err == nil && (c.FullName() != want || c.APIVersion() != version.StoredVersion[kind] || c.APIGroup() != APIGroup) {
+			t.Fatalf("NewConfig(%q) = %s %s, want %s at %s/%s", full, c.FullName(), c.Version, want, APIGroup, version.StoredVersion[kind])
+		}
+	})
+}
+
+// DecodeConfigFile decodes a config by the extension of its file, keeps each
+// placeholder as written, and clears the fields only the store sets.
+func TestDecodeConfigFile(t *testing.T) {
+	t.Parallel()
+
+	const (
+		jsonBody = `{"apiVersion":"phenix.sandia.gov/v1","kind":"Topology",` +
+			`"metadata":{"name":"${NAME:a}","created":"x","updated":"y","revision":7}}`
+		yamlBody = "apiVersion: phenix.sandia.gov/v1\nkind: Topology\n" +
+			"metadata:\n  name: ${NAME:a}\n  created: x\n  updated: y\n  revision: 7\n"
+	)
+
+	want := &Config{Version: "phenix.sandia.gov/v1", Kind: "Topology", Metadata: ConfigMetadata{Name: "${NAME:a}"}}
+
+	for name, tc := range map[string]struct {
+		file, body string
+		want       *Config
+		wantErr    error
+		wantMsg    string
+	}{
+		"json":         {file: "a.json", body: jsonBody, want: want},
+		"yaml":         {file: "a.yaml", body: yamlBody, want: want},
+		"yml":          {file: "dir/a.yml", body: yamlBody, want: want},
+		"bad json":     {file: "a.json", body: "{", wantErr: ErrInvalidFormat},
+		"bad yaml":     {file: "a.yaml", body: "kind: [", wantErr: ErrInvalidFormat},
+		"no extension": {file: "a", body: jsonBody, wantMsg: "invalid config extension"},
+		"other":        {file: "a.txt", body: jsonBody, wantMsg: "invalid config extension"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := DecodeConfigFile(tc.file, []byte(tc.body))
+			if (err != nil) != (tc.want == nil) || (tc.wantErr != nil && !errors.Is(err, tc.wantErr)) {
+				t.Fatalf("DecodeConfigFile(%s) error = %v, want error %t (%v)", tc.file, err, tc.want == nil, tc.wantErr)
+			}
+
+			if tc.wantMsg != "" && (err == nil || !strings.Contains(err.Error(), tc.wantMsg)) {
+				t.Fatalf("DecodeConfigFile(%s) error = %v, want it to contain %q", tc.file, err, tc.wantMsg)
+			}
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("DecodeConfigFile(%s) mismatch (-want +got):\n%s", tc.file, diff)
+			}
+		})
+	}
+}
+
+// TestDecodeConfigKeepsPlaceholders checks that DecodeConfigJSON,
+// DecodeConfigYAML and DecodeConfigFile keep each ${NAME} placeholder, and
+// that NewConfigFromYAML fills them in from the environment.
 func TestDecodeConfigKeepsPlaceholders(t *testing.T) {
 	t.Setenv("PHENIX_STORE_TEST_SECRET", "server-secret")
 
 	fromFile := func(body []byte) (*Config, error) {
-		path := filepath.Join(t.TempDir(), "topology.yml")
-		if err := os.WriteFile(path, body, 0o600); err != nil {
-			t.Fatalf("os.WriteFile(%q) returned error: %v", path, err)
-		}
-
-		return NewConfigFromFile(path)
+		return DecodeConfigFile("topology.yml", body)
 	}
 
 	const (
@@ -852,7 +991,7 @@ func TestDecodeConfigKeepsPlaceholders(t *testing.T) {
 		{name: "DecodeConfigJSON", decode: DecodeConfigJSON, input: jsonDoc, want: verbatim},
 		{name: "DecodeConfigYAML", decode: DecodeConfigYAML, input: yamlDoc, want: verbatim},
 		{name: "NewConfigFromYAML", decode: NewConfigFromYAML, input: yamlDoc, want: expanded},
-		{name: "NewConfigFromFile", decode: fromFile, input: yamlDoc, want: expanded},
+		{name: "DecodeConfigFile", decode: fromFile, input: yamlDoc, want: verbatim},
 	}
 
 	for _, tt := range tests {
@@ -869,53 +1008,114 @@ func TestDecodeConfigKeepsPlaceholders(t *testing.T) {
 	}
 }
 
-// TestExpandBranchName checks that ExpandBranchName fills in only the
-// ${BRANCH_NAME} placeholders and keeps every other one as it is written.
-func TestExpandBranchName(t *testing.T) {
-	t.Setenv("BRANCH_NAME", "lab")
-	t.Setenv("PHENIX_STORE_TEST_SECRET", "server-secret")
+// APIGroup and APIVersion split a config's version at its "/".
+func TestConfigAPIVersion(t *testing.T) {
+	t.Parallel()
 
-	tests := []struct {
-		input string
-		want  string
+	for _, tc := range []struct{ version, group, apiVersion string }{
+		{"phenix.sandia.gov/v1", "phenix.sandia.gov", "v1"},
+		{"phenix.sandia.gov/v2/extra", "phenix.sandia.gov", "v2"},
+		{"v1", "", "v1"},
+		{"", "", ""},
+		{"/", "", ""},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			t.Parallel()
+
+			c := Config{Version: tc.version}
+
+			if got := c.APIGroup(); got != tc.group {
+				t.Errorf("Config{Version: %q}.APIGroup() = %q, want %q", tc.version, got, tc.group)
+			}
+
+			if got := c.APIVersion(); got != tc.apiVersion {
+				t.Errorf("Config{Version: %q}.APIVersion() = %q, want %q", tc.version, got, tc.apiVersion)
+			}
+		})
+	}
+}
+
+func TestConfigHasAnnotation(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		annotations Annotations
+		want        bool
 	}{
-		{input: "${BRANCH_NAME}", want: "lab"},
-		{input: "/phenix/injects/${BRANCH_NAME}/motd", want: "/phenix/injects/lab/motd"},
-		{input: "${BRANCH_NAME:other}", want: "lab"},
-		{input: "${PHENIX_STORE_TEST_SECRET}", want: "${PHENIX_STORE_TEST_SECRET}"},
-		{input: "${PHENIX_STORE_TEST_SECRET:x}", want: "${PHENIX_STORE_TEST_SECRET:x}"},
-		{input: "$PHENIX_STORE_TEST_SECRET", want: "$PHENIX_STORE_TEST_SECRET"},
-		{input: "$BRANCH_NAME", want: "$BRANCH_NAME"},
-		{input: "${BRANCH_NAME}-${PHENIX_STORE_TEST_SECRET}", want: "lab-${PHENIX_STORE_TEST_SECRET}"},
+		"none":                {want: false},
+		"empty":               {annotations: Annotations{}, want: false},
+		"another":             {annotations: Annotations{"other": "x"}, want: false},
+		"set":                 {annotations: Annotations{"phenix.io/key": "x"}, want: true},
+		"set to empty string": {annotations: Annotations{"phenix.io/key": ""}, want: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			c := Config{Metadata: ConfigMetadata{Annotations: tc.annotations}}
+			if got := c.HasAnnotation("phenix.io/key"); got != tc.want {
+				t.Errorf("HasAnnotation(phenix.io/key) with %v = %t, want %t", tc.annotations, got, tc.want)
+			}
+		})
+	}
+}
+
+// FullName joins kind and name as given; ConfigFullName takes one full name
+// or a kind and a name, and nothing else.
+func TestConfigFullNames(t *testing.T) {
+	t.Parallel()
+
+	if got := (Config{Kind: "Topology", Metadata: ConfigMetadata{Name: "a"}}).FullName(); got != "Topology/a" {
+		t.Errorf("Config{Topology, a}.FullName() = %q, want %q", got, "Topology/a")
 	}
 
-	for _, tt := range tests {
-		if got := string(ExpandBranchName([]byte(tt.input))); got != tt.want {
-			t.Errorf("ExpandBranchName(%q) = %q, want %q", tt.input, got, tt.want)
+	if got := (Config{}).FullName(); got != "/" {
+		t.Errorf("Config{}.FullName() = %q, want %q", got, "/")
+	}
+
+	for _, args := range [][]string{nil, {"topology", "a", "b"}, {"notakind", "a"}, {"topology"}} {
+		if got := ConfigFullName(args...); got != "" {
+			t.Errorf("ConfigFullName(%q) = %q, want empty", args, got)
 		}
 	}
 }
 
-// TestExpandBranchNameUnset checks that ExpandBranchName uses the default of
-// a ${BRANCH_NAME:default} placeholder when BRANCH_NAME is not set.
-func TestExpandBranchNameUnset(t *testing.T) {
-	t.Setenv("BRANCH_NAME", "")
+// TestExpandBranchName checks that ExpandBranchName fills in only the
+// ${BRANCH_NAME} placeholders, from the lookup and not from the environment,
+// and keeps every other placeholder as it is written.
+func TestExpandBranchName(t *testing.T) {
+	t.Setenv("BRANCH_NAME", "from-the-environment")
+	t.Setenv("PHENIX_STORE_TEST_SECRET", "server-secret")
 
-	if err := os.Unsetenv("BRANCH_NAME"); err != nil {
-		t.Fatalf("os.Unsetenv(BRANCH_NAME) returned error: %v", err)
-	}
+	const secret = "${PHENIX_STORE_TEST_SECRET}"
+
+	set := envsubst.Fixed("lab")
+	unset := func(string) (string, bool) { return "", false }
 
 	tests := []struct {
-		input string
-		want  string
+		name   string
+		lookup envsubst.Lookup
+		input  string
+		want   string
 	}{
-		{input: "${BRANCH_NAME:main}", want: "main"},
-		{input: "${BRANCH_NAME}", want: ""},
+		{name: "the name", lookup: set, input: "${BRANCH_NAME}", want: "lab"},
+		{name: "in a path", lookup: set, input: "/phenix/injects/${BRANCH_NAME}/motd", want: "/phenix/injects/lab/motd"},
+		{name: "with a default", lookup: set, input: "${BRANCH_NAME:other}", want: "lab"},
+		{name: "another name", lookup: set, input: secret, want: secret},
+		{name: "another name with a default", lookup: set, input: "${PHENIX_STORE_TEST_SECRET:x}", want: "${PHENIX_STORE_TEST_SECRET:x}"},
+		{name: "another name without braces", lookup: set, input: "$PHENIX_STORE_TEST_SECRET", want: "$PHENIX_STORE_TEST_SECRET"},
+		{name: "the name without braces", lookup: set, input: "$BRANCH_NAME", want: "$BRANCH_NAME"},
+		{name: "both names", lookup: set, input: "${BRANCH_NAME}-" + secret, want: "lab-" + secret},
+		{name: "the escaped name", lookup: set, input: "$${BRANCH_NAME}", want: "${BRANCH_NAME}"},
+		{name: "another escaped name", lookup: set, input: "$" + secret, want: "$" + secret},
+		{name: "not set, with a default", lookup: unset, input: "${BRANCH_NAME:main}", want: "main"},
+		{name: "not set", lookup: unset, input: "[${BRANCH_NAME}]", want: "[]"},
 	}
 
 	for _, tt := range tests {
-		if got := string(ExpandBranchName([]byte(tt.input))); got != tt.want {
-			t.Errorf("ExpandBranchName(%q) = %q, want %q", tt.input, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			if got := string(ExpandBranchName([]byte(tt.input), tt.lookup)); got != tt.want {
+				t.Errorf("ExpandBranchName(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
 	}
 }

@@ -10,10 +10,12 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/store"
 	v1 "phenix/types/version/v1"
@@ -51,7 +53,7 @@ spec:
 
 // upsertTestIncludeTopology is a topology without nodes of its own that
 // includes a topology that is not stored; its name expands to main-topo on
-// branch main. The Topology schema does not declare includeTopologies.
+// branch main.
 const upsertTestIncludeTopology = `apiVersion: phenix.sandia.gov/v1
 kind: Topology
 metadata:
@@ -77,19 +79,6 @@ spec:
       os_type: linux
       drives:
       - image: x.qc2
-`
-
-// upsertTestUndecodableTopology is a topology that passes its schema, which
-// does not declare includeTopologies, but does not decode: a mapping is no
-// include name. Its name expands to main-topo on branch main.
-const upsertTestUndecodableTopology = `apiVersion: phenix.sandia.gov/v1
-kind: Topology
-metadata:
-  name: ${BRANCH_NAME}-topo
-spec:
-  includeTopologies:
-  - name: x
-  nodes: []
 `
 
 // upsertTestScenarioWithNodes is a valid scenario, named main-scn on branch
@@ -235,8 +224,6 @@ func TestWorkflowUpsertConfigDryRun(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("BRANCH_NAME", "") // the handler sets it; t.Setenv restores it
-
 			// The strict mock allows only the existence check. A real create
 			// or update would add Create or Update, config.Update's second
 			// Get, or, through the experiment hook, List.
@@ -283,8 +270,6 @@ func TestWorkflowUpsertConfigDryRunExplainsValidationErrors(t *testing.T) {
 	for _, exists := range []bool{false, true} {
 		for _, tt := range bodies {
 			t.Run(fmt.Sprintf("%s, exists=%t", tt.name, exists), func(t *testing.T) {
-				t.Setenv("BRANCH_NAME", "")
-
 				key := workflowTestKey("topology/demo")
 
 				send := func(query string) error {
@@ -328,78 +313,58 @@ func TestWorkflowUpsertConfigDryRunExplainsValidationErrors(t *testing.T) {
 	}
 }
 
-// TestWorkflowUpsertConfigRefusesBadTopology sends topologies that pass their
-// schema but that no experiment could use, for real and as a dry run, to a
-// stored and to a new config, and expects the same 400 from both: the node
-// error's text for a node named all, and the decode error for a topology
-// that does not decode. The strict mock allows only the existence check, so
-// the real upsert stores nothing and config.Update's own read never happens.
+// TestWorkflowUpsertConfigRefusesBadTopology sends a topology that passes its
+// schema but has a node named all, which no experiment could use, for real and
+// as a dry run, to a stored and to a new config, and expects the same 400 from
+// both with the node error's text. The strict mock allows only the existence
+// check, so the real upsert stores nothing.
 func TestWorkflowUpsertConfigRefusesBadTopology(t *testing.T) {
-	tests := []struct {
-		name      string
-		body      string
-		wantCause string
-	}{
-		{
-			name:      "node named all",
-			body:      upsertTestBadTopology,
-			wantCause: `topology "main-topo" cannot be used in an experiment: validating node all: hostname 'all' is reserved`,
-		},
-		{
-			name:      "topology that does not decode",
-			body:      upsertTestUndecodableTopology,
-			wantCause: `decoding topology "main-topo": `,
-		},
-	}
+	const wantCause = `topology "main-topo" cannot be used in an experiment: validating node all: hostname 'all' is reserved`
 
-	for _, tt := range tests {
-		for _, exists := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s, exists=%t", tt.name, exists), func(t *testing.T) {
-				t.Setenv("BRANCH_NAME", "")
+	for _, exists := range []bool{false, true} {
+		t.Run(fmt.Sprintf("exists=%t", exists), func(t *testing.T) {
+			key := workflowTestKey("topology/main-topo")
 
-				key := workflowTestKey("topology/main-topo")
+			wantMessage := "unable to create new config Topology/main-topo"
+			if exists {
+				wantMessage = "unable to update config Topology/main-topo"
+			}
 
-				wantMessage := "unable to create new config Topology/main-topo"
-				if exists {
-					wantMessage = "unable to update config Topology/main-topo"
-				}
+			send := func(query string) error {
+				expectUpsertExists(installValidationTestStore(t), key, exists)
 
-				send := func(query string) error {
-					expectUpsertExists(installValidationTestStore(t), key, exists)
+				return WorkflowUpsertConfig(httptest.NewRecorder(), upsertTestRequest(t, query, upsertTestBadTopology))
+			}
 
-					return WorkflowUpsertConfig(httptest.NewRecorder(), upsertTestRequest(t, query, tt.body))
-				}
+			realErr := send("")
+			dryErr := send("?dryRun=true")
 
-				realErr := send("")
-				dryErr := send("?dryRun=true")
+			var dry, upserted *weberror.WebError
+			if !errors.As(dryErr, &dry) {
+				t.Fatalf("WorkflowUpsertConfig(?dryRun=true, node named all) = %v, want a *weberror.WebError", dryErr)
+			}
 
-				var werr *weberror.WebError
-				if !errors.As(dryErr, &werr) {
-					t.Fatalf("WorkflowUpsertConfig(?dryRun=true) error = %v, want a *weberror.WebError", dryErr)
-				}
+			if !errors.As(realErr, &upserted) {
+				t.Fatalf("WorkflowUpsertConfig(node named all) = %v, want a *weberror.WebError", realErr)
+			}
 
-				got := upsertWebError{Status: werr.Status, Message: werr.Message}
-				want := upsertWebError{Status: http.StatusBadRequest, Message: wantMessage}
+			if dry.Status != http.StatusBadRequest {
+				t.Errorf("WorkflowUpsertConfig(?dryRun=true, node named all) status = %d, want %d", dry.Status, http.StatusBadRequest)
+			}
 
-				if diff := cmp.Diff(want, got); diff != "" {
-					t.Errorf("WorkflowUpsertConfig(?dryRun=true) error mismatch (-want +got):\n%s", diff)
-				}
+			if dry.Message != wantMessage {
+				t.Errorf("WorkflowUpsertConfig(?dryRun=true, node named all) message = %q, want %q", dry.Message, wantMessage)
+			}
 
-				if !strings.Contains(werr.Cause, tt.wantCause) {
-					t.Errorf("WorkflowUpsertConfig(?dryRun=true) cause = %q, want it to contain %q", werr.Cause, tt.wantCause)
-				}
+			if !strings.Contains(dry.Cause, wantCause) {
+				t.Errorf("WorkflowUpsertConfig(?dryRun=true, node named all) cause = %q, want it to contain %q", dry.Cause, wantCause)
+			}
 
-				// Compare what the client gets: wrapped multierror causes are never equal.
-				var realWerr *weberror.WebError
-				if !errors.As(realErr, &realWerr) {
-					t.Fatalf("WorkflowUpsertConfig() error = %v, want a *weberror.WebError", realErr)
-				}
-
-				if diff := cmp.Diff(newUpsertWebError(realWerr), newUpsertWebError(werr)); diff != "" {
-					t.Errorf("WorkflowUpsertConfig(?dryRun=true) error mismatch with the real upsert's (-want +got):\n%s", diff)
-				}
-			})
-		}
+			// Compare what the client gets: wrapped multierror causes are never equal.
+			if diff := cmp.Diff(newUpsertWebError(upserted), newUpsertWebError(dry)); diff != "" {
+				t.Errorf("WorkflowUpsertConfig(?dryRun=true, node named all) error mismatch with the real upsert's (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -409,8 +374,6 @@ func TestWorkflowUpsertConfigRefusesBadTopology(t *testing.T) {
 // upserts "kind: topology" and "kind: Topology" files would store one config
 // over the other.
 func TestWorkflowUpsertConfigDryRunRejectsKindInWrongCase(t *testing.T) {
-	t.Setenv("BRANCH_NAME", "")
-
 	// The strict mock allows only the existence check.
 	m := installValidationTestStore(t)
 	expectUpsertExists(m, workflowTestKey("topology/demo"), false)
@@ -439,14 +402,14 @@ func TestWorkflowUpsertConfigRejectsBadRequests(t *testing.T) {
 			name:      "dryRun that is not a boolean",
 			query:     "?dryRun=maybe",
 			body:      upsertTestTopology,
-			wantMsg:   `invalid dryRun value "maybe"`,
+			wantMsg:   `dryRun must be true or false, not "maybe"`,
 			wantCause: `strconv.ParseBool: parsing "maybe": invalid syntax`,
 		},
 		{
 			name:      "bare dryRun",
 			query:     "?dryRun",
 			body:      upsertTestTopology,
-			wantMsg:   `invalid dryRun value ""`,
+			wantMsg:   `dryRun must be true or false, not ""`,
 			wantCause: `strconv.ParseBool: parsing "": invalid syntax`,
 		},
 	}
@@ -491,20 +454,19 @@ func TestWorkflowUpsertConfigRejectsBadRequests(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("BRANCH_NAME", "")
 			installValidationTestStore(t) // each is refused before any store call
 
 			err := WorkflowUpsertConfig(httptest.NewRecorder(), upsertTestRequest(t, tt.query, tt.body))
 
 			var werr *weberror.WebError
 			if !errors.As(err, &werr) {
-				t.Fatalf("WorkflowUpsertConfig(%s) error = %v, want a *weberror.WebError", tt.query, err)
+				t.Fatalf("WorkflowUpsertConfig(%s) = %v, want a *weberror.WebError", tt.query, err)
 			}
 
-			got := upsertWebError{Status: werr.Status, Message: werr.Message, Cause: werr.Cause}
-			want := upsertWebError{Status: http.StatusBadRequest, Message: tt.wantMsg, Cause: tt.wantCause}
+			want := &weberror.WebError{Status: http.StatusBadRequest, Message: tt.wantMsg, Cause: tt.wantCause}
+			ignoreMetadata := cmpopts.IgnoreFields(weberror.WebError{}, "SystemMetadata", "UserMetadata")
 
-			if diff := cmp.Diff(want, got); diff != "" {
+			if diff := cmp.Diff(want, werr, ignoreMetadata, cmpopts.IgnoreUnexported(weberror.WebError{})); diff != "" {
 				t.Errorf("WorkflowUpsertConfig(%s) error mismatch (-want +got):\n%s", tt.query, diff)
 			}
 		})
@@ -517,8 +479,6 @@ func TestWorkflowUpsertConfigForbidden(t *testing.T) {
 	for _, query := range []string{"?dryRun=true", ""} {
 		for _, exists := range []bool{false, true} {
 			t.Run(fmt.Sprintf("query %q, exists=%t", query, exists), func(t *testing.T) {
-				t.Setenv("BRANCH_NAME", "")
-
 				m := installValidationTestStore(t)
 				expectUpsertExists(m, workflowTestKey("topology/main-topo"), exists)
 
@@ -567,8 +527,6 @@ func TestWorkflowUpsertConfigWritesWithoutDryRun(t *testing.T) {
 		for _, query := range []string{"", "?dryRun=false"} {
 			for _, exists := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s, query %q, exists=%t", tt.name, query, exists), func(t *testing.T) {
-					t.Setenv("BRANCH_NAME", "")
-
 					m := installValidationTestStore(t)
 					key := workflowTestKey("topology/main-topo")
 
@@ -674,8 +632,6 @@ spec:
 	for _, query := range []string{"?dryRun=true", ""} {
 		for _, tt := range tests {
 			t.Run(fmt.Sprintf("%s, query %q", tt.name, query), func(t *testing.T) {
-				t.Setenv("BRANCH_NAME", "")
-
 				m := installValidationTestStore(t)
 				if tt.lookup {
 					expectUpsertExists(m, workflowTestKey("topology/probe"), tt.exists)
@@ -713,7 +669,6 @@ func TestWorkflowUpsertConfigRefusesEnvironmentInName(t *testing.T) {
 	const secret = "s3cret-value-for-test"
 
 	t.Setenv("PHENIX_TEST_SECRET", secret)
-	t.Setenv("BRANCH_NAME", "")
 
 	m := installValidationTestStore(t)
 	expectUpsertExists(m, workflowTestKey("topology/1"), false)
@@ -761,6 +716,18 @@ func TestConfigName(t *testing.T) {
 			body: `{"kind": "Scenario", "metadata": {"name": "${BRANCH_NAME}"}, "spec": {"port": ${PORT}}}`,
 			want: "Scenario/main",
 		},
+		{
+			name: "escaped branch name",
+			typ:  mimeYAML,
+			body: "kind: Topology\nmetadata:\n  name: $${BRANCH_NAME}\n",
+			want: "Topology/${BRANCH_NAME}",
+		},
+		{
+			name: "another escaped placeholder",
+			typ:  mimeYAML,
+			body: "kind: Topology\nmetadata:\n  name: $${PHENIX_TEST_SECRET}\n",
+			want: "Topology/1",
+		},
 	}
 
 	for _, tt := range tests {
@@ -776,7 +743,6 @@ func TestConfigName(t *testing.T) {
 // TestReadWorkflowConfigExpandsOnlyBranchName asserts that readWorkflowConfig
 // fills in ${BRANCH_NAME} with the branch and keeps every other placeholder.
 func TestReadWorkflowConfigExpandsOnlyBranchName(t *testing.T) {
-	t.Setenv("BRANCH_NAME", "")
 	t.Setenv("PHENIX_WEB_TEST_SECRET", "workflow-secret-value")
 
 	body := workflowTestYAML("  topology: ${BRANCH_NAME}-topo\n  scenario: ${PHENIX_WEB_TEST_SECRET}\n" +
@@ -799,4 +765,45 @@ func TestReadWorkflowConfigExpandsOnlyBranchName(t *testing.T) {
 	if diff := cmp.Diff(want, doc["spec"]); diff != "" {
 		t.Errorf("readWorkflowConfig(lab) spec mismatch (-want +got):\n%s", diff)
 	}
+}
+
+// TestReadWorkflowConfigKeepsBranchesApart checks that requests for different
+// branches at the same moment each get their own branch name.
+func TestReadWorkflowConfigKeepsBranchesApart(t *testing.T) {
+	t.Parallel()
+
+	const rounds = 50
+
+	body := workflowTestYAML("  topology: ${BRANCH_NAME}-topo\n")
+
+	var wg sync.WaitGroup
+
+	for _, branch := range []string{"lab-a", "lab-b", "lab-c", "lab-d"} {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			for range rounds {
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/workflow/apply/"+branch, strings.NewReader(body))
+				req.Header.Set("Content-Type", mimeYAML)
+
+				doc, _, err := readWorkflowConfig(req, branch)
+				if err != nil {
+					t.Errorf("readWorkflowConfig(%s) returned error: %v", branch, err)
+
+					return
+				}
+
+				spec, _ := doc["spec"].(map[string]any)
+				if got, want := spec["topology"], branch+"-topo"; got != want {
+					t.Errorf("readWorkflowConfig(%s) topology = %v, want %s", branch, got, want)
+
+					return
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
 }

@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 const phenix = vi.hoisted(() => ({
   username: 'builder',
@@ -40,8 +40,6 @@ vi.mock('vue-router', () => ({
 
 import Builder from '@/views/Builder.vue';
 import { useBuilderStore } from '@/builder/store.js';
-
-enableAutoUnmount(afterEach);
 
 globalThis.ResizeObserver ??= class {
   observe() {}

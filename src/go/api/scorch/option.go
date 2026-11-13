@@ -21,6 +21,7 @@ type Options struct {
 	Loop         int
 	Count        int
 	Background   bool
+	CleanupOnly  bool // run only the cleanup stage
 	Replacements scorchmd.ResolvedReplacements
 }
 
@@ -95,6 +96,13 @@ func CurrentLoop(l int) Option {
 func LoopCount(c int) Option {
 	return func(o *Options) {
 		o.Count = c
+	}
+}
+
+// CleanupOnly runs only the cleanup stage of a run.
+func CleanupOnly() Option {
+	return func(o *Options) {
+		o.CleanupOnly = true
 	}
 }
 

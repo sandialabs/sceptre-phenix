@@ -5,7 +5,6 @@
 // The text and surface colors below give text a contrast of 7:1 or more
 // (WCAG 1.4.6) on each surface that holds them.
 
-$logo: #9a4420;
 // derived via: https://m2.material.io/design/color/the-color-system.html#tools-for-picking-colors
 // Bulma builds its $colors map in the import above, before these two values
 // are set. The `is-primary` and `is-link` classes use the $colors map below;
@@ -27,8 +26,6 @@ $background-ter: #4a4a4a;
 $border: white;
 $text: white;
 $text-strong: white;
-$text-weak: whitesmoke;
-$input-color: black;
 
 // Link text: 7.2:1 on $background-ter, 10:1 on $background.
 $link-text: #d0ecf3;
@@ -40,21 +37,22 @@ $button-ghost-color: $link-text;
 $button-ghost-hover-color: $link-text;
 // A see-through toast loses contrast to the page under it.
 $toast-opacity: 1;
-// Text on light fills (turquoise, green, yellow, cyan).
+// Text on light fills, such as the cyan $link.
 $dark-text: $black;
 
 // The is-* color classes. Each entry is (fill, text on the fill, light fill,
 // text on the light fill), 7:1 or more also on the hover and active shades.
-// `is-primary` stays Bulma's turquoise. `is-info`, `is-link` and `is-danger`
-// get darker fills, because no text color has 7:1 on Bulma's fills.
+// `is-primary` (orange), `is-success`, `is-info`, `is-link` and `is-danger`
+// get darker fills, because no text color has 7:1 on Bulma's fills. White is
+// only 6.5:1 on the `is-primary` fill.
 $colors: map.merge(
   $colors,
   (
     'primary': (
-      $turquoise,
-      $dark-text,
-      $primary-light,
-      #005e50,
+      #9a4420,
+      $white,
+      findLightColor($primary),
+      #8a3d1c,
     ),
     'link': (
       hsl(229, 53%, 46%),
@@ -69,8 +67,8 @@ $colors: map.merge(
       #1c4d75,
     ),
     'success': (
-      $success,
-      $dark-text,
+      #17603d,
+      $white,
       $success-light,
       #1b583c,
     ),
@@ -92,7 +90,7 @@ $colors: map.merge(
 // The same hues as light text on the dark surfaces, for `has-text-*` and
 // `.help.is-*` (see _general.scss): 7:1 or more on $background-ter.
 $text-on-dark: (
-  'primary': #b5f2e9,
+  'primary': #ffe4d6,
   'link': $link-text,
   'info': #daeaf6,
   'success': #caefde,
@@ -126,6 +124,7 @@ $modal-card-foot-border-top: 1px solid $scheme-main-bis;
 
 $button-border-color: lighten($scheme-main, 10);
 $button-hover-color: $text-strong;
+// Bulma's focused and pressed text, #363636, is 2.2:1 on a default button
 $button-focus-color: $text-strong;
 $button-active-color: $text-strong;
 $button-text-hover-background-color: $scheme-main;
@@ -150,9 +149,9 @@ $hero-colors: map.merge(
   )
 );
 
-// White text on a darker orange: no text color has 7:1 on $primary.
-$table-row-active-background-color: #8f3a15;
-$datepicker-item-selected-background-color: #8f3a15;
+// White text on a darker orange (6.5:1): no text color has 7:1 on $primary.
+$table-row-active-background-color: #9a4420;
+$datepicker-item-selected-background-color: #9a4420;
 $datepicker-header-color: $text-strong;
 $datepicker-item-color: $text-strong;
 
@@ -169,7 +168,6 @@ $input-icon-color: lighten($scheme-main, 20);
 $input-icon-active-color: lighten($scheme-main, 10);
 $input-hover-color: lighten($link, 10); // dropdown arrows etc.
 
-$progress-text-color: black;
 $hr-background-color: whitesmoke;
 
 $fullhd: 1536px + (2 * $gap);

@@ -5,10 +5,12 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/cobra"
 
 	"phenix/store"
 	"phenix/util/mm"
+	"phenix/util/mm/mmtest"
 )
 
 // findCaptureSubcommand looks up one of the "vm capture" subcommands (e.g.
@@ -32,7 +34,7 @@ func findCaptureSubcommand(t *testing.T, name string) *cobra.Command {
 }
 
 // captureCmdTestMM is a test double for mm.MM used by the vm capture CLI
-// tests below. Embedding the (nil) mm.MM interface means any method call
+// tests. Embedding the (nil) mm.MM interface means any method call
 // this test doesn't stub will panic, which is fine since these tests only
 // ever exercise the capture-related methods.
 type captureCmdTestMM struct {
@@ -80,8 +82,16 @@ func installCaptureCmdTestMM(t *testing.T, fake *captureCmdTestMM) {
 // experiment named "test-experiment" with a single VM named "test-vm" that
 // has two network interfaces, named "IF0" and "IF1", on VLANs "EXP_1" and
 // "EXP_2" respectively. It installs the mock as store.DefaultStore for the
-// duration of the test.
+// duration of the test, restoring the original afterward.
 func installCaptureCmdTestExperiment(t *testing.T) {
+	t.Helper()
+
+	installCaptureCmdTestExperimentStatus(t, map[string]any{"startTime": "2024-01-01T00:00:00Z"})
+}
+
+// installCaptureCmdTestExperimentStatus is installCaptureCmdTestExperiment for an experiment of status, stopped for an
+// empty status.
+func installCaptureCmdTestExperimentStatus(t *testing.T, status map[string]any) {
 	t.Helper()
 
 	ctrl := gomock.NewController(t)
@@ -126,9 +136,7 @@ func installCaptureCmdTestExperiment(t *testing.T) {
 				},
 			},
 		},
-		Status: map[string]any{
-			"startTime": "2024-01-01T00:00:00Z",
-		},
+		Status: status,
 	}
 
 	m := store.NewMockStore(ctrl)
@@ -137,6 +145,9 @@ func installCaptureCmdTestExperiment(t *testing.T) {
 
 		return nil
 	}).AnyTimes()
+
+	original := store.DefaultStore
+	t.Cleanup(func() { store.DefaultStore = original }) //nolint:reassign // restore test double
 
 	store.DefaultStore = m //nolint:reassign // monkey patching for test
 }
@@ -282,5 +293,79 @@ func TestVMCaptureStopUnknownInterfaceName(t *testing.T) {
 
 	if fake.stopCalls != 0 {
 		t.Fatalf("expected StopVMCapture to not be called, got %d calls", fake.stopCalls)
+	}
+}
+
+// formatCaptureCmdTestMM is captureCmdTestMM with the real VM capture start, sent to the fake minimega.
+type formatCaptureCmdTestMM struct {
+	*captureCmdTestMM
+}
+
+func (formatCaptureCmdTestMM) GetVMHost(...mm.Option) (string, error) { return "headnode", nil }
+
+func (formatCaptureCmdTestMM) StartVMCapture(opts ...mm.Option) error {
+	return mm.Minimega{}.StartVMCapture(opts...) //nolint:wrapcheck // the test reads the commands
+}
+
+// vm capture start sends the --format flag's format and ui.captures.max-size to minimega 3.4.0, and the file
+// extension follows the format.
+func TestVMCaptureStartFormat(t *testing.T) {
+	tests := map[string]struct {
+		args []string
+		want string // the capture command sent, "" for none
+	}{
+		"pcapng by default": {
+			args: []string{"test-experiment", "test-vm", "IF1", "out.pcap"},
+			want: "capture pcap vm test-vm 1 test-experiment/files/out.pcapng format=pcapng maxsize=64M",
+		},
+		"pcap": {
+			args: []string{"test-experiment", "test-vm", "0", "out", "--format", "pcap"},
+			want: "capture pcap vm test-vm 0 test-experiment/files/out.pcap format=pcap maxsize=64M",
+		},
+		"another format": {args: []string{"test-experiment", "test-vm", "0", "out", "--format", "erf"}},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("PHENIX_UI_CAPTURES_MAX_SIZE", "64")
+			installCaptureCmdTestExperiment(t)
+
+			original := mm.DefaultMM
+			t.Cleanup(func() { mm.DefaultMM = original }) //nolint:reassign // restore test double
+
+			mm.DefaultMM = formatCaptureCmdTestMM{&captureCmdTestMM{ //nolint:reassign // install test double
+				vmInfo: mm.VMs{{Name: "test-vm", Running: true, Networks: []string{"EXP_1 (101)", "EXP_2 (102)"}}},
+			}}
+
+			mm.SetCaptureFeaturesForced(true)
+			t.Cleanup(func() { mm.SetCaptureFeaturesForced(!mm.CaptureVersionRequired) })
+
+			received := mmtest.Use(t, nil)
+
+			root := newVMCaptureCmd()
+			root.SetArgs(append([]string{"start"}, tc.args...))
+			root.SilenceUsage, root.SilenceErrors = true, true
+
+			if err := root.Execute(); (err != nil) != (tc.want == "") {
+				t.Fatalf("vm capture start %v error = %v, want error %t", tc.args, err, tc.want == "")
+			}
+
+			var got []string
+
+			for _, base := range mmtest.Bases(received()) {
+				if strings.HasPrefix(base, "capture pcap vm ") {
+					got = append(got, base)
+				}
+			}
+
+			var want []string
+			if tc.want != "" {
+				want = []string{tc.want}
+			}
+
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("vm capture start %v commands mismatch (-want +got):\n%s", tc.args, diff)
+			}
+		})
 	}
 }

@@ -45,9 +45,14 @@ begin with a capital letter.
     When we say this, we mean passing a YAML or JSON configuration file of any
     type to the `phenix config create` command.
 
-    `phenix config create` also takes a directory, and creates every
-    configuration file below it. It skips a [Builder](builder/index.md)
-    document in a directory, and refuses one named on the command line (see
+    `phenix config create`, `phenix config apply` and `phenix config diff`
+    take files only: each argument is a `.json`, `.yaml` or `.yml` file, and
+    a directory is an error. To read every file of a directory, give `dir/*`
+    in a shell, such as `phenix config create configs/*`. The shell replaces
+    `dir/*` with the files of the directory before phēnix starts. Use
+    `dir/*.yml` when the directory also holds files that are not
+    configurations. The commands refuse a [Builder](builder/index.md)
+    document (see
     [Builder documents and phenix config create](builder/details/import-upload-download.md#builder-documents-and-phenix-config-create)).
 
 The `metadata` section can also hold `annotations`: text values by key, such
@@ -146,7 +151,9 @@ three options available to set, but on only one option can be set:
    start either through the phēnix UI or command line (the latter can be by
    phēnix or minimega commands).
 
-1. `timer` is a string that is set as a delay in minutes; e.g., `5m`.
+1. `timer` is a
+   [Golang duration string](https://pkg.go.dev/time#ParseDuration) such as
+   `30s`, `5m`, or `1h30m`. A timer that is not a duration is rejected.
 
 1. `c2` requires minimega command and control. Note in the example below that
    the hostname `AD1` will be delayed starting until the VM `host-00` has
@@ -158,8 +165,17 @@ three options available to set, but on only one option can be set:
 !!! note
     If one or more VMs are set with a delayed start, the UI will display a blue
     tag in the Delay column next to the Screenshot column. The tag will indicate
-    what type of dealy was set. Once all the delayed VMs have started, the Delay
-    column will no longer be visible.
+    what type of delay was set. Once all the delayed VMs have started, the Delay
+    column will no longer be visible. For a `timer` delay, the tag and the VM
+    details card show the time until the VM starts, for example
+    `starts in 4m 12s`.
+
+    While VMs wait for a delayed start, the summary at the top of the running
+    experiment page shows a blue tag, for example `2 delayed VMs waiting`, next
+    to the `Running` status. When a VM waits for a timer, the tag also shows
+    the time until the next VM starts, for example
+    `2 delayed VMs waiting, next starts in 4m 12s`. The VMs tile of the
+    summary also shows the number of delayed VMs. To see the tiles, click `Details` in the summary.
 
 #### Network Address Translation (NAT)
 
@@ -523,12 +539,14 @@ spec:
 scenarios to form an experiment (it should be note that an experiments do not
 require a scenario).
 
-Typically experiment configurations are
-[created automatically](experiments.md#create-a-new-experiment), but it is
-possible to create them manually using a configuration file similar to the one
-shown below. In this case, an experiment named `foobar` would be created based
-on an existing topology named `foobar` and an existing scenario named `foobar`
-(note that none of the names are required to match).
+Experiment configurations are
+[created](experiments.md#create-a-new-experiment) from an existing topology and
+an optional scenario, with `phenix experiment create` or the web UI. A
+configuration file holding only the header below is not enough: its `spec` must
+already hold the experiment, so `phenix config create` rejects it. The header
+of an experiment named `foobar`, created from a topology named `foobar` and a
+scenario named `foobar` (none of the names are required to match), looks like
+this:
 
 ```yaml
 apiVersion: phenix.sandia.gov/v1
@@ -538,12 +556,13 @@ metadata:
   annotations:
     topology: foobar # this is required
     scenario: foobar # this is optional
+spec:
+  ...
 ```
 
-Once created, either manually or automatically, the experiment configuration
-will be expanded to have the topology and scenario configurations embedded in
-it, as well as additional details like cluster host schedules for VMs, VLAN
-ranges, etc. The advantage of embedding the topology and scenario
+The experiment configuration has the topology and scenario configurations
+embedded in it, as well as additional details like cluster host schedules for
+VMs, VLAN ranges, etc. The advantage of embedding the topology and scenario
 into the experiment is that they can be modified in the experiment without
 modifying the originals.
 
@@ -651,9 +670,10 @@ that user should have is specified, and using that role name the appropriate
 RBAC permissions are copied from the role configuration into the user
 configuration.
 
-There are six (6) default role configurations that get created automatically,
-and are described under [default roles](user-administration.md#roles). An example role
-configuration is shown below for completeness.
+There are eight (8) default role configurations that get created automatically:
+the seven described under [default roles](user-administration.md#roles), and
+`Disabled`, which allows nothing. An example role configuration is shown below
+for completeness.
 
 ```yaml
 apiVersion: phenix.sandia.gov/v1
@@ -665,12 +685,18 @@ spec:
   policies:
   - resourceNames:
     - '*'
+    - '*/*'
     resources:
     - '*'
     - '*/*'
     verbs:
     - '*'
 ```
+
+Resource names are matched with the same `Kind/name` or `experiment/vm` shape
+as the resource they belong to, and a `*` never crosses the `/`, which is why
+this role lists both `*` and `*/*`. See
+[Resources](user-administration.md#resources).
 
 ## Web-UI
 
@@ -680,13 +706,24 @@ The `Configs` component will initially load with a table presenting all the
 available configuration files. It is possible to filter in two ways:
 
 1. There is a pull-down selector, which will allow filtering on a specific
-   `Kind` of config.
-  ![screenshot](images/filter_kind.png){: width=350 .center}
-2. A filter field will allow filtering on `Name` (if you have filtered on
-   `Kind`, it will be limited to that kind of config).
-  ![screenshot](images/filter.png){: width=600 .center}
+   `Kind` of config. Choosing `All kinds` puts every kind back in the table.
+  ![Filter on Kind drop-down beside the Find a Config search box.](images/filter_kind.png){: width=350 .center}
+2. A separate `Find a Config` field will allow filtering on `Name` (if you have
+   filtered on `Kind`, it will be limited to that kind of config).
+  ![Find a Config search box with a magnifying-glass icon.](images/filter.png){: width=600 .center}
 
 Clicking on the `X` next to the `Find a Config` field will reset both filters.
+
+The totals strip above the table counts the configs of each kind. Click the
+count of a kind to filter on that kind. Click the `Configs` total, or the
+count of the kind again, to show all kinds. The `Kind` selector shows the same
+filter.
+
+The `In Use` column shows an icon for a topology or scenario that an
+experiment uses. An experiment uses the topology or scenario that its
+`topology` or `scenario` annotation names. This includes experiments that are
+not running. Hold the pointer on the icon to see the names of the experiments.
+For the other kinds of config, the column is empty.
 
 ### View a Config
 
@@ -697,13 +734,19 @@ There are two ways to view a specific config:
    possible to edit the config directly in this view. Instead, there is an
    `Edit Config` button, which will open an editor. It is also possible to
    download a copy of the config. From the keyboard, Tab to the name and press
-   Enter.
-  ![screenshot](images/view.png){: width=800 .center}
+   Enter. A topology or scenario name on the `Experiments` page opens its
+   config in this viewer, too. The annotations of the config show next to
+   its title. Above the text, the viewer shows the kind, name, creation time
+   and update time of the config. Use the `YAML` and `JSON` buttons to change the format of the
+   text. Use `Wrap lines` to wrap long lines, and `Copy` to copy the text.
+   The viewer of an experiment config has a link to the experiment page. The
+   viewer of a topology or scenario lists the experiments that use it.
+  ![Config viewer dialog showing the YAML of Role/vm-viewer, with Edit Config, download and Exit buttons.](images/view.png){: width=800 .center}
 2. Selecting the `Edit` button for a given config will open the editor window.
    It is possible to edit the config in this window and save the update to the
    phēnix store. The config will be validated against the schema, and if
    invalid, an error will be presented.
-  ![screenshot](images/view_edit.png){: width=800 .center}
+  ![Config editor with the name mirror, the kind Scenario and the YAML format selected, beside the scenario's YAML and Save and Exit buttons.](images/view_edit.png){: width=800 .center}
 
 ### Topologies with a Builder diagram
 
@@ -719,7 +762,7 @@ There are two ways to create a new config:
 1. Selecting the `Upload` button located to the far right of the search field
    will allow you to upload a file from disk. It is possible to drag and drop in
    the upload modal or click the upload icon to open a file browser.
-  ![screenshot](images/upload.png){: width=350 .center}
+  ![Upload a Config dialog with a drop zone that accepts .yaml, .yml and .json files.](images/upload.png){: width=350 .center}
 
     !!! note
         Only files with the extensions `.yml`, `.yaml`, and `.json` will be allowed.
@@ -733,7 +776,7 @@ There are two ways to create a new config:
    completed, clicking the `Create` button will post it server-side where it
    will be validated, similar to file upload. If invalid, an error will be
    presented.
-  ![screenshot](images/new_edit.png){: width=800 .center}
+  ![New config editor with the placeholder name TODO, no kind selected, the YAML format, and a template config beside Create and Exit buttons.](images/new_edit.png){: width=800 .center}
 
 ### Editor Window
 
@@ -747,7 +790,7 @@ The editor window allows direct editing of an existing or new config file.
 
 - It is also possible to set keybindings to the Vim editor by enabling them with
   the sliding selector under `Vim Mode`.
-  ![screenshot](images/edit_settings.png){: width=150 .center}
+  ![Editor settings with the File Format radio buttons set to YAML and the Vim Mode toggle disabled.](images/edit_settings.png){: width=150 .center}
 
 #### New Config
 
@@ -756,7 +799,7 @@ text field to the left or within the config editor directly. Similarly, use the
 pull-down selector to the left to select the kind of config or within the config
 editor.
 
-  ![screenshot](images/name_kind.png){: width=200 .center}
+  ![Config Kind drop-down open below the Config Name field, listing Topology, Scenario, Experiment, Image, User and Role.](images/name_kind.png){: width=200 .center}
 
 Selecting the `Create` button will post the new config server-side for
 validation and addition to the store. Choosing the `Exit` button will leave the
@@ -767,7 +810,7 @@ editor window; nothing will be saved.
 Changing the name in an existing config is only available through the editor
 window.
 
-  ![screenshot](images/disabled.png){: width=600 .center}
+  ![Editor for an existing Experiment config, with the Config Name and Config Kind fields grayed out beside its YAML.](images/disabled.png){: width=600 .center}
 
 Selecting the `Save` button will post any updates server-side for validation and
 addition to the store. Selecting the `Exit` button will leave the editor window;
@@ -780,7 +823,7 @@ presented to confirm the selection. Once the config is deleted, it cannot be
 restored to the store. If an experiment config is deleted, the corresponding
 experiment will not longer be presented in the `Experiments` tab.
 
-  ![screenshot](images/actions.png){: width=150 .center}
+  ![Edit, download and delete icon buttons from a config row.](images/actions.png){: width=150 .center}
 
 ## Environment Variables
 
@@ -790,15 +833,18 @@ replaces each environment variable placeholder with the value of that
 variable. Placeholders can be in the format `${VAR}` or
 `${VAR:default}`, where `VAR` is the environment variable name, and `default`
 is an optional default value to use if the variable is not set. If the
-environment variable is not found and no default is provided, the placeholder
-is replaced with an empty string. A `$VAR` without braces is not a placeholder.
+variable is not set and no default is provided, the command stops with an
+error and changes nothing. Write `${VAR:}` for a variable that can be empty.
+A `$VAR` without braces is not a placeholder. Write `$${VAR}` to keep the
+text `${VAR}` in the config.
 
 !!! note
     For a config sent to the REST API or the web UI (`POST /configs`,
     `PUT /configs/{kind}/{name}` and the workflow endpoints), the server fills
     in only `${BRANCH_NAME}`. It stores every other placeholder as written, so
-    a client cannot read the server environment through a config. The Builder
-    fills in no placeholders.
+    a client cannot read the server environment through a config. The REST API
+    does not take variables: a client fills in the other placeholders before
+    it sends a config. The Builder fills in no placeholders.
 
 Example config before parsing environment variables:
 
@@ -827,6 +873,73 @@ Or if `HOST` env variable isn't found, the default is used:
         ip: localhost
 ```
 
+### Variable Sources
+
+These commands read config files and fill in their placeholders:
+`phenix config create`, `phenix config apply`, `phenix config diff`,
+`phenix experiment create` with a file for `-t` or `-s`, and
+`phenix workflow apply`. A command gets the value of a variable from the first
+of these sources that has it:
+
+| Source | Description |
+| :--- | :--- |
+| `-e`, `--env` | `-e NAME=value` sets a variable. `-e NAME` copies the value of `NAME` from the shell. Repeat the flag for more variables. If a name is given more than once, the last value is used. |
+| `--env-file` | An [env file](#env-files) of `NAME=value` lines. Repeat the flag for more files. A later file overrides an earlier file. A relative path starts at the working directory. `phenix workflow apply` reads `.env` in the topology directory when no `--env-file` is given. |
+| The shell | The environment of the command, without the variables whose names start with `PHENIX_`. Those variables hold the settings of phēnix. Name one with `-e NAME` to use it. |
+
+```bash
+phenix config create topology.yml -e HOST=172.1.3.37
+phenix config apply configs/* --env-file site.env -e NODES=3
+```
+
+A command reads every file and checks every variable before it changes
+anything. It stops, and changes nothing, in these cases:
+
+- A placeholder has no value and no default.
+- No file uses a variable that `-e` sets. This is usually a typing mistake.
+- A value or a default contains a line break.
+
+The command replaces the text of a placeholder before it reads the YAML or
+JSON. Thus a placeholder in a comment is also filled in, and a value can
+change how YAML reads a line. Put a placeholder in quotes when its value can
+contain `:` or `#`.
+
+phēnix does not have the Docker Compose forms `${VAR:-default}` and
+`${VAR:?error}`. For phēnix, the default of `${VAR:-3}` is the text `-3`.
+The command logs a warning for a default that starts with `-` or `?`.
+
+The log shows the name and the source of each variable that a file uses. It
+shows the values only with `--log.level debug`. Debug records can thus hold
+secrets, also in the log file.
+
+!!! warning
+    In earlier releases, a variable that was not set became an empty string,
+    and the CLI used every shell variable. A config that relied on this now
+    stops the command. Give the placeholder a default, such as `${VAR:}`, or
+    name a `PHENIX_` variable with `-e`.
+
+### Env Files
+
+An env file holds one variable on each line:
+
+```text
+# Blank lines and lines that start with "#" are skipped.
+SITE=lab
+NODES=3
+export IMAGE=ubuntu.qc2
+MOTD="  the quotes keep the spaces  "
+```
+
+- A line is `NAME=value`, with no space before the `=`. A name starts with a
+  letter or `_`, and continues with letters, digits and `_`.
+- `export` before the name is permitted.
+- A value in single or double quotes is the text between the quotes. The
+  closing quote must be the last character of the line.
+- Any other value is the text as written, a `#` included.
+- Nothing in the file is expanded: `${OTHER}` and `\n` stay as written.
+- When a name is on more than one line, the last line is used.
+- Any other line is an error that names the file and the line.
+
 ### Environment variables using Docker
 
 If phēnix is running in a docker container (or docker compose), environment
@@ -848,7 +961,9 @@ docker exec -it -e BRANCH_NAME=foobar phenix phenix exp create foobar -t topo -s
     Configs sent by `phenix workflow apply`, or to the
     `/workflow/configs/{branch}` and `/workflow/apply/{branch}` API endpoints,
     don't need `-e BRANCH_NAME`: phēnix sets `BRANCH_NAME` to the workflow
-    branch name itself. It keeps their other placeholders as written. The
+    branch name itself. The API endpoints keep their other placeholders as
+    written, and `phenix workflow apply` fills them in before it sends a
+    config (see [Variables](workflow.md#variables)). The
     command also copies the topology directory's
     `phenix-injects/` to `<base-dir.injects>/<name>` (by default
     `/phenix/injects/<name>`), so configs can reference injected files as

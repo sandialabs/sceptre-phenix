@@ -15,7 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"phenix/types/version"
-	"phenix/util/common"
+	"phenix/util/envsubst"
 )
 
 const (
@@ -39,12 +39,32 @@ type Config struct {
 	Metadata ConfigMetadata `json:"metadata"         yaml:"metadata"`
 	Spec     map[string]any `json:"spec,omitempty"   yaml:"spec,omitempty"`
 	Status   map[string]any `json:"status,omitempty" yaml:"status,omitempty"`
+
+	// IfRevision, when not zero, makes Store.Update and Store.Delete fail with
+	// ErrConflict unless the stored config is still at this revision. It is
+	// never serialized.
+	IfRevision uint64 `json:"-" yaml:"-"`
+
+	// Stored is, while the "update" config hooks run, the config as the store
+	// holds it, under its name before any rename. It is nil at other times and
+	// never serialized.
+	Stored *Config `json:"-" yaml:"-"`
+
+	// FilesRoot, when not empty, is the folder that the files of the config
+	// must be in, such as the base directory of an experiment. The config
+	// hooks then refuse a config, or leave a folder on delete, outside it. The
+	// web API sets it and the CLI does not. It is never serialized.
+	FilesRoot string `json:"-" yaml:"-"`
 }
 
 type ConfigMetadata struct {
-	Name        string      `json:"name"                  yaml:"name"`
-	Created     string      `json:"created"               yaml:"created"`
-	Updated     string      `json:"updated"               yaml:"updated"`
+	Name    string `json:"name"    yaml:"name"`
+	Created string `json:"created" yaml:"created"`
+	Updated string `json:"updated" yaml:"updated"`
+	// Revision is set by the store on every write and only increases. It is
+	// opaque: compare it for equality only. Zero means the config was written
+	// before revisions existed and has not been written since.
+	Revision    uint64      `json:"revision,omitempty"    yaml:"revision,omitempty"`
 	Annotations Annotations `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 }
 
@@ -85,55 +105,33 @@ func NewConfig(name string) (*Config, error) {
 	return &c, nil
 }
 
-func NewConfigFromFile(path string) (*Config, error) {
-	file, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("cannot read config: %w", err)
-	}
-
-	// Parse environment variables in the file
-	file = []byte(common.ParseEnv(string(file)))
-
-	var c Config
-
+// DecodeConfigFile decodes body, the text of the config file at path, as it is
+// written: JSON for a .json file, and YAML for a .yaml or .yml file.
+func DecodeConfigFile(path string, body []byte) (*Config, error) {
 	switch filepath.Ext(path) {
 	case ".json":
-		err := json.Unmarshal(file, &c)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrInvalidFormat, err)
-		}
+		return DecodeConfigJSON(body)
 	case ".yaml", ".yml":
-		err := yaml.Unmarshal(file, &c)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrInvalidFormat, err)
-		}
+		return DecodeConfigYAML(body)
 	default:
 		return nil, errors.New("invalid config extension")
 	}
-
-	// ensure users aren't trying to set these values
-	c.Metadata.Created = ""
-	c.Metadata.Updated = ""
-
-	return &c, nil
 }
 
 // NewConfigFromYAML decodes a YAML config after it replaces each ${NAME}
 // placeholder with the value of that environment variable.
 func NewConfigFromYAML(body []byte) (*Config, error) {
-	return DecodeConfigYAML([]byte(common.ParseEnv(string(body))))
+	return DecodeConfigYAML(envsubst.Expand(body, os.LookupEnv))
 }
 
-// ExpandBranchName replaces each ${BRANCH_NAME} placeholder in body as
-// [common.ParseEnv] does. It keeps every other placeholder as it is written.
-func ExpandBranchName(body []byte) []byte {
-	return common.EnvPlaceholder.ReplaceAllFunc(body, func(match []byte) []byte {
-		if string(common.EnvPlaceholder.FindSubmatch(match)[1]) != "BRANCH_NAME" {
-			return match
-		}
+// BranchNameVar is the variable that holds the workflow branch name.
+const BranchNameVar = "BRANCH_NAME"
 
-		return []byte(common.ParseEnv(string(match)))
-	})
+// ExpandBranchName replaces each ${BRANCH_NAME} placeholder in body with the
+// value from lookup, as [envsubst.Expand] does. It keeps every other
+// placeholder as it is written.
+func ExpandBranchName(body []byte, lookup envsubst.Lookup) []byte {
+	return envsubst.ExpandOnly(body, BranchNameVar, lookup)
 }
 
 // DecodeConfigJSON decodes a JSON config as it is written. It keeps each
@@ -148,6 +146,7 @@ func DecodeConfigJSON(body []byte) (*Config, error) {
 	// ensure users aren't trying to set these values
 	c.Metadata.Created = ""
 	c.Metadata.Updated = ""
+	c.Metadata.Revision = 0
 
 	return &c, nil
 }
@@ -164,6 +163,7 @@ func DecodeConfigYAML(body []byte) (*Config, error) {
 	// ensure users aren't trying to set these values
 	c.Metadata.Created = ""
 	c.Metadata.Updated = ""
+	c.Metadata.Revision = 0
 
 	return &c, nil
 }
@@ -181,6 +181,7 @@ type exactYAMLMetadata struct {
 	Name        string `yaml:"name"`
 	Created     string `yaml:"created"`
 	Updated     string `yaml:"updated"`
+	Revision    uint64 `yaml:"revision,omitempty"`
 	Annotations any    `yaml:"annotations,omitempty"`
 }
 
@@ -196,6 +197,7 @@ func (c Config) MarshalYAML() (any, error) { //nolint:unparam // implements yaml
 			Name:        c.Metadata.Name,
 			Created:     c.Metadata.Created,
 			Updated:     c.Metadata.Updated,
+			Revision:    c.Metadata.Revision,
 			Annotations: exactYAMLUnlessEmpty(c.Metadata.Annotations.wire()),
 		},
 		Spec:   exactYAMLUnlessEmpty(c.Spec),
@@ -548,6 +550,7 @@ type storedMetadata struct {
 	Name        string            `json:"name"`
 	Created     string            `json:"created"`
 	Updated     string            `json:"updated"`
+	Revision    uint64            `json:"revision,omitempty"`
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
@@ -561,6 +564,7 @@ func (c Config) StoredJSON() ([]byte, error) {
 			Name:        c.Metadata.Name,
 			Created:     c.Metadata.Created,
 			Updated:     c.Metadata.Updated,
+			Revision:    c.Metadata.Revision,
 			Annotations: c.Metadata.Annotations,
 		},
 		Spec:   c.Spec,

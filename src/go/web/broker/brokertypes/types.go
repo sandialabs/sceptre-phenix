@@ -28,6 +28,11 @@ type Publish struct {
 	RequestPolicy *RequestPolicy  `json:"-"`
 	Resource      *Resource       `json:"resource"`
 	Result        json.RawMessage `json:"result"`
+	// Seq orders the message against every other message and REST response
+	// of this phenix process (see freshness.Seq). The broker stamps it as the
+	// message is published, after the change it tells of; a reply to a client
+	// request is stamped before the data it carries is read.
+	Seq uint64 `json:"seq,omitempty"`
 }
 
 type Request struct {
@@ -64,7 +69,8 @@ Response:
 		"vms": [
 			...
 		]
-	}
+	},
+	"seq": 1760450000123456
 }
 
 Screenshot Updates:
@@ -77,6 +83,7 @@ Screenshot Updates:
 	},
 	"result": {
 		"screenshot": "data:image/png;base64,..."
-	}
+	},
+	"seq": 1760450000123457
 }
 */

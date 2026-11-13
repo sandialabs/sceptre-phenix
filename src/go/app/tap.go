@@ -2,10 +2,9 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"math/rand/v2"
 	"slices"
-	"time"
 
 	"github.com/hashicorp/go-multierror"
 	"inet.af/netaddr"
@@ -61,17 +60,17 @@ func (Tap) Configure(ctx context.Context, exp *types.Experiment) error {
 }
 
 func (t *Tap) PreStart(ctx context.Context, exp *types.Experiment) error {
-	return t.createTaps(exp, tapStagePreStart)
+	return t.createTaps(ctx, exp, tapStagePreStart)
 }
 
 func (t *Tap) PostStart(ctx context.Context, exp *types.Experiment) error {
-	return t.createTaps(exp, tapStagePostStart)
+	return t.createTaps(ctx, exp, tapStagePostStart)
 }
 
 // createTaps creates the configured host taps if the app's configured stage
 // matches the given stage. The stage defaults to "post-start" when unset in the
 // app metadata, preserving the original behavior.
-func (t *Tap) createTaps(exp *types.Experiment, stage string) error {
+func (t *Tap) createTaps(ctx context.Context, exp *types.Experiment, stage string) error {
 	app := exp.App(t.Name())
 	if app == nil {
 		// this should never happen...
@@ -102,15 +101,17 @@ func (t *Tap) createTaps(exp *types.Experiment, stage string) error {
 		return nil
 	}
 
-	hosts, err := mm.GetNamespaceHosts(exp.Metadata.Name)
+	hosts, err := mm.GetNamespaceHosts(ctx, exp.Metadata.Name)
 	if err != nil {
 		return fmt.Errorf("getting list of experiment hosts: %w", err)
 	}
 
-	rng := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 1)) //nolint:gosec // weak random number generator
+	host, err := tapHost(hosts)
+	if err != nil {
+		return err
+	}
 
 	var (
-		host  = hosts[rng.IntN(len(hosts))].Name
 		pairs = t.discoverUsedPairs()
 		vlans []string
 	)
@@ -151,6 +152,24 @@ func (t *Tap) createTaps(exp *types.Experiment, stage string) error {
 	exp.Status.SetAppStatus(t.Name(), status)
 
 	return nil
+}
+
+// tapHost picks the experiment host with the fewest VMs, the first by name
+// among equals, so every run places the taps the same way.
+func tapHost(hosts mm.Hosts) (string, error) {
+	if len(hosts) == 0 {
+		return "", errors.New("no experiment hosts to create the taps on")
+	}
+
+	best := hosts[0]
+
+	for _, h := range hosts[1:] {
+		if h.VMs < best.VMs || (h.VMs == best.VMs && h.Name < best.Name) {
+			best = h
+		}
+	}
+
+	return best.Name, nil
 }
 
 func (Tap) Running(ctx context.Context, exp *types.Experiment) error {

@@ -27,7 +27,10 @@ phenix exp list
 ### From the Web-UI
 
 Clicking the `stopped` button will start the experiment; similarly the `started`
-button will stop the experiment. A progress bar is used to update the progress
+button will stop the experiment. The button shows a play icon when it starts
+the experiment and a stop icon when it stops the experiment. If your role cannot
+start or stop the experiment, the status is a plain tag that you cannot click.
+A progress bar is used to update the progress
 of starting an experiment. During the update to the experiment -- starting or
 stopping -- it will not be accessible or available to delete.
 
@@ -51,6 +54,14 @@ phenix exp restart <experiment name>
 
 Optionally, you can use the `--dry-run` flag to do everything except call out to
 minimega.
+
+While `phenix exp start` runs, the Experiments page of the web UI shows the
+experiment as `starting` after a page refresh. phēnix refuses a second start of
+the experiment until the first start ends.
+
+The web UI also shows how far a start or a stop is: the phase, the step and the
+percent that is done. While `phenix exp stop` runs, the page shows the
+experiment as `stopping` after a page refresh.
 
 After an experiment stops successfully, phēnix deletes the VM disk snapshots
 created for file injection. To keep these snapshots for debugging, use
@@ -103,11 +114,11 @@ Use "phenix experiment [command] --help" for more information about a command.
 
 ### From the Web-UI
 
-![screenshot](images/create_exp.png){: width=800 .center}
+![Experiments page with its totals strip and the add experiment plus button circled in red beside the Find an Experiment search box.](images/create_exp.png){: width=800 .center}
 
 Click the `+` button to the right of the filter field.
 
-![screenshot](images/create_exp_dia.png){: width=400 .center}
+![Create a New Experiment dialog with Experiment Name, Experiment Topology and Experiment Scenario fields and a collapsed Advanced Options section.](images/create_exp_dia.png){: width=600 .center}
 
 Enter `Experiment Name` and `Experiment Topology`, the remaining selection are
 optional. In this example, `bennu` is an example topology and is not included
@@ -131,7 +142,7 @@ You can create an experiment entirely through the Web-UI using custom topology a
     * Enter an **Experiment Name**.
     * Select your uploaded topology from the **Experiment Topology** dropdown.
     * (Optional) Select your uploaded scenario from the **Experiment Scenario** dropdown.
-    * Click **Save** to create the experiment.
+    * Click **Create Experiment** to create the experiment.
 
 ### From the Command Line Binary
 
@@ -169,24 +180,28 @@ Examples:
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> -d </path/to/dir/>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> --disabled-apps "app1,app2"
+  phenix experiment create <experiment name> -t <topology name> --node-annotation phenix/default-apps=false --annotation phenix.workflow/tags=nightly
 
 Flags:
-  -d, --base-dir string         Base directory to use for experiment (optional)
-  -b, --default-bridge string   Default bridge name to use for experiment (optional) (default "phenix")
-      --disabled-apps strings   Comma separated ist of apps to disable
-  -h, --help                    help for create
-  -s, --scenario string         Name of an existing scenario to use (optional)
-  -t, --topology string         Name of an existing topology to use
-      --vlan-max int            VLAN pool maximum
-      --vlan-min int            VLAN pool minimum
+      --annotation stringArray        Experiment annotation as key=value; may be repeated
+  -d, --base-dir string               Base directory to use for experiment (optional)
+  -b, --default-bridge string         Default bridge name to use for experiment (optional) (default "phenix")
+      --disabled-apps strings         Comma separated list of apps to disable
+  -h, --help                          help for create
+      --node-annotation stringArray   Annotation for every VM as key=value; true, false and JSON lists or objects keep their type; may be repeated
+  -s, --scenario string               Name of an existing scenario to use (optional)
+  -t, --topology string               Name of an existing topology to use
+      --vlan-max int                  VLAN pool maximum
+      --vlan-min int                  VLAN pool minimum
 ```
 
 ## Deleting Experiments
 
 ### From the Web-UI
 
-The experiment must be stopped before it can be deleted; click the trash can
-icon next to the experiment to delete it.
+The experiment must be stopped before it can be deleted; its trash can icon is
+disabled while it runs. Click the trash can icon next to the experiment to
+delete it.
 
 ### From the Command Line Binary
 
@@ -198,7 +213,8 @@ phenix exp delete <experiment name>
 ```
 
 Alternatively, the `-f`/`--force` flag can be used to automatically stop a
-running experiment before deleting it, similar to `docker rm -f`:
+running experiment before deleting it, similar to `docker rm -f`, even when
+minimega cannot kill its VMs, which are then left for you to clear by hand:
 
 ```bash
 phenix exp delete -f <experiment name>
@@ -234,10 +250,13 @@ Flags:
 ### From Web-UI
 
 The experiment must be stopped; click on the experiment name to enter the
-Stopped Experiment component. Click on the hamburger menu to the right of the
-filter field and start button to select a desired schedule.
+Stopped Experiment component. Click the `Schedule` button to the right of the
+start button. The menu tells how many VMs have a host, and lists the
+schedulers of the server. Click a scheduler, then confirm. The scheduler
+assigns a host to each VM. `round-robin` and `subnet-compute` keep the hosts
+that you set before. `isolate-experiment` replaces them.
 
-![screenshot](images/schedule.png){: width=400 .center}
+![Scheduling menu button circled in red on a stopped experiment's toolbar, open to the isolate_experiment and round_robin algorithms.](images/schedule.png){: width=400 .center}
 
 ### From the Command Line Binary
 
@@ -252,6 +271,47 @@ Then apply the desired schedule with the following command.
 ```bash
 phenix experiment schedule <experiment name> <algorithm>
 ```
+
+A user scheduler (`phenix-scheduler-<name>`) gets a JSON object on STDIN: the
+experiment spec (`spec`) and the schedulable cluster hosts with their disk
+usage (`hosts`). To see
+this JSON, run the following command. The command stores nothing.
+
+```bash
+phenix util scheduler-json <experiment name>
+```
+
+The REST API gives the same JSON at
+`GET /api/v1/experiments/<experiment name>/schedule/input`.
+
+### Scheduling Limits
+
+* A built-in scheduler must finish in 45 seconds. A user scheduler
+  (`phenix-scheduler-<name>`) must finish in 2 minutes. If a scheduler does
+  not finish in time, phēnix stops it and stores no schedule. The web UI and
+  the REST API then show error 504.
+* If the experiment changes or starts while phēnix schedules it, phēnix keeps
+  that change and stores no schedule. The web UI and the REST API then show
+  error 409. Schedule the experiment again.
+* The web UI and the REST API lock the experiment while they schedule it. You
+  cannot start or change the experiment until the schedule is complete.
+* If the cluster has mesh peers and no peer answers, phēnix stores no
+  schedule. The web UI and the REST API then show error 503. Make sure that
+  minimega runs on the compute nodes, then schedule the experiment again.
+* A schedule can have warnings. phēnix stores the schedule and shows each
+  warning. The web UI shows them in a notice, `phenix experiment schedule`
+  logs them, and the REST API puts them in `warnings`. A built-in scheduler
+  gives a warning in these conditions:
+    * A VM is set to a host that is not a schedulable cluster host.
+      `round-robin` and `subnet-compute` keep that host.
+      `isolate-experiment` puts the VM on a different host.
+    * The VMs on a host need more memory or more CPUs than the host has.
+      The warning gives the committed value and the available value.
+* The capacity checks include the VMs that have `do_not_boot` set, because
+  you can boot these VMs later.
+* `subnet-compute` puts a VM that has no interfaces on the host that has the
+  most VMs of the experiment. If that host does not have sufficient memory,
+  it uses the next host.
 
 ## Triggering App Lifecycle Stages
 
@@ -298,6 +358,24 @@ Trigger the configure stage for all experiments:
 phenix exp trigger configure all
 ```
 
+### From the REST API
+
+`POST /api/v1/experiments/<experiment name>/trigger?apps=<app,...>&stage=<stage>`
+runs one stage for the apps that `apps` names. The `stage` value is one of the
+full stage names above. Without `stage`, the request runs the `running` stage.
+The request returns before the apps run. The `/ws` websocket reports the
+progress of each app.
+
+### From the Web-UI
+
+On a running experiment's page, click `Trigger` or an app tile in the Apps box
+to open the `phēnix Apps` dialog. The page header is collapsed by default. To
+see the Apps box, click `Details`. The browser keeps this choice. Select a stage in the `Stage` list. The default stage is
+`running`. Select the apps, then click `Trigger Apps`. The `running` stage does
+not offer the apps that phēnix runs itself, such as `ntp`. The dialog shows a
+warning for each other stage, because the stage can change the running
+experiment. The `configure` stage rewrites the experiment spec.
+
 ### `trigger configure` vs. `reconfigure`
 
 `phenix exp trigger configure` and `phenix experiment reconfigure` both re-run
@@ -338,6 +416,12 @@ phenix exp trigger running my-experiment [<app name> ...]
 
 Topologies refer to VLANs by alias, such as `MGMT` or `EXP-1`,
 which is mapped by phēnix to a numerical VLAN ID.
+
+### From Web-UI
+
+On a stopped experiment, click the `VLAN IDs` button. The menu lists each
+alias with its VLAN ID. Enter an ID from 1 to 4094, or 0 to let minimega
+pick an ID when the experiment starts. Then click `Save VLAN IDs`.
 
 ### From the Command Line Binary
 

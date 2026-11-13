@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 // Edit on a topology made in the Builder opens the Builder for a role that
 // has it, and shows an alert for a role that does not.
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { flushPromises, mount } from '@vue/test-utils';
 import Buefy from 'buefy';
 import ConfigsEditor from '@/components/configs/ConfigsEditor.vue';
 
@@ -31,8 +31,6 @@ function setRole(resources) {
     policies: [{ resources, verbs: ['*'], resourceNames: ['*/*'] }],
   };
 }
-
-enableAutoUnmount(afterEach);
 
 function mountEditor(router) {
   return mount(ConfigsEditor, {

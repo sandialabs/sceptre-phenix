@@ -1,6 +1,7 @@
 package util
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"slices"
@@ -9,6 +10,10 @@ import (
 )
 
 var private []*net.IPNet //nolint:gochecknoglobals // global constant
+
+// ErrNoUnusedSubnet is the error that UnusedSubnet returns when every subnet from its start to the end of the address
+// space is used.
+var ErrNoUnusedSubnet = errors.New("no unused subnet")
 
 func init() { //nolint:gochecknoinits // private ip blocks
 	for _, cidr := range []string{
@@ -40,22 +45,23 @@ func PrivateIP(ip net.IP) bool {
 	return false
 }
 
+// UnusedSubnet returns the first subnet of start's size, at or after start, that is not in used. It compares the
+// subnets without their host bits.
 func UnusedSubnet(start netaddr.IPPrefix, used []netaddr.IPPrefix) (netaddr.IPPrefix, error) {
-	var (
-		subnet = start
-		err    error
-	)
+	if !start.IsValid() {
+		return netaddr.IPPrefix{}, fmt.Errorf("invalid start subnet %q", start)
+	}
 
-	for {
-		if slices.Contains(used, subnet) {
-			subnet, err = subnet.Range().To().Next().Prefix(start.Bits())
-			if err != nil {
-				return netaddr.IPPrefix{}, fmt.Errorf("getting next subnet: %w", err)
-			}
+	subnet := start.Masked()
 
-			continue
+	for slices.ContainsFunc(used, func(u netaddr.IPPrefix) bool { return u.Masked() == subnet }) {
+		next := subnet.Range().To().Next()
+		if next.IsZero() {
+			return netaddr.IPPrefix{}, fmt.Errorf("%w of size /%d at or after %s", ErrNoUnusedSubnet, start.Bits(), start.Masked())
 		}
 
-		return subnet, nil
+		subnet = netaddr.IPPrefixFrom(next, start.Bits())
 	}
+
+	return subnet, nil
 }

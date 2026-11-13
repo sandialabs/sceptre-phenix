@@ -4,8 +4,8 @@
 // (InspectorIconControl and BuilderMenuButton). Its markup is in
 // inspector-render.test.js.
 
-import { afterEach, describe, expect, test } from 'vitest';
-import { enableAutoUnmount, flushPromises } from '@vue/test-utils';
+import { describe, expect, test } from 'vitest';
+import { flushPromises } from '@vue/test-utils';
 
 import { isIconKey } from '@/builder/catalog.js';
 import { ICON_ORDER, iconLabel } from '@/builder/iconLabels.js';
@@ -14,8 +14,6 @@ import { addNode, findNode, updateNode } from '@/builder/model.js';
 import { sampleDocument } from './fixtures.js';
 import { mountInspector } from './inspector-mount.js';
 import { ICON_DATA } from './png.js';
-
-enableAutoUnmount(afterEach);
 
 const offered = ICON_ORDER.filter(isIconKey);
 

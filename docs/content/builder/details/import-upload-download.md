@@ -706,20 +706,20 @@ the editor refuses a layer set file.
 
 ## Builder documents and phenix config create
 
-A Builder document is not a config. `phenix config create` refuses one
-named on the command line, and skips one in a directory:
+A Builder document is not a config. `phenix config create`,
+`phenix config apply` and `phenix config diff` refuse one:
 
 ```console
 $ phenix config create pump-station.builder.json
 Error: pump-station.builder.json is a Builder document, not a configuration. Upload it in the Builder or send it to the Builder REST API (/api/v1/builder/drafts). Then publish it to create its topology
-$ phenix config create examples
-2026-10-01 21:51:05.962 INF skipped Builder document. Upload it in the Builder to publish it type=SYSTEM path=examples/pump-station.builder.json
-2026-10-01 21:51:05.994 INF configuration created type=SYSTEM kind=Topology name=pump-station
 ```
 
+These commands take files only, so `examples/*` in a shell gives them each
+file of a directory. Use a pattern that leaves out the Builder files, such
+as `examples/*.topology.yaml`.
+
 The same is true for a template file, a Builder package and a layer set
-file. `phenix config create` skips one in a directory, with a debug log
-line. It refuses one named on the command line:
+file. The commands refuse one:
 
 ```console
 $ phenix config create node-templates.yaml
@@ -730,7 +730,7 @@ $ phenix config create purdue-model.layers.yaml
 Error: purdue-model.layers.yaml is a Builder layer set file, not a configuration. Use Upload layer set on the Layers tab of the Builder to add its layer set
 ```
 
-In the `phenix config create examples` command above, `examples` holds the
+In `examples/*`, `examples` holds the
 [example configs](../tutorial.md#the-example-lab). From a script, use
 the Builder [REST API](administration.md#rest-api).
 

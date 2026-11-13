@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -23,6 +22,7 @@ import (
 	"phenix/store"
 	"phenix/store/storetest"
 	bdoc "phenix/types/builder"
+	"phenix/util/envsubst"
 	"phenix/util/plog/plogtest"
 )
 
@@ -40,7 +40,6 @@ func TestConfigCommandsShowBuilderDocumentAsMap(t *testing.T) {
 		body := "apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: " + name +
 			"\n  annotations:\n    builder-doc:\n" + reference + "spec:\n  nodes: []\n"
 
-		//nolint:gosec // a config file the test creates
 		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 			t.Fatalf("writing %s: %v", path, err)
 		}
@@ -95,7 +94,6 @@ func TestConfigCommandsShowBuilderDocumentAsMap(t *testing.T) {
 	editor := filepath.Join(t.TempDir(), "editor")
 	script := "#!/bin/sh\nsed 's|builder.yaml$|other.yml|' \"$1\" > \"$1.edited\" && mv \"$1.edited\" \"$1\"\n"
 
-	//nolint:gosec // the editor the test runs
 	if err := os.WriteFile(editor, []byte(script), 0o700); err != nil {
 		t.Fatalf("writing the editor: %v", err)
 	}
@@ -132,17 +130,14 @@ func TestConfigCommandsShowBuilderDocumentAsMap(t *testing.T) {
 	}
 }
 
-// TestConfigCreateSkipsBuilderFiles checks that config create skips Builder files in a
-// directory with a log line, and refuses each one named on the command line.
-func TestConfigCreateSkipsBuilderFiles(t *testing.T) {
+// TestConfigCommandsRefuseBuilderFiles checks that config create refuses each
+// Builder file, and that config apply refuses one and applies the config files.
+func TestConfigCommandsRefuseBuilderFiles(t *testing.T) {
 	storetest.UseBolt(t)
 
-	logs := plogtest.Capture(t)
 	directory := t.TempDir()
-	documents, skipped := writeBuilderFiles(t, directory)
-
-	writeTestFile(t, directory, "pump-station.topology.yaml", exampleFile(t, "pump-station.topology.yaml"))
-	writeTestFile(t, directory, "notes.txt", []byte("not a config"))
+	documents, others := writeBuilderFiles(t, directory)
+	topology := writeTestBytes(t, directory, "pump-station.topology.yaml", exampleFile(t, "pump-station.topology.yaml"))
 
 	run := func(args ...string) error {
 		_, err := runConfigTestCommand(append([]string{"create"}, args...)...)
@@ -150,8 +145,9 @@ func TestConfigCreateSkipsBuilderFiles(t *testing.T) {
 		return err
 	}
 
-	if err := run(directory); err != nil {
-		t.Fatalf("config create on the directory returned error: %v", err)
+	out, err := runConfigTestCommand("apply", documents[0], topology)
+	if err == nil || out != "topology/pump-station created\n" {
+		t.Fatalf("config apply of a document and a config = %q, %v, want the config created and an error", out, err)
 	}
 
 	topologies, err := config.List("topology")
@@ -164,48 +160,10 @@ func TestConfigCreateSkipsBuilderFiles(t *testing.T) {
 	}
 
 	if topologies[0].HasAnnotation(builder.DocumentAnnotation) {
-		t.Error("the topology names a Builder document, which config create never publishes")
+		t.Error("the topology names a Builder document, which config apply never publishes")
 	}
 
-	if scenarios, err := config.List("scenario"); err != nil {
-		t.Errorf("config.List(scenario) error = %v", err)
-	} else if len(scenarios) != 0 {
-		t.Errorf("config.List(scenario) = %v, want none: a package's Scenario config is not created", scenarios)
-	}
-
-	if created := logs.Records(t, plogtest.Message("configuration created")); len(created) != 1 {
-		t.Errorf("created = %v, want the one config", created)
-	}
-
-	logged := logs.Records(t, plogtest.Message("skipped Builder document. Upload it in the Builder to publish it"))
-
-	paths := make([]string, 0, len(logged))
-	for _, record := range logged {
-		path, _ := record["path"].(string)
-		paths = append(paths, path)
-	}
-
-	if !slices.Equal(paths, documents) {
-		t.Errorf("logged skipped documents = %v, want one log line for each of %v", paths, documents)
-	}
-
-	got := map[string]string{}
-
-	for _, record := range logs.Records(t, plogtest.Message("skipped Builder file, which is not a configuration")) {
-		path, _ := record["path"].(string)
-		kind, _ := record["kind"].(string)
-		got[path] = kind
-
-		if record["level"] != slog.LevelDebug.String() {
-			t.Errorf("the log line for %s is at level %v, want %v", path, record["level"], slog.LevelDebug)
-		}
-	}
-
-	if diff := cmp.Diff(skipped, got); diff != "" {
-		t.Errorf("logged skipped Builder files mismatch (-want +got):\n%s", diff)
-	}
-
-	// Named on the command line, a Builder document is an error, with or without
+	// A Builder document is an error of config create, with or without
 	// validation, and files named after it are not read.
 	for _, test := range []struct {
 		name string
@@ -213,7 +171,7 @@ func TestConfigCreateSkipsBuilderFiles(t *testing.T) {
 	}{
 		{name: "a JSON document", args: []string{documents[0]}},
 		{name: "a YAML document without validation", args: []string{documents[1], "--skip-validation"}},
-		{name: "a document before a directory", args: []string{documents[0], directory}},
+		{name: "a document before a config file", args: []string{documents[0], topology}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			err := run(test.args...)
@@ -226,7 +184,7 @@ func TestConfigCreateSkipsBuilderFiles(t *testing.T) {
 		})
 	}
 
-	for path, kind := range skipped {
+	for path, kind := range others {
 		t.Run(filepath.Base(path), func(t *testing.T) {
 			if err := run(path); err == nil || err.Error() != wantBuilderFileRefusal(path, kind) {
 				t.Errorf("config create %s error = %v, want %q", path, err, wantBuilderFileRefusal(path, kind))
@@ -251,7 +209,7 @@ func TestConfigCreateSkipsBuilderFiles(t *testing.T) {
 		t.Errorf("config.List(topology) names mismatch, want still only pump-station (-want +got):\n%s", diff)
 	}
 
-	other := writeTestFile(t, t.TempDir(), "other.json", []byte(`{"$schema": "https://json-schema.org/draft/2020-12/schema"}`))
+	other := writeTestBytes(t, t.TempDir(), "other.json", []byte(`{"$schema": "https://json-schema.org/draft/2020-12/schema"}`))
 	if err := run(other); err == nil || !strings.HasPrefix(err.Error(), "Unable to create configuration from "+other) {
 		t.Errorf("config create %s (no config) error = %v, want the humanized failure", other, err)
 	}
@@ -306,26 +264,26 @@ func writeBuilderFiles(t *testing.T, directory string) ([]string, map[string]str
 
 	// The Builder exports each file as plain .json or .yaml, so the names say nothing.
 	documents := []string{
-		writeTestFile(t, directory, "a-diagram.json", exampleFile(t, builderExample)),
-		writeTestFile(t, nested, "pump-station.yaml", documentYAML),
+		writeTestBytes(t, directory, "a-diagram.json", exampleFile(t, builderExample)),
+		writeTestBytes(t, nested, "pump-station.yaml", documentYAML),
 	}
 
 	skipped := map[string]string{}
 
-	skipped[writeTestFile(t, directory, "node-templates.yaml", exampleFile(t, "node-templates.yaml"))] = builderFileTemplateFile
-	skipped[writeTestFile(t, directory, "templates.json", asJSON("node-templates.yaml"))] = builderFileTemplateFile
-	skipped[writeTestFile(t, directory, "pump-station.package.yaml", exampleFile(t, "pump-station.package.yaml"))] = builderFilePackage
-	skipped[writeTestFile(t, directory, "package.json", asJSON("pump-station.package.yaml"))] = builderFilePackage
+	skipped[writeTestBytes(t, directory, "node-templates.yaml", exampleFile(t, "node-templates.yaml"))] = builderFileTemplateFile
+	skipped[writeTestBytes(t, directory, "templates.json", asJSON("node-templates.yaml"))] = builderFileTemplateFile
+	skipped[writeTestBytes(t, directory, "pump-station.package.yaml", exampleFile(t, "pump-station.package.yaml"))] = builderFilePackage
+	skipped[writeTestBytes(t, directory, "package.json", asJSON("pump-station.package.yaml"))] = builderFilePackage
 
 	layerSet := "$schema: " + bdoc.LayerSetFileSchemaURI + "\nname: Plant levels\nlayers:\n  - id: 1\n    label: Field devices\n"
-	skipped[writeTestFile(t, directory, "plant-levels.layers.yaml", []byte(layerSet))] = builderFileLayerSetFile
+	skipped[writeTestBytes(t, directory, "plant-levels.layers.yaml", []byte(layerSet))] = builderFileLayerSetFile
 
 	layerSetJSON, err := bdoc.JSONFromYAML([]byte(layerSet))
 	if err != nil {
 		t.Fatalf("encoding the layer set file as JSON: %v", err)
 	}
 
-	skipped[writeTestFile(t, directory, "layers.json", layerSetJSON)] = builderFileLayerSetFile
+	skipped[writeTestBytes(t, directory, "layers.json", layerSetJSON)] = builderFileLayerSetFile
 
 	return documents, skipped
 }
@@ -359,8 +317,8 @@ func exampleFile(t *testing.T, name string) []byte {
 	return data
 }
 
-// writeTestFile writes content to directory/name and returns its path.
-func writeTestFile(t *testing.T, directory, name string, content []byte) string {
+// writeTestBytes writes content to directory/name and returns its path.
+func writeTestBytes(t *testing.T, directory, name string, content []byte) string {
 	t.Helper()
 
 	path := filepath.Join(directory, name)
@@ -379,7 +337,9 @@ func runConfigTestCommand(args ...string) (string, error) {
 	configCmd := newConfigCmd()
 	deleteCmd := newConfigDeleteCmd()
 	deleteCmd.AddCommand(newConfigDeleteAllCmd())
-	configCmd.AddCommand(newConfigListCmd(), newConfigGetCmd(), newConfigCreateCmd(), newConfigEditCmd(), deleteCmd)
+	configCmd.AddCommand(
+		newConfigListCmd(), newConfigGetCmd(), newConfigCreateCmd(), newConfigApplyCmd(), newConfigEditCmd(), deleteCmd,
+	)
 	root.AddCommand(configCmd)
 	root.SetArgs(append([]string{"config"}, args...))
 
@@ -392,9 +352,10 @@ func runConfigTestCommand(args ...string) (string, error) {
 	return output.String(), err
 }
 
-// captureConfigTestStdout returns what fn writes to [os.Stdout], where config
-// list prints its table.
-func captureConfigTestStdout(t *testing.T, fn func()) string {
+// captureStdout returns what fn writes to [os.Stdout]. Tables that pick colors
+// from the real stdout, and output from other packages, go there and not to
+// the command writer.
+func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 
 	reader, writer, err := os.Pipe()
@@ -410,7 +371,7 @@ func captureConfigTestStdout(t *testing.T, fn func()) string {
 	}()
 
 	original := os.Stdout
-	os.Stdout = writer //nolint:reassign // config list writes to the process stdout
+	os.Stdout = writer //nolint:reassign // some output goes to the process stdout
 
 	func() {
 		defer func() { os.Stdout = original }() //nolint:reassign // restore the process stdout
@@ -478,10 +439,10 @@ func TestConfigKindArgsValidator(t *testing.T) {
 	kinds := "[topology scenario experiment image user role]"
 
 	for _, tt := range []struct {
-		name            string
-		multi, allowAll bool
-		args            []string
-		want            string
+		name  string
+		multi bool
+		args  []string
+		want  string
 	}{
 		{name: "one config", args: []string{"topology/site"}},
 		{name: "kind in capitals", args: []string{"TOPOLOGY/site"}},
@@ -491,17 +452,17 @@ func TestConfigKindArgsValidator(t *testing.T) {
 		{name: "no slash", args: []string{"topology"}, want: form},
 		{name: "two slashes", args: []string{"topology/a/b"}, want: form},
 		{name: "unknown kind", args: []string{"vm/a"}, want: "expects the configuration kind to be one of " + kinds + ", received vm"},
-		{name: "all without allowAll", args: []string{"all/a"}, want: "expects the configuration kind to be one of " + kinds + ", received all"},
-		{name: "all with allowAll", multi: true, allowAll: true, args: []string{"all/a"}},
+		{name: "all", args: []string{"all/a"}, want: "expects the configuration kind to be one of " + kinds + ", received all"},
+		{name: "multi, all", multi: true, args: []string{"all/a"}, want: "expects the configuration kind to be one of " + kinds + ", received all"},
 		{name: "multi, no argument", multi: true, args: []string{}, want: "must provide at least one argument"},
 		{name: "multi, many", multi: true, args: []string{"topology/a", "image/b", "Role/c"}},
 		{name: "multi, one bad", multi: true, args: []string{"topology/a", "b"}, want: form},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			err := configKindArgsValidator(tt.multi, tt.allowAll)(nil, tt.args)
+			err := configKindArgsValidator(tt.multi)(nil, tt.args)
 
 			if got := errorText(err); got != tt.want {
-				t.Errorf("configKindArgsValidator(%t, %t)(%q) error = %q, want %q", tt.multi, tt.allowAll, tt.args, got, tt.want)
+				t.Errorf("configKindArgsValidator(%t)(%q) error = %q, want %q", tt.multi, tt.args, got, tt.want)
 			}
 		})
 	}
@@ -556,7 +517,7 @@ func TestConfigCommandTree(t *testing.T) {
 		names = append(names, sub.Name())
 	}
 
-	if diff := cmp.Diff([]string{"create", "delete", "edit", "get", "list"}, names); diff != "" {
+	if diff := cmp.Diff([]string{"apply", "create", "delete", "diff", "edit", "get", "list"}, names); diff != "" {
 		t.Errorf("config subcommands mismatch (-want +got):\n%s", diff)
 	}
 
@@ -580,11 +541,7 @@ func TestConfigListCmd(t *testing.T) {
 	list := func(t *testing.T, args ...string) string {
 		t.Helper()
 
-		var err error
-
-		output := captureConfigTestStdout(t, func() {
-			_, err = runConfigTestCommand(append([]string{"list"}, args...)...)
-		})
+		output, err := runConfigTestCommand(append([]string{"list"}, args...)...)
 		if err != nil {
 			t.Fatalf("config list %q returned error: %v", args, err)
 		}
@@ -632,6 +589,7 @@ func TestConfigGetArgsCompletion(t *testing.T) {
 	storeConfigTestConfigs(t, "topology/alpha", "topology/beta", "image/alpine")
 
 	kinds := []string{"topology/", "scenario/", "experiment/", "image/", "user/", "role/"}
+	kindDirective := cobra.ShellCompDirectiveNoSpace | cobra.ShellCompDirectiveNoFileComp
 
 	for _, tt := range []struct {
 		name       string
@@ -641,9 +599,9 @@ func TestConfigGetArgsCompletion(t *testing.T) {
 		directive  cobra.ShellCompDirective
 	}{
 		{name: "after the argument", args: []string{"topology/alpha"}, directive: cobra.ShellCompDirectiveNoFileComp},
-		{name: "every kind", toComplete: "", want: kinds, directive: cobra.ShellCompDirectiveNoSpace},
-		{name: "a kind", toComplete: "to", want: []string{"topology/"}, directive: cobra.ShellCompDirectiveNoSpace},
-		{name: "no kind", toComplete: "x", directive: cobra.ShellCompDirectiveNoSpace},
+		{name: "every kind", toComplete: "", want: kinds, directive: kindDirective},
+		{name: "a kind", toComplete: "to", want: []string{"topology/"}, directive: kindDirective},
+		{name: "no kind", toComplete: "x", directive: kindDirective},
 		{
 			name: "every name of a kind", toComplete: "topology/",
 			want: []string{"topology/alpha", "topology/beta"}, directive: cobra.ShellCompDirectiveNoFileComp,
@@ -705,11 +663,19 @@ func TestConfigGetCmdOutput(t *testing.T) {
 			want: shown{Kind: "Experiment", Spec: map[string]any{"baseDir": "/phenix/exp"}},
 		},
 		{
-			name: "JSON on one line", args: []string{"image/disk", "-o", "json"}, unmarshal: json.Unmarshal, lines: 1,
+			name: "JSON", args: []string{"image/disk", "-o", "json"}, unmarshal: json.Unmarshal,
 			want: shown{Kind: "Image"},
 		},
 		{
 			name: "pretty JSON", args: []string{"Image/disk", "--output", "json", "--pretty"}, unmarshal: json.Unmarshal,
+			want: shown{Kind: "Image"},
+		},
+		{
+			name: "pretty keeps YAML", args: []string{"image/disk", "--pretty"}, unmarshal: yaml.Unmarshal,
+			want: shown{Kind: "Image"},
+		},
+		{
+			name: "pretty YAML", args: []string{"image/disk", "-o", "yaml", "-p"}, unmarshal: yaml.Unmarshal,
 			want: shown{Kind: "Image"},
 		},
 	} {
@@ -741,7 +707,10 @@ func TestConfigGetCmdOutput(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "unknown format", args: []string{"image/disk", "-o", "xml"}, want: "unrecognized output format 'xml'"},
+		{
+			name: "unknown format", args: []string{"image/disk", "-o", "xml"},
+			want: `invalid argument "xml" for "-o, --output" flag: unknown output format "xml": use one of yaml, json`,
+		},
 		{name: "missing config", args: []string{"image/none"}, want: "Unable to get the image/none configuration (search error logs for "},
 		{name: "no name", args: []string{"image"}, want: "expected an argument in the form of <config kind>/<config name>"},
 	} {
@@ -759,7 +728,7 @@ func TestConfigCreateCmdArguments(t *testing.T) {
 
 	missing := filepath.Join(t.TempDir(), "missing.yaml")
 	notes := t.TempDir()
-	writeTestFile(t, notes, "notes.txt", []byte("not a config"))
+	writeTestBytes(t, notes, "notes.txt", []byte("not a config"))
 
 	for _, tt := range []struct {
 		name string
@@ -768,7 +737,8 @@ func TestConfigCreateCmdArguments(t *testing.T) {
 	}{
 		{name: "no file", args: nil, want: "must provide at least one configuration file"},
 		{name: "a missing file", args: []string{missing}, want: "Unable to create configuration from " + missing + " (search error logs for "},
-		{name: "a directory of no configs", args: []string{notes}},
+		{name: "a directory", args: []string{notes}, want: notes + " is a directory: "},
+		{name: "a file that is not a config file", args: []string{filepath.Join(notes, "notes.txt")}, want: filepath.Join(notes, "notes.txt") + ": not a "},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := runConfigTestCommand(append([]string{"create"}, tt.args...)...)
@@ -784,66 +754,53 @@ func TestConfigCreateCmdArguments(t *testing.T) {
 	}
 }
 
-func TestConfigFilesAt(t *testing.T) {
+// readConfigInputs reads only files with the extension .json, .yaml or .yml,
+// and refuses a directory before it reads a file.
+func TestReadConfigInputs(t *testing.T) {
 	directory := t.TempDir()
-	nested := filepath.Join(directory, "b")
 
-	if err := os.Mkdir(nested, 0o750); err != nil {
-		t.Fatalf("creating %s: %v", nested, err)
+	for _, name := range []string{"a.json", "e.txt", "f.YAML", "yaml", "é.yaml"} {
+		writeTestBytes(t, directory, name, nil)
 	}
 
-	for _, name := range []string{"a.json", "b/c.yml", "b/d.yaml", "e.txt", "f.YAML", "yaml", "é.yaml"} {
-		writeTestFile(t, directory, name, nil)
+	vars, err := envsubst.NewSet(envsubst.Options{Flags: nil, EnvFiles: nil, DefaultEnvFile: "", Environ: nil, Reserved: ""})
+	if err != nil {
+		t.Fatalf("NewSet error = %v", err)
 	}
 
-	in := func(names ...string) []string {
-		paths := make([]string, 0, len(names))
-		for _, name := range names {
-			paths = append(paths, filepath.Join(directory, name))
-		}
-
-		return paths
-	}
-
-	for _, tt := range []struct {
-		name string
-		path string
-		want []string
-	}{
-		{name: "directory tree", path: directory, want: in("a.json", "b/c.yml", "b/d.yaml", "é.yaml")},
-		{name: "a config file", path: in("a.json")[0], want: in("a.json")},
-		{name: "another file", path: in("e.txt")[0], want: nil},
-		{name: "extension in capitals", path: in("f.YAML")[0], want: nil},
+	for name, want := range map[string]error{
+		"a.json": nil, "é.yaml": nil, "e.txt": errNotConfigFile, "f.YAML": errNotConfigFile, "yaml": errNotConfigFile,
+		"missing.yml": os.ErrNotExist,
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := configFilesAt(tt.path)
-			if err != nil {
-				t.Fatalf("configFilesAt(%s) error = %v", tt.path, err)
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(directory, name)
+
+			inputs, err := readConfigInputs([]string{path}, vars)
+			if err != nil || len(inputs) != 1 || inputs[0].path != path {
+				t.Fatalf("readConfigInputs(%s) = %v, %v, want one input for the path", name, inputs, err)
 			}
 
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("configFilesAt(%s) mismatch (-want +got):\n%s", tt.path, diff)
+			if !errors.Is(inputs[0].err, want) {
+				t.Errorf("readConfigInputs(%s) input error = %v, want %v", name, inputs[0].err, want)
 			}
 		})
 	}
 
-	if got, err := configFilesAt(filepath.Join(directory, "missing")); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("configFilesAt(missing) = %q, %v, want os.ErrNotExist", got, err)
+	inputs, err := readConfigInputs([]string{filepath.Join(directory, "a.json"), directory}, vars)
+	if !errors.Is(err, errConfigDirectory) || inputs != nil {
+		t.Errorf("readConfigInputs(a file and a directory) = %v, %v, want no input and errConfigDirectory", inputs, err)
 	}
 }
 
 func TestBuilderFileKindOfOtherFiles(t *testing.T) {
-	directory := t.TempDir()
-
-	for name, path := range map[string]string{
-		"a missing file": filepath.Join(directory, "missing.json"),
-		"a topology":     writeTestFile(t, directory, "topology.yaml", []byte(configCreateTestTopology)),
-		"an empty file":  writeTestFile(t, directory, "empty.json", nil),
-		"not JSON":       writeTestFile(t, directory, "broken.json", []byte("{")),
+	for name, text := range map[string]string{
+		"a topology":    configCreateTestTopology,
+		"an empty file": "",
+		"not JSON":      "{",
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := builderFileKind(path); got != "" {
-				t.Errorf("builderFileKind(%s) = %q, want \"\"", path, got)
+			if got := builderFileKind([]byte(text)); got != "" {
+				t.Errorf("builderFileKind(%s) = %q, want \"\"", name, got)
 			}
 		})
 	}
@@ -951,8 +908,8 @@ func TestConfigCommandsReportStoreErrors(t *testing.T) {
 		useConfigTestMockStore(t).EXPECT().List("Image").Return(nil, failure)
 
 		got, directive := configGetArgsCompletion(nil, nil, "image/")
-		if got != nil || directive != cobra.ShellCompDirectiveError {
-			t.Errorf("configGetArgsCompletion(image/) = %q, %v, want none and ShellCompDirectiveError", got, directive)
+		if got != nil || directive != cobra.ShellCompDirectiveNoFileComp {
+			t.Errorf("configGetArgsCompletion(image/) = %q, %v, want none and ShellCompDirectiveNoFileComp", got, directive)
 		}
 	})
 
@@ -962,6 +919,31 @@ func TestConfigCommandsReportStoreErrors(t *testing.T) {
 		_, err := runConfigTestCommand("delete", "all", "image")
 		if !strings.HasPrefix(errorText(err), "Unable to list known configurations (search error logs for ") {
 			t.Errorf("config delete all image error = %v, want the humanized list failure", err)
+		}
+	})
+
+	t.Run("edit, conflict", func(t *testing.T) {
+		editor := filepath.Join(t.TempDir(), "editor")
+		if err := os.WriteFile(editor, []byte("#!/bin/sh\necho '# edited' >> \"$1\"\n"), 0o700); err != nil {
+			t.Fatalf("writing the editor: %v", err)
+		}
+
+		t.Setenv("EDITOR", editor)
+
+		// the second read, after the edit, finds a newer revision
+		var reads uint64
+
+		useConfigTestMockStore(t).EXPECT().Get(gomock.Any()).DoAndReturn(func(c *store.Config) error {
+			reads++
+			c.Metadata.Revision = reads
+
+			return nil
+		}).Times(2)
+
+		_, err := runConfigTestCommand("edit", "image/disk")
+		want := "image/disk changed while you edited it, so run `phenix config edit` again (search error logs for "
+		if !strings.HasPrefix(errorText(err), want) {
+			t.Errorf("config edit image/disk error = %v, want the humanized conflict", err)
 		}
 	})
 

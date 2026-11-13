@@ -2,9 +2,9 @@
 // Upload refuses a template file and names Import templates, while a diagram
 // with its own templates still uploads. Mounted and driven as a user would.
 
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import YAML from 'js-yaml';
 
 import UploadDialog from '@/components/builder/dialogs/UploadDialog.vue';
@@ -30,8 +30,6 @@ const FILE = {
     },
   ],
 };
-
-enableAutoUnmount(afterEach);
 
 // Opens the dialog in the page, as Builder does.
 function open() {

@@ -94,6 +94,35 @@ To exit the attached console session, type `disconnect` or press `Ctrl+D`.
 !!! warning
     Typing `quit` in the console stops the minimega daemon itself, not just the console session. minimega asks you to enter `quit` a second time to confirm.
 
+### The Console Page
+
+When `phenix ui` runs with `--minimega-console`, the **Console** page of the web UI shows the same console. The toolbar above the terminal has these controls:
+
+* **State**: The connection state: Connecting, Connected, Ended, or Connection lost.
+* **Namespace**: The experiment whose minimega namespace the console uses. "All (no namespace)" uses no namespace. Running experiments are first in the list. A change starts a new console in the namespace that you select, and then ends the old console. The page asks you to confirm first. If the new console does not start, the old console stays.
+* **Commands**: A menu of common minimega commands, and a link to the [minimega API Reference](https://sandia-minimega.github.io/minimega/reference/minimega/). The page erases the text on the command line, and then types the command that you select. It also enters commands that only read data. You must enter commands that change data, such as `vm start`, yourself.
+* **Search**: Finds text in the output. Press `Enter` for the next match and `Shift+Enter` for the previous match.
+* **Text size**: Makes the text smaller or larger. The browser keeps the size for the next visit.
+* **Clear**, **Copy all**, and **Download**: Clear the terminal, copy all of the output, or download the output as a text file. The terminal keeps approximately the last 10,000 lines of output. If the output has more lines, the page tells you that the copy or the file has only the last lines.
+* **End console**: Ends your minimega command line after you confirm. minimega and its experiments continue to run.
+
+Keyboard shortcuts:
+
+| Action | Linux and Windows | macOS |
+|---|---|---|
+| Copy the selected text | `Ctrl+Shift+C` | `Cmd+C` |
+| Paste | `Ctrl+Shift+V` | `Cmd+V` |
+| Search the output | `Ctrl+F` | `Cmd+F` |
+| Clear the terminal, as **Clear** does | `Ctrl+L` | `Ctrl+L` |
+| Scroll the output up or down one page | `PageUp` or `PageDown` | `PageUp` or `PageDown` |
+| Scroll to the top or bottom of the output | `Shift+Home` or `Shift+End` | `Shift+Home` or `Shift+End` |
+| Show the previous or next command | `Up` or `Down` | `Up` or `Down` |
+| Search the command history (reverse search) | `Ctrl+R` | `Ctrl+R` |
+
+When you enter `quit`, the page shows a warning. The page does not stop the command, and minimega asks for a second `quit`. `quit` with a delay, such as `quit 10`, stops minimega with no second request.
+
+If the connection to the console stops, the page tries to connect again after 1, 2, 4, 8, and 15 seconds. Select **Reconnect now** to try immediately, or **Cancel** to stop.
+
 ## minimega Command and Control (`miniccc`)
 
 phēnix and its applications rely on minimega's command and control infrastructure ([miniccc](https://sandia-minimega.github.io/minimega/reference/minimega/)) running inside experiment VMs to execute commands, transfer files, and monitor VM health.

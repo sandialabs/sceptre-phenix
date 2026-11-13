@@ -2,19 +2,21 @@ package mm
 
 import (
 	"errors"
-	"fmt"
 	"maps"
-	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
+	"time"
 )
 
 var ErrHostNotFound = errors.New("host not found")
 
+// Hosts is a list of cluster hosts. Its Sort methods are stable: hosts that
+// tie keep their order.
 type Hosts []Host
 
 func (h Hosts) SortByUnallocatedCPU(asc bool) {
-	sort.Slice(h, func(i, j int) bool {
+	sort.SliceStable(h, func(i, j int) bool {
 		ui := h[i].CPUs - h[i].CPUCommit
 		uj := h[j].CPUs - h[j].CPUCommit
 
@@ -27,7 +29,7 @@ func (h Hosts) SortByUnallocatedCPU(asc bool) {
 }
 
 func (h Hosts) SortByCommittedCPU(asc bool) {
-	sort.Slice(h, func(i, j int) bool {
+	sort.SliceStable(h, func(i, j int) bool {
 		if asc {
 			return h[i].CPUCommit < h[j].CPUCommit
 		}
@@ -37,7 +39,7 @@ func (h Hosts) SortByCommittedCPU(asc bool) {
 }
 
 func (h Hosts) SortByUnallocatedMem(asc bool) {
-	sort.Slice(h, func(i, j int) bool {
+	sort.SliceStable(h, func(i, j int) bool {
 		ui := h[i].MemTotal - h[i].MemCommit
 		uj := h[j].MemTotal - h[j].MemCommit
 
@@ -50,7 +52,7 @@ func (h Hosts) SortByUnallocatedMem(asc bool) {
 }
 
 func (h Hosts) SortByCommittedMem(asc bool) {
-	sort.Slice(h, func(i, j int) bool {
+	sort.SliceStable(h, func(i, j int) bool {
 		if asc {
 			return h[i].MemCommit < h[j].MemCommit
 		}
@@ -60,7 +62,7 @@ func (h Hosts) SortByCommittedMem(asc bool) {
 }
 
 func (h Hosts) SortByVMs(asc bool) {
-	sort.Slice(h, func(i, j int) bool {
+	sort.SliceStable(h, func(i, j int) bool {
 		if asc {
 			return h[i].VMs < h[j].VMs
 		}
@@ -123,22 +125,22 @@ type Cluster struct {
 }
 
 type Host struct {
-	Name        string    `json:"name"`
-	CPUs        int       `json:"cpus"`
-	CPUCommit   int       `json:"cpucommit"`
-	Load        []string  `json:"load"`
-	MemUsed     int       `json:"memused"`
-	MemTotal    int       `json:"memtotal"`
-	MemCommit   int       `json:"memcommit"`
-	Tx          float64   `json:"tx"`
-	Rx          float64   `json:"rx"`
-	Bandwidth   string    `json:"bandwidth"`
-	DiskUsage   DiskUsage `json:"diskusage"`
-	NetCommit   int       `json:"netcommit"`
-	VMs         int       `json:"vms"`
-	Uptime      float64   `json:"uptime"`
-	Schedulable bool      `json:"schedulable"`
-	Headnode    bool      `json:"headnode"`
+	Name        string     `json:"name"`
+	CPUs        int        `json:"cpus"`
+	CPUCommit   int        `json:"cpucommit"`
+	Load        []string   `json:"load"`
+	MemUsed     int        `json:"memused"`
+	MemTotal    int        `json:"memtotal"`
+	MemCommit   int        `json:"memcommit"`
+	Tx          float64    `json:"tx"`
+	Rx          float64    `json:"rx"`
+	Bandwidth   string     `json:"bandwidth"`
+	DiskUsage   *DiskUsage `json:"diskusage,omitempty"` // nil unless the caller asked for it
+	NetCommit   int        `json:"netcommit"`
+	VMs         int        `json:"vms"`
+	Uptime      float64    `json:"uptime"`
+	Schedulable bool       `json:"schedulable"`
+	Headnode    bool       `json:"headnode"`
 }
 
 type DiskUsage struct {
@@ -253,8 +255,15 @@ type VM struct {
 	UUID string `json:"-"`
 }
 
-// Copy returns a deep copy of the VM. It only makes deep copies of fields that
-// are exported as JSON.
+// OnAnyHost reports whether the VM runs on one of hosts, named exactly as
+// minimega reports them; a VM with no host matches none.
+func (v VM) OnAnyHost(hosts []string) bool {
+	return v.Host != "" && slices.Contains(hosts, v.Host)
+}
+
+// Copy returns a deep copy of the VM. No slice or map field of the copy
+// shares memory with v. Copy makes shallow copies of the values in Metadata
+// and Annotations.
 func (v VM) Copy() VM {
 	vm := v
 
@@ -277,6 +286,11 @@ func (v VM) Copy() VM {
 	vm.Tags = make(map[string]string, len(v.Tags))
 	maps.Copy(vm.Tags, v.Tags)
 
+	vm.Labels = maps.Clone(v.Labels)
+	vm.Interfaces = maps.Clone(v.Interfaces)
+	vm.Metadata = maps.Clone(v.Metadata)
+	vm.Annotations = maps.Clone(v.Annotations)
+
 	return vm
 }
 
@@ -284,10 +298,59 @@ type Captures struct {
 	Captures []Capture `json:"captures"`
 }
 
+// Capture is a packet capture on one VM interface. The fields after Filepath are zero with a minimega older than
+// MinCaptureVersion.
 type Capture struct {
 	VM        string `json:"vm"`
 	Interface int    `json:"interface"`
 	Filepath  string `json:"filepath"`
+
+	ID      string `json:"id,omitempty"`
+	State   string `json:"state,omitempty"`
+	Format  string `json:"format,omitempty"`
+	Packets uint64 `json:"packets,omitempty"`
+	KDrops  uint64 `json:"kdrops,omitempty"`
+	Size    int64  `json:"size,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// CaptureCounters are the packet counters of an experiment capture, or of one of its streams.
+type CaptureCounters struct {
+	Ports, Packets, Bytes, KDrops, PDrops, QDrops, Lost, Late uint64
+	Lag, Skew                                                 time.Duration
+}
+
+// CaptureStream is the part of an experiment capture that one host records from one bridge.
+type CaptureStream struct {
+	CaptureCounters
+
+	Host, Bridge, State string
+}
+
+// NamespaceCapture is an experiment capture: one capture of all the VLANs, or of the given VLANs, of a namespace.
+// Its counters are those of its summary row. Its streams are sorted by host, then bridge.
+type NamespaceCapture struct {
+	CaptureCounters
+
+	ID, State, Path, Format, Filter, Start, Error string
+	VLANs                                         []string
+	Size                                          int64
+	Streams                                       []CaptureStream
+}
+
+// Running reports whether minimega still records the capture.
+func (c NamespaceCapture) Running() bool {
+	switch c.State {
+	case "starting", "running", "stalled", "stopping":
+		return true
+	}
+
+	return false
+}
+
+// BridgeMirror is one Open vSwitch mirror on a bridge of a host, as `bridge mirrors` lists it.
+type BridgeMirror struct {
+	Host, Bridge, Mirror, Output, Namespace, Kind string
 }
 
 type BlockDumpResponse struct {
@@ -296,37 +359,4 @@ type BlockDumpResponse struct {
 		Status    string `json:"status"`
 		Total     int    `json:"total"`
 	} `json:"return"`
-}
-
-type diskConfig struct {
-	path  string
-	base  string
-	cache string
-}
-
-func newDiskConfig(c string) diskConfig {
-	tokens := strings.Split(c, ",")
-
-	cfg := diskConfig{ //nolint:exhaustruct // partial initialization
-		path: tokens[0],
-		base: filepath.Base(tokens[0]),
-	}
-
-	if len(tokens) > 1 {
-		cfg.cache = tokens[1]
-	}
-
-	return cfg
-}
-
-func (d diskConfig) string(cache string) string {
-	if cache != "" {
-		return fmt.Sprintf("%s,%s", d.path, cache)
-	}
-
-	if d.cache != "" {
-		return fmt.Sprintf("%s,%s", d.path, d.cache)
-	}
-
-	return d.path
 }

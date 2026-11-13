@@ -1,280 +1,329 @@
 package web
 
 import (
-	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
-	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
-	"github.com/golang/mock/gomock"
-	"github.com/gorilla/mux"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/testing/protocmp"
 
-	"phenix/store"
-	v1 "phenix/types/version/v1"
 	"phenix/util/mm"
-	"phenix/web/middleware"
+	"phenix/web/proto"
 	"phenix/web/rbac"
 )
 
-// captureHandlerTestMM is a test double for mm.MM used by the StopVMCaptures
-// handler tests. Embedding the (nil) mm.MM interface means any method call
-// this test doesn't stub will panic, which is fine since these tests only
-// ever exercise the capture-related methods.
-type captureHandlerTestMM struct {
-	mm.MM
+func TestStopVMCaptures(t *testing.T) {
+	var (
+		both = []mm.Capture{
+			{VM: "test-vm", Interface: 0, Filepath: "/tmp/0.pcap"},
+			{VM: "test-vm", Interface: 1, Filepath: "/tmp/1.pcap"},
+		}
+		stopper = testRole("vms/captures", "delete", "*/*")
+	)
 
-	vmInfo   mm.VMs
-	captures []mm.Capture
-
-	stopCalls int
-	stopErr   error
-}
-
-func (m *captureHandlerTestMM) GetVMInfo(...mm.Option) mm.VMs {
-	return m.vmInfo
-}
-
-func (m *captureHandlerTestMM) GetVMCaptures(...mm.Option) []mm.Capture {
-	return m.captures
-}
-
-func (m *captureHandlerTestMM) StopVMCapture(...mm.Option) error {
-	m.stopCalls++
-
-	return m.stopErr
-}
-
-// installCaptureHandlerTestMM installs the given fake as mm.DefaultMM for the
-// duration of the test, restoring the original afterward.
-func installCaptureHandlerTestMM(t *testing.T, fake *captureHandlerTestMM) {
-	t.Helper()
-
-	original := mm.DefaultMM
-	t.Cleanup(func() { mm.DefaultMM = original }) //nolint:reassign // restore test double
-
-	mm.DefaultMM = fake //nolint:reassign // install test double
-}
-
-// installCaptureHandlerTestExperiment builds a store mock backing a running
-// experiment (i.e. one with a non-empty status start time) named
-// "test-experiment" with a single VM named "test-vm" that has two network
-// interfaces on VLANs "EXP_1" and "EXP_2".
-func installCaptureHandlerTestExperiment(t *testing.T) {
-	t.Helper()
-
-	ctrl := gomock.NewController(t)
-	t.Cleanup(ctrl.Finish)
-
-	c := store.Config{
-		Version: "phenix.sandia.gov/v1",
-		Kind:    "Experiment",
-		Metadata: store.ConfigMetadata{
-			Name: "test-experiment",
+	tests := map[string]struct {
+		query     string
+		role      rbac.Role
+		captures  []mm.Capture
+		want      int
+		wantStops int32
+		// the audit event's outcome and phenix.vm.interface ("" for none)
+		wantOutcome, wantIface string
+	}{
+		"every interface": {"", stopper, both, http.StatusNoContent, 1, "success", ""},
+		"one interface":   {"?iface=1", stopper, both, http.StatusNoContent, 1, "success", "1"},
+		// rather than stop every capture
+		"interface not captured": {"?iface=0", stopper, both[1:], http.StatusNotFound, 0, "failure", "0"},
+		"interface not a number": {"?iface=not-a-number", stopper, both, http.StatusBadRequest, 0, "", ""},
+		"interface by name":      {"?ifaceName=if1", stopper, both, http.StatusNoContent, 1, "success", "1"},
+		"unknown interface name": {"?ifaceName=IF9", stopper, both, http.StatusBadRequest, 0, "failure", ""},
+		"empty interface name":   {"?ifaceName=", stopper, both, http.StatusBadRequest, 0, "", ""},
+		"index and name":         {"?iface=1&ifaceName=IF1", stopper, both, http.StatusBadRequest, 0, "", ""},
+		"list only": {
+			"?iface=0", testRole("vms/captures", "list", "*/*"), both, http.StatusForbidden, 0, "failure", "",
 		},
-		Spec: map[string]any{
-			"experimentName": "test-experiment",
-			"baseDir":        t.TempDir(),
-			"topology": map[string]any{
-				"nodes": []map[string]any{
-					{
-						"type": "VirtualMachine",
-						"general": map[string]any{
-							"hostname":    "test-vm",
-							"do_not_boot": false,
-							"snapshot":    false,
-						},
-						"hardware": map[string]any{
-							"vcpus":   2,
-							"memory":  512,
-							"os_type": "linux",
-							"drives": []map[string]any{
-								{
-									"image":            "test.qc2",
-									"inject_partition": 1,
-								},
-							},
-						},
-						"network": map[string]any{
-							"interfaces": []map[string]any{
-								{"name": "IF0", "vlan": "EXP_1"},
-								{"name": "IF1", "vlan": "EXP_2"},
-							},
-						},
-					},
-				},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			useTestExperiment(t)
+
+			fake := useTestMM(t, &testMM{
+				vms: mm.VMs{{
+					Name:     "test-vm",
+					Running:  true,
+					Networks: []string{"EXP_1 (101)", "EXP_2 (102)"},
+				}},
+				captures: tt.captures,
+			})
+
+			server := serveAs(t, "alice", tt.role).URL
+			events := captureAudit(t)
+
+			path := "/api/v1/experiments/test-experiment/vms/test-vm/captures" + tt.query
+
+			resp := do(t, http.MethodDelete, server+path, "")
+			if resp.StatusCode != tt.want {
+				t.Errorf("DELETE %s = %d, want %d: %s", path, resp.StatusCode, tt.want, readBody(t, resp))
+			}
+
+			if n := fake.captureStops.Load(); n != tt.wantStops {
+				t.Errorf("DELETE %s stopped captures %d times, want %d", path, n, tt.wantStops)
+			}
+
+			got := events()
+			if tt.wantOutcome == "" {
+				if len(got) != 0 {
+					t.Errorf("DELETE %s audit events = %v, want none before the RBAC check", path, got)
+				}
+
+				return
+			}
+
+			e := wantAudit(t, got, "capture-stop", tt.wantOutcome, map[string]any{
+				"user.name": "alice", "phenix.experiment.name": "test-experiment", "phenix.vm.name": "test-vm",
+			})
+			if e == nil {
+				return
+			}
+
+			iface := ""
+			if v, ok := e["phenix.vm.interface"]; ok {
+				iface = fmt.Sprint(v)
+			}
+
+			if iface != tt.wantIface {
+				t.Errorf("DELETE %s audit phenix.vm.interface = %q, want %q", path, iface, tt.wantIface)
+			}
+		})
+	}
+}
+
+func TestGetExperimentCaptures(t *testing.T) {
+	tests := map[string]struct {
+		started      string
+		role         rbac.Role
+		want         *proto.CaptureList
+		wantListings int32
+	}{
+		// a VM is named exp/vm, like every other VM resource name
+		"of the VMs the role names": {
+			started: "2024-01-01T00:00:00Z",
+			role:    testRole("experiments/captures", "list", "test-experiment", "test-experiment/vm-a"),
+			want: &proto.CaptureList{
+				Captures: []*proto.Capture{{Vm: "vm-a", Filepath: "/tmp/a.pcap"}},
+				Support:  &proto.CaptureSupport{Reason: "requires minimega 3.4.0 or later; minimega did not answer"},
 			},
+			wantListings: 1,
 		},
-		Status: map[string]any{
-			"startTime": "2024-01-01T00:00:00Z",
-		},
-	}
-
-	m := store.NewMockStore(ctrl)
-	m.EXPECT().Get(gomock.Any()).DoAndReturn(func(cfg *store.Config) error {
-		*cfg = c
-
-		return nil
-	}).AnyTimes()
-
-	store.DefaultStore = m //nolint:reassign // monkey patching for test
-}
-
-// stopVMCapturesTestRequest builds a DELETE request for the StopVMCaptures
-// handler targeting "test-experiment"/"test-vm", with the given raw query
-// string (e.g. "iface=1"), pre-populated with mux vars and a permissive
-// rbac.Role in its context so the handler's role check passes.
-func stopVMCapturesTestRequest(rawQuery string) *http.Request {
-	url := "/api/v1/experiments/test-experiment/vms/test-vm/captures"
-	if rawQuery != "" {
-		url += "?" + rawQuery
-	}
-
-	req := httptest.NewRequest(http.MethodDelete, url, nil)
-	req = mux.SetURLVars(req, map[string]string{"exp": "test-experiment", "name": "test-vm"})
-
-	role := rbac.Role{
-		Spec: &v1.RoleSpec{
-			Policies: []*v1.PolicySpec{
-				{
-					Resources:     []string{"vms/captures"},
-					ResourceNames: []string{"*/*"},
-					Verbs:         []string{"delete"},
-				},
+		// asking minimega would recreate the experiment's namespace
+		"none of a stopped experiment": {
+			role: testRole("experiments/captures", "list", "test-experiment", "test-experiment/*"),
+			want: &proto.CaptureList{
+				Support: &proto.CaptureSupport{Reason: "requires minimega 3.4.0 or later; minimega did not answer"},
 			},
 		},
 	}
 
-	ctx := context.WithValue(req.Context(), middleware.ContextKeyRole, role)
-	ctx = context.WithValue(ctx, middleware.ContextKeyUser, "test-user")
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			useCaptureSupport(t, false)
+			useTestStore(t, testExperiment(t, tt.started))
 
-	return req.WithContext(ctx)
+			fake := useTestMM(t, &testMM{captures: []mm.Capture{
+				{VM: "vm-a", Interface: 0, Filepath: "/tmp/a.pcap"},
+				{VM: "vm-b", Interface: 0, Filepath: "/tmp/b.pcap"},
+			}})
+
+			server := serveAs(t, "alice", tt.role).URL
+
+			resp := do(t, http.MethodGet, server+"/api/v1/experiments/test-experiment/captures", "")
+
+			body := readBody(t, resp)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("GET /api/v1/experiments/test-experiment/captures = %d, want %d: %s",
+					resp.StatusCode, http.StatusOK, body)
+			}
+
+			list := new(proto.CaptureList)
+			if err := protojson.Unmarshal([]byte(body), list); err != nil {
+				t.Fatalf("GET /api/v1/experiments/test-experiment/captures = %s, not a capture list: %v", body, err)
+			}
+
+			if diff := cmp.Diff(tt.want, list, protocmp.Transform()); diff != "" {
+				t.Errorf("GET /api/v1/experiments/test-experiment/captures mismatch (-want +got):\n%s", diff)
+			}
+
+			if n := fake.captureListings.Load(); n != tt.wantListings {
+				t.Errorf("GET /api/v1/experiments/test-experiment/captures listed minimega's captures %d times, want %d",
+					n, tt.wantListings)
+			}
+		})
+	}
 }
 
-// twoInterfaceVMInfo returns mm.VMs describing a single running VM
-// ("test-vm") with two network interfaces, matching the topology built by
-// installCaptureHandlerTestExperiment.
-func twoInterfaceVMInfo() mm.VMs {
-	return mm.VMs{
-		{
-			Name:     "test-vm",
-			Running:  true,
-			Networks: []string{"EXP_1 (101)", "EXP_2 (102)"},
+func TestStopCaptureSubnetNeedsDelete(t *testing.T) {
+	tests := map[string]struct {
+		role     rbac.Role
+		wantCode int
+	}{
+		// the handler reads the (invalid) body only once the role check passes
+		"delete allowed": {
+			role:     testRole("exp/captureSubnet", "delete", "test-experiment"),
+			wantCode: http.StatusBadRequest,
+		},
+		"create only": {
+			role:     testRole("exp/captureSubnet", "create", "test-experiment"),
+			wantCode: http.StatusForbidden,
+		},
+		"other experiment": {
+			role:     testRole("exp/captureSubnet", "delete", "other-experiment"),
+			wantCode: http.StatusForbidden,
 		},
 	}
-}
 
-func TestStopVMCapturesStopsAllWithoutIfaceQuery(t *testing.T) {
-	installCaptureHandlerTestExperiment(t)
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			server := serveAs(t, "alice", tc.role).URL
+			events := captureAudit(t)
 
-	fake := &captureHandlerTestMM{
-		vmInfo: twoInterfaceVMInfo(),
-		captures: []mm.Capture{
-			{VM: "test-vm", Interface: 0, Filepath: "/tmp/0.pcap"},
-			{VM: "test-vm", Interface: 1, Filepath: "/tmp/1.pcap"},
-		},
-	}
-	installCaptureHandlerTestMM(t, fake)
+			const path = "/api/v1/experiments/test-experiment/stopCaptureSubnet"
 
-	rec := httptest.NewRecorder()
-	StopVMCaptures(rec, stopVMCapturesTestRequest(""))
+			resp := do(t, http.MethodPost, server+path, "not json")
+			if resp.StatusCode != tc.wantCode {
+				t.Errorf("POST %s = %d, want %d: %s", path, resp.StatusCode, tc.wantCode, readBody(t, resp))
+			}
 
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	if fake.stopCalls != 1 {
-		t.Fatalf("expected StopVMCapture to be called once, got %d calls", fake.stopCalls)
+			// a body refused after the RBAC check is not audited
+			denied := countAudit(events(), "capture-stop", "failure", nil)
+			if forbidden := tc.wantCode == http.StatusForbidden; forbidden && denied == 0 {
+				t.Errorf("POST %s refused by RBAC audited no capture-stop failure, want one", path)
+			} else if !forbidden && denied != 0 {
+				t.Errorf("POST %s audited %d capture-stop failures, want none after the RBAC check", path, denied)
+			}
+		})
 	}
 }
 
-func TestStopVMCapturesStopsOnlyRequestedInterface(t *testing.T) {
-	installCaptureHandlerTestExperiment(t)
+// startCaptureMM is a test minimega that counts the captures it starts.
+type startCaptureMM struct {
+	*testMM
 
-	fake := &captureHandlerTestMM{
-		vmInfo: twoInterfaceVMInfo(),
-		captures: []mm.Capture{
-			{VM: "test-vm", Interface: 0, Filepath: "/tmp/0.pcap"},
-			{VM: "test-vm", Interface: 1, Filepath: "/tmp/1.pcap"},
-		},
+	starts atomic.Int32
+}
+
+func (m *startCaptureMM) StartVMCapture(...mm.Option) error {
+	m.starts.Add(1)
+
+	return nil
+}
+
+// A capture starts on the interface the body names by index or by name, and
+// a body that names both, or neither, is refused.
+func TestStartVMCaptureInterface(t *testing.T) {
+	tests := map[string]struct {
+		body      string
+		want      int
+		wantIface string // the audited phenix.vm.interface, "" for none
+	}{
+		"by index":         {`{"interface":1,"filename":"a.pcap"}`, http.StatusNoContent, "1"},
+		"index 0":          {`{"interface":0,"filename":"a.pcap"}`, http.StatusNoContent, "0"},
+		"by name":          {`{"interfaceName":"IF1","filename":"a.pcap"}`, http.StatusNoContent, "1"},
+		"name in any case": {`{"interfaceName":"if0","filename":"a.pcap"}`, http.StatusNoContent, "0"},
+		"unknown name":     {`{"interfaceName":"IF9","filename":"a.pcap"}`, http.StatusBadRequest, ""},
+		"index and name":   {`{"interface":1,"interfaceName":"IF1","filename":"a.pcap"}`, http.StatusBadRequest, ""},
+		"neither":          {`{"filename":"a.pcap"}`, http.StatusBadRequest, ""},
+		"name, no file":    {`{"interfaceName":"IF1"}`, http.StatusBadRequest, ""},
 	}
-	installCaptureHandlerTestMM(t, fake)
 
-	rec := httptest.NewRecorder()
-	StopVMCaptures(rec, stopVMCapturesTestRequest("iface=1"))
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			useTestExperiment(t)
 
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
-	}
+			fake := &startCaptureMM{testMM: &testMM{vms: mm.VMs{{
+				Name: "test-vm", Running: true, Networks: []string{"EXP_1 (101)", "EXP_2 (102)"},
+			}}}}
 
-	if fake.stopCalls != 1 {
-		t.Fatalf("expected StopVMCapture to be called once, got %d calls", fake.stopCalls)
+			original := mm.DefaultMM
+			t.Cleanup(func() { mm.DefaultMM = original }) //nolint:reassign // restore the default
+
+			mm.DefaultMM = fake //nolint:reassign // install test double
+
+			var (
+				server = serveAs(t, "alice", testRole("vms/captures", "create", "*/*")).URL
+				events = captureAudit(t)
+				path   = "/api/v1/experiments/test-experiment/vms/test-vm/captures"
+			)
+
+			resp := do(t, http.MethodPost, server+path, tt.body)
+			if resp.StatusCode != tt.want {
+				t.Fatalf("POST %s %s = %d, want %d: %s", path, tt.body, resp.StatusCode, tt.want, readBody(t, resp))
+			}
+
+			wantStarts := int32(0)
+			if tt.want == http.StatusNoContent {
+				wantStarts = 1
+			}
+
+			if n := fake.starts.Load(); n != wantStarts {
+				t.Errorf("POST %s %s started %d captures, want %d", path, tt.body, n, wantStarts)
+			}
+
+			if tt.wantIface == "" {
+				return
+			}
+
+			e := wantAudit(t, events(), "capture-start", "success", map[string]any{"phenix.vm.name": "test-vm"})
+			if got := fmt.Sprint(e["phenix.vm.interface"]); got != tt.wantIface {
+				t.Errorf("POST %s %s audit phenix.vm.interface = %q, want %q", path, tt.body, got, tt.wantIface)
+			}
+		})
 	}
 }
 
-// TestStopVMCapturesUnrequestedInterfaceNotCaptured verifies that requesting
-// to stop a capture on an interface that isn't currently being captured
-// fails without calling into minimega, so it can't be confused with stopping
-// all captures.
-func TestStopVMCapturesUnrequestedInterfaceNotCaptured(t *testing.T) {
-	installCaptureHandlerTestExperiment(t)
+// A subnet capture starts on each VM interface with an address in the subnet, and answers those captures.
+func TestStartCaptureSubnet(t *testing.T) {
+	fake := useVLANCaptureVMs(t, false)
+	fake.vms[0].IPv4 = []string{"10.0.1.1", "10.0.2.1"}
+	fake.vms[1].IPv4 = []string{"10.0.1.2", "10.0.3.1"}
 
-	fake := &captureHandlerTestMM{
-		vmInfo:   twoInterfaceVMInfo(),
-		captures: []mm.Capture{{VM: "test-vm", Interface: 1, Filepath: "/tmp/1.pcap"}},
-	}
-	installCaptureHandlerTestMM(t, fake)
+	server := serveAs(t, "alice", testRole("exp/captureSubnet", "create", "test-experiment")).URL
+	events := captureAudit(t)
 
-	rec := httptest.NewRecorder()
-	StopVMCaptures(rec, stopVMCapturesTestRequest("iface=0"))
+	const path = "/api/v1/experiments/test-experiment/captureSubnet"
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	resp := do(t, http.MethodPost, server+path, `{"subnet":"10.0.2.0/24"}`)
+	body := readBody(t, resp)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST %s = %d, want %d: %s", path, resp.StatusCode, http.StatusOK, body)
 	}
 
-	if fake.stopCalls != 0 {
-		t.Fatalf(
-			"expected StopVMCapture to not be called when the requested interface isn't captured, got %d calls",
-			fake.stopCalls,
-		)
-	}
-}
-
-func TestStopVMCapturesRejectsNonIntegerIface(t *testing.T) {
-	installCaptureHandlerTestExperiment(t)
-
-	fake := &captureHandlerTestMM{vmInfo: twoInterfaceVMInfo()}
-	installCaptureHandlerTestMM(t, fake)
-
-	rec := httptest.NewRecorder()
-	StopVMCaptures(rec, stopVMCapturesTestRequest("iface=not-a-number"))
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	if n := fake.captureStarts.Load(); n != 1 {
+		t.Errorf("POST %s started %d captures, want 1", path, n)
 	}
 
-	if fake.stopCalls != 0 {
-		t.Fatalf("expected StopVMCapture to not be called, got %d calls", fake.stopCalls)
+	var got vlanCaptureBody
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("POST %s = %s, not JSON: %v", path, body, err)
 	}
-}
 
-// TestStopVMCapturesForbidden verifies the role check still applies to the
-// per-interface stop, not just the stop-all path.
-func TestStopVMCapturesForbidden(t *testing.T) {
-	req := stopVMCapturesTestRequest("iface=0")
+	want := vlanCaptureBody{Captures: []struct {
+		VM        string `json:"vm"`
+		Interface int    `json:"interface"`
+		Filepath  string `json:"filepath"`
+	}{{VM: "a", Interface: 1, Filepath: "/files/a1.pcap"}}}
 
-	// Replace the permissive role installed by stopVMCapturesTestRequest with
-	// one that has no policies (a non-nil Spec is required; Role.Allowed
-	// dereferences Spec.Policies directly rather than treating a nil Spec as
-	// "no policies").
-	noPolicies := rbac.Role{Spec: &v1.RoleSpec{}}
-
-	ctx := context.WithValue(req.Context(), middleware.ContextKeyRole, noPolicies)
-	req = req.WithContext(ctx)
-
-	rec := httptest.NewRecorder()
-	StopVMCaptures(rec, req)
-
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+		t.Errorf("POST %s body mismatch (-want +got):\n%s", path, diff)
 	}
+
+	wantAudit(t, events(), "capture-start", "success", map[string]any{
+		"phenix.experiment.name": "test-experiment", "file.path": "/files/a1.pcap",
+	})
 }

@@ -82,6 +82,7 @@ phenix workflow apply helloworld -f
 
 ```text
 helloworld/
+├── .env                # variables for the configs (optional)
 ├── phenix.yml          # workflow config
 ├── phenix-configs/     # topology, scenario and other configs
 │   ├── topology.yml
@@ -94,12 +95,13 @@ Every part is optional, and a missing part is skipped: a directory with only
 `phenix-configs/` just creates or updates its configs. A directory with none
 of them is an error.
 
+* `.env` - the [variables](#variables) for the placeholders in the configs
+  and in the workflow config, as `NAME=value` lines.
 * `phenix.yml` - the [workflow config](#workflow-config). A file with another
   name needs `-c`.
 * `phenix-configs/` - one config per `.json`, `.yaml` or `.yml` file, in
   subdirectories too. Other files and hidden files are skipped. Each file
-  holds one YAML or JSON document, and its `kind` must be written out, not
-  given as a `${VAR}` placeholder. Each config is created, or updated if it
+  holds one YAML or JSON document. Each config is created, or updated if it
   already exists.
 * `phenix-injects/` - copied to `<base-dir.injects>/<name>` on the phēnix
   host, by default `/phenix/injects/<name>`, replacing any previous copy.
@@ -114,13 +116,20 @@ sets another. It must start with a letter or digit and hold only letters,
 digits, `.`, `_` and `-`.
 
 `${BRANCH_NAME}` in a config or in the workflow config expands to the branch
-name. The server keeps every other `${VAR}` placeholder as written (see
-[Environment Variables](configuration.md#environment-variables)). Because
-only `${BRANCH_NAME}` expands, configs reference injected files as
+name. The server fills it in, and only `-b` sets it. The command fills in
+every other `${VAR}` placeholder before it sends a file (see
+[Variables](#variables)). Configs reference injected files as
 `/phenix/injects/${BRANCH_NAME}/<file>`. Thus you can deploy one directory
-under several names side by side. A config's `kind` and `metadata.name` can
-use no placeholder but `${BRANCH_NAME}`. An experiment that a workflow creates is
+under several names side by side. An experiment that a workflow creates is
 [mapped](#actions) to its branch name.
+
+The branch name is not the experiment name. The experiment name is
+`auto.create` in the [workflow config](#workflow-config). With
+`auto.create: ${BRANCH_NAME}`, as in the examples on this page, `-b` also
+names the experiment, and each branch name is a separate deployment. A fixed
+`auto.create` ignores `-b`. phēnix reads `auto.create` only when no experiment
+is mapped to the branch, so `-b` and `auto.create` do not rename an
+experiment that exists.
 
 Configs that hard-code the injects path need `-b` set to the name they use:
 a topology that references `/phenix/injects/lab-a/<file>` is deployed with
@@ -143,8 +152,10 @@ by default `/phenix/topologies/NAME`, so the command works from any directory.
 
 | Flag | Default | Description |
 | :--- | :--- | :--- |
-| `-b, --branch-name` | the directory's name | The workflow [branch name](#branch-name). |
+| `-b, --branch-name` | the directory's name | The workflow [branch name](#branch-name). It does not rename an experiment. |
 | `-c, --config` | `phenix.yml` | Workflow config file, relative to the directory unless absolute. |
+| `-e, --env` | | Set a [variable](#variables): `NAME=value`, or `NAME` to copy the value from the shell. Repeat it for more variables. |
+| `--env-file` | `.env` in the directory | Read [variables](#variables) from an env file. A relative path starts at the working directory. Repeat it for more files. |
 | `-n, --dry-run` | `false` | Validate everything, log the server's plan, and change nothing. |
 | `-f, --force` | `false` | Allow restarting a running experiment. |
 | `--follow-inject-symlinks` | `false` | Follow symlinks in `phenix-injects/` and copy targets as regular files or directories. |
@@ -156,8 +167,9 @@ The command never prompts. It reports through the phēnix logger and runs five
 steps, named in the `step` field of its log lines. Nothing changes before
 `injects`:
 
-1. **`preflight`** - checks that the server answers and that every file can
-   be read and parsed.
+1. **`preflight`** - checks that the server answers, fills in the
+   [variables](#variables), and checks that every file can be read and
+   parsed.
 2. **`plan`** - the server [dry-runs](#dry-run) every config and the workflow
    config, and the plan is logged. `-n` stops here. Without `-f`, so does a
    plan that would restart a running experiment.
@@ -183,7 +195,7 @@ uncommitted changes.
 
 ### Examples
 
-`phenix workflow apply --help` has the full list.
+The [CLI reference](cli/workflow.md#phenix-workflow-apply) has the full list.
 
 | Command | What it does |
 | :--- | :--- |
@@ -193,6 +205,10 @@ uncommitted changes.
 | `phenix workflow apply helloworld -n` | Validate everything and log the plan. |
 | `phenix workflow apply helloworld -f` | Allow restarting the running experiment. |
 | `phenix workflow apply helloworld -b helloworld-2` | Deploy a second copy under another branch name. |
+| `phenix workflow apply helloworld -e NODES=3 -e SITE=lab` | Set [variables](#variables). `-e` overrides an env file. |
+| `phenix workflow apply helloworld -e NODES` | Copy `NODES` from the shell. It then overrides `helloworld/.env`. |
+| `phenix workflow apply helloworld --env-file base.env --env-file site.env` | Read the env files, and not `helloworld/.env`. `site.env` overrides `base.env`. |
+| `phenix workflow render helloworld -e NODES=3` | Print the configs with the variables filled in. Nothing is sent. |
 | `phenix workflow apply helloworld --follow-inject-symlinks` | Follow symlinks in `phenix-injects/` and copy targets as regular files or directories. |
 | `phenix workflow apply helloworld -c alt.yml` | Use another workflow config from the directory. |
 | `docker exec phenix phenix workflow apply helloworld -f` | Run it in a [Docker Compose](#docker-compose) deployment. |
@@ -207,6 +223,100 @@ for dir in /phenix/topologies/*/; do
   phenix workflow apply "$dir" -n || echo "check $dir"
 done
 ```
+
+## Variables
+
+`phenix workflow apply` fills in the `${NAME}` and `${NAME:default}`
+placeholders of each file in `phenix-configs/` and of the workflow config
+before it sends the file to the server. It does not change the files in
+`phenix-injects/`.
+
+The command gets the value of a variable from the first of these sources that
+has it:
+
+1. `-e NAME=value` on the command line. `-e NAME` copies the value of `NAME`
+   from the shell.
+2. The env files that `--env-file` names. Without `--env-file`, the command
+   reads `.env` in the topology directory, if that file exists. A later file
+   overrides an earlier file.
+3. The shell environment, without the variables whose names start with
+   `PHENIX_`. Name such a variable with `-e NAME` to use it.
+
+For example, a topology directory can hold its defaults in `.env`:
+
+```text title="helloworld/.env"
+SITE=lab
+MEMORY=2048
+```
+
+A config uses the variables, and gives a default to a variable that is
+optional:
+
+```yaml title="helloworld/phenix-configs/topology.yml (part)"
+    general:
+      hostname: ${SITE}-host-01
+    hardware:
+      memory: ${MEMORY}
+      drives:
+      - image: ${IMAGE:ubuntu.qc2}
+```
+
+```bash
+phenix workflow apply helloworld                      # lab-host-01, 2048, ubuntu.qc2
+phenix workflow apply helloworld -e MEMORY=4096       # lab-host-01, 4096, ubuntu.qc2
+MEMORY=8192 phenix workflow apply helloworld          # 2048: .env overrides the shell
+MEMORY=8192 phenix workflow apply helloworld -e MEMORY  # 8192: -e copies it from the shell
+```
+
+The command checks every variable in the `preflight` step, before it changes
+anything:
+
+* A placeholder with no value and no default is an error. Write `${NAME:}`
+  for a variable that can be empty.
+* A `-e` variable that no file uses is an error. This finds a variable name
+  with a typing mistake.
+* A value or a default that contains a line break is an error.
+* `BRANCH_NAME` can't be set as a variable. Use `-b`.
+
+The rules for placeholders, for env files and for the logs are the same for
+every command that reads config files. See
+[Environment Variables](configuration.md#environment-variables) for the
+syntax, the `$${NAME}` escape and the env file format.
+
+!!! note
+    The command reads the shell environment of the user that runs it. `sudo`
+    removes most of that environment, and with `docker exec` the shell is that
+    of the container. Use `-e`, an env file, or `docker exec -e NAME=value` in
+    these cases.
+
+### Show the Result
+
+`phenix workflow render` prints each config, and then the workflow config,
+with the variables and the branch name filled in. The text is what the server
+has after an apply. The command does not contact the server and changes
+nothing.
+
+```bash
+phenix workflow render helloworld -b helloworld-2 -e MEMORY=4096
+```
+
+```text
+# phenix-configs/topology.yml
+apiVersion: phenix.sandia.gov/v1
+kind: Topology
+metadata:
+  name: helloworld-2
+...
+---
+# phenix.yml
+apiVersion: phenix.sandia.gov/v0
+kind: Workflow
+...
+```
+
+The command takes `-b`, `-c`, `-e` and `--env-file`, and gives the same
+variable errors as `phenix workflow apply`. Its output can hold secrets: it
+shows the value of each variable that a file uses.
 
 ## Workflow Config
 
@@ -242,7 +352,7 @@ spec:
 | `kind` | required | `Workflow`. |
 | `metadata` | | Not used today. It is accepted so a workflow config has the same top-level keys as every other phēnix config, and so a later version can add a name or annotations without a breaking change. |
 | `spec` | required | Holds the fields below; `spec: {}` applies every default. |
-| `auto.create` | unset | The name of the experiment to create when none is mapped to the branch. Unset never creates one. |
+| `auto.create` | unset | The name of the experiment to create when none is mapped to the branch. Unset never creates one. phēnix does not read it when an experiment is mapped to the branch. |
 | `auto.update` | `true` | Update the experiment mapped to the branch. A running experiment is only updated if `auto.restart` is also true. |
 | `auto.restart` | `true` | Restart a running experiment to update it, and start an experiment that was just created or updated. |
 | `topology` | the experiment's topology | The topology config to use. Required to create an experiment. |
@@ -252,7 +362,7 @@ spec:
 | `deployMode` | the server's `deploy-mode` | Which minimega VMs to deploy: `all`, `no-headnode` or `only-headnode`. |
 | `useGREMesh` | `false` | Use GRE tunnels between mesh nodes for VLAN trunking. |
 | `vlanRange.min`, `vlanRange.max` | `0` | The lowest and highest VLAN IDs minimega may assign. `0` leaves that end unset. |
-| `defaultBridge` | `phenix` | The bridge VMs connect to by default: at most 15 characters and, unless it's `phenix`, used by no other experiment. |
+| `defaultBridge` | `phenix` | The bridge VMs connect to by default: at most 15 ASCII letters, digits, `_`, `@`, `.`, or `-` and, unless it's `phenix`, used by no other experiment. |
 
 ### Schema
 
@@ -283,6 +393,9 @@ branch:
 
 It is also an error when `auto.create` names an existing experiment that
 isn't mapped to the branch.
+
+A `restart` checks the disks of its start before it stops the experiment. If
+the start would fail, the apply fails, and the experiment continues to run.
 
 ## Dry Run
 
@@ -366,6 +479,12 @@ Send the file as the body, with `Content-Type: application/x-yaml` or
 `X-phenix-auth-token: Bearer <token>` header (see
 [API](api.md#authentication)).
 
+The endpoints do not take [variables](#variables). The server fills in
+`${BRANCH_NAME}` with the branch of the URL and keeps every other placeholder
+as written. A client fills in the other placeholders before it sends a file.
+A config's `kind` and `metadata.name` can use no placeholder but
+`${BRANCH_NAME}`.
+
 | Query parameter | Endpoint | Description |
 | :--- | :--- | :--- |
 | `dryRun=true` | both | Run every check and change nothing. |
@@ -439,9 +558,8 @@ Use absolute paths for both. See the
   job on another machine can call the REST API, but has to get the injects
   onto the phēnix host itself.
 * There is no web UI for workflow apply.
-* Avoid sending workflow requests for different branches at the same moment:
-  the server sets `BRANCH_NAME` for the whole process while it parses a
-  request.
+* The REST API does not take [variables](#variables). Only the CLI fills in
+  placeholders other than `${BRANCH_NAME}`.
 * A dry run can't find every error. It doesn't merge the topologies that a
   not yet stored topology includes, and it checks only the schema of an
   `Experiment` config. The real apply can then fail after the injects are
@@ -462,6 +580,14 @@ Use absolute paths for both. See the
   default.
 * **The server is refused.** The server is from another phēnix release than
   the CLI; use the same release for both.
+* **A variable is not set.** A file has a `${NAME}` placeholder with no value
+  and no default. The error records name the variable, the file and the line.
+  Set it with `-e NAME=value` or in an env file, write `${NAME:default}`, or
+  write `$${NAME}` to keep the text `${NAME}`. Nothing was changed.
+* **A variable from the shell is not used.** `sudo` and `docker exec` do not
+  pass your shell environment, an env file overrides the shell, and a
+  variable whose name starts with `PHENIX_` needs `-e NAME`. Run
+  `phenix workflow render` to see the values.
 * **The run stops and asks for `-f`.** The plan would restart a running
   experiment. Nothing was changed; run it again with `-f` to allow it.
 * **The plan changed (409).** The experiment was started or stopped between

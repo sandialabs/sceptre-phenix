@@ -5,7 +5,7 @@
 // an interface (InspectorOneOfRenderer).
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises } from '@vue/test-utils';
+import { flushPromises } from '@vue/test-utils';
 
 import { resetCollapsed } from '@/components/builder/inspector/collapse.js';
 
@@ -22,7 +22,6 @@ import {
   type,
 } from './inspector-mount.js';
 
-enableAutoUnmount(afterEach);
 afterEach(resetCollapsed);
 
 const DISKS = ['ubuntu.qc2', 'kali.qc2', 'ubuntu-22.qc2', 'win10.qc2'];

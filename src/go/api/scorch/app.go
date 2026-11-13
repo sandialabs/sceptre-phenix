@@ -23,7 +23,8 @@ import (
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/util"
-	"phenix/util/mm/mmcli"
+	"phenix/util/file"
+	"phenix/util/mm"
 	"phenix/util/plog"
 	"phenix/util/shell"
 	"phenix/version"
@@ -31,6 +32,7 @@ import (
 )
 
 const (
+	appName        = "scorch"
 	statusRunning  = "running"
 	statusSuccess  = "success"
 	statusFailure  = "failure"
@@ -44,15 +46,18 @@ const (
 )
 
 func init() { //nolint:gochecknoinits // app registration
-	_ = app.RegisterUserApp("scorch", func() app.App { return newScorch() })
+	_ = app.RegisterUserApp(appName, func() app.App { return newScorch(scorch.UpdatePipeline) })
 }
 
 type Scorch struct {
 	md scorchmd.ScorchMetadata
+
+	// updatePipeline reports a run's done stage to the pipeline view.
+	updatePipeline func(scorch.ComponentUpdate) error
 }
 
-func newScorch() *Scorch {
-	return new(Scorch)
+func newScorch(updatePipeline func(scorch.ComponentUpdate) error) *Scorch {
+	return &Scorch{updatePipeline: updatePipeline} //nolint:exhaustruct // the rest is set by Init
 }
 
 func (*Scorch) Init(...app.Option) error {
@@ -60,14 +65,14 @@ func (*Scorch) Init(...app.Option) error {
 }
 
 func (Scorch) Name() string {
-	return "scorch"
+	return appName
 }
 
 func (Scorch) Configure(ctx context.Context, exp *types.Experiment) error {
 	var app ifaces.ScenarioApp
 
 	for _, app = range exp.Apps() {
-		if app.Name() == "scorch" {
+		if app.Name() == appName {
 			break // this will keep `app` set to SCORCH app
 		}
 	}
@@ -110,12 +115,16 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 
 	var (
 		runID  = scorchexe.MustRunID(ctx)
-		runDir = filepath.Join(exp.FilesDir(), "scorch", fmt.Sprintf("run-%d", runID))
+		runDir = filepath.Join(exp.FilesDir(), appName, fmt.Sprintf("run-%d", runID))
 		start  = time.Now().UTC()
 	)
 
 	if runID < 0 || runID >= len(s.md.Runs) {
 		return fmt.Errorf("invalid Scorch run ID for experiment %s", exp.Metadata.Name)
+	}
+
+	if scorchexe.CleanupOnly(ctx) {
+		return s.cleanupOnly(ctx, exp, runID, start)
 	}
 
 	if err := os.RemoveAll(runDir); err != nil {
@@ -144,7 +153,7 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 	var (
 		errors error
 		run    = s.md.Runs[runID]
-		opts   = []Option{Experiment(*exp), RunID(runID), StartTime(start.Format(time.RubyDate))}
+		opts   = []Option{Experiment(*exp), RunID(runID), StartTime(startTimeText(start))}
 	)
 
 	for i := range run.Count {
@@ -170,7 +179,7 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 	}
 
 	update.Status = statusRunning
-	_ = scorch.UpdatePipeline(update)
+	_ = s.updatePipeline(update)
 
 	if cmd != nil {
 		s.stopFilebeat(ctx, cmd, port)
@@ -180,25 +189,64 @@ func (s *Scorch) Running(ctx context.Context, exp *types.Experiment) error {
 		errors = multierror.Append(errors, err)
 	}
 
-	if _, err := os.Stat(runDir); err == nil {
-		archive := filepath.Join(
-			exp.FilesDir(),
-			fmt.Sprintf("scorch-run-%d_%s.tgz", runID, start.Format("2006-01-02T15-04-05Z0700")),
-		)
-
-		err := util.CreateArchive(runDir, archive)
-		if err != nil {
-			errors = multierror.Append(
-				errors,
-				fmt.Errorf("archiving data generated for run %d: %w", runID, err),
-			)
-		}
+	if err := archiveRun(exp, runID, runDir, start); err != nil {
+		errors = multierror.Append(errors, err)
 	}
 
-	update.Status = statusSuccess
-	_ = scorch.UpdatePipeline(update)
+	update.Status = doneStatus(errors)
+	_ = s.updatePipeline(update)
 
 	return errors
+}
+
+// archiveRun archives the run's directory, if any, to the experiment's
+// scorch-run-<run>_<start>.tgz, which the SCORCH runs page downloads.
+func archiveRun(exp *types.Experiment, runID int, runDir string, start time.Time) error {
+	if _, err := os.Stat(runDir); err != nil {
+		return nil //nolint:nilerr // a run that wrote nothing has nothing to archive
+	}
+
+	archive := filepath.Join(
+		exp.FilesDir(),
+		fmt.Sprintf("scorch-run-%d_%s.tgz", runID, start.Format("2006-01-02T15-04-05Z0700")),
+	)
+
+	err := util.CreateArchive(runDir, archive)
+
+	// lists the new archive at once rather than once the cached listing expires
+	file.InvalidateExperimentFiles(exp.Metadata.Name)
+
+	if err != nil {
+		return fmt.Errorf("archiving data generated for run %d: %w", runID, err)
+	}
+
+	return nil
+}
+
+// doneStatus is a run's done stage status: failure when the run or its
+// archiving met errs.
+func doneStatus(errs error) string {
+	if errs != nil {
+		return statusFailure
+	}
+
+	return statusSuccess
+}
+
+// cleanupOnly runs just the run's cleanup components, leaving the data an
+// earlier run collected in place.
+func (s *Scorch) cleanupOnly(
+	ctx context.Context,
+	exp *types.Experiment,
+	runID int,
+	start time.Time,
+) error {
+	opts := []Option{
+		Experiment(*exp), RunID(runID), StartTime(startTimeText(start)),
+		LoopCount(0), CleanupOnly(),
+	}
+
+	return executor(ctx, s.md.ComponentSpecs(), s.md.Runs[runID], opts...)
 }
 
 func (Scorch) Cleanup(context.Context, *types.Experiment) error {
@@ -289,7 +337,7 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 				"err",
 				err,
 				"app",
-				"scorch",
+				appName,
 			)
 		}
 
@@ -323,7 +371,7 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 				"max",
 				maxTimer,
 				"app",
-				"scorch",
+				appName,
 			)
 
 			_ = cmd.Process.Signal(os.Interrupt)
@@ -344,7 +392,7 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 					"err",
 					err,
 					"app",
-					"scorch",
+					appName,
 				)
 
 				_ = cmd.Process.Signal(os.Interrupt)
@@ -352,7 +400,7 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 
 				return
 			}
-			resp, err := http.DefaultClient.Do(req) //nolint:gosec // SSRF via taint analysis
+			resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704 asks the local Filebeat that scorch started
 			if err != nil {
 				plog.Error(
 					plog.TypePhenixApp,
@@ -360,7 +408,7 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 					"err",
 					err,
 					"app",
-					"scorch",
+					appName,
 				)
 
 				_ = cmd.Process.Signal(os.Interrupt)
@@ -378,7 +426,7 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 					"err",
 					err,
 					"app",
-					"scorch",
+					appName,
 				)
 
 				_ = cmd.Process.Signal(os.Interrupt)
@@ -396,7 +444,7 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 					"err",
 					err,
 					"app",
-					"scorch",
+					appName,
 				)
 
 				continue
@@ -428,7 +476,7 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 					plog.TypePhenixApp,
 					"Filebeat has completed harvesting inputs",
 					"app",
-					"scorch",
+					appName,
 				)
 
 				_ = cmd.Process.Signal(os.Interrupt)
@@ -440,16 +488,19 @@ func (s Scorch) stopFilebeat(ctx context.Context, cmd *exec.Cmd, port int) {
 	}
 }
 
+// minimegaVersion returns minimega's version, recorded with every run. util/mm asks minimega only until it has
+// answered once, and uses the same answer for its capture support.
+func minimegaVersion() (string, error) {
+	return mm.MinimegaVersion() //nolint:wrapcheck // mm names the command
+}
+
 func (s Scorch) recordInfo(
 	runID int,
 	runDir string,
 	md store.ConfigMetadata,
 	startTime time.Time,
 ) error {
-	c := mmcli.NewCommand()
-	c.Command = "version"
-
-	mmVersion, err := mmcli.SingleResponse(mmcli.Run(c))
+	mmVersion, err := minimegaVersion()
 	if err != nil {
 		return fmt.Errorf("getting minimega version: %w", err)
 	}
@@ -505,12 +556,11 @@ func executor(
 ) error {
 	options := NewOptions(opts...)
 
-	loopReplacements, err := scorchmd.ResolveReplacements(exe.Replace)
+	mergedReplacements, err := loopReplacements(options.Replacements, exe)
 	if err != nil {
-		return fmt.Errorf("resolving replacements: %w", err)
+		return err
 	}
 
-	mergedReplacements := scorchmd.MergeReplacements(options.Replacements, loopReplacements)
 	plog.Info(
 		plog.TypePhenixApp,
 		"Resolved replacements for Scorch loop",
@@ -521,7 +571,7 @@ func executor(
 		"replacements",
 		mergedReplacements,
 		"app",
-		"scorch",
+		appName,
 	)
 
 	options.Replacements = mergedReplacements
@@ -577,7 +627,7 @@ func executor(
 
 			scorch.UpdateComponent(update)
 
-			meta := scorchmd.ApplyReplacements(components[name].Metadata, options.Replacements)
+			meta := componentMetadata(components[name], options.Replacements)
 			cmpOpts := opts
 			cmpOpts = append(cmpOpts, Name(name), Type(typ), Stage(stage), Metadata(meta))
 
@@ -646,6 +696,10 @@ func executor(
 	start := func() error { return runStage(ActionStart, exe.Start, true) }
 	stop := func() error { return runStage(ActionStop, exe.Stop, false) }
 	cleanup := func() error { return runStage(ActionCleanup, exe.Cleanup, false) }
+
+	if options.CleanupOnly {
+		return cleanup()
+	}
 
 	if err := configure(); err != nil {
 		errors := multierror.Append(nil, err)

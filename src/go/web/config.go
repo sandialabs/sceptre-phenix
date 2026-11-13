@@ -8,8 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"maps"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,7 +27,9 @@ import (
 	"phenix/store"
 	"phenix/types"
 	"phenix/types/version"
+	"phenix/util/freshness"
 	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/broker"
 	bt "phenix/web/broker/brokertypes"
 	"phenix/web/middleware"
@@ -30,8 +38,17 @@ import (
 	"phenix/web/weberror"
 )
 
-const kindExperiment = "Experiment"
+const (
+	kindExperiment    = "Experiment"
+	kindUser          = "User"
+	mimeMultipartForm = "multipart/form-data"
+)
 const MaxUploadSize = 1 << 20
+
+// configListKinds are the kind values of GET /configs, in lower case.
+var configListKinds = []string{ //nolint:gochecknoglobals // constant list
+	"all", "topology", "scenario", "experiment", "image", "user", "role",
+}
 
 // GetConfigs - GET /configs.
 func GetConfigs(w http.ResponseWriter, r *http.Request) error {
@@ -61,16 +78,26 @@ func GetConfigs(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	if kind == "" {
+	if !query.Has("kind") {
 		kind = "all"
 	}
 
-	configs, err := config.List(kind)
-	if err != nil {
-		return weberror.NewWebError(err, "unable to get configs from store")
+	// the kinds in any letter case, as config.List reads them
+	if err := checkEnum("kind", strings.ToLower(kind), configListKinds...); err != nil {
+		return err
 	}
 
-	var allowed []store.Config
+	configs, err := config.List(kind)
+	if errors.Is(err, config.ErrUnknownKind) {
+		return weberror.NewWebError(err, "unknown config kind %s", kind)
+	}
+
+	if err != nil {
+		return weberror.NewWebError(err, "unable to get configs from store").SetStatus(http.StatusInternalServerError)
+	}
+
+	// an empty list, never null
+	allowed := []store.Config{}
 
 	for _, cfg := range configs {
 		if !role.Allowed("configs", "list", cfg.FullName()) {
@@ -90,8 +117,8 @@ func GetConfigs(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusInternalServerError)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
 
 	return nil
 }
@@ -167,11 +194,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to get config %s from store", name)
 		}
 
-		// TODO: also clear passwords for users
-		if cfg.Kind == kindExperiment {
-			// Clear experiment name... not applicable to end users.
-			delete(cfg.Spec, "experimentName")
-		}
+		redactConfig(cfg)
 
 		body, err := yaml.Marshal(cfg)
 		if err != nil {
@@ -183,7 +206,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 		fn := fmt.Sprintf("%s-%s.yml", cfg.Kind, cfg.Metadata.Name)
 
 		w.Header().Set("Content-Type", "text/plain")
-		w.Header().Set("Content-Disposition", "attachment; filename="+fn)
+		w.Header().Set("Content-Disposition", util.Attachment(fn))
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
 		plog.Info(
 			plog.TypeAction,
@@ -198,7 +221,15 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	zipper := zip.NewWriter(w)
+	// Every config is read before the archive starts, so a failure answers
+	// with an error rather than a broken archive, and the headers go out
+	// before the zip writer's buffer first fills.
+	type entry struct {
+		name string
+		body []byte
+	}
+
+	entries := make([]entry, 0, len(configs))
 
 	for _, name := range configs {
 		if !role.Allowed("configs", "get", name) {
@@ -210,11 +241,7 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 			return weberror.NewWebError(err, "unable to get config %s from store", name)
 		}
 
-		// TODO: also clear passwords for users
-		if cfg.Kind == kindExperiment {
-			// Clear experiment name... not applicable to end users.
-			delete(cfg.Spec, "experimentName")
-		}
+		redactConfig(cfg)
 
 		body, err := yaml.Marshal(cfg)
 		if err != nil {
@@ -223,24 +250,31 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		fn := fmt.Sprintf("%s-%s.yml", cfg.Kind, cfg.Metadata.Name)
+		entries = append(entries, entry{name: fmt.Sprintf("%s-%s.yml", cfg.Kind, cfg.Metadata.Name), body: body})
+	}
 
-		zf, err := zipper.Create(fn)
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", util.Attachment("configs.zip"))
+	// built as it is sent, so it cannot be resumed or cached
+	w.Header().Set("Accept-Ranges", "none")
+	w.Header().Set("Cache-Control", "no-store")
+
+	zipper := zip.NewWriter(w)
+
+	for _, e := range entries {
+		zf, err := zipper.Create(e.name)
 		if err != nil {
-			plog.Error(plog.TypeSystem, "creating zip file entry", "file", fn, "err", err)
+			plog.Error(plog.TypeSystem, "creating zip file entry", "file", e.name, "err", err)
 
 			continue
 		}
 
-		if _, err := zf.Write(body); err != nil {
-			plog.Error(plog.TypeSystem, "writing config to zip file", "file", fn, "err", err)
+		if _, err := zf.Write(e.body); err != nil {
+			plog.Error(plog.TypeSystem, "writing config to zip file", "file", e.name, "err", err)
 
 			continue
 		}
 	}
-
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", "attachment; filename=configs.zip")
 
 	// This will flush the zipped configs to the HTTP writer.
 	if err := zipper.Close(); err != nil {
@@ -260,6 +294,107 @@ func DownloadConfigs(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// userSecretFields are the User config fields holding credentials: the
+// password hash and the user's API tokens.
+func userSecretFields() []string {
+	return []string{"password", "tokens"}
+}
+
+// redactConfig removes from a config the configs API returns an experiment's
+// name in its spec and a user's credentials, leaving the stored config as is.
+func redactConfig(cfg *store.Config) {
+	var drop []string
+
+	switch {
+	case cfg.Kind == kindExperiment:
+		drop = []string{"experimentName"}
+	case strings.EqualFold(cfg.Kind, kindUser):
+		drop = userSecretFields()
+	default:
+		return
+	}
+
+	cfg.Spec = maps.Clone(cfg.Spec)
+	for _, field := range drop {
+		delete(cfg.Spec, field)
+	}
+}
+
+// keepUserSecrets gives an update of the User config name the stored password
+// and tokens in place of any it carries, since the configs API never returns
+// them; the users routes change them. Without an If-Match revision, the update
+// must still find the revision read here, so a concurrent change is not lost.
+func keepUserSecrets(name string, c *store.Config) error {
+	if !strings.EqualFold(c.Kind, kindUser) {
+		return nil
+	}
+
+	old, err := store.NewConfig(name)
+	if err != nil {
+		return nil //nolint:nilerr // no stored config of that name to keep from
+	}
+
+	if err := store.Get(old); err != nil {
+		if errors.Is(err, store.ErrNotExist) {
+			return nil
+		}
+
+		return fmt.Errorf("getting config %s: %w", name, err)
+	}
+
+	if !strings.EqualFold(old.Kind, kindUser) {
+		return nil
+	}
+
+	if c.Spec == nil {
+		c.Spec = make(map[string]any)
+	}
+
+	for _, field := range userSecretFields() {
+		if v, ok := old.Spec[field]; ok {
+			c.Spec[field] = v
+		} else {
+			delete(c.Spec, field)
+		}
+	}
+
+	if c.IfRevision == 0 {
+		c.IfRevision = old.Metadata.Revision
+	}
+
+	return nil
+}
+
+// configPermName returns the Kind/name config permissions are checked against,
+// or, for an unknown kind, the name as given, which kind-scoped roles do not match.
+func configPermName(c *store.Config) string {
+	if name := store.ConfigFullName(c.Kind, c.Metadata.Name); name != "" {
+		return name
+	}
+
+	return c.FullName()
+}
+
+// authorizeConfigCreate checks that the requester may create a config of c's
+// kind and name, so a role limited to some kinds cannot create User or Role
+// configs and grant itself more access.
+func authorizeConfigCreate(r *http.Request, c *store.Config) error {
+	var (
+		role = middleware.RoleFromContext(r.Context())
+		name = configPermName(c)
+	)
+
+	if role.Allowed("configs", "create", name) {
+		return nil
+	}
+
+	user := middleware.UserFromContext(r.Context())
+	audit.Denied(r, audit.ConfigCreate, "creating config not allowed", audit.Fields{Config: name})
+
+	return weberror.NewWebError(nil, "creating config %s not allowed for %s", name, user).
+		SetStatus(http.StatusForbidden)
+}
+
 // CreateConfig - POST /configs.
 //
 //nolint:funlen // handler
@@ -273,12 +408,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	if !role.Allowed("configs", "create") {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"creating config not allowed",
-			"user",
-			user,
-		)
+		audit.Denied(r, audit.ConfigCreate, "creating config not allowed", audit.Fields{})
 		err := weberror.NewWebError(
 			nil,
 			"creating configs not allowed for %s",
@@ -288,16 +418,18 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
+	typ, err := configMediaType(r, "creating")
+	if err != nil {
+		return err
+	}
+
 	var (
-		typ   = r.Header.Get("Content-Type")
 		body  []byte
 		parse func([]byte) (*store.Config, error)
 	)
 
-	switch {
-	case typ == mimeJSON: // default to JSON if not set
-		var err error
-
+	switch typ {
+	case mimeJSON:
 		body, err = io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
@@ -306,9 +438,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		parse = store.DecodeConfigJSON
-	case typ == mimeYAML:
-		var err error
-
+	case mimeYAML:
 		body, err = io.ReadAll(r.Body)
 		if err != nil {
 			err := weberror.NewWebError(err, "unable to parse request")
@@ -317,14 +447,10 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		}
 
 		parse = store.DecodeConfigYAML
-	case strings.HasPrefix(typ, "multipart/form-data"): // file upload
-		_ = r.ParseMultipartForm(MaxUploadSize)
-
-		file, handler, err := r.FormFile("fileupload") // assume `fileupload` key used for upload
+	default: // multipart/form-data, a file upload
+		file, handler, err := uploadedConfigFile(r)
 		if err != nil {
-			err := weberror.NewWebError(err, "unable to access uploaded file")
-
-			return err.SetStatus(http.StatusInternalServerError)
+			return err
 		}
 
 		defer func() { _ = file.Close() }()
@@ -355,32 +481,44 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 				handler.Filename,
 			)
 		}
-	default:
-		return weberror.NewWebError(
-			nil,
-			"unknown content type provided when creating config: %s",
-			typ,
-		)
 	}
 
 	// Only ${BRANCH_NAME} expands, so a client cannot read the server's
 	// environment through a stored config.
-	c, err := parse(store.ExpandBranchName(body))
+	c, err := parse(store.ExpandBranchName(body, os.LookupEnv))
 	if err != nil {
+		audit.Failure(r, audit.ConfigCreate, "creating config failed", audit.Fields{}, err)
+
 		return weberror.NewWebError(err, "invalid formatting").
 			WithMetadata("validation", err.Error(), true)
 	}
 
 	// The check above allows creating some config. This one checks the config
 	// the body names, so a role scoped to some kinds or names creates no other.
-	if name := c.FullName(); !role.Allowed("configs", "create", name) {
-		return configForbidden(ctx, "creating", name)
-	}
+	name := configPermName(c)
 
-	c, err = config.Create(config.CreateFromConfig(c), config.CreateWithValidation())
+	c.FilesRoot = experiment.BaseDirRoot()
+
+	c, err = config.Create(
+		config.CreateFromConfig(c),
+		config.CreateWithCheck(func(c *store.Config) error { return authorizeConfigCreate(r, c) }),
+		config.CreateWithValidation(),
+	)
 	if err != nil {
+		var werr *weberror.WebError
+		if errors.As(err, &werr) {
+			// a refusal, audited by authorizeConfigCreate
+			return werr
+		}
+
+		audit.Failure(r, audit.ConfigCreate, "creating config failed", audit.Fields{Config: name}, err)
+
 		if errors.Is(err, store.ErrExist) {
-			return weberror.NewWebError(err, "config with same name already exists")
+			return weberror.NewWebError(err, "config with same name already exists").SetStatus(http.StatusConflict)
+		}
+
+		if werr := baseDirWebError(err); werr != nil {
+			return werr
 		}
 
 		if errors.Is(err, types.ErrValidationFailed) {
@@ -394,8 +532,10 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 		return weberror.NewWebError(err, "unable to create new config")
 	}
 
-	w.Header().
-		Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))
+	audit.Success(r, audit.ConfigCreate, "created config", audit.Fields{Config: c.FullName()})
+
+	w.Header().Set("Location", apiLocation(strings.ToLower(fmt.Sprintf("configs/%s/%s", c.Kind, c.Metadata.Name))))
+	setRevisionHeaders(w, c.Metadata.Revision)
 	w.WriteHeader(http.StatusCreated)
 
 	if err := broadcastConfig(c, c.FullName(), "create"); err != nil {
@@ -403,16 +543,6 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 		return nil
 	}
-
-	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"created config",
-		"user",
-		user,
-		"config",
-		c.FullName(),
-	)
 
 	return nil
 }
@@ -448,14 +578,30 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	cfg, err := config.Get(name)
-	if err != nil {
-		return weberror.NewWebError(err, "unable to get config %s from store", name)
+	if name == "" {
+		return unknownConfigKind(vars["kind"])
 	}
 
-	if cfg.Kind == kindExperiment {
-		// Clear experiment name... not applicable to end users.
-		delete(cfg.Spec, "experimentName")
+	cfg, err := config.Get(name)
+	if err != nil {
+		werr := weberror.NewWebError(err, "unable to get config %s from store", name)
+		if errors.Is(err, store.ErrNotExist) {
+			return werr.SetStatus(http.StatusNotFound)
+		}
+
+		return werr
+	}
+
+	redactConfig(cfg)
+
+	// the ETag names the stored revision, secrets included
+	setRevisionHeaders(w, cfg.Metadata.Revision)
+
+	if inm := r.Header.Get("If-None-Match"); inm != "" && cfg.Metadata.Revision > 0 &&
+		freshness.MatchRevision(inm, cfg.Metadata.Revision) {
+		w.WriteHeader(http.StatusNotModified)
+
+		return nil
 	}
 
 	var body []byte
@@ -471,7 +617,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 			return err.SetStatus(http.StatusInternalServerError)
 		}
 
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", mimeJSON)
 	case "application/x-yaml":
 		var err error
 
@@ -486,12 +632,12 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 	default:
 		return weberror.NewWebError(
 			nil,
-			"unknown accept content type provided when creating config: %s",
+			"unknown accept content type provided when getting config: %s",
 			typ,
-		)
+		).SetStatus(http.StatusNotAcceptable)
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	_, _ = w.Write(body)
 
 	return nil
 }
@@ -511,14 +657,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	if !role.Allowed("configs", "update", name) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"updating config not allowed",
-			"user",
-			user,
-			"config",
-			name,
-		)
+		audit.Denied(r, audit.ConfigUpdate, "updating config not allowed", audit.Fields{Config: name})
 		err := weberror.NewWebError(
 			nil,
 			"updating config %s not allowed for %s",
@@ -529,110 +668,55 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
-	var (
-		typ = r.Header.Get("Content-Type")
-		c   *store.Config
-		src []byte
-	)
+	if name == "" {
+		return unknownConfigKind(vars["kind"])
+	}
 
-	switch {
-	case typ == mimeJSON: // default to JSON if not set
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			err := weberror.NewWebError(err, "unable to parse request")
+	ifRevision, err := ifMatchRevision(r, name)
+	if err != nil {
+		return err
+	}
 
-			return err.SetStatus(http.StatusInternalServerError)
-		}
-
-		src = body
-		c, err = store.DecodeConfigJSON(store.ExpandBranchName(body))
-		if err != nil {
-			err := weberror.NewWebError(err, "unable to parse request")
-
-			return err.SetStatus(http.StatusInternalServerError)
-		}
-	case typ == "application/x-yaml":
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			err := weberror.NewWebError(err, "unable to parse request")
-
-			return err.SetStatus(http.StatusInternalServerError)
-		}
-
-		src = body
-		c, err = store.DecodeConfigYAML(store.ExpandBranchName(body))
-		if err != nil {
-			err := weberror.NewWebError(err, "unable to parse request")
-
-			return err.SetStatus(http.StatusInternalServerError)
-		}
-	case strings.HasPrefix(typ, "multipart/form-data"): // file upload
-		_ = r.ParseMultipartForm(MaxUploadSize)
-
-		file, handler, err := r.FormFile("fileupload") // assume `fileupload` key used for upload
-		if err != nil {
-			err := weberror.NewWebError(err, "unable to access uploaded file")
-
-			return err.SetStatus(http.StatusInternalServerError)
-		}
-
-		defer func() { _ = file.Close() }()
-
-		switch filepath.Ext(handler.Filename) {
-		case ".json":
-			body, err := io.ReadAll(file)
-			if err != nil {
-				err := weberror.NewWebError(err, "unable to parse uploaded file")
-
-				return err.SetStatus(http.StatusInternalServerError)
-			}
-
-			src = body
-			c, err = store.DecodeConfigJSON(store.ExpandBranchName(body))
-			if err != nil {
-				err := weberror.NewWebError(err, "unable to parse uploaded file")
-
-				return err.SetStatus(http.StatusInternalServerError)
-			}
-		case ".yaml", ".yml":
-			body, err := io.ReadAll(file)
-			if err != nil {
-				err := weberror.NewWebError(err, "unable to parse uploaded file")
-
-				return err.SetStatus(http.StatusInternalServerError)
-			}
-
-			src = body
-			c, err = store.DecodeConfigYAML(store.ExpandBranchName(body))
-			if err != nil {
-				err := weberror.NewWebError(err, "unable to parse uploaded file")
-
-				return err.SetStatus(http.StatusInternalServerError)
-			}
-		default:
-			return weberror.NewWebError(
-				nil,
-				"unknown file extension for uploaded file: %s",
-				handler.Filename,
-			)
-		}
-	default:
-		return weberror.NewWebError(
-			nil,
-			"unknown content type provided when updating config: %s",
-			typ,
-		)
+	c, src, err := decodeUpdateConfigBody(r)
+	if err != nil {
+		return err
 	}
 
 	// The config is stored under the body's kind and name, which can differ from
-	// the path's (a rename or another config), so check that config too.
-	if target := c.FullName(); target != name && !role.Allowed("configs", "update", target) {
-		return configForbidden(ctx, "updating", target)
+	// the path's (a rename or another config), so it needs update and create too.
+	if target := configPermName(c); target != name {
+		if !role.Allowed("configs", "update", target) {
+			user, _ := ctx.Value(middleware.ContextKeyUser).(string)
+			audit.Denied(r, audit.ConfigUpdate, "updating config not allowed", audit.Fields{Config: target})
+
+			return weberror.NewWebError(nil, "updating config %s not allowed for %s", target, user).
+				SetStatus(http.StatusForbidden)
+		}
+
+		if err := authorizeConfigCreate(r, c); err != nil {
+			return err
+		}
 	}
 
-	if c.Kind == kindExperiment {
-		// Reset experiment name in spec since we removed it before sending.
+	// Reset experiment name in spec since we removed it before sending. A
+	// config without a spec fails validation in config.Update.
+	if c.Kind == kindExperiment && c.Spec != nil {
 		c.Spec["experimentName"] = vars["name"]
+	}
+
+	c.IfRevision = ifRevision
+	c.FilesRoot = experiment.BaseDirRoot()
+
+	updated := audit.Fields{Config: name}
+	if renamed := configPermName(c); renamed != name {
+		updated.Extra = []any{"phenix.config.new_name", renamed}
+	}
+
+	if err := keepUserSecrets(name, c); err != nil {
+		audit.Failure(r, audit.ConfigUpdate, "updating config failed", updated, err)
+
+		return weberror.NewWebError(err, "unable to read config %s", name).
+			SetStatus(http.StatusInternalServerError)
 	}
 
 	// A rename or kind change removes the old name's published Builder
@@ -642,27 +726,16 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if err := config.Update(name, c); err != nil {
-		if errors.Is(err, store.ErrNotExist) {
-			return weberror.NewWebError(err, "config to update (%s) does not exist", name)
-		}
+		audit.Failure(r, audit.ConfigUpdate, "updating config failed", updated, err)
 
-		if errors.Is(err, types.ErrValidationFailed) {
-			return validationWebError(src, err)
-		}
-
-		if errors.Is(err, store.ErrInvalidFormat) {
-			cause := errors.Unwrap(err)
-
-			return weberror.NewWebError(cause, "invalid formatting").
-				WithMetadata("validation", cause.Error(), true)
-		}
-
-		return weberror.NewWebError(err, "unable to update config %s", name)
+		return updateConfigWebError(err, name, src)
 	}
 
 	if c.Kind == kindExperiment {
-		err := experiment.Reconfigure(c.Metadata.Name)
+		err := experiment.Reconfigure(context.Background(), c.Metadata.Name)
 		if err != nil {
+			audit.Failure(r, audit.ConfigUpdate, "updating config failed", updated, err)
+
 			return weberror.NewWebError(
 				err,
 				"unable to reconfigure updated experiment %s",
@@ -671,8 +744,15 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	w.Header().
-		Set("Location", strings.ToLower(fmt.Sprintf("/api/v1/configs/%s/%s", c.Kind, c.Metadata.Name)))
+	audit.Success(r, audit.ConfigUpdate, "updated config", updated)
+
+	if c.Kind == kindExperiment {
+		// reconfiguring wrote the experiment again
+		c.Metadata.Revision = storedRevision(c.FullName())
+	}
+
+	w.Header().Set("Location", apiLocation(strings.ToLower(fmt.Sprintf("configs/%s/%s", c.Kind, c.Metadata.Name))))
+	setRevisionHeaders(w, c.Metadata.Revision)
 	w.WriteHeader(http.StatusNoContent)
 
 	// The old name, so clients know which config to update.
@@ -681,17 +761,64 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 
 		return nil
 	}
-	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"updated config",
-		"user",
-		user,
-		"config",
-		name,
-	)
 
 	return nil
+}
+
+// decodeUpdateConfigBody reads and decodes the config in an UpdateConfig
+// request body. It also returns the raw body.
+func decodeUpdateConfigBody(r *http.Request) (*store.Config, []byte, error) {
+	typ, err := configMediaType(r, "updating")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var (
+		input io.Reader = r.Body
+		msg             = "unable to parse request"
+		parse func([]byte) (*store.Config, error)
+	)
+
+	switch typ {
+	case mimeJSON:
+		parse = store.DecodeConfigJSON
+	case mimeYAML:
+		parse = store.DecodeConfigYAML
+	default: // multipart/form-data, a file upload
+		file, handler, err := uploadedConfigFile(r)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		defer func() { _ = file.Close() }()
+
+		input, msg = file, "unable to parse uploaded file"
+
+		switch filepath.Ext(handler.Filename) {
+		case ".json":
+			parse = store.DecodeConfigJSON
+		case ".yaml", ".yml":
+			parse = store.DecodeConfigYAML
+		default:
+			return nil, nil, weberror.NewWebError(
+				nil,
+				"unknown file extension for uploaded file: %s",
+				handler.Filename,
+			)
+		}
+	}
+
+	src, err := io.ReadAll(input)
+	if err != nil {
+		return nil, nil, weberror.NewWebError(err, "%s", msg).SetStatus(http.StatusInternalServerError)
+	}
+
+	c, err := parse(store.ExpandBranchName(src, os.LookupEnv))
+	if err != nil {
+		return nil, nil, weberror.NewWebError(err, "%s", msg)
+	}
+
+	return c, src, nil
 }
 
 // DeleteConfig - DELETE /configs/{kind}/{name}.
@@ -707,14 +834,7 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 
 	if !role.Allowed("configs", "delete", name) {
 		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			"deleting config not allowed",
-			"user",
-			user,
-			"config",
-			name,
-		)
+		audit.Denied(r, audit.ConfigDelete, "deleting config not allowed", audit.Fields{Config: name})
 		err := weberror.NewWebError(
 			nil,
 			"deleting config %s not allowed for %s",
@@ -725,43 +845,90 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 		return err.SetStatus(http.StatusForbidden)
 	}
 
+	if name == "" {
+		return unknownConfigKind(vars["kind"])
+	}
+
+	ifRevision, err := ifMatchRevision(r, name)
+	if err != nil {
+		return err
+	}
+
 	// Deleting a topology removes its published Builder documents, so it
 	// waits for a publication under way.
 	defer lockBuilderPublishing(name)()
 
-	if err := deleteConfig(name); err != nil {
+	if err := deleteConfigAtRevision(name, ifRevision); err != nil {
+		audit.Failure(r, audit.ConfigDelete, "deleting config failed", audit.Fields{Config: name}, err)
+
+		if errors.Is(err, store.ErrConflict) {
+			return conflictWebError(err, name)
+		}
+
+		if errors.Is(err, store.ErrNotExist) {
+			return weberror.NewWebError(err, "config %s does not exist", name).SetStatus(http.StatusNotFound)
+		}
+
 		return weberror.NewWebError(err, "unable to update config %s", name)
 	}
 
+	audit.Success(r, audit.ConfigDelete, "deleted config", audit.Fields{Config: name})
 	w.WriteHeader(http.StatusNoContent)
-	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-	plog.Info(
-		plog.TypeAction,
-		"deleted config",
-		"user",
-		user,
-		"config",
-		name,
-	)
 
 	return nil
 }
 
-// configForbidden logs and returns a 403 for a role that may not act on the
-// config name. action is what the request asked for, such as "creating".
-func configForbidden(ctx context.Context, action, name string) error {
-	user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-	plog.Warn(
-		plog.TypeSecurity,
-		action+" config not allowed",
-		"user",
-		user,
-		"config",
-		name,
-	)
+// unknownConfigKind is the 404 for a config path whose kind phenix does not
+// know: no config can exist there.
+func unknownConfigKind(kind string) error {
+	return weberror.NewWebError(nil, "unknown config kind %s", kind).SetStatus(http.StatusNotFound)
+}
 
-	return weberror.NewWebError(nil, "%s config %s not allowed for %s", action, name, user).
-		SetStatus(http.StatusForbidden)
+// configMediaType returns the media type of a config request body without its
+// parameters: JSON when the request has no Content-Type. A type that the
+// config routes do not take is a 415; action names the route in its message.
+func configMediaType(r *http.Request, action string) (string, error) {
+	typ := r.Header.Get("Content-Type")
+	if typ == "" {
+		return mimeJSON, nil
+	}
+
+	media, _, err := mime.ParseMediaType(typ)
+	if err != nil || media != mimeJSON && media != mimeYAML && media != mimeMultipartForm {
+		return "", weberror.NewWebError(nil, "unknown content type provided when %s config: %s", action, typ).
+			SetStatus(http.StatusUnsupportedMediaType)
+	}
+
+	return media, nil
+}
+
+// uploadedConfigFile returns the fileupload file of a multipart config
+// request. A body that is not a valid multipart form, or that has no
+// fileupload file, is a 400. A failure to store the upload is a 500.
+func uploadedConfigFile(r *http.Request) (multipart.File, *multipart.FileHeader, error) {
+	err := r.ParseMultipartForm(MaxUploadSize)
+	if err == nil {
+		file, handler, ferr := r.FormFile("fileupload")
+		if ferr == nil {
+			return file, handler, nil
+		}
+
+		err = ferr
+	}
+
+	msg := "unable to access uploaded file"
+	if errors.Is(err, http.ErrMissingFile) {
+		msg = "the request has no fileupload file"
+	}
+
+	werr := weberror.NewWebError(err, "%s", msg)
+
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		werr = werr.SetStatus(http.StatusInternalServerError)
+	}
+
+	return nil, nil, werr
 }
 
 // broadcastConfig sends c without its spec and status to everyone who may list
@@ -785,11 +952,135 @@ func broadcastConfig(c *store.Config, name, action string) error {
 	return nil
 }
 
+// updateConfigWebError is the answer to a config update the store or the
+// config API refused. src is the document the client sent.
+func updateConfigWebError(err error, name string, src []byte) error {
+	switch {
+	case errors.Is(err, store.ErrConflict):
+		return conflictWebError(err, name)
+	case errors.Is(err, store.ErrNotExist):
+		return weberror.NewWebError(err, "config to update (%s) does not exist", name).SetStatus(http.StatusNotFound)
+	case errors.Is(err, types.ErrValidationFailed):
+		return validationWebError(src, err)
+	case errors.Is(err, store.ErrInvalidFormat):
+		cause := errors.Unwrap(err)
+
+		return weberror.NewWebError(cause, "invalid formatting").
+			WithMetadata("validation", cause.Error(), true)
+	case errors.Is(err, experiment.ErrBaseDirOutside):
+		return baseDirWebError(err)
+	default:
+		return weberror.NewWebError(err, "unable to update config %s", name)
+	}
+}
+
+// baseDirWebError is the 400 for an experiment whose base directory the web API
+// refuses (see experiment.ErrBaseDirOutside), or nil for any other error.
+func baseDirWebError(err error) *weberror.WebError {
+	if !errors.Is(err, experiment.ErrBaseDirOutside) {
+		return nil
+	}
+
+	return weberror.NewWebError(
+		err, "the experiment base directory (spec.baseDir) must be a folder inside %s", experiment.BaseDirRoot(),
+	).WithCode(weberror.CodeInvalidRequest)
+}
+
+// setRevisionHeaders names a config revision in the ETag and
+// X-Phenix-Revision headers; revision 0 (a config not written since revisions
+// were added) sets neither.
+func setRevisionHeaders(w http.ResponseWriter, revision uint64) {
+	if revision == 0 {
+		return
+	}
+
+	w.Header().Set("ETag", freshness.ETag(revision))
+	w.Header().Set(freshness.HeaderRevision, strconv.FormatUint(revision, 10))
+}
+
+// ifMatchRevision reads a write's If-Match header. It returns 0 when there is
+// none, and otherwise the revision the store must still hold for the write to
+// run: the current one, if the header matches it. A malformed header is a 400
+// and one that does not match a 412.
+func ifMatchRevision(r *http.Request, name string) (uint64, error) {
+	ifMatch := r.Header.Get("If-Match")
+	if ifMatch == "" {
+		return 0, nil
+	}
+
+	if _, _, err := freshness.ParseIfMatch(ifMatch); err != nil {
+		err := weberror.NewWebError(err, "invalid If-Match header %q", ifMatch)
+
+		return 0, err.SetStatus(http.StatusBadRequest)
+	}
+
+	current, err := store.NewConfig(name)
+	if err != nil {
+		return 0, weberror.NewWebError(err, "invalid config name %s", name)
+	}
+
+	if err := store.Get(current); err != nil {
+		// a missing config fails If-Match (RFC 9110, 13.1.1)
+		if errors.Is(err, store.ErrNotExist) {
+			err := weberror.NewWebError(err, "config %s does not exist", name)
+
+			return 0, err.SetStatus(http.StatusPreconditionFailed)
+		}
+
+		return 0, weberror.NewWebError(err, "unable to get config %s from store", name)
+	}
+
+	if !freshness.MatchRevision(ifMatch, current.Metadata.Revision) {
+		return 0, conflictWebError(
+			fmt.Errorf("%w: at revision %d", store.ErrConflict, current.Metadata.Revision),
+			name,
+		)
+	}
+
+	return current.Metadata.Revision, nil
+}
+
+// conflictWebError is the 412 for a write refused because the config changed
+// since the client read it. metadata.revision holds the current revision.
+func conflictWebError(err error, name string) error {
+	werr := weberror.NewWebError(err, "config %s changed after you read it", name).
+		SetStatus(http.StatusPreconditionFailed)
+
+	if revision := storedRevision(name); revision > 0 {
+		werr = werr.WithMetadata("revision", strconv.FormatUint(revision, 10), true)
+	}
+
+	return werr
+}
+
+// storedRevision returns the named config's revision in the store, or 0 when
+// it cannot be read.
+func storedRevision(name string) uint64 {
+	c, err := store.NewConfig(name)
+	if err != nil {
+		return 0
+	}
+
+	if err := store.Get(c); err != nil {
+		return 0
+	}
+
+	return c.Metadata.Revision
+}
+
 // deleteConfig deletes the config name through the config API, which runs
 // the delete hooks of the kind. Then it tells everyone who may list the
 // config that it is gone.
 func deleteConfig(name string) error {
-	if err := config.Delete(name); err != nil {
+	return deleteConfigAtRevision(name, 0)
+}
+
+// deleteConfigAtRevision is [deleteConfig] that deletes nothing unless the
+// config is at revision, when revision is not zero.
+func deleteConfigAtRevision(name string, revision uint64) error {
+	// Through the API, the delete of an experiment leaves a base directory
+	// outside the experiments folder.
+	if err := config.DeleteAtRevision(name, revision, config.DeleteWithFilesRoot(experiment.BaseDirRoot())); err != nil {
 		return err //nolint:wrapcheck // callers word the error themselves
 	}
 

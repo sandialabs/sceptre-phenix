@@ -4,20 +4,32 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/lmittmann/tint"
+
 	"phenix/api/workflow"
+	"phenix/util/envsubst"
 	"phenix/util/plog"
 )
 
-const elapsedPrecision = time.Millisecond
+const (
+	elapsedPrecision = time.Millisecond
+
+	// ANSI color numbers of tint.Attr.
+	ansiGreen  = 2
+	ansiYellow = 3
+	ansiGray   = 8
+)
 
 // applyOptions is what runWorkflowApply needs. The apply command fills it
 // from its flags and the global settings; tests fill it directly. An empty
 // Name means the base name of the topology directory, and Config is relative
-// to that directory unless absolute.
+// to that directory unless absolute. Env, EnvFiles and Environ are the
+// sources of the variables: the -e values, the env files and the shell.
 type applyOptions struct {
 	Name                 string
 	Config               string
@@ -29,11 +41,15 @@ type applyOptions struct {
 	TopologiesBase       string
 	InjectsBaseExplicit  bool
 	FollowInjectSymlinks bool
+	Env                  []string
+	EnvFiles             []string
+	Environ              []string
 	Now                  func() time.Time
 }
 
-// configFile is a config file as read. Body goes to the server unchanged, so
-// the line numbers in its explained validation errors match the file.
+// configFile is a config file with its variables filled in. A value holds no
+// line break, so the line numbers in the explained validation errors of Body
+// match the file.
 type configFile struct {
 	Path        string
 	Kind        string
@@ -53,6 +69,7 @@ type applyRun struct {
 	injects  string
 	configs  string
 	wfConfig string
+	vars     *envsubst.Set
 	staged   bool
 	upserted int
 }
@@ -151,7 +168,7 @@ func (r *applyRun) dryRunConfigs(ctx context.Context, configs []configFile) ([]s
 
 		plog.Info(
 			plog.TypeSystem, "config checked",
-			"step", stepPlan, "file", file, "kind", result.Kind, "name", result.Name, "action", string(result.Action),
+			"step", stepPlan, "file", file, "kind", result.Kind, "name", result.Name, actionAttr(result.Action),
 		)
 
 		if first, ok := definedBy[ref]; ok {
@@ -204,8 +221,18 @@ func (r *applyRun) dryRunWorkflow(ctx context.Context, wfConfig *configFile, pen
 
 	plog.Info(
 		plog.TypeSystem, "workflow plan",
-		"step", stepPlan, "file", file, "action", string(result.Action), "experiment", result.Experiment, "reason", result.Reason,
+		"step", stepPlan, "file", file, actionAttr(result.Action), "experiment", result.Experiment, "reason", result.Reason,
 	)
+
+	// what the disk check of the start the plan makes finds
+	for _, warning := range result.Warnings {
+		warn := plog.Warn
+		if strings.HasPrefix(warning, workflow.StartFailPrefix) {
+			warn = plog.WarnAlarm
+		}
+
+		warn(plog.TypeSystem, warning, "step", stepPlan, "file", file, "experiment", result.Experiment)
+	}
 
 	if !r.opts.DryRun && !r.opts.Force && result.Action == workflow.ActionRestart {
 		return workflow.Plan{}, fmt.Errorf(
@@ -313,7 +340,7 @@ func (r *applyRun) apply(ctx context.Context, wfConfig *configFile, plan workflo
 
 	plog.Info(
 		plog.TypeSystem, "applying workflow config",
-		"step", stepApply, "file", file, "action", string(plan.Action), "experiment", plan.Experiment,
+		"step", stepApply, "file", file, actionAttr(plan.Action), "experiment", plan.Experiment,
 	)
 	plog.Debug(plog.TypeSystem, "workflow tags", "step", stepApply, "tags", strings.Join(tags, ","))
 
@@ -325,7 +352,7 @@ func (r *applyRun) apply(ctx context.Context, wfConfig *configFile, plan workflo
 	if result.Action == workflow.ActionNone {
 		plog.Warn(
 			plog.TypeSystem, "workflow config applied; no experiment changed",
-			"step", stepApply, "file", file, "action", string(result.Action), "experiment", result.Experiment, "reason", result.Reason,
+			"step", stepApply, "file", file, actionAttr(result.Action), "experiment", result.Experiment, "reason", result.Reason,
 		)
 
 		return nil
@@ -333,10 +360,27 @@ func (r *applyRun) apply(ctx context.Context, wfConfig *configFile, plan workflo
 
 	plog.Info(
 		plog.TypeSystem, "workflow config applied",
-		"step", stepApply, "file", file, "action", string(result.Action), "experiment", result.Experiment,
+		"step", stepApply, "file", file, actionAttr(result.Action), "experiment", result.Experiment,
 	)
 
 	return nil
+}
+
+// actionAttr is the action attribute of a log record. A colored console
+// shows it as a plan tool shows a change: a create green, an update or a
+// restart yellow, and no change gray.
+func actionAttr(action workflow.Action) slog.Attr {
+	attr := slog.String("action", string(action))
+
+	switch action {
+	case workflow.ActionCreate, workflow.ActionCreateAndStart:
+		return tint.Attr(ansiGreen, attr)
+	case workflow.ActionUpdate, workflow.ActionUpdateAndStart, workflow.ActionRestart:
+		return tint.Attr(ansiYellow, attr)
+	case workflow.ActionNone:
+	}
+
+	return tint.Attr(ansiGray, attr)
 }
 
 // notSentError is an interrupt that came before the request what describes
@@ -415,7 +459,12 @@ func (r *applyRun) requestError(what string, err error) error {
 
 // rel returns path relative to the topology directory, for logs.
 func (r *applyRun) rel(path string) string {
-	relative, _ := filepath.Rel(r.dir, path)
+	return relTo(r.dir, path)
+}
+
+// relTo returns path relative to dir, for logs.
+func relTo(dir, path string) string {
+	relative, _ := filepath.Rel(dir, path)
 
 	return relative
 }

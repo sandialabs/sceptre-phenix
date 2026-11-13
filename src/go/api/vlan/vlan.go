@@ -93,41 +93,6 @@ func AliasID(opts ...Option) (int, error) {
 	return id, nil
 }
 
-// SetAlias sets a VLAN alias for the given experiment as the given VLAN ID.
-func SetAlias(opts ...Option) error {
-	o := newOptions(opts...)
-
-	if o.exp == "" {
-		return errors.New("no experiment name provided")
-	}
-
-	if o.alias == "" {
-		return errors.New("no VLAN alias provided")
-	}
-
-	if o.id == 0 {
-		return errors.New("no VLAN ID provided")
-	}
-
-	exp, err := experiment.Get(o.exp)
-	if err != nil {
-		return fmt.Errorf("getting experiment %s: %w", o.exp, err)
-	}
-
-	if err := exp.Spec.SetVLANAlias(o.alias, o.id, o.force); err != nil {
-		return fmt.Errorf("setting VLAN alias for experiment %s: %w", o.exp, err)
-	}
-
-	if err := experiment.Save(
-		experiment.SaveWithName(o.exp),
-		experiment.SaveWithSpec(exp.Spec),
-	); err != nil {
-		return fmt.Errorf("saving updated spec for experiment %s: %w", o.exp, err)
-	}
-
-	return nil
-}
-
 // Ranges collects VLAN range details for all experiments or a given experiment.
 // It returns a map of VLAN ranges mapped to experiments and any errors
 // encountered while gathering them.
@@ -178,44 +143,4 @@ func Ranges(opts ...Option) (map[string][2]int, error) {
 	}
 
 	return info, nil
-}
-
-// SetRange sets the VLAN range for the given experiment. It returns an error if
-// the given range is not in ascending order (ie. if min > max).
-func SetRange(opts ...Option) error {
-	o := newOptions(opts...)
-
-	if o.exp == "" {
-		return errors.New("no experiment name provided")
-	}
-
-	if o.min == 0 {
-		return errors.New("no VLAN min ID provided")
-	}
-
-	if o.max == 0 {
-		return errors.New("no VLAN max ID provided")
-	}
-
-	if o.min > o.max {
-		return errors.New("min VLAN ID must not be greater than max VLAN ID")
-	}
-
-	exp, err := experiment.Get(o.exp)
-	if err != nil {
-		return fmt.Errorf("getting experiment %s: %w", o.exp, err)
-	}
-
-	if err := exp.Spec.SetVLANRange(o.min, o.max, o.force); err != nil {
-		return fmt.Errorf("setting VLAN range for experiment %s: %w", o.exp, err)
-	}
-
-	if err := experiment.Save(
-		experiment.SaveWithName(o.exp),
-		experiment.SaveWithSpec(exp.Spec),
-	); err != nil {
-		return fmt.Errorf("saving updated spec for experiment %s: %w", o.exp, err)
-	}
-
-	return nil
 }

@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -19,9 +19,11 @@ import (
 	"phenix/store"
 	"phenix/tmpl"
 	"phenix/types"
+	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
 	"phenix/util/common"
 	"phenix/util/file"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/util/mm/mmcli"
 	"phenix/util/notes"
@@ -37,20 +39,28 @@ const (
 
 	// ReservedName is the experiment name [Create] refuses in any letter case.
 	ReservedName = "all"
-
-	c2CheckInterval = 5 * time.Second
 )
+
+// c2CheckInterval is how often the C2 clients C2-delayed VMs wait on are
+// checked.
+const c2CheckInterval = 5 * time.Second
 
 var (
 	ErrExperimentNotFound   = errors.New("experiment not found")
 	ErrExperimentNotRunning = errors.New("experiment not running")
+	ErrExperimentRunning    = errors.New("experiment already running")
+
+	// ErrInvalidVLANRange is wrapped by the error of Start for a VLAN range that is not lowest first once the
+	// range of the start replaces an end of the experiment's own range.
+	ErrInvalidVLANRange = errors.New("invalid VLAN range")
 )
 
 func init() { //nolint:gochecknoinits // config hook
 	config.RegisterConfigHook("Experiment", experimentConfigHook)
+	config.RegisterServerAnnotation(VMDefaultsAnnotation)
 }
 
-func experimentConfigHook(stage string, c *store.Config) error {
+func experimentConfigHook(ctx context.Context, stage string, c *store.Config) error {
 	exp, err := types.DecodeExperimentFromConfig(*c)
 	if err != nil {
 		return fmt.Errorf("decoding experiment from config: %w", err)
@@ -60,11 +70,11 @@ func experimentConfigHook(stage string, c *store.Config) error {
 	case "startup":
 		return hookStartup(exp, c)
 	case "create":
-		return hookCreate(exp, c)
+		return hookCreate(ctx, exp, c)
 	case "update":
 		return hookUpdate(exp, c)
 	case "delete":
-		return hookDelete(exp)
+		return hookDelete(exp, c.FilesRoot)
 	}
 
 	return nil
@@ -77,7 +87,13 @@ func hookStartup(exp *types.Experiment, c *store.Config) error {
 		exp.Spec.SetDefaultBridge(defaultBridgeName)
 
 		err := exp.Spec.Init()
-		if err != nil {
+
+		// a stored experiment with a value minimega would change must not stop phenix
+		// from starting; creating or updating it reports the value
+		if errors.Is(err, mm.ErrUnsafeArg) {
+			plog.Warn(plog.TypeSystem, "stored experiment has a value minimega would change",
+				"exp", c.Metadata.Name, "err", err)
+		} else if err != nil {
 			return fmt.Errorf("re-initializing experiment with default bridge: %w", err)
 		}
 
@@ -86,12 +102,45 @@ func hookStartup(exp *types.Experiment, c *store.Config) error {
 	return nil
 }
 
-func hookCreate(exp *types.Experiment, c *store.Config) error {
+// bridgeCheckExperiments returns the stored experiments the default bridge
+// check uses. It skips each stored config that does not decode, with a
+// warning, so that one bad config does not stop the check.
+func bridgeCheckExperiments() ([]*types.Experiment, error) {
+	existing, failed, err := types.DecodableExperiments(false)
+	if err != nil {
+		return nil, fmt.Errorf("checking the default bridge of other experiments: %w", err)
+	}
+
+	for _, f := range failed {
+		plog.Warn(
+			plog.TypeSystem, "default bridge check skips an experiment config that does not decode",
+			"exp", f.Name, "err", f.Err,
+		)
+	}
+
+	return existing, nil
+}
+
+// hookCreate checks and initializes a new experiment, and runs the configure
+// stage of its apps, which stops when ctx is done.
+func hookCreate(ctx context.Context, exp *types.Experiment, c *store.Config) error {
+	if err := CheckReservedName(c.Metadata.Name); err != nil {
+		return err
+	}
+
+	if err := checkSpecBaseDir(exp.Spec.BaseDir(), c.FilesRoot, ""); err != nil {
+		return err
+	}
+
 	exp.Spec.SetExperimentName(c.Metadata.Name)
 
 	err := exp.Spec.Init()
 	if err != nil {
 		return fmt.Errorf("initializing experiment: %w", err)
+	}
+
+	if err := checkSpecBaseDir(exp.Spec.BaseDir(), c.FilesRoot, ""); err != nil {
+		return err
 	}
 
 	if common.BridgeMode == common.BridgeModeAuto {
@@ -111,7 +160,11 @@ func hookCreate(exp *types.Experiment, c *store.Config) error {
 
 	exp.Spec.SetUseGREMesh(exp.Spec.UseGREMesh() || common.UseGREMesh)
 
-	existing, _ := types.Experiments(false)
+	existing, err := bridgeCheckExperiments()
+	if err != nil {
+		return err
+	}
+
 	for _, other := range existing {
 		if other.Metadata.Name == exp.Metadata.Name {
 			continue
@@ -130,15 +183,17 @@ func hookCreate(exp *types.Experiment, c *store.Config) error {
 		}
 	}
 
-	err = exp.Spec.VerifyScenario(context.Background())
+	err = exp.Spec.VerifyScenario(ctx)
 	if err != nil {
 		return fmt.Errorf("verifying experiment scenario: %w", err)
 	}
 
-	err = app.ApplyApps(context.Background(), exp, app.Stage(app.ActionConfigure))
+	err = app.ApplyApps(ctx, exp, app.Stage(app.ActionConfigure))
 	if err != nil {
 		return fmt.Errorf("applying apps to experiment: %w", err)
 	}
+
+	recordVMDefaults(c, exp.Spec)
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 	return nil
@@ -148,6 +203,12 @@ func hookUpdate(exp *types.Experiment, c *store.Config) error {
 	if exp.Running() {
 		// Halt this update if the experiment is running.
 		return errors.New("cannot update running experiment")
+	}
+
+	stored := storedBaseDir(c)
+
+	if err := checkSpecBaseDir(exp.Spec.BaseDir(), c.FilesRoot, stored); err != nil {
+		return err
 	}
 
 	err := exp.Spec.Init()
@@ -173,9 +234,14 @@ func hookUpdate(exp *types.Experiment, c *store.Config) error {
 
 	exp.Spec.SetUseGREMesh(exp.Spec.UseGREMesh() || common.UseGREMesh)
 
-	existing, _ := types.Experiments(false)
+	existing, err := bridgeCheckExperiments()
+	if err != nil {
+		return err
+	}
+
 	for _, other := range existing {
-		if other.Metadata.Name == exp.Metadata.Name {
+		// a renamed experiment is still stored under its old name
+		if other.Metadata.Name == exp.Metadata.Name || other.Metadata.Name == exp.Spec.ExperimentName() {
 			continue
 		}
 
@@ -192,26 +258,68 @@ func hookUpdate(exp *types.Experiment, c *store.Config) error {
 		}
 	}
 
-	if exp.Spec.ExperimentName() != c.Metadata.Name {
-		if strings.Contains(exp.Spec.BaseDir(), exp.Spec.ExperimentName()) {
-			// If the experiment's base directory contains the current experiment
-			// name, replace it with the new name.
-			dir := strings.ReplaceAll(
-				exp.Spec.BaseDir(),
-				exp.Spec.ExperimentName(),
-				c.Metadata.Name,
-			)
-			exp.Spec.SetBaseDir(dir)
-		}
+	keepStoredVMDefaults(c)
 
+	if exp.Spec.ExperimentName() != c.Metadata.Name {
+		exp.Spec.SetBaseDir(renamedBaseDir(exp.Spec.BaseDir(), exp.Spec.ExperimentName(), c.Metadata.Name))
 		exp.Spec.SetExperimentName(c.Metadata.Name)
+	}
+
+	if err := checkSpecBaseDir(exp.Spec.BaseDir(), c.FilesRoot, stored); err != nil {
+		return err
 	}
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 	return nil
 }
 
-func hookDelete(exp *types.Experiment) error {
+// checkSpecBaseDir checks the base directory dir of an experiment spec when
+// root, the config's FilesRoot, is not empty: dir must then be empty (the
+// default), the base directory stored keeps (see sameBaseDir), or a folder
+// inside root (see checkBaseDir).
+func checkSpecBaseDir(dir, root, stored string) error {
+	if root == "" || dir == "" || sameBaseDir(dir, stored) {
+		return nil
+	}
+
+	return checkBaseDir(dir, root)
+}
+
+// storedBaseDir is the base directory of c.Stored, the experiment as the
+// store holds it while the update hooks run, or "" when there is none.
+func storedBaseDir(c *store.Config) string {
+	if c.Stored == nil {
+		return ""
+	}
+
+	exp, err := types.DecodeExperimentFromConfig(*c.Stored)
+	if err != nil {
+		return ""
+	}
+
+	return exp.Spec.BaseDir()
+}
+
+// renamedBaseDir is base directory dir of an experiment renamed from old to name: each part of the path that is old
+// becomes name. Other parts stay as they are, also those that only contain old.
+func renamedBaseDir(dir, old, name string) string {
+	if old == "" {
+		return dir
+	}
+
+	parts := strings.Split(dir, "/")
+	for i, part := range parts {
+		if part == old {
+			parts[i] = name
+		}
+	}
+
+	return strings.Join(parts, "/")
+}
+
+// hookDelete deletes the files of experiment exp. It removes the base
+// directory only as removeBaseDir allows, with root, the config's FilesRoot.
+func hookDelete(exp *types.Experiment, root string) error {
 	var errors error
 
 	// Delete any snapshot files created by this headnode for this experiment
@@ -224,7 +332,7 @@ func hookDelete(exp *types.Experiment) error {
 		)
 	}
 
-	err = os.RemoveAll(exp.Spec.BaseDir())
+	err = removeBaseDir(exp.Metadata.Name, exp.Spec.BaseDir(), root)
 	if err != nil {
 		errors = multierror.Append(
 			errors,
@@ -305,21 +413,72 @@ func Get(name string) (*types.Experiment, error) {
 	return exp, nil
 }
 
+// reservedNames are the experiment names phenix or minimega reserve, in lower
+// case, with the reason. An experiment runs in the minimega namespace of the
+// same name, and its default base directory is a folder of the same name.
+var reservedNames = map[string]string{ //nolint:gochecknoglobals // constant table
+	ReservedName: "start and trigger take this name for every experiment",
+	// stopping the experiment would clear minimega's default namespace
+	"minimega": "it is a minimega namespace",
+	// older phenix versions use this namespace to reach every cluster host
+	"__phenix__": "it is a minimega namespace",
+	".":          "it is a relative folder name",
+	"..":         "it is a relative folder name",
+}
+
+// CheckReservedName returns an error that wraps ErrReservedName when phenix or
+// minimega reserve the experiment name, in any letter case.
+func CheckReservedName(name string) error {
+	if reason, ok := reservedNames[strings.ToLower(name)]; ok {
+		return fmt.Errorf("cannot use '%s' for experiment name: %w: %s", name, ErrReservedName, reason)
+	}
+
+	return nil
+}
+
+// validateName rejects experiment names phenix or minimega reserve.
+func validateName(name string) error {
+	if name == "" {
+		return errors.New("no experiment name provided")
+	}
+
+	return CheckReservedName(name)
+}
+
+// createTopology reads the topology name for a new experiment. A store that cannot read it gives an error that
+// matches config.ErrStoreFailed.
+func createTopology(name string) (ifaces.TopologySpec, error) {
+	topoC, _ := store.NewConfig("topology/" + name)
+
+	err := store.Get(topoC)
+	if errors.Is(err, store.ErrNotExist) {
+		return nil, errors.New("topology doesn't exist")
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("getting topology %s: %w: %w", name, config.ErrStoreFailed, err)
+	}
+
+	topo, err := types.DecodeTopologyFromConfig(*topoC)
+	if err != nil {
+		return nil, fmt.Errorf("decoding topology from config: %w", err)
+	}
+
+	return topo, nil
+}
+
 // Create uses the provided arguments to create a new experiment. The
 // `scenarioName` argument can be an empty string, in which case no scenario is
 // used for the experiment. The `baseDir` argument can be an empty string, in
 // which case the default value of `/phenix/experiments/{name}` is used for the
-// experiment base directory. It returns any errors encountered while creating
-// the experiment.
-func Create(opts ...CreateOption) error {
+// experiment base directory. The configure stage of the apps stops when ctx is
+// done, and then the error wraps the error of ctx. It returns any errors
+// encountered while creating the experiment.
+func Create(ctx context.Context, opts ...CreateOption) error {
 	o := newCreateOptions(opts...)
 
-	if o.name == "" {
-		return errors.New("no experiment name provided")
-	}
-
-	if strings.ToLower(o.name) == ReservedName {
-		return fmt.Errorf("cannot use '%s' for experiment name", ReservedName)
+	if err := validateName(o.name); err != nil {
+		return err
 	}
 
 	if o.topology == "" {
@@ -330,22 +489,22 @@ func Create(opts ...CreateOption) error {
 		return fmt.Errorf("default bridge name must be %d characters or less", MaxBridgeNameLength)
 	}
 
+	if err := validateCreateAnnotations(o.annotations, o.nodeAnnotations); err != nil {
+		return err
+	}
+
 	var (
 		kind       = "Experiment"
 		apiVersion = version.StoredVersion[kind]
 	)
 
-	topoC, _ := store.NewConfig("topology/" + o.topology)
-
-	err := store.Get(topoC)
+	topo, err := createTopology(o.topology)
 	if err != nil {
-		return errors.New("topology doesn't exist")
+		return err
 	}
 
-	topo, err2 := types.DecodeTopologyFromConfig(*topoC)
-	if err2 != nil {
-		return fmt.Errorf("decoding topology from config: %w", err2)
-	}
+	// topo is the experiment's own copy; the topology config is not saved
+	applyNodeAnnotations(topo, o.nodeAnnotations)
 
 	meta := store.ConfigMetadata{ //nolint:exhaustruct // partial initialization
 		Name: o.name,
@@ -377,10 +536,11 @@ func Create(opts ...CreateOption) error {
 	}
 
 	c := &store.Config{ //nolint:exhaustruct // partial initialization
-		Version:  store.APIGroup + "/" + apiVersion,
-		Kind:     kind,
-		Metadata: meta,
-		Spec:     specMap,
+		Version:   store.APIGroup + "/" + apiVersion,
+		Kind:      kind,
+		Metadata:  meta,
+		Spec:      specMap,
+		FilesRoot: o.baseDirRoot,
 	}
 
 	exp, err2 := types.DecodeExperimentFromConfig(*c)
@@ -402,6 +562,7 @@ func Create(opts ...CreateOption) error {
 	_, err = config.Create(
 		config.CreateFromConfig(c),
 		config.CreateWithValidation(),
+		config.CreateWithContext(ctx),
 	)
 	if err != nil {
 		return fmt.Errorf("creating experiment config: %w", err)
@@ -458,42 +619,56 @@ func processCreateScenario(
 	return nil
 }
 
-// Schedule applies the given scheduling algorithm to the experiment with the
-// given name. It returns any errors encountered while scheduling the
-// experiment.
-func Schedule(opts ...ScheduleOption) error {
-	var err error
+// Schedule applies the given scheduling algorithm to the stopped experiment
+// with the given name, stores the schedule and returns the experiment with the
+// scheduler's warnings about the schedule. The scheduler gives up once ctx is
+// done or its limit (scheduler.BuiltinTimeout or scheduler.UserTimeout) has
+// passed. It refuses an experiment that runs or that a live process starts,
+// and an experiment that changed while it was scheduled (store.ErrConflict),
+// so it never overwrites a change or a start made in the meantime.
+func Schedule(ctx context.Context, opts ...ScheduleOption) (*types.Experiment, []string, error) {
 	o := newScheduleOptions(opts...)
 
 	c, _ := store.NewConfig("experiment/" + o.name)
 
-	err = store.Get(c)
-	if err != nil {
-		return fmt.Errorf("getting experiment %s from store: %w", o.name, err)
+	if err := store.Get(c); err != nil {
+		return nil, nil, fmt.Errorf("getting experiment %s from store: %w", o.name, err)
 	}
 
-	exp, err2 := types.DecodeExperimentFromConfig(*c)
-	if err2 != nil {
-		return fmt.Errorf("decoding experiment from config: %w", err2)
+	exp, err := types.DecodeExperimentFromConfig(*c)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decoding experiment from config: %w", err)
 	}
 
 	if exp.Running() {
-		return fmt.Errorf("experiment already running (started at: %s)", exp.Status.StartTime())
+		return nil, nil, fmt.Errorf("%w (started at: %s)", ErrExperimentRunning, exp.Status.StartTime())
 	}
 
-	err = scheduler.Schedule(o.algorithm, exp.Spec)
+	if m := exp.Status.Starting(); StartMarkerLive(m) {
+		return nil, nil, &StartingError{Name: o.name, Marker: m}
+	}
+
+	warnings, err := scheduler.Schedule(ctx, o.algorithm, exp.Spec)
 	if err != nil {
-		return fmt.Errorf("running scheduler algorithm: %w", err)
+		return nil, nil, fmt.Errorf("running scheduler algorithm: %w", err)
 	}
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
+	c.IfRevision = c.Metadata.Revision
 
 	err = store.Update(c)
-	if err != nil {
-		return fmt.Errorf("updating experiment config: %w", err)
+	c.IfRevision = 0
+
+	switch {
+	case errors.Is(err, store.ErrConflict):
+		return nil, nil, fmt.Errorf("experiment %s changed while it was scheduled, schedule it again: %w", o.name, err)
+	case err != nil:
+		return nil, nil, fmt.Errorf("updating experiment config: %w", err)
 	}
 
-	return nil
+	exp.Metadata = c.Metadata
+
+	return exp, warnings, nil
 }
 
 // Start starts the experiment with the given name. It returns any errors
@@ -503,23 +678,28 @@ func Schedule(opts ...ScheduleOption) error {
 func Start(ctx context.Context, opts ...StartOption) error {
 	o := newStartOptions(opts...)
 
-	c, _ := store.NewConfig("experiment/" + o.name)
+	timer := newStartTimer(o.name, time.Now)
+	defer timer.done()
 
-	err := store.Get(c)
+	timer.begin("claim")
+
+	c, exp, marker, err := claimStart(o.name)
 	if err != nil {
-		return fmt.Errorf("getting experiment %s from store: %w", o.name, err)
+		return err
 	}
 
-	exp, err2 := types.DecodeExperimentFromConfig(*c)
-	if err2 != nil {
-		return fmt.Errorf("decoding experiment from config: %w", err2)
-	}
+	// the store write that records the start clears the marker; every other return clears it here
+	recorded := false
 
-	if exp.Running() {
-		if !strings.HasSuffix(exp.Status.StartTime(), "-DRYRUN") {
-			return fmt.Errorf("experiment already running (started at: %s)", exp.Status.StartTime())
+	defer func() {
+		if recorded {
+			return
 		}
-	}
+
+		if err := dropStartMarker(o.name, marker); err != nil {
+			plog.Warn(plog.TypeSystem, "clearing experiment start marker", "exp", o.name, "err", err)
+		}
+	}()
 
 	if o.vlanMin != 0 {
 		exp.Spec.VLANs().SetMin(o.vlanMin)
@@ -529,15 +709,57 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		exp.Spec.VLANs().SetMax(o.vlanMax)
 	}
 
+	if vlans := exp.Spec.VLANs(); (o.vlanMin != 0 || o.vlanMax != 0) && vlans.Min() != 0 && vlans.Max() != 0 &&
+		vlans.Min() > vlans.Max() {
+		return fmt.Errorf(
+			"%w: the start gives the VLAN range %d–%d, which is not lowest first", ErrInvalidVLANRange, vlans.Min(), vlans.Max(),
+		)
+	}
+
+	// the startup app marks a VM do not boot when its first disk image is missing; the disk check still reports it
+	booting := bootingVMs(exp.Spec)
+
+	// the post-start work runs after Start returns, in finishStart
+	background := o.errChan != nil && (!o.dryrun || !o.keepStopped)
+
+	plan := newProgressPlan(OperationStart, startPhases(), startWork(exp, o.dryrun, background))
+	rep := newProgressReporter(plan, o.progress, markStart(exp, marker))
+
+	timer.begin("pre-start-apps")
+
+	preStart := app.PlannedApps(exp, app.Stage(app.ActionPreStart), app.DryRun(o.dryrun))
+	rep.begin(PhasePreStartApps, len(preStart), firstApp(preStart))
+
 	err = app.ApplyApps(
 		ctx,
 		exp,
 		app.Stage(app.ActionPreStart),
 		app.DryRun(o.dryrun),
+		rep.appSteps(0),
 	)
 	if err != nil {
 		return fmt.Errorf("applying apps to experiment: %w", err)
 	}
+
+	// pre-start apps may change the drives, so the check comes after them and before minimega is told anything
+	timer.begin("disk-check")
+
+	prepare := prepareSteps
+	if o.dryrun {
+		prepare = prepareDryRunSteps
+	}
+
+	rep.begin(PhasePrepare, prepare, "disk-check")
+
+	warnings, err := CheckDisks(ctx, exp.Spec, CheckAsWarnings(o.dryrun || o.mmErrAsWarn), checkBooting(booting))
+	reportDiskWarnings(ctx, exp.Metadata.Name, warnings)
+
+	if err != nil {
+		return err
+	}
+
+	timer.begin("scripts")
+	rep.step(prepareScripts, "scripts", false)
 
 	var (
 		mmScript = fmt.Sprintf("%s/mm_files/%s.mm", exp.Spec.BaseDir(), exp.Spec.ExperimentName())
@@ -551,6 +773,10 @@ func Start(ctx context.Context, opts ...StartOption) error {
 	err = tmpl.CreateFileFromTemplate("minimega_script.tmpl", exp.Spec, mmScript)
 	if err != nil {
 		return fmt.Errorf("generating minimega script: %w", err)
+	}
+
+	if o.result != nil {
+		o.result.MMScript = mmScript
 	}
 
 	if exp.Spec.Topology().HasCommands() {
@@ -575,115 +801,50 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		// Delete any snapshot files created by this headnode for this experiment
 		// previously before starting the experiment. This way, cluster nodes that VMs
 		// get scheduled on will pull the most up-to-date snapshot files.
+		timer.begin("snapshot-cleanup")
+		rep.step(prepareSnapshotCleanup, "snapshot-cleanup", false)
+
 		err = deleteC2AndSnapshots(exp)
 		if err != nil {
 			return fmt.Errorf("deleting experiment snapshots and CC responses: %w", err)
 		}
 
+		timer.begin("minimega-script")
+		rep.step(prepareMinimegaScript, "minimega-script", false)
+
 		err = mm.ReadScriptFromFile(exp.Spec.ExperimentName(), mmScript)
-		if err != nil {
-			if !o.mmErrAsWarn {
-				_ = mm.ClearNamespace(exp.Spec.ExperimentName())
-
-				return fmt.Errorf("reading minimega script: %w", err)
-			}
-
-			merr := &multierror.Error{} //nolint:exhaustruct // library struct
-			if errors.As(err, &merr) {
-				notes.AddWarnings(ctx, false, merr.Errors...)
-			} else {
-				notes.AddWarnings(ctx, false, err)
-			}
+		err = explainVLANInUse(ctx, exp.Spec.ExperimentName(), exp.Spec.VLANs().Aliases(), err)
+		if err = mmStepFailed(ctx, exp.Spec.ExperimentName(), o.mmErrAsWarn, "reading minimega script", err); err != nil {
+			return err
 		}
 
-		var (
-			bootable = exp.Spec.Topology().BootableNodes()
-			start    = make([]string, 0) // nil vs. slice makes a difference here
-		)
+		launch := planLaunch(exp.Spec)
+		delays, c2s = launch.delays, launch.c2s
 
-		for _, node := range bootable {
-			if node.External() {
-				continue
-			}
+		noteDelayed(ctx, "to be started by user", launch.userDelayed)
+		noteDelayed(ctx, "will be started when C2 is active on other VMs", launch.c2Delayed)
+		noteDelayed(ctx, "will be started after a set time", launch.timerDelayed)
 
-			hostname := node.General().Hostname()
+		timer.begin("launch")
+		rep.begin(PhaseLaunchVMs, len(launch.vms), "launch")
 
-			if node.Delay().User() {
-				notes.AddInfo(
-					ctx,
-					true,
-					fmt.Sprintf("VM %s delayed - to be started by user", hostname),
-				)
+		stopPolling := pollLaunch(ctx, exp.Spec.ExperimentName(), launch.vms, rep, launchPollInterval)
+		launchErr := mm.LaunchVMs(exp.Spec.ExperimentName())
 
-				continue
-			}
+		stopPolling()
 
-			if others := node.Delay().C2(); len(others) > 0 {
-				var (
-					c2    = make(map[string]bool)
-					hosts = make([]string, len(others))
-				)
-
-				for i, other := range others {
-					if other.Hostname() == "" {
-						continue
-					}
-
-					c2[other.Hostname()] = other.UseUUID()
-					hosts[i] = other.Hostname()
-				}
-
-				if len(c2) > 0 {
-					c2s[hostname] = c2
-					notes.AddInfo(
-						ctx,
-						true,
-						fmt.Sprintf(
-							"VM %s delayed - will be started after C2 for %v is active",
-							hostname,
-							hosts,
-						),
-					)
-
-					continue
-				}
-			}
-
-			if d := node.Delay().Timer(); d != 0 {
-				delays[hostname] = d
-
-				notes.AddInfo(
-					ctx,
-					true,
-					fmt.Sprintf("VM %s delayed - will be started after %v", hostname, d),
-				)
-
-				continue
-			}
-
-			start = append(start, hostname)
+		if err = mmStepFailed(ctx, exp.Spec.ExperimentName(), o.mmErrAsWarn, "launching experiment VMs", launchErr); err != nil {
+			return err
 		}
 
-		if len(start) == len(bootable) {
-			// Reset start slice so the call to mm.LaunchVMs results in `vm start all`
-			// being used (to reduce calls to minimega). A nil slice vs. an empty
-			// slice makes a difference here.
-			start = nil
-		}
+		timer.begin("vm-start")
+		rep.begin(PhaseStartVMs, startVMSteps(exp, background), "vm-start")
 
-		err = mm.LaunchVMs(exp.Spec.ExperimentName(), start...)
-		if err != nil {
-			if !o.mmErrAsWarn {
-				_ = mm.ClearNamespace(exp.Spec.ExperimentName())
-
-				return fmt.Errorf("launching experiment VMs: %w", err)
-			}
-
-			merr := &multierror.Error{} //nolint:exhaustruct // library struct
-			if errors.As(err, &merr) {
-				notes.AddWarnings(ctx, false, merr.Errors...)
-			} else {
-				notes.AddWarnings(ctx, false, err)
+		// A failed launch, also as a warning, sends no vm start.
+		if launchErr == nil {
+			err = mm.StartLaunchedVMs(exp.Spec.ExperimentName(), launch.start...)
+			if err = mmStepFailed(ctx, exp.Spec.ExperimentName(), o.mmErrAsWarn, "launching experiment VMs", err); err != nil {
+				return err
 			}
 		}
 
@@ -692,31 +853,24 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		// them. This cannot be done as part of the minimega script template since
 		// the VM taps (and thus bridges) do not get created until the overall
 		// minimega namespace is launched.
+		next := 1
+
 		if exp.Spec.UseGREMesh() {
+			timer.begin("bridge")
+			rep.step(next, "bridge", false)
+
+			next++
+
 			err = mm.CreateBridge(mm.NS(exp.Metadata.Name), mm.Bridge(exp.Spec.DefaultBridge()))
-			if err != nil {
-				if !o.mmErrAsWarn {
-					_ = mm.ClearNamespace(exp.Spec.ExperimentName())
-
-					return fmt.Errorf("creating experiment bridge: %w", err)
-				}
-
-				merr := &multierror.Error{} //nolint:exhaustruct // library struct
-				if errors.As(err, &merr) {
-					notes.AddWarnings(ctx, false, merr.Errors...)
-				} else {
-					notes.AddWarnings(ctx, false, err)
-				}
+			if err = mmStepFailed(ctx, exp.Spec.ExperimentName(), o.mmErrAsWarn, "creating experiment bridge", err); err != nil {
+				return err
 			}
 		}
 
-		schedule := make(map[string]string)
+		timer.begin("vm-hosts-and-vlans")
+		rep.step(next, "vm-hosts-and-vlans", false)
 
-		for _, vm := range mm.GetVMInfo(mm.NS(exp.Spec.ExperimentName())) {
-			schedule[vm.Name] = vm.Host
-		}
-
-		exp.Status.SetSchedule(schedule)
+		exp.Status.SetSchedule(mm.GetVMHosts(mm.NS(exp.Spec.ExperimentName())))
 
 		var vlans map[string]int
 		vlans, err = mm.GetVLANs(mm.NS(exp.Spec.ExperimentName()))
@@ -729,127 +883,46 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		exp.Status.SetVLANs(vlans)
 	}
 
-	start := time.Now().Format(time.RFC3339)
+	now := time.Now()
+	start := now.Format(time.RFC3339)
 
 	if o.dryrun {
 		start += "-DRYRUN"
 	}
 
-	if o.errChan == nil {
-		if !o.dryrun {
-			if exp.Spec.Topology().HasCommands() {
-				err = mm.ReadScriptFromFile(exp.Spec.ExperimentName(), ccScript)
-				if err != nil {
-					errors := multierror.Append(
-						nil,
-						fmt.Errorf("reading minimega cc script: %w", err),
-					)
+	steps := pendingSteps{ccScript: ccScript, delays: delays, c2s: c2s, postStart: true, persist: false}
 
-					err = mm.ClearNamespace(exp.Spec.ExperimentName())
-					if err != nil {
-						errors = multierror.Append(
-							errors,
-							fmt.Errorf("killing experiment VMs: %w", err),
-						)
-					}
+	exp.Status.SetInterrupted("")
+	exp.Status.SetDelayedStarts(nil, nil, false)
 
-					return errors
-				}
-			}
-
-			err = handleDelayedVMs(ctx, exp.Spec.ExperimentName(), delays, c2s)
-			if err != nil {
-				errors := multierror.Append(nil, fmt.Errorf("handling delayed VMs: %w", err))
-
-				err = mm.ClearNamespace(exp.Spec.ExperimentName())
-				if err != nil {
-					errors = multierror.Append(
-						errors,
-						fmt.Errorf("killing experiment VMs: %w", err),
-					)
-				}
-
-				return errors
-			}
+	if !background {
+		if step, err := afterLaunch(ctx, exp, o.dryrun, steps, timer, rep); err != nil {
+			return abortStart(exp, o.dryrun, step, err)
 		}
 
-		err = app.ApplyApps(ctx, exp, app.Stage(app.ActionPostStart), app.DryRun(o.dryrun))
-		if err != nil {
-			errors := multierror.Append(nil, fmt.Errorf("applying apps to experiment: %w", err))
+		if o.dryrun && o.keepStopped {
+			rep.finish()
 
-			err = app.ApplyApps(
-				context.Background(),
-				exp,
-				app.Stage(app.ActionCleanup),
-				app.DryRun(o.dryrun),
-			)
-			if err != nil {
-				errors = multierror.Append(
-					errors,
-					fmt.Errorf("cleaning up app experiments: %w", err),
-				)
-			}
-
-			err = mm.ClearNamespace(exp.Spec.ExperimentName())
-			if err != nil {
-				errors = multierror.Append(errors, fmt.Errorf("killing experiment VMs: %w", err))
-			}
-
-			return errors
+			return nil
 		}
-	} else {
-		go func() {
-			defer close(o.errChan)
-
-			if !o.dryrun {
-				if exp.Spec.Topology().HasCommands() {
-					err = mm.ReadScriptFromFile(exp.Spec.ExperimentName(), ccScript)
-					if err != nil {
-						o.errChan <- fmt.Errorf("reading minimega cc script: %w", err)
-
-						err = Stop(exp.Spec.ExperimentName())
-						if err != nil {
-							o.errChan <- fmt.Errorf("stopping experiment: %w", err)
-						}
-
-						return
-					}
-				}
-
-				err = handleDelayedVMs(ctx, exp.Spec.ExperimentName(), delays, c2s)
-				if err != nil {
-					o.errChan <- fmt.Errorf("handling delayed VMs: %w", err)
-
-					// If the context was canceled, the experiment is already being
-					// stopped elsewhere (e.g. via the web UI, which cancels this
-					// context before calling Stop). Calling Stop again here would
-					// race with that in-progress stop and its cleanup, so skip it.
-					if errors.Is(ctx.Err(), context.Canceled) {
-						return
-					}
-
-					err = Stop(exp.Spec.ExperimentName())
-					if err != nil {
-						o.errChan <- fmt.Errorf("stopping experiment: %w", err)
-					}
-
-					return
-				}
-			}
-
-			err = app.ApplyApps(ctx, exp, app.Stage(app.ActionPostStart), app.DryRun(o.dryrun))
-			if err != nil {
-				o.errChan <- fmt.Errorf("applying apps to experiment: %w", err)
-
-				err = Stop(exp.Spec.ExperimentName())
-				if err != nil {
-					o.errChan <- fmt.Errorf("stopping experiment: %w", err)
-				}
-			}
-		}()
+	} else if !o.dryrun && steps.delayed() {
+		// the experiment is stored as started before its delayed VMs start, so
+		// they are recorded for a restarted phenix to resume (see ResumeStart)
+		steps.persist = true
+		exp.Status.SetDelayedStarts(dueTimes(now, delays), c2s, true)
 	}
 
 	exp.Status.SetStartTime(start)
+
+	var none ifaces.StartMarker
+
+	exp.Status.SetStarting(none)
+
+	timer.begin("record")
+
+	if background && !o.dryrun {
+		rep.step(startVMSteps(exp, true)-1, "record", false)
+	}
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 	c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
@@ -861,17 +934,162 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		return fmt.Errorf("updating experiment config: %w", err)
 	}
 
+	recorded = true
+
+	// the store no longer holds the start marker
+	rep.stopMarking()
+
+	if background {
+		go finishStart(ctx, exp, o.dryrun, steps, o.errChan, rep)
+	}
+
 	for _, hook := range hooks["start"] {
 		hook("start", o.name)
+	}
+
+	if !background {
+		rep.finish()
 	}
 
 	return nil
 }
 
-// Stop stops the experiment with the given name. Injection snapshots are
-// deleted by default. It returns any errors encountered while stopping the
-// experiment.
-func Stop(name string, opts ...StopOption) error {
+// mmStepFailed handles err from a minimega step of Start: it clears namespace ns and returns err
+// wrapped with step, or with asWarn records err as warnings on ctx and returns nil.
+func mmStepFailed(ctx context.Context, ns string, asWarn bool, step string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	if !asWarn {
+		_ = mm.ClearNamespace(ns)
+
+		return fmt.Errorf("%s: %w", step, err)
+	}
+
+	merr := &multierror.Error{} //nolint:exhaustruct // library struct
+	if errors.As(err, &merr) {
+		notes.AddWarnings(ctx, false, merr.Errors...)
+	} else {
+		notes.AddWarnings(ctx, false, err)
+	}
+
+	return nil
+}
+
+// noteDelayed adds one info note, which is also logged, that counts and lists the VMs of one type of delayed start;
+// it adds nothing when vms is empty.
+func noteDelayed(ctx context.Context, how string, vms []string) {
+	if len(vms) == 0 {
+		return
+	}
+
+	noun := "VMs"
+	if len(vms) == 1 {
+		noun = "VM"
+	}
+
+	notes.AddInfo(ctx, true, fmt.Sprintf("%d %s delayed - %s: %s", len(vms), noun, how, strings.Join(vms, ", ")))
+}
+
+// startStep is a step of Start that runs after the VMs launch.
+type startStep int
+
+const (
+	stepC2Script startStep = iota + 1
+	stepDelayedVMs
+	stepPostStartApps
+)
+
+// afterLaunch runs Start's steps after the VMs launch and returns the step that failed and its error; with
+// steps.persist it updates the status's pending starts as delayed VMs start and post-start apps finish. timer and
+// rep, which can be nil, record the time of each step and report the post-start-apps phase.
+func afterLaunch(
+	ctx context.Context, exp *types.Experiment, dryrun bool, steps pendingSteps, timer *startTimer,
+	rep *progressReporter,
+) (startStep, error) {
+	c2, apps := postStartSteps(exp, dryrun, steps.ccScript != "", steps.postStart)
+
+	first := firstApp(apps)
+	if c2 > 0 {
+		first = "c2-script"
+	}
+
+	rep.begin(PhasePostStartApps, c2+len(apps), first)
+
+	if !dryrun {
+		timer.begin("c2-script")
+
+		if steps.ccScript != "" && exp.Spec.Topology().HasCommands() {
+			if err := mm.ReadC2ScriptFromFile(exp.Spec.ExperimentName(), steps.ccScript); err != nil {
+				return stepC2Script, fmt.Errorf("reading minimega cc script: %w", err)
+			}
+		}
+
+		var started func(host string)
+
+		if steps.persist {
+			name := exp.Metadata.Name
+			started = func(host string) { delayedVMStarted(name, host) }
+		}
+
+		timer.begin("delayed-vms")
+
+		if steps.delayed() {
+			rep.step(c2, "delayed-vms", false)
+		}
+
+		if err := handleDelayedVMs(ctx, exp.Spec.ExperimentName(), steps.delays, steps.c2s, c2CheckInterval, started); err != nil {
+			return stepDelayedVMs, fmt.Errorf("handling delayed VMs: %w", err)
+		}
+
+		if steps.persist {
+			setPending(exp, nil, nil, steps.postStart)
+		}
+	}
+
+	if steps.postStart {
+		timer.begin("post-start-apps")
+
+		if err := app.ApplyApps(ctx, exp, app.Stage(app.ActionPostStart), app.DryRun(dryrun), rep.appSteps(c2)); err != nil {
+			return stepPostStartApps, fmt.Errorf("applying apps to experiment: %w", err)
+		}
+	}
+
+	if steps.persist {
+		setPending(exp, nil, nil, false)
+	}
+
+	return 0, nil
+}
+
+// abortStart undoes a Start that failed at step with err, running the apps' cleanup after a
+// post-start failure and then clearing the namespace, and returns every error it met.
+func abortStart(exp *types.Experiment, dryrun bool, step startStep, err error) error {
+	errs := multierror.Append(nil, err)
+
+	if step == stepPostStartApps {
+		err := app.ApplyApps(context.Background(), exp, app.Stage(app.ActionCleanup), app.DryRun(dryrun))
+		if err != nil {
+			errs = multierror.Append(errs, fmt.Errorf("cleaning up app experiments: %w", err))
+		}
+	}
+
+	if err := mm.ClearNamespace(exp.Spec.ExperimentName()); err != nil {
+		errs = multierror.Append(errs, fmt.Errorf("killing experiment VMs: %w", err))
+	}
+
+	return errs
+}
+
+// Stop stops the named experiment, deleting injection snapshots by default and the experiment's own bridge in the auto
+// bridge mode (see deleteOwnBridge). When minimega cannot kill its VMs it stays running and the error wraps
+// ErrTeardownFailed, unless StopWithForce marks it stopped anyway. While it runs, the stored status holds its stop
+// marker with its progress. When ctx is done during the cleanup stage of the apps, Stop stops those apps, leaves the
+// VMs and returns an error that wraps the error of ctx. When all the cleanup apps finished, Stop does the full stop.
+//
+//nolint:funlen // one step after the other
+func Stop(ctx context.Context, name string, opts ...StopOption) error {
 	o := newStopOptions(opts...)
 
 	var err error
@@ -879,7 +1097,7 @@ func Stop(name string, opts ...StopOption) error {
 
 	err = store.Get(c)
 	if err != nil {
-		return fmt.Errorf("getting experiment %s from store: %w", name, err)
+		return fmt.Errorf("getting experiment %s from store: %w", name, notFound(err))
 	}
 
 	exp, err2 := types.DecodeExperimentFromConfig(*c)
@@ -888,65 +1106,160 @@ func Stop(name string, opts ...StopOption) error {
 	}
 
 	if !exp.Running() {
-		return errors.New("experiment isn't running")
+		return ErrStopNotRunning
 	}
 
-	dryrun := strings.HasSuffix(exp.Status.StartTime(), "-DRYRUN")
+	dryrun := exp.DryRun()
 
-	var errors error
+	marker := newStartMarker(time.Now())
+	plan := newProgressPlan(OperationStop, stopPhases(), stopWork(exp, dryrun, o.keepInjectionSnapshots))
+	rep := newProgressReporter(plan, o.progress, markStop(exp, marker))
+
+	// the store write that records the stop clears the marker; it stays when that write fails
+	recorded := false
+
+	defer func() {
+		if recorded {
+			return
+		}
+
+		if err := dropStopMarker(name, marker); err != nil {
+			plog.Warn(plog.TypeSystem, "clearing experiment stop marker", "exp", name, "err", err)
+		}
+	}()
+
+	var errs error
+
+	cleanup := app.PlannedApps(exp, app.Stage(app.ActionCleanup), app.DryRun(dryrun))
+	rep.begin(PhaseCleanupApps, len(cleanup), firstApp(cleanup))
 
 	err = app.ApplyApps(
-		context.Background(),
+		ctx,
 		exp,
 		app.Stage(app.ActionCleanup),
 		app.DryRun(dryrun),
+		rep.appSteps(0),
 	)
 	if err != nil {
-		errors = multierror.Append(errors, fmt.Errorf("cleaning up app experiments: %w", err))
+		errs = multierror.Append(errs, fmt.Errorf("cleaning up app experiments: %w", err))
 	}
+
+	if ctxErr := ctx.Err(); err != nil && ctxErr != nil {
+		if !errors.Is(errs, ctxErr) {
+			errs = multierror.Append(errs, ctxErr)
+		}
+
+		return fmt.Errorf("stop of experiment %s canceled, so its VMs still run: %w", name, errs)
+	}
+
+	stopped := true
 
 	if !dryrun {
-		err = stopVMsAndDeleteSnapshots(exp, o.keepInjectionSnapshots)
-		if err != nil {
-			errors = multierror.Append(errors, err)
+		killed, err := stopVMsAndDeleteSnapshots(exp, o.keepInjectionSnapshots, rep)
+
+		// the cleanup phase deletes the snapshots, unless it keeps them, then the bridge, then records the stop
+		bridge := 1
+		if o.keepInjectionSnapshots {
+			bridge = 0
 		}
+
+		switch {
+		case killed:
+			if err != nil {
+				errs = multierror.Append(errs, err)
+			}
+
+			rep.step(bridge, "bridge", false)
+
+			if err := deleteOwnBridge(exp); err != nil {
+				errs = multierror.Append(errs, err)
+			}
+		case o.force:
+			plog.Warn(
+				plog.TypeSystem,
+				"marking experiment stopped although phenix could not kill its VMs",
+				"exp", name, "err", err,
+			)
+		default:
+			stopped = false
+			errs = multierror.Append(errs, err)
+		}
+
+		rep.step(bridge+1, "record", false)
+	} else {
+		rep.begin(PhaseCleanup, stopCleanupSteps(true, o.keepInjectionSnapshots), "record")
 	}
 
-	exp.Status.SetStartTime("")
+	if stopped {
+		exp.Status.SetStartTime("")
+		exp.Status.SetDelayedStarts(nil, nil, false)
+		exp.Status.SetInterrupted("")
+	}
+
+	var none ifaces.StopMarker
+
+	exp.Status.SetStopping(none)
 
 	c.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
 	c.Status = structs.MapDefaultCase(exp.Status, structs.CASESNAKE)
 
+	unlock := lockStatus(name)
 	err = store.Update(c)
+
+	unlock()
+
 	if err != nil {
-		errors = multierror.Append(errors, fmt.Errorf("updating experiment config: %w", err))
+		errs = multierror.Append(errs, fmt.Errorf("updating experiment config: %w", err))
+	} else {
+		recorded = true
 	}
 
-	for _, hook := range hooks["stop"] {
-		hook("stop", name)
+	if stopped {
+		for _, hook := range hooks["stop"] {
+			hook("stop", name)
+		}
 	}
 
-	return errors
+	return errs
 }
 
-func stopVMsAndDeleteSnapshots(exp *types.Experiment, keepSnapshots bool) error {
+// stopVMsAndDeleteSnapshots kills the experiment's VMs in the stop-vms phase of rep, then deletes their injection
+// snapshots, unless keepSnapshots, in the cleanup phase; it returns false and an error wrapping ErrTeardownFailed when
+// the VMs could not be killed.
+func stopVMsAndDeleteSnapshots(exp *types.Experiment, keepSnapshots bool, rep *progressReporter) (bool, error) {
+	// one step: minimega gives no count, and a read of the namespace while it is cleared can create it again
+	rep.begin(PhaseStopVMs, 1, "clear-namespace")
+
 	err := mm.ClearNamespace(exp.Spec.ExperimentName())
+
+	steps := stopCleanupSteps(false, keepSnapshots)
+
 	if err != nil {
-		return fmt.Errorf("killing experiment VMs: %w", err)
+		rep.begin(PhaseCleanup, steps, "")
+
+		return false, fmt.Errorf("%w: %w", ErrTeardownFailed, err)
 	}
 
 	if keepSnapshots {
-		return nil
+		rep.begin(PhaseCleanup, steps, "bridge")
+
+		return true, nil
 	}
+
+	rep.begin(PhaseCleanup, steps, "snapshots")
 
 	err = deleteSnapshots(exp)
 	if err != nil {
-		return fmt.Errorf("deleting experiment snapshots: %w", err)
+		return true, fmt.Errorf("deleting experiment snapshots: %w", err)
 	}
 
-	return nil
+	return true, nil
 }
 
+// Running reports whether the experiment is running. Check it before asking
+// minimega about an experiment that may be stopped: any command sent to a
+// namespace creates it if it doesn't exist, and a namespace keeps the cluster
+// hosts it was created with, which the experiment's next start would reuse.
 func Running(name string) bool {
 	var err error
 	c, _ := store.NewConfig("experiment/" + name)
@@ -999,12 +1312,11 @@ func Save(opts ...SaveOption) error {
 // workflow APIs), not as a general on-demand debugging tool. Unlike
 // Trigger(ctx, name, app.ActionConfigure), it: refuses to run against a
 // running experiment; persists the experiment via config.Update so config
-// validation and any registered config hooks run; deletes the experiment's
-// minimega bridge (when not using the GRE mesh) so it gets recreated with the
-// current settings; and always applies to every app, without support for
-// filtering to specific apps. Use Trigger for manually re-running a single
-// app's (or apps') configure hook on demand, e.g. for debugging.
-func Reconfigure(name string) error {
+// validation and any registered config hooks run; and always applies to every
+// app, without support for filtering to specific apps. Use Trigger for manually re-running a single
+// app's (or apps') configure hook on demand, e.g. for debugging. The configure
+// stage stops when ctx is done, and then the error wraps the error of ctx.
+func Reconfigure(ctx context.Context, name string) error {
 	var err error
 	c, _ := store.NewConfig("experiment/" + name)
 
@@ -1022,7 +1334,7 @@ func Reconfigure(name string) error {
 		return errors.New("experiment is running")
 	}
 
-	err = app.ApplyApps(context.Background(), exp, app.Stage(app.ActionConfigure))
+	err = app.ApplyApps(ctx, exp, app.Stage(app.ActionConfigure))
 	if err != nil {
 		return fmt.Errorf("configuring apps for experiment: %w", err)
 	}
@@ -1034,13 +1346,6 @@ func Reconfigure(name string) error {
 		return fmt.Errorf("updating experiment config: %w", err)
 	}
 
-	// Try deleting the minimega bridge associated with this experiment if we're
-	// not using the GRE mesh, just in case we were using it prior. Ignore any
-	// errors since they will occur if GRE wasn't being used.
-	if !exp.Spec.UseGREMesh() {
-		_ = mm.MeshSend(name, "", "ns del-bridge "+exp.Spec.DefaultBridge())
-	}
-
 	return nil
 }
 
@@ -1050,8 +1355,8 @@ func Reconfigure(name string) error {
 // Trigger is intended for manually invoking a lifecycle stage for a specific
 // app (or apps) on demand, e.g. for debugging. For the 'configure' stage in
 // particular, it is not a replacement for Reconfigure: Trigger doesn't
-// validate the experiment config, run config hooks, reset the minimega
-// bridge, or refuse to run against a running experiment. Use Reconfigure
+// validate the experiment config, run config hooks, or refuse to run against
+// a running experiment. Use Reconfigure
 // after an experiment's stored topology, scenario, or deployment settings
 // have changed.
 func Trigger(ctx context.Context, name string, stage app.Action, apps ...string) error {
@@ -1106,13 +1411,6 @@ func Trigger(ctx context.Context, name string, stage app.Action, apps ...string)
 	return nil
 }
 
-// TriggerRunning executes the 'running' stage for the given apps in the given
-// experiment. If no apps are passed, then all experiment apps will have their
-// 'running' stage triggered.
-func TriggerRunning(ctx context.Context, name string, apps ...string) error {
-	return Trigger(ctx, name, app.ActionRunning, apps...)
-}
-
 // validateTriggerApps ensures the given apps are part of the experiment and
 // that the requested lifecycle stage is applicable to each of them. If no
 // apps are given (meaning "all apps"), it instead ensures at least one app in
@@ -1158,88 +1456,73 @@ func validateTriggerApps(exp *types.Experiment, stage app.Action, apps []string)
 	return nil
 }
 
-func Delete(name string) error {
+// Delete deletes the stopped experiment name: its config, then its files. A
+// delete through the web API passes DeleteWithBaseDirInside.
+func Delete(name string, opts ...DeleteOption) error {
+	o := newDeleteOptions(opts...)
+
 	if Running(name) {
-		return errors.New("cannot delete a running experiment")
+		return ErrDeleteRunning
 	}
 
-	c, err := config.Get("experiment/" + name)
+	_, err := config.Get("experiment/" + name)
 	if err != nil {
-		return fmt.Errorf("getting experiment %s: %w", name, err)
+		return fmt.Errorf("getting experiment %s: %w", name, notFound(err))
 	}
 
-	err = config.Delete("experiment/" + name)
+	// The delete config hook (see hookDelete) deletes the experiment's files
+	// after the store deletes the config, so its error comes once the config is gone.
+	err = config.DeleteAtRevision("experiment/"+name, 0, config.DeleteWithFilesRoot(o.baseDirRoot))
 	if err != nil {
-		return fmt.Errorf("deleting experiment %s: %w", name, err)
-	}
-
-	exp, err2 := types.DecodeExperimentFromConfig(*c)
-	if err2 != nil {
-		return fmt.Errorf("decoding experiment from config: %w", err2)
-	}
-
-	var errors error
-
-	// Delete any snapshot files created by this headnode for this experiment
-	// after deleting the experiment.
-	err = deleteC2AndSnapshots(exp)
-	if err != nil {
-		errors = multierror.Append(
-			errors,
-			fmt.Errorf("deleting experiment snapshots and CC responses: %w", err),
-		)
-	}
-
-	err = os.RemoveAll(exp.Spec.BaseDir())
-	if err != nil {
-		errors = multierror.Append(
-			errors,
-			fmt.Errorf("deleting experiment base directory: %w", err),
-		)
+		if _, getErr := config.Get("experiment/" + name); !errors.Is(getErr, store.ErrNotExist) {
+			return fmt.Errorf("deleting experiment %s: %w", name, err)
+		}
 	}
 
 	for _, hook := range hooks["delete"] {
 		hook("delete", name)
 	}
 
-	return errors //nolint:wrapcheck // returning multierror
-}
-
-func Files(name, filter string) (file.Files, error) {
-	return file.GetExperimentFiles(name, filter) //nolint:wrapcheck // passthrough
-}
-
-func File(name, filePath string) ([]byte, error) {
-	files, err := file.GetExperimentFiles(name, "")
 	if err != nil {
-		return nil, fmt.Errorf("getting list of experiment files: %w", err)
+		return fmt.Errorf("deleting experiment %s: %w: %w", name, ErrDeleteCleanup, err)
 	}
 
-	for _, c := range mm.GetExperimentCaptures(mm.NS(name)) {
-		if strings.Contains(c.Filepath, path.Base(filePath)) {
-			return nil, mm.ErrCaptureExists
-		}
+	return nil
+}
+
+// FilesObserved lists the experiment's files matching filter, also reporting
+// when the listing was read from minimega, with the capture format of each
+// headnode file, read once for each listing. The listing may be a few seconds old (see
+// file.InvalidateExperimentFiles). It fails, rather than give a partial
+// listing, as file.GetExperimentFilesObserved does.
+func FilesObserved(ctx context.Context, name, filter string) (file.Files, freshness.Observation, error) {
+	return file.GetExperimentFilesObserved(ctx, name, filter) //nolint:wrapcheck // passthrough
+}
+
+// InvalidateFiles makes the next FilesObserved call list the experiment's files anew,
+// for after phenix changes them.
+func InvalidateFiles(name string) {
+	file.InvalidateExperimentFiles(name)
+}
+
+// LocalFile returns the headnode path of one of the experiment's files, by its
+// path relative to the experiment's files directory as listed (see
+// FilesObserved), copying it to the headnode first if only a mesh node has it.
+// It refuses a capture file a running capture still writes (a
+// *CaptureWritingError, which wraps mm.ErrCaptureExists). ctx bounds its
+// minimega calls.
+func LocalFile(ctx context.Context, name, filePath string) (string, error) {
+	clean, err := cleanFilePath(filePath)
+	if err != nil {
+		return "", err
 	}
 
-	for _, f := range files {
-		if filePath == f.Path {
-			headnode, _ := os.Hostname()
-
-			_ = file.CopyFile(fmt.Sprintf("/%s/files/%s", name, f.Path), headnode, nil)
-
-			path := fmt.Sprintf("%s/images/%s/files/%s", common.PhenixBase, name, f.Path)
-
-			var data []byte
-			data, err = os.ReadFile(path)
-			if err != nil {
-				return nil, fmt.Errorf("reading contents of file: %w", err)
-			}
-
-			return data, nil
-		}
+	err = captureChecker(ctx, name)(clean)
+	if err != nil {
+		return "", err
 	}
 
-	return nil, errors.New("file not found")
+	return fetchFile(name, clean)
 }
 
 func deleteC2AndSnapshots(exp *types.Experiment) error {
@@ -1269,9 +1552,13 @@ func deleteSnapshots(exp *types.Experiment) error {
 	// including the hostname we ensure that only snapshots created for
 	// experiments by this headnode get deleted. This is important when multiple
 	// headnodes exist for a single minimega cluster.
+	//
+	// The snapshots are deleted together, by their exact names (see
+	// file.DeleteExistingFiles).
 	var (
-		expName  = exp.Metadata.Name
-		headnode = mm.Headnode()
+		expName   = exp.Metadata.Name
+		headnode  = mm.Headnode()
+		snapshots []string
 	)
 
 	for _, node := range exp.Spec.Topology().Nodes() {
@@ -1280,27 +1567,26 @@ func deleteSnapshots(exp *types.Experiment) error {
 		}
 
 		hostname := node.General().Hostname()
-		snapshot := fmt.Sprintf("%s_%s_%s_snapshot", headnode, expName, hostname)
+		snapshots = append(snapshots, fmt.Sprintf("%s_%s_%s_snapshot", headnode, expName, hostname))
+	}
 
-		err := file.DeleteFile(snapshot)
-		if err != nil {
-			return fmt.Errorf(
-				"deleting snapshot file for VM %s in experiment %s: %w",
-				hostname,
-				expName,
-				err,
-			)
-		}
+	err := file.DeleteExistingFiles(snapshots)
+	if err != nil {
+		return fmt.Errorf("deleting snapshot files for experiment %s: %w", expName, err)
 	}
 
 	return nil
 }
 
+// handleDelayedVMs starts the delayed VMs of namespace ns as their delays end, checking the C2 clients every
+// c2Check, and calls started, when it is not nil, with each VM it started.
 func handleDelayedVMs(
 	ctx context.Context,
 	ns string,
 	delays map[string]time.Duration,
 	c2s map[string]map[string]bool,
+	c2Check time.Duration,
+	started func(host string),
 ) error {
 	if len(delays) == 0 && len(c2s) == 0 {
 		return nil
@@ -1318,21 +1604,23 @@ func handleDelayedVMs(
 
 		go func(host string, delay time.Duration) {
 			defer wg.Done()
-			if err := waitForTimeDelay(ctx, ns, host, delay); err != nil {
+			if err := waitForTimeDelay(ctx, ns, host, delay, started); err != nil {
 				errChan <- err
 			}
 		}(host, delay)
 	}
 
-	for host, others := range c2s {
+	if len(c2s) > 0 {
 		wg.Add(1)
 
-		go func(host string, others map[string]bool) {
+		go func() {
 			defer wg.Done()
-			if err := waitForC2(ctx, ns, host, others); err != nil {
+
+			// at most one error per C2-delayed VM, so errChan has room for them
+			for _, err := range waitForC2(ctx, ns, c2s, c2Check, started) {
 				errChan <- err
 			}
-		}(host, others)
+		}()
 	}
 
 	wg.Wait()
@@ -1365,7 +1653,7 @@ func handleDelayedVMs(
 	return nil
 }
 
-func waitForTimeDelay(ctx context.Context, ns, host string, delay time.Duration) error {
+func waitForTimeDelay(ctx context.Context, ns, host string, delay time.Duration, started func(string)) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -1378,6 +1666,10 @@ func waitForTimeDelay(ctx context.Context, ns, host string, delay time.Duration)
 			return NewDelayedVMError(host, err, "starting VM %s", host)
 		}
 
+		if started != nil {
+			started(host)
+		}
+
 		notes.AddInfo(ctx, true, fmt.Sprintf("Time delayed VM %s started", host))
 		pubsub.Publish("delayed-start", fmt.Sprintf("%s/%s", ns, host))
 	}
@@ -1385,53 +1677,107 @@ func waitForTimeDelay(ctx context.Context, ns, host string, delay time.Duration)
 	return nil
 }
 
+// waitForC2 starts each C2-delayed VM in c2s once the C2 clients of every VM it waits on are active, asking minimega
+// about all the clients still waited on at once every interval. It returns the errors from starting them, and the
+// context's error once for each VM still waiting when ctx is done.
 func waitForC2(
-	ctx context.Context,
-	ns, host string,
-	others map[string]bool,
-) error {
-	ticker := time.NewTicker(c2CheckInterval)
+	ctx context.Context, ns string, c2s map[string]map[string]bool, interval time.Duration, started func(string),
+) []error {
+	var (
+		pending = maps.Clone(c2s)
+		errs    []error
+		ticker  = time.NewTicker(interval)
+	)
+
 	defer ticker.Stop()
 
-	for {
+	for len(pending) > 0 {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			for range pending {
+				errs = append(errs, ctx.Err())
+			}
+
+			return errs
 		case <-ticker.C:
+		}
+
+		active := mm.ActiveC2Clients(ns, waitedOnC2Clients(pending))
+
+		for _, host := range slices.Sorted(maps.Keys(pending)) {
+			others := pending[host]
+
 			done := true
 
 			for other, useUUID := range others {
-				opts := []mm.C2Option{
-					mm.C2NS(ns),
-					mm.C2VM(other),
-					mm.C2Timeout(1 * time.Second),
-				}
-
-				if useUUID {
-					opts = append(opts, mm.C2IDClientsByUUID())
-				}
-
-				if mm.IsC2ClientActive(opts...) != nil {
+				if !active[mm.C2ClientRef{VM: other, ByUUID: useUUID}] {
 					done = false
 
 					break
 				}
 			}
 
-			if done {
-				cmd := mmcli.NewNamespacedCommand(ns)
-				cmd.Command = "vm start " + host
-
-				err := mmcli.ErrorResponse(mmcli.Run(cmd))
-				if err != nil {
-					return NewDelayedVMError(host, err, "starting VM %s", host)
-				}
-
-				notes.AddInfo(ctx, true, fmt.Sprintf("C2 delayed VM %s started", host))
-				pubsub.Publish("delayed-start", fmt.Sprintf("%s/%s", ns, host))
-
-				return nil
+			if !done {
+				continue
 			}
+
+			delete(pending, host)
+
+			cmd := mmcli.NewNamespacedCommand(ns)
+			cmd.Command = "vm start " + host
+
+			err := mmcli.ErrorResponse(mmcli.Run(cmd))
+			if err != nil {
+				errs = append(errs, NewDelayedVMError(host, err, "starting VM %s", host))
+
+				continue
+			}
+
+			if started != nil {
+				started(host)
+			}
+
+			notes.AddInfo(ctx, true, fmt.Sprintf("C2 delayed VM %s started", host))
+			pubsub.Publish("delayed-start", fmt.Sprintf("%s/%s", ns, host))
 		}
 	}
+
+	return errs
+}
+
+// waitedOnC2Clients lists, once each, the C2 clients the pending VMs wait on.
+func waitedOnC2Clients(pending map[string]map[string]bool) []mm.C2ClientRef {
+	seen := make(map[mm.C2ClientRef]struct{})
+
+	var refs []mm.C2ClientRef
+
+	for _, others := range pending {
+		for other, useUUID := range others {
+			ref := mm.C2ClientRef{VM: other, ByUUID: useUUID}
+
+			if _, ok := seen[ref]; ok {
+				continue
+			}
+
+			seen[ref] = struct{}{}
+			refs = append(refs, ref)
+		}
+	}
+
+	slices.SortFunc(refs, func(a, b mm.C2ClientRef) int {
+		if c := strings.Compare(a.VM, b.VM); c != 0 {
+			return c
+		}
+
+		switch {
+		case a.ByUUID == b.ByUUID:
+			return 0
+		case b.ByUUID:
+			return -1
+		default:
+			return 1
+		}
+	})
+
+	return refs
 }

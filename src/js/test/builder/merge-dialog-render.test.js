@@ -2,17 +2,15 @@
 // The merge dialog, mounted: two radio buttons per clashing field, neither
 // chosen, and Save merged unavailable until each has one.
 
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import MergeDialog from '@/components/builder/dialogs/MergeDialog.vue';
 import { addNode } from '@/builder/model.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument } from './fixtures.js';
-
-enableAutoUnmount(afterEach);
 
 function renamed(doc, id, name) {
   return {
