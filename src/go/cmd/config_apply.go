@@ -17,7 +17,7 @@ import (
 	"phenix/util/sigterm"
 )
 
-// configFileFlag names the files and directories of config apply.
+// configFileFlag names files of config apply, as its arguments do.
 const configFileFlag = "filename"
 
 // fileConfig is a config that config apply or config diff read from a file,
@@ -133,9 +133,10 @@ func newConfigApplyCmd() *cobra.Command {
 
   This subcommand creates each configuration in the given JSON or YAML files
   that is not stored, updates each stored configuration that is different,
-  and does not change a configuration that is the same. A -f value can be a
-  file or a directory. The command reads all JSON and YAML files in a
-  directory and its subdirectories. It skips a Builder file in a directory.
+  and does not change a configuration that is the same. Give the files as
+  arguments, with -f, or both. Each one is the path of a file with the
+  extension .json, .yaml or .yml. A directory is an error. To read the files
+  of a directory, let the shell give them: "phenix config apply DIR/*".
 
   The command applies Topology configurations first, then Scenario, then
   Experiment, then Image and Role configurations, because a scenario and an
@@ -160,22 +161,22 @@ func newConfigApplyCmd() *cobra.Command {
   nothing.` + configVarsHelp
 
 	example := `
+  phenix config apply topology.yml scenario.yml
   phenix config apply -f topology.yml -f scenario.yml
-  phenix config apply -f ./configs --dry-run
-  phenix config apply -f topology.yml -e NODES=3 --env-file site.env`
+  phenix config apply ./configs/* --dry-run
+  phenix config apply topology.yml -e NODES=3 --env-file site.env`
 
 	var dry dryRun
 
 	cmd := &cobra.Command{
-		Use:     "apply -f <file|dir> [-f <file|dir>]...",
+		Use:     "apply <file>... [-f <file>]...",
 		Short:   "Create or update configurations from files",
 		Long:    desc,
 		Example: example,
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			paths := mustGet(cmd.Flags().GetStringArray, configFileFlag)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			paths := slices.Concat(mustGet(cmd.Flags().GetStringArray, configFileFlag), args)
 			if len(paths) == 0 {
-				return errors.New("must provide at least one configuration file or directory with -f")
+				return errors.New("must provide at least one configuration file")
 			}
 
 			ctx := sigterm.CancelContext(commandContext(cmd))
@@ -203,12 +204,11 @@ func newConfigApplyCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringArrayP(configFileFlag, "f", nil, "Configuration file or directory to apply (repeatable)")
+	cmd.Flags().StringArrayP(configFileFlag, "f", nil, "Configuration file to apply (repeatable); the same as an argument")
 	dry = addDryRunFlag(cmd)
 	cmd.Flags().Bool("skip-validation", false, "Skip schema validation of new configurations (updates are always validated)")
 	addVarFlags(cmd)
 
-	_ = cmd.MarkFlagRequired(configFileFlag)
 	_ = cmd.MarkFlagFilename(configFileFlag, "json", "yaml", "yml")
 
 	return cmd

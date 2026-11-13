@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -23,6 +22,7 @@ import (
 	"phenix/store"
 	"phenix/store/storetest"
 	bdoc "phenix/types/builder"
+	"phenix/util/envsubst"
 	"phenix/util/plog/plogtest"
 )
 
@@ -130,18 +130,14 @@ func TestConfigCommandsShowBuilderDocumentAsMap(t *testing.T) {
 	}
 }
 
-// TestConfigSkipsBuilderFiles checks that config apply skips Builder files in a
-// directory with a log line, and that config create refuses each one named on
-// the command line.
-func TestConfigSkipsBuilderFiles(t *testing.T) {
+// TestConfigCommandsRefuseBuilderFiles checks that config create refuses each
+// Builder file, and that config apply refuses one and applies the config files.
+func TestConfigCommandsRefuseBuilderFiles(t *testing.T) {
 	storetest.UseBolt(t)
 
-	logs := plogtest.Capture(t)
 	directory := t.TempDir()
-	documents, skipped := writeBuilderFiles(t, directory)
-
-	writeTestBytes(t, directory, "pump-station.topology.yaml", exampleFile(t, "pump-station.topology.yaml"))
-	writeTestBytes(t, directory, "notes.txt", []byte("not a config"))
+	documents, others := writeBuilderFiles(t, directory)
+	topology := writeTestBytes(t, directory, "pump-station.topology.yaml", exampleFile(t, "pump-station.topology.yaml"))
 
 	run := func(args ...string) error {
 		_, err := runConfigTestCommand(append([]string{"create"}, args...)...)
@@ -149,8 +145,9 @@ func TestConfigSkipsBuilderFiles(t *testing.T) {
 		return err
 	}
 
-	if out, err := runConfigTestCommand("apply", "-f", directory); err != nil || out != "topology/pump-station created\n" {
-		t.Fatalf("config apply on the directory = %q, %v, want the one config created", out, err)
+	out, err := runConfigTestCommand("apply", documents[0], topology)
+	if err == nil || out != "topology/pump-station created\n" {
+		t.Fatalf("config apply of a document and a config = %q, %v, want the config created and an error", out, err)
 	}
 
 	topologies, err := config.List("topology")
@@ -163,44 +160,10 @@ func TestConfigSkipsBuilderFiles(t *testing.T) {
 	}
 
 	if topologies[0].HasAnnotation(builder.DocumentAnnotation) {
-		t.Error("the topology names a Builder document, which config create never publishes")
+		t.Error("the topology names a Builder document, which config apply never publishes")
 	}
 
-	if scenarios, err := config.List("scenario"); err != nil {
-		t.Errorf("config.List(scenario) error = %v", err)
-	} else if len(scenarios) != 0 {
-		t.Errorf("config.List(scenario) = %v, want none: a package's Scenario config is not created", scenarios)
-	}
-
-	logged := logs.Records(t, plogtest.Message("skipped Builder document. Upload it in the Builder to publish it"))
-
-	paths := make([]string, 0, len(logged))
-	for _, record := range logged {
-		path, _ := record["path"].(string)
-		paths = append(paths, path)
-	}
-
-	if !slices.Equal(paths, documents) {
-		t.Errorf("logged skipped documents = %v, want one log line for each of %v", paths, documents)
-	}
-
-	got := map[string]string{}
-
-	for _, record := range logs.Records(t, plogtest.Message("skipped Builder file, which is not a configuration")) {
-		path, _ := record["path"].(string)
-		kind, _ := record["kind"].(string)
-		got[path] = kind
-
-		if record["level"] != slog.LevelDebug.String() {
-			t.Errorf("the log line for %s is at level %v, want %v", path, record["level"], slog.LevelDebug)
-		}
-	}
-
-	if diff := cmp.Diff(skipped, got); diff != "" {
-		t.Errorf("logged skipped Builder files mismatch (-want +got):\n%s", diff)
-	}
-
-	// Named on the command line, a Builder document is an error, with or without
+	// A Builder document is an error of config create, with or without
 	// validation, and files named after it are not read.
 	for _, test := range []struct {
 		name string
@@ -208,7 +171,7 @@ func TestConfigSkipsBuilderFiles(t *testing.T) {
 	}{
 		{name: "a JSON document", args: []string{documents[0]}},
 		{name: "a YAML document without validation", args: []string{documents[1], "--skip-validation"}},
-		{name: "a document before a config file", args: []string{documents[0], filepath.Join(directory, "pump-station.topology.yaml")}},
+		{name: "a document before a config file", args: []string{documents[0], topology}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			err := run(test.args...)
@@ -221,7 +184,7 @@ func TestConfigSkipsBuilderFiles(t *testing.T) {
 		})
 	}
 
-	for path, kind := range skipped {
+	for path, kind := range others {
 		t.Run(filepath.Base(path), func(t *testing.T) {
 			if err := run(path); err == nil || err.Error() != wantBuilderFileRefusal(path, kind) {
 				t.Errorf("config create %s error = %v, want %q", path, err, wantBuilderFileRefusal(path, kind))
@@ -791,66 +754,53 @@ func TestConfigCreateCmdArguments(t *testing.T) {
 	}
 }
 
-func TestConfigFilesAt(t *testing.T) {
+// readConfigInputs reads only files with the extension .json, .yaml or .yml,
+// and refuses a directory before it reads a file.
+func TestReadConfigInputs(t *testing.T) {
 	directory := t.TempDir()
-	nested := filepath.Join(directory, "b")
 
-	if err := os.Mkdir(nested, 0o750); err != nil {
-		t.Fatalf("creating %s: %v", nested, err)
-	}
-
-	for _, name := range []string{"a.json", "b/c.yml", "b/d.yaml", "e.txt", "f.YAML", "yaml", "é.yaml"} {
+	for _, name := range []string{"a.json", "e.txt", "f.YAML", "yaml", "é.yaml"} {
 		writeTestBytes(t, directory, name, nil)
 	}
 
-	in := func(names ...string) []string {
-		paths := make([]string, 0, len(names))
-		for _, name := range names {
-			paths = append(paths, filepath.Join(directory, name))
-		}
-
-		return paths
+	vars, err := envsubst.NewSet(envsubst.Options{Flags: nil, EnvFiles: nil, DefaultEnvFile: "", Environ: nil, Reserved: ""})
+	if err != nil {
+		t.Fatalf("NewSet error = %v", err)
 	}
 
-	for _, tt := range []struct {
-		name string
-		path string
-		want []string
-	}{
-		{name: "directory tree", path: directory, want: in("a.json", "b/c.yml", "b/d.yaml", "é.yaml")},
-		{name: "a config file", path: in("a.json")[0], want: in("a.json")},
-		{name: "another file", path: in("e.txt")[0], want: nil},
-		{name: "extension in capitals", path: in("f.YAML")[0], want: nil},
+	for name, want := range map[string]error{
+		"a.json": nil, "é.yaml": nil, "e.txt": errNotConfigFile, "f.YAML": errNotConfigFile, "yaml": errNotConfigFile,
+		"missing.yml": os.ErrNotExist,
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := configFilesAt(tt.path)
-			if err != nil {
-				t.Fatalf("configFilesAt(%s) error = %v", tt.path, err)
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(directory, name)
+
+			inputs, err := readConfigInputs([]string{path}, vars)
+			if err != nil || len(inputs) != 1 || inputs[0].path != path {
+				t.Fatalf("readConfigInputs(%s) = %v, %v, want one input for the path", name, inputs, err)
 			}
 
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("configFilesAt(%s) mismatch (-want +got):\n%s", tt.path, diff)
+			if !errors.Is(inputs[0].err, want) {
+				t.Errorf("readConfigInputs(%s) input error = %v, want %v", name, inputs[0].err, want)
 			}
 		})
 	}
 
-	if got, err := configFilesAt(filepath.Join(directory, "missing")); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("configFilesAt(missing) = %q, %v, want os.ErrNotExist", got, err)
+	inputs, err := readConfigInputs([]string{filepath.Join(directory, "a.json"), directory}, vars)
+	if !errors.Is(err, errConfigDirectory) || inputs != nil {
+		t.Errorf("readConfigInputs(a file and a directory) = %v, %v, want no input and errConfigDirectory", inputs, err)
 	}
 }
 
 func TestBuilderFileKindOfOtherFiles(t *testing.T) {
-	directory := t.TempDir()
-
-	for name, path := range map[string]string{
-		"a missing file": filepath.Join(directory, "missing.json"),
-		"a topology":     writeTestBytes(t, directory, "topology.yaml", []byte(configCreateTestTopology)),
-		"an empty file":  writeTestBytes(t, directory, "empty.json", nil),
-		"not JSON":       writeTestBytes(t, directory, "broken.json", []byte("{")),
+	for name, text := range map[string]string{
+		"a topology":    configCreateTestTopology,
+		"an empty file": "",
+		"not JSON":      "{",
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := builderFileKind(path); got != "" {
-				t.Errorf("builderFileKind(%s) = %q, want \"\"", path, got)
+			if got := builderFileKind([]byte(text)); got != "" {
+				t.Errorf("builderFileKind(%s) = %q, want \"\"", name, got)
 			}
 		})
 	}

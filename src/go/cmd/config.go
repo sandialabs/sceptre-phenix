@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/hashicorp/go-multierror"
@@ -236,8 +234,8 @@ func newConfigCreateCmd() *cobra.Command {
 
   This subcommand is used to create one or more configurations from JSON or
   YAML file(s). Each argument is the path of a file with the extension
-  .json, .yaml or .yml. A directory is an error: give its files, or use
-  "phenix config apply -f" for a directory.
+  .json, .yaml or .yml. A directory is an error. To read the files of a
+  directory, let the shell give them: "phenix config create DIR/*".
 
   A Builder document (the Builder's JSON or YAML export), a Builder
   template file, a Builder package and a Builder layer set file are not
@@ -268,12 +266,6 @@ func newConfigCreateCmd() *cobra.Command {
 			skip := mustGet(cmd.Flags().GetBool, "skip-validation")
 			ctx := sigterm.CancelContext(commandContext(cmd))
 
-			for _, arg := range args {
-				if info, err := os.Stat(arg); err == nil && info.IsDir() {
-					return fmt.Errorf("%s is a directory: %w", arg, errConfigDirectory)
-				}
-			}
-
 			vars, err := configVarsFromFlags(cmd)
 			if err != nil {
 				return err
@@ -291,8 +283,8 @@ func newConfigCreateCmd() *cobra.Command {
 				case in.err == nil:
 				case in.builder:
 					return in.err
-				case errors.Is(in.err, errNoConfigFiles):
-					return fmt.Errorf("%s: %w", in.path, errNotConfigFile)
+				case errors.Is(in.err, errNotConfigFile):
+					return fmt.Errorf("%s: %w", in.path, in.err)
 				default:
 					return configCreateError(in.path, nil, in.err)
 				}
@@ -345,41 +337,6 @@ func createConfigInput(ctx context.Context, in configInput, skip bool) (*store.C
 	return config.Create(opts...)
 }
 
-// configFilesAt returns the JSON and YAML files at path: the file itself, or
-// the files of the directory and of the directories below it.
-func configFilesAt(path string) ([]string, error) {
-	var configs []string
-
-	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() {
-			return nil
-		}
-
-		extensions := []string{"*.json", "*.yaml", "*.yml"}
-
-		for _, ext := range extensions {
-			match, err := filepath.Match(ext, filepath.Base(path))
-			if err != nil {
-				return err
-			}
-
-			if match {
-				configs = append(configs, path)
-
-				break
-			}
-		}
-
-		return nil
-	})
-
-	return configs, err //nolint:wrapcheck // the caller words the error
-}
-
 // Kinds of Builder-owned files, none of which holds a configuration (see
 // [builderFileKind]).
 const (
@@ -389,17 +346,11 @@ const (
 	builderFileLayerSetFile = "Builder layer set file"
 )
 
-// builderFileKind returns what the file at path is, by its content, when it is
-// a Builder-owned file: a Builder document, a template file, a package or a
-// layer set file. The Builder exports each of these as plain .json or .yaml. It returns "" for any
-// other file. It also returns "" for a file that cannot be read, and leaves it
-// to the normal read to report why.
-func builderFileKind(path string) string {
-	text, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-
+// builderFileKind returns what a file with the content text is, when it is a
+// Builder-owned file: a Builder document, a template file, a package or a
+// layer set file. The Builder exports each of these as plain .json or .yaml.
+// It returns "" for any other file.
+func builderFileKind(text []byte) string {
 	switch bdoc.FileKindOf(text) {
 	case bdoc.FileKindDocument:
 		return builderFileDocument
@@ -413,20 +364,6 @@ func builderFileKind(path string) string {
 	}
 
 	return ""
-}
-
-// skipBuilderFile logs that a config command skipped the Builder-owned file at
-// path, of kind, found in a directory it was given. The line of a Builder
-// document says where to publish it. The other kinds are logged at debug
-// level.
-func skipBuilderFile(kind, path string) {
-	if kind == builderFileDocument {
-		plog.Info(plog.TypeSystem, "skipped Builder document. Upload it in the Builder to publish it", "path", path)
-
-		return
-	}
-
-	plog.Debug(plog.TypeSystem, "skipped Builder file, which is not a configuration", "kind", kind, "path", path)
 }
 
 // builderFileRefusal is the error of config create for the Builder-owned file

@@ -45,12 +45,14 @@ begin with a capital letter.
     When we say this, we mean passing a YAML or JSON configuration file of any
     type to the `phenix config create` command.
 
-    `phenix config create` takes files only: each argument is a `.json`,
-    `.yaml` or `.yml` file, and a directory is an error. Use
-    `phenix config apply -f <directory>` to create or update every
-    configuration file below a directory. `phenix config create` refuses a
-    [Builder](builder/index.md) document, and `phenix config apply` skips one
-    in a directory (see
+    `phenix config create`, `phenix config apply` and `phenix config diff`
+    take files only: each argument is a `.json`, `.yaml` or `.yml` file, and
+    a directory is an error. To read every file of a directory, give `dir/*`
+    in a shell, such as `phenix config create configs/*`. The shell replaces
+    `dir/*` with the files of the directory before phēnix starts. Use
+    `dir/*.yml` when the directory also holds files that are not
+    configurations. The commands refuse a [Builder](builder/index.md)
+    document (see
     [Builder documents and phenix config create](builder/details/import-upload-download.md#builder-documents-and-phenix-config-create)).
 
 The `metadata` section can also hold `annotations`: text values by key, such
@@ -887,7 +889,7 @@ of these sources that has it:
 
 ```bash
 phenix config create topology.yml -e HOST=172.1.3.37
-phenix config apply -f ./configs --env-file site.env -e NODES=3
+phenix config apply configs/* --env-file site.env -e NODES=3
 ```
 
 A command reads every file and checks every variable before it changes

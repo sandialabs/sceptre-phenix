@@ -207,8 +207,9 @@ A package never holds disk images, apps or files. It lists them by name
 - A layer set file holds one layer set of the library. You download and
   upload it on the **Layers** tab of the drafts page. See
   [Layer set files](details/import-upload-download.md#layer-set-files).
-- `phenix config create` refuses a Builder document, a template file, a
-  package and a layer set file, and skips them in a directory. See
+- `phenix config create`, `phenix config apply` and `phenix config diff`
+  refuse a Builder document, a template file, a package and a layer set
+  file. See
   [Builder documents and `phenix config create`](details/import-upload-download.md#builder-documents-and-phenix-config-create).
 - A topology in a repository can name its Builder file in its
   `builder-doc` annotation, and its diagram then opens from the file.

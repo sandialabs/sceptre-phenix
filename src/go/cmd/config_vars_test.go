@@ -43,20 +43,20 @@ func TestConfigApplyAndDiffVariables(t *testing.T) { //nolint:paralleltest // re
 	storetest.UseBolt(t)
 	t.Setenv("CFGVARS_IMAGE", "from-the-shell")
 
-	dir := writeConfigFiles(t, map[string]string{"t.yml": configVarsTopology})
+	file := filepath.Join(writeConfigFiles(t, map[string]string{"t.yml": configVarsTopology}), "t.yml")
 	env := filepath.Join(writeConfigFiles(t, map[string]string{"site.env": "CFGVARS_SITE=demo\nCFGVARS_IMAGE=from-the-file\n"}), "site.env")
 
 	problems := []struct {
 		name string
 		args []string
 	}{
-		{name: "a variable that is not set", args: []string{dir}},
-		{name: "a -e variable that no file uses", args: []string{dir, "-e", "CFGVARS_SITE=demo", "-e", "CFGVARS_EXTRA=1"}},
+		{name: "a variable that is not set", args: []string{file}},
+		{name: "a -e variable that no file uses", args: []string{file, "-e", "CFGVARS_SITE=demo", "-e", "CFGVARS_EXTRA=1"}},
 	}
 
 	for _, tt := range problems {
 		t.Run(tt.name, func(t *testing.T) {
-			stdout, _, err := runConfigSubcommand(t, newConfigApplyCmd(), append([]string{"apply", "-f"}, tt.args...)...)
+			stdout, _, err := runConfigSubcommand(t, newConfigApplyCmd(), append([]string{"apply"}, tt.args...)...)
 			if !errors.Is(err, errVariables) || stdout != "" {
 				t.Errorf("config apply = %q, %v, want no output and errVariables", stdout, err)
 			}
@@ -72,12 +72,12 @@ func TestConfigApplyAndDiffVariables(t *testing.T) { //nolint:paralleltest // re
 		})
 	}
 
-	_, _, err := runConfigSubcommand(t, newConfigDiffCmd(), "diff", dir, "-e", "not a name=x")
+	_, _, err := runConfigSubcommand(t, newConfigDiffCmd(), "diff", file, "-e", "not a name=x")
 	if !errors.Is(err, envsubst.ErrBadFlag) || exitCode(err) != exitDiffError {
 		t.Errorf("config diff with a bad -e = %v with exit code %d, want ErrBadFlag with exit code %d", err, exitCode(err), exitDiffError)
 	}
 
-	stdout, _, err := runConfigSubcommand(t, newConfigDiffCmd(), "diff", dir, "--env-file", env)
+	stdout, _, err := runConfigSubcommand(t, newConfigDiffCmd(), "diff", file, "--env-file", env)
 	if want := "topology/demo new\n"; stdout != want || exitCode(err) != exitDiffers {
 		t.Errorf("config diff = %q with exit code %d, want %q with exit code %d", stdout, exitCode(err), want, exitDiffers)
 	}
@@ -92,7 +92,7 @@ func TestConfigApplyAndDiffVariables(t *testing.T) { //nolint:paralleltest // re
 		{args: []string{"--env-file", env, "-e", "CFGVARS_IMAGE=kali"}, want: "topology/demo updated\n", wantImage: "kali.qc2"},
 		{args: []string{"-e", "CFGVARS_SITE=demo"}, want: "topology/demo updated\n", wantImage: "from-the-shell.qc2"},
 	} {
-		stdout, stderr, err := runConfigSubcommand(t, newConfigApplyCmd(), append([]string{"apply", "-f", dir}, tt.args...)...)
+		stdout, stderr, err := runConfigSubcommand(t, newConfigApplyCmd(), append([]string{"apply", "-f", file}, tt.args...)...)
 		if err != nil || stderr != "" || stdout != tt.want {
 			t.Errorf("config apply %q = %q, stderr %q, %v, want %q, nil", tt.args, stdout, stderr, err, tt.want)
 		}

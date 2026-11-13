@@ -22,8 +22,9 @@ func newConfigDiffCmd() *cobra.Command {
   This subcommand prints a unified diff from each stored configuration to the
   configuration of the same kind and name in the given JSON or YAML files. It
   prints "new" for a configuration that is not stored. It prints nothing for a
-  configuration that is the same. An argument can be a file or a directory,
-  as for config apply.
+  configuration that is the same. Each argument is the path of a file with
+  the extension .json, .yaml or .yml. A directory is an error. To read the
+  files of a directory, let the shell give them: "phenix config diff DIR/*".
 
   The diff shows the apiVersion, kind, name, annotations and spec, as YAML
   with sorted keys. It ignores the fields that phenix sets: created, updated,
@@ -35,18 +36,18 @@ func newConfigDiffCmd() *cobra.Command {
 
 	example := `
   phenix config diff topology.yml
-  phenix config diff ./configs
+  phenix config diff ./configs/*
   phenix config diff topology.yml -e NODES=3 --env-file site.env`
 
 	cmd := &cobra.Command{
-		Use:     "diff <file|dir>...",
+		Use:     "diff <file>...",
 		Short:   "Show how configuration files differ from the stored configurations",
 		Long:    desc,
 		Example: example,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return &exitCodeError{
-					err:  errors.New("must provide at least one configuration file or directory"),
+					err:  errors.New("must provide at least one configuration file"),
 					code: exitDiffError,
 				}
 			}

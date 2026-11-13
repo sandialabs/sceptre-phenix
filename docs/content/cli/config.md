@@ -49,9 +49,10 @@ Create or update configurations from files
 
   This subcommand creates each configuration in the given JSON or YAML files
   that is not stored, updates each stored configuration that is different,
-  and does not change a configuration that is the same. A -f value can be a
-  file or a directory. The command reads all JSON and YAML files in a
-  directory and its subdirectories. It skips a Builder file in a directory.
+  and does not change a configuration that is the same. Give the files as
+  arguments, with -f, or both. Each one is the path of a file with the
+  extension .json, .yaml or .yml. A directory is an error. To read the files
+  of a directory, let the shell give them: "phenix config apply DIR/*".
 
   The command applies Topology configurations first, then Scenario, then
   Experiment, then Image and Role configurations, because a scenario and an
@@ -85,15 +86,16 @@ Create or update configurations from files
 ```
 
 ```text
-phenix config apply -f <file|dir> [-f <file|dir>]... [flags]
+phenix config apply <file>... [-f <file>]... [flags]
 ```
 
 ### Examples
 
 ```text
+phenix config apply topology.yml scenario.yml
 phenix config apply -f topology.yml -f scenario.yml
-phenix config apply -f ./configs --dry-run
-phenix config apply -f topology.yml -e NODES=3 --env-file site.env
+phenix config apply ./configs/* --dry-run
+phenix config apply topology.yml -e NODES=3 --env-file site.env
 ```
 
 ### Options
@@ -102,7 +104,7 @@ phenix config apply -f topology.yml -e NODES=3 --env-file site.env
       --dry-run                Show what the command would change, and change nothing
   -e, --env stringArray        set a variable for the ${NAME} placeholders: NAME=value, or NAME to copy the value from the shell (repeatable)
       --env-file stringArray   read variables from an env file of NAME=value lines; a relative path starts at the working directory (repeatable)
-  -f, --filename stringArray   Configuration file or directory to apply (repeatable)
+  -f, --filename stringArray   Configuration file to apply (repeatable); the same as an argument
   -h, --help                   help for apply
       --skip-validation        Skip schema validation of new configurations (updates are always validated)
 ```
@@ -122,8 +124,8 @@ Create a configuration(s)
 
   This subcommand is used to create one or more configurations from JSON or
   YAML file(s). Each argument is the path of a file with the extension
-  .json, .yaml or .yml. A directory is an error: give its files, or use
-  "phenix config apply -f" for a directory.
+  .json, .yaml or .yml. A directory is an error. To read the files of a
+  directory, let the shell give them: "phenix config create DIR/*".
 
   A Builder document (the Builder's JSON or YAML export), a Builder
   template file, a Builder package and a Builder layer set file are not
@@ -272,8 +274,9 @@ Show how configuration files differ from the stored configurations
   This subcommand prints a unified diff from each stored configuration to the
   configuration of the same kind and name in the given JSON or YAML files. It
   prints "new" for a configuration that is not stored. It prints nothing for a
-  configuration that is the same. An argument can be a file or a directory,
-  as for config apply.
+  configuration that is the same. Each argument is the path of a file with
+  the extension .json, .yaml or .yml. A directory is an error. To read the
+  files of a directory, let the shell give them: "phenix config diff DIR/*".
 
   The diff shows the apiVersion, kind, name, annotations and spec, as YAML
   with sorted keys. It ignores the fields that phenix sets: created, updated,
@@ -293,14 +296,14 @@ Show how configuration files differ from the stored configurations
 ```
 
 ```text
-phenix config diff <file|dir>... [flags]
+phenix config diff <file>... [flags]
 ```
 
 ### Examples
 
 ```text
 phenix config diff topology.yml
-phenix config diff ./configs
+phenix config diff ./configs/*
 phenix config diff topology.yml -e NODES=3 --env-file site.env
 ```
 

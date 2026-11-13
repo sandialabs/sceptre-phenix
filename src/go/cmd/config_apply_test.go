@@ -42,6 +42,19 @@ func writeConfigFiles(t *testing.T, files map[string]string) string {
 	return dir
 }
 
+// configFilesIn returns the files of dir in name order, as a shell gives them
+// for dir/*.
+func configFilesIn(t *testing.T, dir string) []string {
+	t.Helper()
+
+	files, err := filepath.Glob(filepath.Join(dir, "*"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("filepath.Glob(%s/*) = %v, %v, want files", dir, files, err)
+	}
+
+	return files
+}
+
 // runConfigSubcommand runs "phenix config <args>" with sub as the config
 // subcommand, and returns its stdout, its stderr and its error.
 func runConfigSubcommand(t *testing.T, sub *cobra.Command, args ...string) (string, string, error) {
@@ -70,7 +83,9 @@ func TestConfigApply(t *testing.T) { //nolint:paralleltest // replaces the store
 
 	dir := writeConfigFiles(t, map[string]string{"a-scenario.yml": applyCmdScenario, "b-topology.yml": applyCmdTopology})
 
-	stdout, stderr, err := runConfigSubcommand(t, newConfigApplyCmd(), "apply", "-f", dir, "--dry-run")
+	files := configFilesIn(t, dir)
+
+	stdout, stderr, err := runConfigSubcommand(t, newConfigApplyCmd(), append([]string{"apply", "--dry-run"}, files...)...)
 	if err != nil || stderr != "" {
 		t.Fatalf("config apply --dry-run = %v, stderr %q, want nil", err, stderr)
 	}
@@ -87,7 +102,7 @@ func TestConfigApply(t *testing.T) { //nolint:paralleltest // replaces the store
 		"topology/demo created\nscenario/demo created\n",
 		"topology/demo unchanged\nscenario/demo unchanged\n",
 	} {
-		stdout, stderr, err := runConfigSubcommand(t, newConfigApplyCmd(), "apply", "-f", dir)
+		stdout, stderr, err := runConfigSubcommand(t, newConfigApplyCmd(), append([]string{"apply"}, files...)...)
 		if err != nil || stderr != "" || stdout != want {
 			t.Errorf("config apply = %q, stderr %q, %v, want %q, nil", stdout, stderr, err, want)
 		}
@@ -118,7 +133,7 @@ func TestConfigApplyFailures(t *testing.T) { //nolint:paralleltest // replaces t
 		),
 		"broken.yml": "kind: [\n",
 	})
-	stdout, stderr, err := runConfigSubcommand(t, newConfigApplyCmd(), "apply", "-f", dir)
+	stdout, stderr, err := runConfigSubcommand(t, newConfigApplyCmd(), append([]string{"apply"}, configFilesIn(t, dir)...)...)
 	if err == nil {
 		t.Fatal("config apply with bad files error = nil, want an error")
 	}
@@ -143,14 +158,33 @@ func TestConfigApplyFailures(t *testing.T) { //nolint:paralleltest // replaces t
 	}
 }
 
-// config apply needs -f and takes no arguments.
+// config apply needs a file, as an argument or with -f, and refuses a
+// directory before it applies a file.
 func TestConfigApplyArgs(t *testing.T) { //nolint:paralleltest // replaces the store
 	storetest.UseBolt(t)
 
-	for _, args := range [][]string{{"apply"}, {"apply", "x.yml"}} {
-		if _, _, err := runConfigSubcommand(t, newConfigApplyCmd(), args...); err == nil {
-			t.Errorf("config %q error = nil, want an error", args)
+	dir := writeConfigFiles(t, map[string]string{"t.yml": applyCmdTopology, "s.yml": applyCmdScenario})
+	topology, scenario := filepath.Join(dir, "t.yml"), filepath.Join(dir, "s.yml")
+
+	if _, _, err := runConfigSubcommand(t, newConfigApplyCmd(), "apply"); err == nil {
+		t.Error("config apply with no file error = nil, want an error")
+	}
+
+	for _, args := range [][]string{{"apply", topology, dir}, {"apply", "-f", dir}, {"apply", "-f", topology, dir}} {
+		stdout, _, err := runConfigSubcommand(t, newConfigApplyCmd(), args...)
+		if !errors.Is(err, errConfigDirectory) || stdout != "" {
+			t.Errorf("config %q = %q, %v, want no output and errConfigDirectory", args, stdout, err)
 		}
+	}
+
+	if _, err := config.Get("topology/demo"); !errors.Is(err, store.ErrNotExist) {
+		t.Errorf("config.Get(topology/demo) after a refused directory error = %v, want %v", err, store.ErrNotExist)
+	}
+
+	// A file of -f and a file of the arguments are both applied.
+	stdout, stderr, err := runConfigSubcommand(t, newConfigApplyCmd(), "apply", "-f", scenario, topology)
+	if want := "topology/demo created\nscenario/demo created\n"; err != nil || stderr != "" || stdout != want {
+		t.Errorf("config apply -f and an argument = %q, stderr %q, %v, want %q, nil", stdout, stderr, err, want)
 	}
 }
 
@@ -174,10 +208,10 @@ func TestConfigDiff(t *testing.T) { //nolint:paralleltest // replaces the store
 		wantStdout string
 		wantCode   int
 	}{
-		{name: "the same", args: []string{same}, wantStdout: "", wantCode: 0},
+		{name: "the same", args: configFilesIn(t, same), wantStdout: "", wantCode: 0},
 		{
 			name: "changed and new",
-			args: []string{changed},
+			args: []string{filepath.Join(changed, "t.yml"), filepath.Join(changed, "s.yml")},
 			wantStdout: "--- stored topology/demo\n+++ " + filepath.Join(changed, "t.yml") + "\n" +
 				"@@ -8,6 +8,6 @@\n" +
 				"         hostname: host-00\n       hardware:\n         drives:\n" +
@@ -187,6 +221,7 @@ func TestConfigDiff(t *testing.T) { //nolint:paralleltest // replaces the store
 			wantCode: exitDiffers,
 		},
 		{name: "a missing file", args: []string{filepath.Join(same, "nope.yml")}, wantCode: exitDiffError},
+		{name: "a directory", args: []string{same}, wantCode: exitDiffError},
 		{name: "no files", args: nil, wantCode: exitDiffError},
 	}
 
