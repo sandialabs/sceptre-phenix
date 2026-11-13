@@ -10,7 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"phenix/types/version"
-	"phenix/util/common"
+	"phenix/util/envsubst"
 )
 
 // typesFullNameModel names the config that s identifies: one "/", and a kind
@@ -167,7 +167,7 @@ func FuzzNewConfigFromYAML(f *testing.F) {
 			t.Fatalf("yaml.Marshal(NewConfigFromYAML(%q)) error = %v", body, err)
 		}
 
-		if common.EnvPlaceholder.Match(out) { // a second parse would expand it
+		if len(envsubst.Tokens(out)) > 0 { // a second parse would expand it
 			return
 		}
 

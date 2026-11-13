@@ -15,7 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"pgregory.net/rapid"
 
-	"phenix/util/common"
+	"phenix/util/envsubst"
 )
 
 func TestLoadConfigs(t *testing.T) {
@@ -489,8 +489,8 @@ func TestNeutralizePlaceholdersProperties(t *testing.T) {
 
 		inside := make([]bool, len(in))
 
-		for _, span := range common.EnvPlaceholder.FindAllStringIndex(body, -1) {
-			start, end := utf8.RuneCountInString(body[:span[0]]), utf8.RuneCountInString(body[:span[1]])
+		for _, tok := range envsubst.Tokens([]byte(body)) {
+			start, end := utf8.RuneCountInString(body[:tok.Start]), utf8.RuneCountInString(body[:tok.End])
 			for i := start; i < end; i++ {
 				inside[i] = true
 			}

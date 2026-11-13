@@ -15,7 +15,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"phenix/util/common"
+	"phenix/util/envsubst"
 	"phenix/util/plog"
 )
 
@@ -247,17 +247,17 @@ func parseDocument(path string, body []byte) (*yaml.Node, error) {
 }
 
 // neutralizePlaceholders replaces each non-whitespace character of every
-// common.EnvPlaceholder match with x. A placeholder then breaks no syntax
-// check, and every line and column stays where it was.
+// placeholder with x. A placeholder then breaks no syntax check, and every
+// line and column stays where it was.
 func neutralizePlaceholders(body []byte) []byte {
-	return common.EnvPlaceholder.ReplaceAllFunc(body, func(match []byte) []byte {
+	return envsubst.Replace(body, func(tok envsubst.Token) ([]byte, bool) {
 		return bytes.Map(func(r rune) rune {
 			if unicode.IsSpace(r) {
 				return r
 			}
 
 			return 'x'
-		}, match)
+		}, []byte(tok.Raw)), true
 	})
 }
 

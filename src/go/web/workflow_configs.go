@@ -15,7 +15,7 @@ import (
 	"phenix/api/experiment"
 	"phenix/api/workflow"
 	"phenix/store"
-	"phenix/util/common"
+	"phenix/util/envsubst"
 	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
@@ -34,14 +34,17 @@ func parseDryRun(q url.Values) (bool, error) {
 func configName(body []byte, typ, branch string) (string, error) {
 	var n int
 
-	src := common.EnvPlaceholder.ReplaceAllStringFunc(string(body), func(match string) string {
-		if common.EnvPlaceholder.FindStringSubmatch(match)[1] == "BRANCH_NAME" {
-			return branch
+	src := envsubst.Replace(body, func(tok envsubst.Token) ([]byte, bool) {
+		switch {
+		case tok.Name != "BRANCH_NAME":
+			n++
+
+			return []byte(strconv.Itoa(n)), true
+		case tok.Escaped:
+			return tok.Literal(), true
+		default:
+			return []byte(branch), true
 		}
-
-		n++
-
-		return strconv.Itoa(n)
 	})
 
 	var head struct {
@@ -53,9 +56,9 @@ func configName(body []byte, typ, branch string) (string, error) {
 
 	var err error
 	if typ == mimeJSON {
-		err = json.Unmarshal([]byte(src), &head)
+		err = json.Unmarshal(src, &head)
 	} else {
-		err = yaml.Unmarshal([]byte(src), &head)
+		err = yaml.Unmarshal(src, &head)
 	}
 
 	if err != nil {

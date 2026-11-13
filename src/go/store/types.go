@@ -15,7 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"phenix/types/version"
-	"phenix/util/common"
+	"phenix/util/envsubst"
 )
 
 const (
@@ -111,8 +111,7 @@ func NewConfigFromFile(path string) (*Config, error) {
 		return nil, fmt.Errorf("cannot read config: %w", err)
 	}
 
-	// Parse environment variables in the file
-	file = []byte(common.ParseEnv(string(file)))
+	file = envsubst.Expand(file, os.LookupEnv)
 
 	var c Config
 
@@ -142,19 +141,13 @@ func NewConfigFromFile(path string) (*Config, error) {
 // NewConfigFromYAML decodes a YAML config after it replaces each ${NAME}
 // placeholder with the value of that environment variable.
 func NewConfigFromYAML(body []byte) (*Config, error) {
-	return DecodeConfigYAML([]byte(common.ParseEnv(string(body))))
+	return DecodeConfigYAML(envsubst.Expand(body, os.LookupEnv))
 }
 
 // ExpandBranchName replaces each ${BRANCH_NAME} placeholder in body as
-// [common.ParseEnv] does. It keeps every other placeholder as it is written.
+// [envsubst.Expand] does. It keeps every other placeholder as it is written.
 func ExpandBranchName(body []byte) []byte {
-	return common.EnvPlaceholder.ReplaceAllFunc(body, func(match []byte) []byte {
-		if string(common.EnvPlaceholder.FindSubmatch(match)[1]) != "BRANCH_NAME" {
-			return match
-		}
-
-		return []byte(common.ParseEnv(string(match)))
-	})
+	return envsubst.ExpandOnly(body, "BRANCH_NAME", os.LookupEnv)
 }
 
 // DecodeConfigJSON decodes a JSON config as it is written. It keeps each
