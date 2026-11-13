@@ -1,14 +1,29 @@
-// The real store's login: what it keeps on this device, and the page it opens.
+// The real store's login and logout: what it keeps on this device, and the
+// page it opens.
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { router, session } = vi.hoisted(() => ({
+const { router, session, caches } = vi.hoisted(() => ({
   router: { replace: vi.fn() },
   session: { startBuilderSession: vi.fn(), endBuilderSession: vi.fn() },
+  caches: {
+    clearPageCache: vi.fn(),
+    clearConfigCache: vi.fn(),
+    clearRunningVmsCache: vi.fn(),
+  },
 }));
 vi.unmock('@/store.js');
 vi.mock('@/router', () => ({ default: router }));
 vi.mock('@/builder/session.js', () => session);
+vi.mock('@/utils/pageCache.js', () => ({
+  clearPageCache: caches.clearPageCache,
+}));
+vi.mock('@/utils/configCache.js', () => ({
+  clearConfigCache: caches.clearConfigCache,
+}));
+vi.mock('@/vnc/vmListCache.js', () => ({
+  clearRunningVmsCache: caches.clearRunningVmsCache,
+}));
 
 import { usePhenixStore } from '@/store.js';
 
@@ -86,5 +101,26 @@ describe('login', () => {
     store.next = { name: 'vms' };
     store.login(answer('VM Viewer'), false);
     expect(store.next).toEqual({ name: 'vms' });
+  });
+});
+
+describe('logout', () => {
+  it("clears the user's cached data and opens the sign-in page", () => {
+    const store = usePhenixStore();
+    store.login(answer('Global Admin'), true, false);
+    store.logout();
+
+    for (const clear of Object.values(caches)) {
+      expect(clear).toHaveBeenCalledOnce();
+    }
+    expect(session.endBuilderSession).toHaveBeenCalledOnce();
+    expect(store).toMatchObject({ username: null, token: null, auth: false });
+    expect(kept(localStorage)).toEqual(
+      Object.fromEntries(KEYS.map((key) => [key, null])),
+    );
+    expect(kept(sessionStorage)).toEqual(
+      Object.fromEntries(KEYS.map((key) => [key, null])),
+    );
+    expect(router.replace).toHaveBeenCalledExactlyOnceWith('/signin');
   });
 });
