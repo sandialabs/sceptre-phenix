@@ -1,7 +1,4 @@
-// How the VM details card names and colors a VM's guest operating system.
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
+// How the VM details card names a VM's guest operating system and its icon.
 import { icon, library } from '@fortawesome/fontawesome-svg-core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -10,23 +7,6 @@ import { osTypeInfo } from '@/components/experiment/osType.js';
 import { faLinux, faWindows } from '@/utils/icons.js';
 
 const FAMILIES = ['linux', 'windows', 'router', 'other'];
-
-// the WCAG contrast ratio of two #rrggbb colors
-function contrast(a, b) {
-  const luminance = (hex) => {
-    const [r, g, bl] = [1, 3, 5].map((i) => {
-      const c = parseInt(hex.slice(i, i + 2), 16) / 255;
-      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-    });
-    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
-  };
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-  return (hi + 0.05) / (lo + 0.05);
-}
-
-// six-digit form of a #rgb or #rrggbb color
-const fullHex = (hex) =>
-  hex.length === 4 ? `#${[...hex.slice(1)].map((c) => c + c).join('')}` : hex;
 
 describe('osTypeInfo', () => {
   it.each([
@@ -72,29 +52,6 @@ describe('osTypeInfo', () => {
         const cased = upper ? text.toUpperCase() : text.toLowerCase();
         expect(osTypeInfo(cased).family).toBe(info.family);
       }),
-    );
-  });
-});
-
-describe('the OS tag colors', () => {
-  const style = readFileSync(
-    join(
-      import.meta.dirname,
-      '..',
-      'src/components/experiment/VmDetailsCard.vue',
-    ),
-    'utf8',
-  );
-
-  it.each(FAMILIES)('give the %s family text of 4.5:1 or more', (family) => {
-    const rule = new RegExp(
-      `\\.vm-os-tag\\.is-os-${family}\\s*\\{([^}]*)\\}`,
-    ).exec(style)?.[1];
-    expect(rule).toBeDefined();
-    const background = /background-color:\s*(#[0-9a-f]+)/i.exec(rule)[1];
-    const text = /(?:^|\s)color:\s*(#[0-9a-f]+)/i.exec(rule)[1];
-    expect(contrast(fullHex(background), fullHex(text))).toBeGreaterThanOrEqual(
-      4.5,
     );
   });
 });

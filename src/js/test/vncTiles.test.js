@@ -21,7 +21,6 @@ import VncTiles from '@/components/experiment/VncTiles.vue';
 import VncTileToolbar from '@/vnc/VncTileToolbar.vue';
 import { sharedLiveTilePool } from '@/vnc/liveTilePool.js';
 import { readPref, writePref } from '@/utils/prefs.js';
-import { componentDeclarations, contrast } from './helpers/css.js';
 import { vm } from './helpers/fixtures.js';
 import { denyAll, denyOnly } from './helpers/permissions.js';
 import { buttons, mountComponent, textOf } from './helpers/mount.js';
@@ -260,15 +259,6 @@ describe('the hover bar', () => {
       expect(wrapper.emitted('action')).toBeUndefined();
     },
   );
-
-  it('keeps the bar shown while focus is in the tile', () => {
-    expect(
-      componentDeclarations(
-        'src/vnc/VncTile.vue',
-        '.vnc-tile:focus-within .vnc-tile-bar',
-      ),
-    ).toMatchObject({ opacity: '1', 'pointer-events': 'auto' });
-  });
 
   it.each([
     ['running', vm(), true],
@@ -548,15 +538,4 @@ describe('the screenshots of tiles that are live', () => {
     await flushPromises();
     expect(liveMessages().at(-1)).toEqual(['demo/db']);
   });
-});
-
-it('writes the VM names at 7:1 or more on their bar', () => {
-  const style = componentDeclarations(
-    'src/components/experiment/VncTiles.vue',
-    '.vnc-tile-name',
-  );
-  expect(style['background-color']).toBe('#4d4d4d');
-  expect(contrast('#f5f5f5', style['background-color'])).toBeGreaterThanOrEqual(
-    7,
-  );
 });

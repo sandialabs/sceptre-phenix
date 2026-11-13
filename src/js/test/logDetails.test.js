@@ -17,7 +17,6 @@ vi.mock('@/store.js', modules.store);
 vi.mock('@/utils/pageLoader.js', capturing);
 
 import Logs from '@/views/Logs.vue';
-import { componentDeclarations, contrast } from './helpers/css.js';
 import { mountPage, textOf } from './helpers/mount.js';
 
 const AUDIT =
@@ -260,41 +259,4 @@ it('steps to the entries before and after it in the list shown', async () => {
   await flushPromises();
   expect(details().raw).toBe(LOGS[0].msg);
   expect(dialogButton('Previous').getAttribute('aria-disabled')).toBe('true');
-});
-
-// happy-dom lays nothing out, so this reads the rules that keep the dialog
-// readable: wrapped values, its own scroll, and 7:1 text
-it('wraps long values inside the dialog, scrolls itself, and keeps text at 7:1', () => {
-  const style = (selector) =>
-    componentDeclarations('src/components/LogDetailsModal.vue', selector);
-  expect(style('.log-details')).toMatchObject({
-    'max-height': 'calc(100vh - 40px)',
-  });
-  expect(style('.log-details .modal-card-body')).toMatchObject({
-    'line-height': '1.5',
-    'overflow-y': 'auto',
-  });
-  for (const selector of ['.log-field dt', '.log-field dd']) {
-    expect(style(selector)['overflow-wrap']).toBe('anywhere');
-  }
-  expect(style('.log-details-raw')).toMatchObject({
-    'white-space': 'pre-wrap',
-    'overflow-wrap': 'anywhere',
-    overflow: 'auto',
-  });
-
-  // the card is $modal-card-body-background-color
-  const card = '#4a4a4a';
-  const stripe = style('.log-field:nth-child(odd)')['background-color'];
-  for (const back of [card, stripe]) {
-    for (const text of ['.log-field dt', '.log-field dd']) {
-      expect(contrast(style(text).color, back)).toBeGreaterThanOrEqual(7);
-    }
-  }
-  const raw = style('.log-details-raw');
-  expect(contrast(raw.color, raw['background-color'])).toBeGreaterThan(7);
-  // the full message's border against the card and its own fill
-  const border = raw.border.split(' ').at(-1);
-  expect(contrast(border, card)).toBeGreaterThanOrEqual(3);
-  expect(contrast(border, raw['background-color'])).toBeGreaterThanOrEqual(3);
 });

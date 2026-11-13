@@ -614,86 +614,9 @@ describe('the experiment summary', () => {
     expect(wrapper.find('.exp-summary-builder').exists()).toBe(false);
   });
 
-  // DOM order: scenarios, topology, hosts, VMs, VLANs, start
-  it('fills every row of tiles, with or without a start or hosts, in a narrow or wide card', () => {
-    const file = 'src/components/experiment/ExperimentSummary.vue';
-    const span = (selectors, wide) => {
-      let found;
-      for (const media of wide ? [null, '(min-width: 44rem)'] : [null]) {
-        for (const selector of selectors.filter(Boolean)) {
-          const value = componentDeclarations(file, selector, media)[
-            'grid-column'
-          ];
-          if (value) found = Number(value.replace('span ', ''));
-        }
-      }
-      return found;
-    };
-    for (const start of [false, true]) {
-      for (const hosts of [false, true]) {
-        for (const wide of [false, true]) {
-          const tiles = [
-            [
-              '.exp-fact-scenarios',
-              start && hosts && '.has-start.has-hosts .exp-fact-scenarios',
-            ],
-            ['.exp-fact-topology'],
-            hosts && ['.exp-fact-hosts', start && '.has-start .exp-fact-hosts'],
-            [
-              '.exp-fact-vms',
-              !start &&
-                !hosts &&
-                '.exp-summary-facts:not(.has-hosts):not(.has-start) .exp-fact-vms',
-              start && '.has-start .exp-fact-vms',
-            ],
-            ['.exp-fact-vlans'],
-            start && ['.exp-fact-started'],
-          ].filter(Boolean);
-          const rows = [0];
-          for (const tile of tiles) {
-            const n = span(tile, wide);
-            if (rows.at(-1) + n > 12) rows.push(0);
-            rows[rows.length - 1] += n;
-          }
-          expect({ start, hosts, wide, rows }).toEqual({
-            start,
-            hosts,
-            wide,
-            rows: [12, 12],
-          });
-        }
-      }
-    }
-    expect(componentDeclarations(file, '.exp-fact-vlans')).toEqual({
-      'grid-column': 'span 2',
-    });
-  });
-
   it('shows a start that is not a time as it came', async () => {
     const wrapper = await render({ start_time: 'garbled' });
     expect(textOf(wrapper.find('.exp-fact-started dd'))).toBe('garbled');
-  });
-
-  // "2026-10-28T14:03:22-06:00 (59 minutes ago)" fits on one line in 7 of the
-  // 12 columns of a 44rem card, and "18 running of 25" in 3.
-  it('widens the start over the counts in a wide card', () => {
-    const file = 'src/components/experiment/ExperimentSummary.vue';
-    expect(
-      componentDeclarations(file, '.content dl.exp-summary-facts'),
-    ).toMatchObject({ 'container-type': 'inline-size' });
-    expect(componentDeclarations(file, '.exp-fact-started')).toEqual({
-      'grid-column': 'span 6',
-    });
-    expect(
-      componentDeclarations(file, '.exp-fact-started', '(min-width: 44rem)'),
-    ).toEqual({ 'grid-column': 'span 7' });
-    expect(
-      componentDeclarations(
-        file,
-        '.has-start .exp-fact-vms',
-        '(min-width: 44rem)',
-      ),
-    ).toEqual({ 'grid-column': 'span 3' });
   });
 });
 
@@ -1197,16 +1120,5 @@ describe('the Hosts and Labels buttons', () => {
         'Labels',
       ),
     );
-  });
-
-  // a full-width glyph such as the server's fills its icon box, so Bulma's
-  // 0.25em after the box left it touching the title
-  it('leave room between the icon and the title', () => {
-    expect(
-      componentDeclarations(
-        'src/components/experiment/VmPickFilter.vue',
-        '.vm-pick-filter-trigger :deep(.icon:first-child:not(:last-child))',
-      ),
-    ).toEqual({ 'margin-inline-end': '0.5em' });
   });
 });

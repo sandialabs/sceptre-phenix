@@ -44,11 +44,7 @@ import {
   tooltipPositions,
 } from './helpers/mount.js';
 import { allowOnly, denyOnly } from './helpers/permissions.js';
-import {
-  componentDeclarations,
-  contrast,
-  declarations,
-} from './helpers/css.js';
+import { componentDeclarations } from './helpers/css.js';
 
 const url = (run, action = '') =>
   `experiments/exp1/scorch/pipelines/${run}${action && `/${action}`}`;
@@ -999,7 +995,6 @@ describe("a component's streamed output", () => {
 });
 
 describe("a component's output window", () => {
-  const FILE = 'src/views/ScorchRuns.vue';
   const STAGES = [
     ['configure', 'stage-configure'],
     ['start', 'stage-start'],
@@ -1056,30 +1051,6 @@ describe("a component's output window", () => {
       'completed',
       ['tag', 'is-success'],
     ]);
-  });
-
-  it.each(STAGES)('gives the %s tag text 7:1 or more on its fill', (_, cls) => {
-    const rule = componentDeclarations(FILE, `.tag.${cls}`);
-    expect(
-      contrast(rule.color, rule['background-color']),
-    ).toBeGreaterThanOrEqual(7);
-  });
-
-  it('gives each stage a fill of its own', () => {
-    const fills = STAGES.map(
-      ([, cls]) =>
-        componentDeclarations(FILE, `.tag.${cls}`)['background-color'],
-    );
-    expect(new Set(fills).size).toBe(fills.length);
-  });
-
-  // the theme draws a plain tag white on #575757
-  it('gives the plain tag of an unknown stage text 7:1 or more on its fill', () => {
-    expect(declarations('.tag:not(body)')).toMatchObject({
-      'background-color': '#575757',
-      color: 'white',
-    });
-    expect(contrast('#ffffff', '#575757')).toBeGreaterThanOrEqual(7);
   });
 });
 

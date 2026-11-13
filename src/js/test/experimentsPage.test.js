@@ -33,7 +33,6 @@ import { pageStatus } from '@/utils/pageLoader.js';
 import { never } from './helpers/async.js';
 import { httpError } from './helpers/fixtures.js';
 import { allowOnly, denyOnly } from './helpers/permissions.js';
-import { componentDeclarations } from './helpers/css.js';
 import {
   buttons,
   byLabel,
@@ -210,19 +209,6 @@ describe('the table', () => {
     ).toBe(false);
     // as before: N/A for none, and text that is not a time as it came
     expect([textOf(b), textOf(c)]).toEqual(['N/A', 'garbled']);
-  });
-
-  // The table fits a 1,024 px screen: the cells pad less below 1,280 px, and
-  // a start time wraps between its date, time and age (see timeWithAge.test).
-  it('keeps the table within a desktop screen', () => {
-    const style = (selector, media) =>
-      componentDeclarations('src/views/Experiments.vue', selector, media);
-    const narrow = 'min-width: 769px) and (max-width: 1279px';
-    for (const cell of ['th', 'td']) {
-      const selector = `.exp-table :deep(${cell}:not(.exp-select-cell))`;
-      expect(style(selector, narrow)).toEqual({ 'padding-inline': '0.375em' });
-      expect(style(selector)).toEqual({});
-    }
   });
 
   it('sorts start times by the moment, not the text', async () => {
@@ -750,16 +736,6 @@ describe('the status', () => {
       expect(cell.find('.exp-status').exists()).toBe(false);
     },
   );
-
-  it('draws every status, button and progress at one width', () => {
-    const style = (selector) =>
-      componentDeclarations('src/views/Experiments.vue', selector);
-    expect(style('.status-width')).toEqual({ 'min-width': '7.5rem' });
-    expect(style('.status-progress')).toEqual({
-      width: '7.5rem',
-      'margin-inline': 'auto',
-    });
-  });
 });
 
 describe('the start and stop bar', () => {

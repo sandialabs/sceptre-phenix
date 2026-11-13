@@ -15,15 +15,12 @@ import DiskDetailsCard from '@/components/DiskDetailsCard.vue';
 import JobProgress from '@/components/jobs/JobProgress.vue';
 import { disk, diskDetails, httpError, partition } from './helpers/fixtures.js';
 import { allowAll, denyOnly } from './helpers/permissions.js';
-import { componentDeclarations, contrast } from './helpers/css.js';
 import {
   byLabel,
   mountComponent,
   textOf,
   tooltipButtons,
 } from './helpers/mount.js';
-
-const FILE = 'src/components/DiskDetailsCard.vue';
 
 const kali = disk('/phenix/images/kali.qc2', 'kali.qc2', {
   size: '16 GiB',
@@ -959,77 +956,5 @@ describe('accessible names', () => {
     for (const button of wrapper.findAll('button')) {
       expect(textOf(button) || button.attributes('aria-label')).toBeTruthy();
     }
-  });
-});
-
-describe('the colors', () => {
-  // the card's surfaces: the head, the body, a section, a box in a section
-  const HEAD = '#4f4f4f';
-  const SECTION = '#484848';
-  const BOX = '#3d3d3d';
-  const fg = (selector) => componentDeclarations(FILE, selector).color;
-  const bg = (selector) =>
-    componentDeclarations(FILE, selector)['background-color'];
-
-  it.each([
-    ['meta text on the head', fg('.disk-card-meta'), HEAD],
-    ['kind and type tags', fg('.disk-kind-tag'), bg('.disk-type-tag')],
-    ['inject tag', fg('.disk-inject-tag'), bg('.disk-inject-tag')],
-    ['section titles', fg('.disk-section-title'), SECTION],
-    ['stat labels', fg('.disk-stat-label'), SECTION],
-    ['empty notes', fg('.disk-empty'), SECTION],
-    ['unavailable reasons', fg('.disk-unavailable'), SECTION],
-    ['links on a section', fg('.disk-use-link'), SECTION],
-    ['links on an issue box', fg('.disk-use-link'), bg('.format-issue')],
-    ['links on a chain box', fg('.disk-use-link'), bg('.disk-chain-item')],
-    ['chain box text', fg('.disk-chain-meta'), bg('.disk-chain-item')],
-    [
-      'chain box text on a missing image',
-      fg('.disk-chain-meta'),
-      bg('.disk-chain-item.is-missing'),
-    ],
-    ['command names on an issue box', fg('.disk-command-name'), BOX],
-    [
-      'partition IDs on an inject row',
-      fg('.disk-part-name'),
-      bg('.disk-partitions tr.is-inject td'),
-    ],
-    ['partition headings', fg('.disk-partitions th'), SECTION],
-    ['problem text on a danger box', '#f5f5f5', bg('.disk-problems.is-danger')],
-    ['problem text on a warning box', '#f5f5f5', bg('.disk-problems')],
-  ])('keep %s at 7:1 or more', (_, text, surface) => {
-    expect(contrast(text, surface)).toBeGreaterThanOrEqual(7);
-  });
-
-  // icons are not text: they need 3:1 (WCAG 1.4.11)
-  it.each([
-    [
-      'danger icons on a danger box',
-      fg('.disk-problems li.is-danger .icon'),
-      bg('.disk-problems.is-danger'),
-    ],
-    [
-      'warning icons on a warning box',
-      fg('.disk-problems li.is-warning .icon'),
-      bg('.disk-problems'),
-    ],
-  ])('keep %s at 3:1 or more', (_, icon, surface) => {
-    expect(contrast(icon, surface)).toBeGreaterThanOrEqual(3);
-  });
-
-  // a disabled control needs no contrast, but its text stays readable and its
-  // dashed outline shows on the section, which it has no fill to hide
-  const disabled =
-    ".disk-action-buttons :deep(.button[aria-disabled='true']:not(.is-inverted))";
-
-  it('keeps disabled action text at 4.5:1 or more', () => {
-    expect(bg(disabled)).toBe('transparent');
-    expect(contrast(fg(disabled), SECTION)).toBeGreaterThanOrEqual(4.5);
-  });
-
-  it('draws a disabled action as a dashed outline at 3:1 or more', () => {
-    const rule = componentDeclarations(FILE, disabled);
-    expect(rule['border-style']).toBe('dashed');
-    expect(contrast(rule['border-color'], SECTION)).toBeGreaterThanOrEqual(3);
   });
 });

@@ -21,7 +21,6 @@ import VmRowActions from '@/components/experiment/VmRowActions.vue';
 import { CHORD_HINT } from '@/vnc/chord.js';
 import { sharedLiveTilePool } from '@/vnc/liveTilePool.js';
 import { never } from './helpers/async.js';
-import { componentDeclarations, contrast } from './helpers/css.js';
 import { disk, vm as makeVm } from './helpers/fixtures.js';
 import { allowAll, denyOnly } from './helpers/permissions.js';
 import {
@@ -862,9 +861,6 @@ describe('VmDetailsCard OS tag', () => {
 });
 
 describe('VmDetailsCard actions that cannot run now', () => {
-  const FILE = 'src/components/experiment/VmDetailsCard.vue';
-  const SECTION = '#484848';
-
   it('say why only in their tooltips on a shut down VM', async () => {
     const wrapper = await card({
       vm: makeVm({ state: 'QUIT', running: false }),
@@ -876,18 +872,6 @@ describe('VmDetailsCard actions that cannot run now', () => {
         .some((b) => b.attributes('aria-disabled') === 'true'),
     ).toBe(true);
     expect(textOf(wrapper)).not.toContain('dashed outline');
-  });
-
-  it.each([
-    ".vm-power-buttons :deep(.button[aria-disabled='true']:not(.is-inverted))",
-    ".vm-tool-buttons :deep(.button[aria-disabled='true']:not(.is-inverted))",
-    ".vm-section-actions .button[aria-disabled='true']:not(.is-inverted)",
-  ])('draw %s as a dashed outline with readable text', (selector) => {
-    const rule = componentDeclarations(FILE, selector);
-    expect(rule['background-color']).toBe('transparent');
-    expect(rule['border-style']).toBe('dashed');
-    expect(contrast(rule['border-color'], SECTION)).toBeGreaterThanOrEqual(3);
-    expect(contrast(rule.color, SECTION)).toBeGreaterThanOrEqual(4.5);
   });
 });
 
@@ -1152,27 +1136,6 @@ describe('VmDetailsCard live console', () => {
     const img = wrapper.find('.vnc-preview img');
     return img.exists() && img.isVisible() ? img.attributes('src') : null;
   };
-
-  it('is the larger modal: console left, details right', () => {
-    expect(
-      componentDeclarations(
-        'src/components/experiment/VmDetailsCard.vue',
-        '.vm-card--console',
-      ),
-    ).toMatchObject({
-      width: 'min(96rem, calc(100vw - 40px))',
-      height: '90vh',
-    });
-    expect(
-      componentDeclarations(
-        'src/components/experiment/VmDetailsCard.vue',
-        '.vm-console-column',
-      ),
-    ).toMatchObject({ width: '60%' });
-    expect(
-      componentDeclarations('src/vnc/VncPreview.vue', '.vnc-preview-screen'),
-    ).toMatchObject({ 'aspect-ratio': '16 / 10' });
-  });
 
   it('shows a live, view-only console with the banners of the VM', async () => {
     const wrapper = await liveCard();

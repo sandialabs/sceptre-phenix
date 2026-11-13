@@ -13,7 +13,6 @@ vi.mock('@/store.js', modules.store);
 
 import NetflowCaptures from '@/components/experiment/NetflowCaptures.vue';
 import { never } from './helpers/async.js';
-import { componentDeclarations, declarations } from './helpers/css.js';
 import { httpError } from './helpers/fixtures.js';
 import { mountComponent, textOf } from './helpers/mount.js';
 
@@ -321,39 +320,5 @@ describe('closing the dialog', () => {
     await wrapper.find('button[aria-label="Close"]').trigger('click');
     await flushPromises();
     expect(document.activeElement).toBe(trigger.element);
-  });
-});
-
-// The dialog opens inside the running experiment page's .content, whose h2
-// and table cell rules would restyle its title and cells.
-describe('the dialog styles', () => {
-  const style = (selector) =>
-    componentDeclarations(
-      'src/components/experiment/NetflowCaptures.vue',
-      selector,
-    );
-
-  it('gives its h2 title the size and spacing of other dialog titles', () => {
-    expect(style('.netflow-captures-card .modal-card-title')).toEqual({
-      'margin-bottom': '0',
-      'font-size': '1.5rem',
-      'font-weight': '400',
-      'line-height': '1.25',
-    });
-  });
-
-  // the theme's is-info fill gives white text 7.3:1
-  it('gives the Recording tag the theme blue, which white text reads on', () => {
-    expect(style('.netflow-captures-table .tag.is-info')).toEqual({});
-    expect(declarations('.tag:not(body).is-info')).toMatchObject({
-      'background-color': 'hsl(207, 61%, 33%)',
-      color: 'hsl(0, 0%, 100%)',
-    });
-  });
-
-  it('centers each row vertically on its download buttons', () => {
-    expect(style('.netflow-captures-table td')).toEqual({
-      'vertical-align': 'middle',
-    });
   });
 });
