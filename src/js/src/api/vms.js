@@ -78,6 +78,14 @@ export function restoreVmSnapshot(exp, vm, snapshot) {
   );
 }
 
+// DELETE /experiments/{exp}/vms/{vm}/snapshots/{snapshot}: deletes the
+// snapshot file of the VM, with no timeout
+export function deleteVmSnapshot(exp, vm, snapshot) {
+  return axiosInstance.delete(vmURL(exp, vm) + '/snapshots/' + snapshot, {
+    timeout: 0,
+  });
+}
+
 // POST /experiments/{exp}/vms/{vm}/commit: a backing image of the VM's
 // disk, with no timeout
 export function commitVmDisk(exp, vm, filename) {

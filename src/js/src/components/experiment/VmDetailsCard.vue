@@ -587,6 +587,30 @@
                     "
                     @click="$emit('restore-snapshot', snap)" />
                 </b-tooltip>
+                <b-tooltip
+                  :label="deleteSnapshotReason || 'delete this snapshot'"
+                  type="is-dark"
+                  multilined>
+                  <b-button
+                    size="is-small"
+                    type="is-danger"
+                    outlined
+                    icon-left="trash"
+                    class="vm-delete-snapshot"
+                    :aria-label="`delete the snapshot ${snap}`"
+                    :aria-disabled="deleteSnapshotReason ? 'true' : undefined"
+                    :loading="
+                      pendingActions.includes(deleteSnapshotPendingKey(snap))
+                    "
+                    :aria-busy="
+                      pendingActions.includes(deleteSnapshotPendingKey(snap))
+                    "
+                    @click="
+                      deleteSnapshotReason ||
+                      pendingActions.includes(deleteSnapshotPendingKey(snap)) ||
+                      $emit('delete-snapshot', snap)
+                    " />
+                </b-tooltip>
               </div>
             </div>
 
@@ -710,6 +734,8 @@
     CAPTURE_ICON,
     POWER_ACTIONS,
     TOOL_ACTIONS,
+    deleteSnapshotPendingKey,
+    notPermittedReason,
     restorePendingKey,
     shownAction,
     vlanPendingKey,
@@ -755,6 +781,7 @@
         NODE_ANNOTATIONS,
         CUSTOM_NODE_ANNOTATION,
         restorePendingKey,
+        deleteSnapshotPendingKey,
         vlanPendingKey,
         AUTOTUNNEL,
         SETTING_ROWS,
@@ -806,6 +833,8 @@
       'capture',
       'change-vlan',
       'delete-forward',
+      // (snapshot): delete the snapshot of the VM
+      'delete-snapshot',
       'edit-labels',
       'restore-snapshot',
       // (annotations, done): done(true) once they are saved
@@ -1000,6 +1029,12 @@
       },
       canRestoreSnapshot() {
         return !this.vm.busy && this.can('vms/snapshots', 'update');
+      },
+      // why Delete is greyed out for each snapshot, or null
+      deleteSnapshotReason() {
+        return this.can('vms/snapshots', 'delete')
+          ? null
+          : notPermittedReason('vms/snapshots', 'delete');
       },
       canListForwards() {
         return this.can('vms/forwards', 'list');

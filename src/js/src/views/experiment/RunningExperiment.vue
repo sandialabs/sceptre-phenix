@@ -27,6 +27,7 @@
         @edit-labels="showTagsModal(expModalVm)"
         @save-annotations="saveAnnotations"
         @restore-snapshot="(snap) => restoreSnapshot(expModalVm.name, snap)"
+        @delete-snapshot="(snap) => deleteSnapshot(expModalVm.name, snap)"
         @delete-forward="(fwd) => deletePortForward(expModalVm.name, fwd)" />
     </b-modal>
     <PortForwardModal
@@ -452,6 +453,7 @@
   import {
     MEMORY_SNAPSHOT_DOES,
     VM_ACTION_CONFIRMS,
+    deleteSnapshotPendingKey,
     partitionVMsForAction,
     restorePendingKey,
     skippedVMsText,
@@ -1635,6 +1637,43 @@
             } finally {
               this.setVmActionPending(key, [name], false);
             }
+          },
+        });
+      },
+
+      // Deletes a snapshot of the VM after it asks, then lists the snapshots
+      // again; its Delete button spins until the server answers.
+      deleteSnapshot(name, snapshot) {
+        this.$buefy.dialog.confirm({
+          title: 'Delete a VM Snapshot',
+          message: escapeHTML(
+            `This will delete the snapshot ${snapshot} of the ${name} VM. You cannot restore it after.`,
+          ),
+          cancelText: 'Cancel',
+          confirmText: 'Delete',
+          type: 'is-danger',
+          hasIcon: true,
+          onConfirm: async () => {
+            const key = deleteSnapshotPendingKey(snapshot);
+            this.setVmActionPending(key, [name], true);
+            try {
+              await vmsApi.deleteVmSnapshot(
+                this.$route.params.id,
+                name,
+                snapshot,
+              );
+              this.$buefy.toast.open({
+                message: escapeHTML(
+                  `Deleted the snapshot ${snapshot} of the ${name} VM`,
+                ),
+                type: 'is-success',
+              });
+            } catch (err) {
+              useErrorNotification(err);
+            } finally {
+              this.setVmActionPending(key, [name], false);
+            }
+            await this.reloadSnapshots(name);
           },
         });
       },

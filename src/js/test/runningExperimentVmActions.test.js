@@ -1822,6 +1822,65 @@ describe('actions on VMs', () => {
     expect(page.vm.expModal.active).toBe(true);
   });
 
+  it("deletes a snapshot from the VM's details after it asks, then lists the snapshots again", async () => {
+    const page = await open({
+      experiment: { name: 'demo', vms },
+      expModal: {
+        active: true,
+        vm: vms[0],
+        snapshots: ['web_2024', 'web_2025'],
+      },
+    });
+    const remove = () =>
+      page
+        .findComponent(VmDetailsCard)
+        .find('[aria-label="delete the snapshot web_2024"]');
+    const request = Promise.withResolvers();
+    axios.delete.mockReturnValue(request.promise);
+    axios.get.mockResolvedValue({ data: { snapshots: ['web_2025'] } });
+
+    await remove().trigger('click');
+    await flushPromises();
+    expect(textOf(dialogs().at(-1).querySelector('.modal-card-title'))).toBe(
+      'Delete a VM Snapshot',
+    );
+    expect(textOf(dialogs().at(-1).querySelector('.media-content'))).toBe(
+      'This will delete the snapshot web_2024 of the web VM. You cannot restore it after.',
+    );
+    expect(axios.delete).not.toHaveBeenCalled();
+    await confirmDialog();
+    expect(axios.delete).toHaveBeenCalledExactlyOnceWith(
+      'experiments/demo/vms/web/snapshots/web_2024',
+      { timeout: 0 },
+    );
+    expect(remove().classes()).toContain('is-loading');
+
+    request.resolve({});
+    await flushPromises();
+    expect(axios.get).toHaveBeenCalledWith(
+      'experiments/demo/vms/web/snapshots',
+    );
+    expect(page.vm.expModal.snapshots).toEqual(['web_2025']);
+    expect(toasts().map((t) => t.text)).toContain(
+      'Deleted the snapshot web_2024 of the web VM',
+    );
+  });
+
+  it('sends no delete when the snapshot dialog is cancelled', async () => {
+    const page = await open({
+      experiment: { name: 'demo', vms },
+      expModal: { active: true, vm: vms[0], snapshots: ['web_2024'] },
+    });
+    await page
+      .findComponent(VmDetailsCard)
+      .find('[aria-label="delete the snapshot web_2024"]')
+      .trigger('click');
+    await flushPromises();
+    dialogs().at(-1).querySelector('footer .button:first-child').click();
+    await flushPromises();
+    expect(axios.delete).not.toHaveBeenCalled();
+  });
+
   it('lists the disks to redeploy a VM on from its details without covering the page', async () => {
     const page = await open({
       experiment: { name: 'demo', vms },

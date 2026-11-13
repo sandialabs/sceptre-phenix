@@ -358,10 +358,12 @@ export const VM_ACTION_CONFIRMS = {
 export const MEMORY_SNAPSHOT_DOES =
   'A memory snapshot saves the memory of a VM to an ELF file in the experiment files.';
 
-// the pending keys of a VLAN change on an interface and a snapshot restore,
-// which spin beside their links rather than on an action button
+// the pending keys of a VLAN change on an interface and a snapshot restore
+// or delete, which spin beside their links rather than on an action button
 export const vlanPendingKey = (index) => `vlan:${index}`;
 export const restorePendingKey = (snapshot) => `restore:${snapshot}`;
+export const deleteSnapshotPendingKey = (snapshot) =>
+  `deleteSnapshot:${snapshot}`;
 
 // power operations, shown first in the details modal
 export const POWER_ACTIONS = ['start', 'pause', 'restart', 'shutdown', 'kill'];

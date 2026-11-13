@@ -15,6 +15,9 @@ that VM.
 Available commands
 
 * `restore` a snapshot by clicking the play button next to the desired snapshot name.
+* `delete` a snapshot by clicking the trash button next to the snapshot name,
+  then confirm. The role needs the `delete` verb on the `vms/snapshots`
+  resource.
 
 The `Power` section holds the `Start` (or `Resume`), `Pause`, `Restart`,
 `Shut down` and `Kill` buttons. `More actions`, under the screenshot, holds

@@ -724,6 +724,12 @@ const requests = [
     ['experiments/exp/vms/a/snapshots/snap', {}, { timeout: 0 }],
   ],
   [
+    'deleteVmSnapshot',
+    () => vmsApi.deleteVmSnapshot('exp', 'a', 'snap'),
+    'delete',
+    ['experiments/exp/vms/a/snapshots/snap', { timeout: 0 }],
+  ],
+  [
     'commitVmDisk',
     () => vmsApi.commitVmDisk('exp', 'a', 'img'),
     'post',

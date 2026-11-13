@@ -710,6 +710,60 @@ describe('VmDetailsCard actions the role may not take', () => {
   });
 });
 
+describe('VmDetailsCard snapshot list', () => {
+  const deleteButton = (wrapper, snap) =>
+    tooltipButtons(wrapper).find(
+      (t) => t.label === `delete the snapshot ${snap}`,
+    );
+
+  it('has Delete next to Restore for each snapshot, and asks the page to delete it', async () => {
+    const wrapper = await card({ snapshots: ['before', 'after'] });
+    const rows = section(wrapper, 'Snapshots').findAll('.vm-list-row');
+    expect(
+      rows.map((row) =>
+        row.findAll('button').map((b) => b.attributes('aria-label')),
+      ),
+    ).toEqual([
+      ['restore this snapshot', 'delete the snapshot before'],
+      ['restore this snapshot', 'delete the snapshot after'],
+    ]);
+    const button = deleteButton(wrapper, 'after');
+    expect(button).toMatchObject({
+      tooltip: 'delete this snapshot',
+      disabled: false,
+    });
+    expect(button.control.find('[data-icon]').attributes('data-icon')).toBe(
+      'trash',
+    );
+    await button.control.trigger('click');
+    expect(wrapper.emitted('delete-snapshot')).toEqual([['after']]);
+  });
+
+  it('greys out Delete for a role without vms/snapshots delete, naming the permission', async () => {
+    rbac.allowed = denyOnly(['vms/snapshots', 'delete']);
+    const wrapper = await card({ snapshots: ['before'] });
+    const button = deleteButton(wrapper, 'before');
+    expect(button).toMatchObject({
+      tooltip: 'Your role does not permit this action (vms/snapshots delete)',
+      disabled: true,
+    });
+    await button.control.trigger('click');
+    expect(wrapper.emitted('delete-snapshot')).toBeUndefined();
+  });
+
+  it('spins Delete while the page deletes the snapshot, and does not ask again', async () => {
+    const wrapper = await card({
+      snapshots: ['before'],
+      pendingActions: ['deleteSnapshot:before'],
+    });
+    const button = deleteButton(wrapper, 'before').control;
+    expect(button.classes()).toContain('is-loading');
+    expect(button.attributes('aria-busy')).toBe('true');
+    await button.trigger('click');
+    expect(wrapper.emitted('delete-snapshot')).toBeUndefined();
+  });
+});
+
 describe('VmDetailsCard Screenshot', () => {
   // the action button with this class, its icon, tooltip and disabled state
   const action = (wrapper, name) => {
