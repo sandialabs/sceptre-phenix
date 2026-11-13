@@ -167,7 +167,8 @@ func newWorkflowCmd() *cobra.Command {
 	desc := `Workflow management
 
   Deploy topology directories through the running phenix server over its
-  unix socket (--unix-socket).`
+  unix socket (--unix-socket), and print their configs with the variables
+  filled in.`
 
 	cmd := &cobra.Command{
 		Use:   "workflow",
@@ -303,6 +304,7 @@ func init() { //nolint:gochecknoinits // cobra command
 	workflowCmd := newWorkflowCmd()
 
 	workflowCmd.AddCommand(newWorkflowApplyCmd())
+	workflowCmd.AddCommand(newWorkflowRenderCmd())
 
 	// Global flags are hidden in help, as they are for every command but ui.
 	// The long help and the examples name the ones apply reads.

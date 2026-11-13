@@ -14,7 +14,8 @@ Workflow management
 Workflow management
 
   Deploy topology directories through the running phenix server over its
-  unix socket (--unix-socket).
+  unix socket (--unix-socket), and print their configs with the variables
+  filled in.
 ```
 
 ```text
@@ -31,6 +32,7 @@ phenix workflow [flags]
 
 * [phenix](index.md) - A cli application for phēnix
 * [phenix workflow apply](workflow.md#phenix-workflow-apply) - Deploy a topology directory through the phenix server
+* [phenix workflow render](workflow.md#phenix-workflow-render) - Print the configs of a topology directory with their variables filled in
 
 ## phenix workflow apply
 
@@ -182,6 +184,63 @@ docker exec phenix phenix workflow apply /phenix/topologies/helloworld -f
   -f, --force                    allow apply to stop, reconfigure and restart a running experiment
   -h, --help                     help for apply
       --name string              same as -b/--branch-name
+```
+
+### SEE ALSO
+
+* [phenix workflow](workflow.md) - Workflow management
+
+## phenix workflow render
+
+Print the configs of a topology directory with their variables filled in
+
+### Synopsis
+
+```text
+Print the configs of a topology directory with their variables filled in
+
+  render reads a topology directory as apply does: the configs in
+  phenix-configs/, the workflow config, and the variables from -e, the env
+  files and the shell. It fills in each ${NAME} and ${NAME:default}
+  placeholder, ${BRANCH_NAME} included, and prints the text of each file as
+  the server gets it and then stores or applies it. It does not contact the
+  server, and it changes nothing.
+
+  The output holds each config in upsert order, Topology configs first, and
+  then the workflow config. A comment line with the path of the file comes
+  before each file, and a line with --- comes between two files. render
+  does not format the text of a file again.
+
+  A problem with a variable is an error, as it is in apply. The output can
+  hold secrets: render prints the value of each variable that a file uses.
+```
+
+```text
+phenix workflow render <DIR|NAME> [flags]
+```
+
+### Examples
+
+```text
+# Print the configs of helloworld with their variables filled in
+phenix workflow render helloworld
+
+# Show what another branch name and a variable give
+phenix workflow render helloworld -b helloworld-2 -e NODES=3
+
+# Use an env file and another workflow config
+phenix workflow render ./topo --env-file site.env -c alt.yml
+```
+
+### Options
+
+```text
+  -b, --branch-name string     workflow branch name (default: base name of the topology directory); it does not rename an experiment
+  -c, --config string          workflow config, relative to the topology directory unless absolute (default "phenix.yml")
+  -e, --env stringArray        set a variable for the ${NAME} placeholders: NAME=value, or NAME to copy the value from the shell (repeatable)
+      --env-file stringArray   read variables from an env file of NAME=value lines; a relative path starts at the working directory (repeatable)
+  -h, --help                   help for render
+      --name string            same as -b/--branch-name
 ```
 
 ### SEE ALSO
