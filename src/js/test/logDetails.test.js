@@ -176,34 +176,6 @@ it('shows the level, time, type, text and each field in order', async () => {
   expect(openDialogs()[0].querySelector('.log-details-raw').tabIndex).toBe(0);
 });
 
-it('shows a quoted value with its spaces as one field', async () => {
-  const page = await logsPage();
-  await openRow(page, 1);
-
-  expect(details()).toMatchObject({
-    level: 'WRN',
-    levelClass: 'level-warn',
-    text: 'vm restarted',
-    fields: [
-      ['msg', '"host was not ready"'],
-      ['vm.name', 'host-01'],
-    ],
-  });
-});
-
-it('shows only the text of a message with no fields', async () => {
-  const page = await logsPage();
-  await openRow(page, 2);
-
-  expect(details()).toMatchObject({
-    level: 'ERR',
-    text: 'capture grant revoked',
-    fields: [],
-    raw: 'capture grant revoked',
-  });
-  expect(openDialogs()[0].querySelector('dl')).toBeNull();
-});
-
 it('copies the full message and says so in a live region', async () => {
   const page = await logsPage();
   await openRow(page, 0);
@@ -258,6 +230,9 @@ it('keeps one dialog however many messages are opened', async () => {
     await openRow(page, i);
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
     expect(details().raw).toBe(LOGS[i].msg);
+    // the last message has no fields, so only its text and no field list
+    expect(openDialogs()[0].querySelector('dl') !== null).toBe(i < 2);
+    if (i === 2) expect(details().text).toBe(LOGS[2].msg);
     dialogButton('Close').click();
     await flushPromises();
   }

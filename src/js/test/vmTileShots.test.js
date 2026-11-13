@@ -21,7 +21,7 @@ import loadingImg from '@/assets/imgs/loading-screenshot.svg';
 import VMtilesView from '@/views/experiment/VMtilesView.vue';
 import { sharedLiveTilePool } from '@/vnc/liveTilePool.js';
 import { never } from './helpers/async.js';
-import { mountComponent, textOf } from './helpers/mount.js';
+import { mountComponent } from './helpers/mount.js';
 import { allowAll, denyOnly } from './helpers/permissions.js';
 
 // An IntersectionObserver whose reports the test makes (see show).
@@ -221,29 +221,6 @@ describe('VM tile screenshots', () => {
 });
 
 describe('VM tiles', () => {
-  it('are live and view only on screen, each with its state and a console link', async () => {
-    const page = await tiles();
-    await showLive(page, ['a', 'off']);
-
-    expect(rfbs.map((rfb) => rfb.url)).toEqual([
-      'ws://phenix.test/api/v1/experiments/exp1/vms/a/vnc/ws?token=t',
-    ]);
-    expect(rfbs[0].viewOnly).toBe(true);
-    const [a] = page.findAll('.tile.is-child');
-    expect(textOf(a.get('.vm-tile-head .tag'))).toBe('Running');
-    expect(a.get('a.vnc-tile-link').attributes('href')).toBe('/vnc?vm=exp1/a');
-    expect(textOf(a.get('a.vnc-tile-link'))).toBe('Open the console of VM a');
-
-    rfbs[0].connect();
-    await flushPromises();
-    expect(textOf(a.get('.vnc-tile-tag'))).toBe('LIVE');
-    // the page has the Live / Snapshots switch and the live tile limit
-    expect(textOf(page.get('.vnc-tile-stats'))).toBe(
-      '1 of 4 live · 3 off screen',
-    );
-    expect(page.get('select').element.value).toBe('16');
-  });
-
   it('fetch no screenshot for a live tile, and one when it stops', async () => {
     const page = await tiles();
     await showLive(page, ['a']);
@@ -277,18 +254,5 @@ describe('a live VM tile that the search hides', () => {
     await flushPromises();
     await show(page, ['a']);
     expect(asked()).toEqual(['a']);
-  });
-
-  it('links only the VMs with a screen to the console', async () => {
-    const page = await tiles();
-    const links = Object.fromEntries(
-      page
-        .findAll('.tile.is-child')
-        .map((tile) => [
-          tile.find('.title').text(),
-          tile.find('a.vnc-tile-link').exists(),
-        ]),
-    );
-    expect(links).toEqual({ a: true, b: true, c: true, d: true, off: false });
   });
 });

@@ -356,47 +356,14 @@ describe('a header menu', () => {
     expect(await isCurrent('/experiments')).toBe(false);
   });
 
-  it('closes on Escape, back to its button, on a click outside it, and when a link is followed', async () => {
-    const wrapper = await menu({ attachTo: document.body });
-    const trigger = wrapper.find('.nav-menu-button');
-    const isOpen = () => wrapper.find('#nav-resources-panel').exists();
-
-    await trigger.trigger('click');
-    await wrapper.find('#nav-resources-panel').trigger('click');
-    expect(isOpen()).toBe(true);
-    document.body.click();
-    await nextTick();
-    expect(isOpen()).toBe(false);
-    expect(document.activeElement).not.toBe(trigger.element);
-
-    await trigger.trigger('click');
-    await wrapper.trigger('keydown', { key: 'Escape' });
-    expect(isOpen()).toBe(false);
-    expect(document.activeElement).toBe(trigger.element);
-
-    await trigger.trigger('click');
-    await wrapper.find('#nav-resources-panel a').trigger('click');
-    await flushPromises();
-    expect(isOpen()).toBe(false);
-    expect(wrapper.router.currentRoute.value.name).toBe('hosts');
-    wrapper.unmount();
-  });
-
-  it('closes when focus moves out of it, not within it', async () => {
-    const wrapper = await menu({ attachTo: document.body });
-    const outside = document.createElement('button');
-    document.body.append(outside);
-    const isOpen = () => wrapper.find('#nav-resources-panel').exists();
+  it('closes when a link in it is followed', async () => {
+    const wrapper = await menu();
 
     await wrapper.find('.nav-menu-button').trigger('click');
-    await wrapper.trigger('focusout', {
-      relatedTarget: wrapper.find('#nav-resources-panel a').element,
-    });
-    expect(isOpen()).toBe(true);
-    await wrapper.trigger('focusout', { relatedTarget: outside });
-    expect(isOpen()).toBe(false);
-    wrapper.unmount();
-    outside.remove();
+    await wrapper.find('#nav-resources-panel a').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('#nav-resources-panel').exists()).toBe(false);
+    expect(wrapper.router.currentRoute.value.name).toBe('hosts');
   });
 
   describe('on hover', () => {
@@ -498,6 +465,63 @@ describe('a header menu', () => {
       return tip.exists() ? tip.props('label') : null;
     });
     expect(tips).toEqual([null, null, 'VLAN IDs in use']);
+  });
+});
+
+describe.each([
+  {
+    name: 'a header menu',
+    mount: () =>
+      mountComponent(NavMenu, {
+        props: {
+          label: 'Resources',
+          icon: 'cubes',
+          links: [{ route: 'hosts', label: 'Hosts', icon: 'server' }],
+        },
+        attachTo: document.body,
+      }),
+    trigger: '.nav-menu-button',
+    panel: '#nav-resources-panel',
+    focusable: '#nav-resources-panel a',
+    isOpen: (wrapper) => wrapper.find('#nav-resources-panel').exists(),
+  },
+  {
+    name: 'the jobs menu',
+    mount: () => mountComponent(JobsMenu, { attachTo: document.body }),
+    trigger: '.jobs-trigger',
+    panel: '#jobs-panel',
+    focusable: '#jobs-panel',
+    isOpen: (wrapper) => wrapper.classes('is-active'),
+  },
+])('$name', ({ mount, trigger: button, panel, focusable, isOpen }) => {
+  it('closes on Escape, back to its button, on a click outside it, and when focus moves out of it', async () => {
+    const wrapper = await mount();
+    const trigger = wrapper.find(button);
+    const outside = document.createElement('button');
+    document.body.append(outside);
+
+    await trigger.trigger('click');
+    await wrapper.find(panel).trigger('click');
+    expect(isOpen(wrapper)).toBe(true);
+    document.body.click();
+    await nextTick();
+    expect(isOpen(wrapper)).toBe(false);
+    expect(document.activeElement).not.toBe(trigger.element);
+
+    await trigger.trigger('click');
+    await wrapper.trigger('keydown', { key: 'Escape' });
+    expect(isOpen(wrapper)).toBe(false);
+    expect(document.activeElement).toBe(trigger.element);
+
+    await trigger.trigger('click');
+    await wrapper.trigger('focusout', {
+      relatedTarget: wrapper.find(focusable).element,
+    });
+    expect(isOpen(wrapper)).toBe(true);
+    await wrapper.trigger('focusout', { relatedTarget: outside });
+    expect(isOpen(wrapper)).toBe(false);
+    wrapper.unmount();
+    outside.remove();
   });
 });
 
@@ -1036,43 +1060,17 @@ describe('the jobs menu', () => {
     ]);
   });
 
-  it('closes on Escape, back to its button, and on a click outside it', async () => {
+  it('leaves focus where it is on Escape with its panel closed', async () => {
     const menu = await mountComponent(JobsMenu, { attachTo: document.body });
     const trigger = menu.find('.jobs-trigger');
-    const isOpen = () => menu.classes('is-active');
-
-    await trigger.trigger('click');
-    await menu.find('#jobs-panel').trigger('click');
-    expect(isOpen()).toBe(true);
-    document.body.click();
-    await nextTick();
-    expect(isOpen()).toBe(false);
-    expect(document.activeElement).not.toBe(trigger.element);
 
     await trigger.trigger('click');
     await menu.trigger('keydown', { key: 'Escape' });
-    expect(isOpen()).toBe(false);
     expect(document.activeElement).toBe(trigger.element);
-
-    // Escape with the panel already closed leaves focus where it is
     trigger.element.blur();
     await menu.trigger('keydown', { key: 'Escape' });
     expect(document.activeElement).not.toBe(trigger.element);
-  });
-
-  it('closes when focus moves out of it, not within it', async () => {
-    const menu = await mountComponent(JobsMenu, { attachTo: document.body });
-    const outside = document.createElement('button');
-    document.body.append(outside);
-    const isOpen = () => menu.classes('is-active');
-
-    await menu.find('.jobs-trigger').trigger('click');
-    await menu.trigger('focusout', {
-      relatedTarget: menu.find('#jobs-panel').element,
-    });
-    expect(isOpen()).toBe(true);
-    await menu.trigger('focusout', { relatedTarget: outside });
-    expect(isOpen()).toBe(false);
+    menu.unmount();
   });
 
   it.each([

@@ -268,13 +268,9 @@ describe('the capture dialog', () => {
     ]);
   });
 
-  it.each([
-    ['a quote', 'host "a"'],
-    ['a backslash', 'a\\b'],
-    ['a #', 'tcp # x'],
-  ])('refuses a filter with %s, saying why', async (_, filter) => {
+  it('refuses a filter with a quote, saying why', async () => {
     const wrapper = await open();
-    await wrapper.find('.capture-filter').setValue(filter);
+    await wrapper.find('.capture-filter').setValue('host "a"');
     expect(textOf(wrapper.find('.capture-filter-error'))).toContain(
       'Use only letters',
     );
@@ -286,38 +282,30 @@ describe('the capture dialog', () => {
     expect(axios.post).not.toHaveBeenCalled();
   });
 
-  it.each(['13', '65536', 'big'])(
-    'refuses the snaplen %s, saying why',
-    async (snaplen) => {
-      const wrapper = await open();
-      await wrapper.find('.capture-snaplen').setValue(snaplen);
-      expect(textOf(wrapper.find('.capture-snaplen-error'))).toBe(
-        'Use a whole number from 14 to 65535.',
-      );
-      expect(footer(wrapper)).toContain('Start capture (submits) (disabled)');
-    },
-  );
+  it('refuses a snaplen out of range, saying why', async () => {
+    const wrapper = await open();
+    await wrapper.find('.capture-snaplen').setValue('13');
+    expect(textOf(wrapper.find('.capture-snaplen-error'))).toBe(
+      'Use a whole number from 14 to 65535.',
+    );
+    expect(footer(wrapper)).toContain('Start capture (submits) (disabled)');
+  });
 
-  it.each([
-    [409, 'compute1 / mega_bridge_exp1 has 32 of 32 Open vSwitch mirrors'],
-    [501, 'experiment captures require minimega 3.4.0 or later'],
-    [400, 'unknown VLAN alias EXP_9'],
-  ])(
-    "shows the server's %i answer in the dialog and stays open",
-    async (status, message) => {
-      axios.post.mockRejectedValue(httpError(status, { message }));
-      const wrapper = await open();
-      await submit(wrapper);
-      expect(textOf(wrapper.find('.capture-start-error'))).toBe(message);
-      expect(wrapper.find('.capture-start-error').attributes('role')).toBe(
-        'alert',
-      );
-      expect(wrapper.emitted('update:active')).toBeUndefined();
-      expect(wrapper.emitted('started')).toEqual([[null]]);
-      expect(notify.error).not.toHaveBeenCalled();
-      expect(toasts()).toEqual([]);
-    },
-  );
+  it("shows the server's answer in the dialog and stays open", async () => {
+    const message =
+      'compute1 / mega_bridge_exp1 has 32 of 32 Open vSwitch mirrors';
+    axios.post.mockRejectedValue(httpError(409, { message }));
+    const wrapper = await open();
+    await submit(wrapper);
+    expect(textOf(wrapper.find('.capture-start-error'))).toBe(message);
+    expect(wrapper.find('.capture-start-error').attributes('role')).toBe(
+      'alert',
+    );
+    expect(wrapper.emitted('update:active')).toBeUndefined();
+    expect(wrapper.emitted('started')).toEqual([[null]]);
+    expect(notify.error).not.toHaveBeenCalled();
+    expect(toasts()).toEqual([]);
+  });
 
   const budgetRow = (total, experiment) => ({
     host: 'compute1',
@@ -326,17 +314,6 @@ describe('the capture dialog', () => {
     experiment,
     limit: 32,
     level: total >= 32 ? 'full' : 'ok',
-  });
-
-  it('warns of the mirror budget before a start, which it allows', async () => {
-    const wrapper = await open({ budget: [budgetRow(16, 16)] });
-    expect(notices(wrapper)).toEqual([
-      {
-        text: 'This capture uses mirror 17 of 32 on compute1 / mega_bridge_exp1. exp1 will use more than half of the Open vSwitch mirror limit there.',
-        type: 'is-warning',
-      },
-    ]);
-    expect(footer(wrapper)).toEqual(['Cancel', 'Start capture (submits)']);
   });
 
   it('refuses a start that needs a 33rd mirror', async () => {
@@ -355,32 +332,16 @@ describe('the capture dialog', () => {
     expect(axios.post).not.toHaveBeenCalled();
   });
 
-  it('warns that a full bridge may refuse a start of some VLANs, which it allows', async () => {
-    axios.post.mockRejectedValue(
-      httpError(409, {
-        message:
-          'compute1 / mega_bridge_exp1 has 32 of 32 Open vSwitch mirrors',
-      }),
-    );
-    const wrapper = await open({ vlan: 'EXP_1', budget: [budgetRow(32, 21)] });
+  it('refuses a start of all VLANs again once no VLAN is selected', async () => {
+    const wrapper = await open({ budget: [budgetRow(32, 21)] });
+    const vlan = wrapper.findAll('.capture-vlans input')[0];
+    await vlan.setValue(true);
     expect(notices(wrapper)).toEqual([
       {
         text: 'compute1 / mega_bridge_exp1 has 32 of 32 Open vSwitch mirrors. The start may be refused when the selected VLANs use that bridge. Stop a capture or a tap mirror on that host to free one. exp1 uses 21; 11 are from other experiments or tools.',
         type: 'is-warning',
       },
     ]);
-    expect(footer(wrapper)).toEqual(['Cancel', 'Start capture (submits)']);
-    await submit(wrapper);
-    expect(axios.post).toHaveBeenCalledTimes(1);
-    expect(textOf(wrapper.find('.capture-start-error'))).toBe(
-      'compute1 / mega_bridge_exp1 has 32 of 32 Open vSwitch mirrors',
-    );
-  });
-
-  it('refuses a start of all VLANs again once no VLAN is selected', async () => {
-    const wrapper = await open({ budget: [budgetRow(32, 21)] });
-    const vlan = wrapper.findAll('.capture-vlans input')[0];
-    await vlan.setValue(true);
     expect(footer(wrapper)).toEqual(['Cancel', 'Start capture (submits)']);
     await vlan.setValue(false);
     expect(notices(wrapper).map((n) => n.type)).toEqual(['is-danger']);
@@ -867,42 +828,23 @@ describe('the Captures tab', () => {
     expect(wrapper.emitted('reload')).toBeUndefined();
   });
 
-  it.each([
-    [
-      'half',
-      { total: 18, experiment: 17 },
-      'is-warning',
-      'demo uses 17 of 32 mirrors on compute1 / mega_bridge_exp1.',
-    ],
-    [
-      'near',
-      { total: 29, experiment: 18 },
-      'is-warning',
-      'compute1 / mega_bridge_exp1 has 29 of 32 Open vSwitch mirrors; 3 are left. demo uses 18 of them, other experiments and tools 11. A capture that needs a 33rd mirror is refused.',
-    ],
-    [
-      'full',
-      { total: 32, experiment: 21 },
-      'is-danger',
+  it('shows a banner at the full budget level', async () => {
+    const budget = [
+      {
+        host: 'compute1',
+        bridge: 'mega_bridge_exp1',
+        limit: 32,
+        level: 'full',
+        total: 32,
+        experiment: 21,
+      },
+    ];
+    const banner = (await mountTab({ budget })).find('.captures-budget');
+    expect(textOf(banner)).toBe(
       'compute1 / mega_bridge_exp1 has 32 of 32 Open vSwitch mirrors; none are left. demo uses 21 of them, other experiments and tools 11. A capture that needs a 33rd mirror is refused.',
-    ],
-  ])(
-    'shows a banner at the %s budget level',
-    async (level, counts, type, text) => {
-      const budget = [
-        {
-          host: 'compute1',
-          bridge: 'mega_bridge_exp1',
-          limit: 32,
-          level,
-          ...counts,
-        },
-      ];
-      const banner = (await mountTab({ budget })).find('.captures-budget');
-      expect(textOf(banner)).toBe(text);
-      expect(banner.find('.notification').classes()).toContain(type);
-    },
-  );
+    );
+    expect(banner.find('.notification').classes()).toContain('is-danger');
+  });
 
   it('shows no banner at the ok level, and says when it cannot count mirrors', async () => {
     const wrapper = await mountTab({

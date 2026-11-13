@@ -59,7 +59,7 @@ describe('layout registry', () => {
     ).toEqual(['groups']);
   });
 
-  it('loads a layout module when it is first asked for, and only then', async () => {
+  it('loads a layout module when it is first asked for, and again only after a failed load', async () => {
     const { runLayout, load } = await freshRegistry();
     expect((await runLayout('radial', input)).id).toBe('radial');
     await runLayout('radial', input);
@@ -68,6 +68,18 @@ describe('layout registry', () => {
     for (const id of ['force', 'layered', 'groups', 'elk']) {
       expect(load[id]).not.toHaveBeenCalled();
     }
+
+    load.layered.mockRejectedValueOnce(new Error('chunk failed'));
+    const onError = vi.fn();
+    const failed = await runLayout('layered', input, { onError });
+    expect(failed.id).toBe('force');
+    expect(failed.result).toBeNull();
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'chunk failed' }),
+      'layered',
+    );
+    expect((await runLayout('layered', input)).id).toBe('layered');
+    expect(load.layered).toHaveBeenCalledTimes(2);
   });
 
   it('falls back to force and reports an unknown layout', async () => {
@@ -78,28 +90,6 @@ describe('layout registry', () => {
       expect.objectContaining({ message: 'unknown layout "nope"' }),
       'nope',
     );
-  });
-
-  it('falls back to force and reports the error when a layout fails to load', async () => {
-    const { load, runLayout } = await freshRegistry();
-    load.radial.mockRejectedValueOnce(new Error('chunk failed'));
-    const onError = vi.fn();
-
-    const run = await runLayout(
-      'radial',
-      { nodes: [], edges: [] },
-      { onError },
-    );
-    expect(run.id).toBe('force');
-    expect(run.result).toBeNull();
-    expect(onError).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'chunk failed' }),
-      'radial',
-    );
-
-    // the next pick tries again
-    expect((await runLayout('radial', input)).id).toBe('radial');
-    expect(load.radial).toHaveBeenCalledTimes(2);
   });
 
   it('leaves a layout file gone after a server update to the page, not the global notice', async () => {

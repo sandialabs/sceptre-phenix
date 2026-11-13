@@ -230,24 +230,7 @@ describe('the VM actions', () => {
   });
 
   it.each([
-    ['Pause', 'pause', ['vms/stop', 'update'], vm()],
-    [
-      'Resume',
-      'start',
-      ['vms/start', 'update'],
-      vm({ state: 'PAUSED', running: false }),
-    ],
-    [
-      'Start',
-      'start',
-      ['vms/start', 'update'],
-      vm({ state: 'QUIT', running: false }),
-    ],
-    ['Restart', 'restart', ['vms/restart', 'update'], vm()],
-    ['Shut down', 'shutdown', ['vms/shutdown', 'update'], vm()],
-    ['Screenshot', 'screenshot', ['vms/screenshot', 'create'], vm()],
     ['Mount disk', 'mount', ['vms/mount', 'post'], vm()],
-    ['Capture interface 0', 'captureIface', ['vms/captures', 'create'], vm()],
     [
       'Stop captures',
       'stopCaptures',

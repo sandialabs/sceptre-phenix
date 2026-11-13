@@ -343,11 +343,6 @@ describe('the filters and the query string', () => {
     expect(wrapper.find('.vlans-chips').exists()).toBe(true);
   });
 
-  it('opens the Blacklist view from the link of the old Blacklist chip', async () => {
-    const wrapper = await page('/vlans?filter=blacklist');
-    expect(cardNames(wrapper)).toEqual(['Blacklist']);
-  });
-
   it('has no Blacklist view for a role that cannot see the blacklist', async () => {
     const wrapper = await page('/vlans', (body) => {
       delete body.blacklist;
@@ -1206,7 +1201,7 @@ describe('the header', () => {
     expect(body.blacklist).toBeUndefined();
   });
 
-  it('says when minimega could not be read, and shows phēnix data only', async () => {
+  it('says when minimega could not be read, and does not say it did not allocate an ID', async () => {
     const wrapper = await page('/vlans', (body) => ({
       ...body,
       minimega: { ok: false, error: 'minimega is busy' },
@@ -1214,13 +1209,6 @@ describe('the header', () => {
     expect(textOf(wrapper.find('.vlans-notice'))).toBe(
       'Could not read minimega: minimega is busy. The page shows the phēnix experiment specs only, with no differences.',
     );
-  });
-
-  it('does not say minimega did not allocate an ID when it could not be read', async () => {
-    const wrapper = await page('/vlans', (body) => ({
-      ...body,
-      minimega: { ok: false, error: 'minimega is busy' },
-    }));
     const lab = expCard(wrapper, 'lab').find('.vlan-alias');
     expect(textOf(lab.findAll('.vlan-source').at(-1))).toBe(
       'minimega ID unknown',

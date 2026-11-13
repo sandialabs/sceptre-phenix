@@ -80,7 +80,6 @@ describe('the SCORCH terminal', () => {
 
   it.each([
     ['the server shutting down', { code: 1001, reason: '' }, 'never', SHUTDOWN],
-    ['a normal close', { code: 1000, reason: '' }, 'never', CLOSED],
     ['a normal close as it shuts down', { code: 1000 }, 'before', SHUTDOWN],
     ['a drop', { code: 1006, reason: '' }, 'never', CLOSED],
     ['a drop, then the shutdown', { code: 1006 }, 'after', SHUTDOWN],

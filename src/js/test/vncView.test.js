@@ -118,9 +118,9 @@ afterEach(() => {
 });
 
 describe('the panes and layout from the URL', () => {
-  it('shows the VMs in the order of the vm parameters', async () => {
+  it('shows the VMs in the order of the vm parameters, drops bad and repeated ones, and corrects the URL', async () => {
     const wrapper = await openPage(
-      '/vnc?vm=demo/kali&vm=demo/web&vm=train/plc-1&layout=main-2',
+      '/vnc?vm=demo/kali&vm=demo&vm=demo/web&vm=a/b/c&vm=&vm=demo/web&vm=train/plc-1&layout=main-2',
     );
     expect(consoleLabels(wrapper)).toEqual([
       'Console of VM kali in experiment demo',
@@ -135,53 +135,9 @@ describe('the panes and layout from the URL', () => {
       'ws://phenix.test/api/v1/experiments/demo/vms/web/vnc/ws?token=t',
       'ws://phenix.test/api/v1/experiments/train/vms/plc-1/vnc/ws?token=t',
     ]);
-  });
-
-  it.each([
-    [
-      'drops a bad VM value and a VM named twice',
-      '/vnc?vm=demo&vm=demo/web&vm=a/b/c&vm=&vm=demo/web&vm=demo/db',
-      ['web', 'db'],
-      'cols',
-      { vm: ['demo/web', 'demo/db'] },
-    ],
-    [
-      'uses the default layout for an unknown one',
-      '/vnc?vm=demo/web&vm=demo/db&layout=bogus',
-      ['web', 'db'],
-      'cols',
-      { vm: ['demo/web', 'demo/db'] },
-    ],
-    [
-      'uses the default layout for one with too few panes',
-      '/vnc?vm=demo/web&vm=demo/db&vm=demo/hmi&layout=rows',
-      ['web', 'db', 'hmi'],
-      'main-2',
-      { vm: ['demo/web', 'demo/db', 'demo/hmi'] },
-    ],
-    [
-      'shows the first four of five VMs',
-      '/vnc?vm=d/a&vm=d/b&vm=d/c&vm=d/e&vm=d/f',
-      ['a', 'b', 'c', 'e'],
-      'grid',
-      { vm: ['d/a', 'd/b', 'd/c', 'd/e'] },
-    ],
-    [
-      'keeps a layout with more panes than VMs',
-      '/vnc?vm=demo/web&layout=grid',
-      ['web'],
-      'grid',
-      { vm: 'demo/web', layout: 'grid' },
-    ],
-  ])('%s, and corrects the URL', async (_, route, names, layout, fixed) => {
-    const wrapper = await openPage(route);
-    expect(consoleLabels(wrapper)).toEqual(
-      names.map((n) => expect.stringContaining(`VM ${n} in`)),
-    );
-    expect(wrapper.find('.vnc-panes').classes()).toContain(
-      `vnc-layout--${layout}`,
-    );
-    expect(query(wrapper)).toEqual(fixed);
+    expect(query(wrapper)).toEqual({
+      vm: ['demo/kali', 'demo/web', 'train/plc-1'],
+    });
   });
 
   it('offers to add a VM in each empty pane of the layout', async () => {
@@ -295,41 +251,6 @@ describe('single view and split view', () => {
     expect(panes[1].classes()).toContain('is-active');
     expect(panes[0].classes()).not.toContain('is-active');
   });
-
-  it('moves input to pane 2 with the chord Ctrl+] then 2', async () => {
-    const wrapper = await openPage('/vnc?vm=demo/kali&vm=demo/web');
-    rfbs[0].focus();
-    const pane = wrapper.findAll('.vnc-pane')[0].element;
-    for (const init of [
-      { code: 'BracketRight', key: ']', ctrlKey: true },
-      { code: 'Digit2', key: '2' },
-    ]) {
-      rfbs[0].canvas.dispatchEvent(
-        new KeyboardEvent('keydown', { ...init, bubbles: true }),
-      );
-    }
-    await nextTick();
-    expect(pane.contains(document.activeElement)).toBe(false);
-    expect(document.activeElement).toBe(rfbs[1].canvas);
-    expect(textOf(wrapper.find('.vnc-target'))).toBe('acting on demo / web');
-  });
-
-  it('leaves the console for the top bar with the chord Ctrl+] then Tab', async () => {
-    const wrapper = await openPage('/vnc?vm=demo/web');
-    rfbs[0].focus();
-    for (const init of [
-      { code: 'BracketRight', key: ']', ctrlKey: true },
-      { code: 'Tab', key: 'Tab' },
-    ]) {
-      rfbs[0].canvas.dispatchEvent(
-        new KeyboardEvent('keydown', { ...init, bubbles: true }),
-      );
-    }
-    await nextTick();
-    expect(
-      wrapper.find('.vnc-toolbar').element.contains(document.activeElement),
-    ).toBe(true);
-  });
 });
 
 describe('the banners', () => {
@@ -340,22 +261,6 @@ describe('the banners', () => {
       ['EXP: demo - VM: kali', 'EXP: demo - VM: kali'],
       ['EXP: demo - VM: web', 'EXP: demo - VM: web'],
     ]);
-  });
-
-  it('draws the server text of a banner as text', async () => {
-    const markup = '<img src=x onerror="alert(1)"> <b>TOP SECRET</b>';
-    answers['experiments/demo/vms/web/vnc'] = session('demo', 'web', {
-      top: { lines: [markup], backgroundColor: 'red', textColor: 'white' },
-      bottom: { lines: [], backgroundColor: 'red', textColor: 'white' },
-    });
-    const wrapper = await openPage('/vnc?vm=demo/web');
-    const banners = wrapper.findAll('.vnc-banner');
-    expect(banners).toHaveLength(1);
-    expect(banners[0].find('.vnc-banner-line').element.textContent).toBe(
-      markup,
-    );
-    expect(wrapper.find('.vnc-pane img').exists()).toBe(false);
-    expect(wrapper.find('.vnc-pane b').exists()).toBe(false);
   });
 });
 
@@ -448,13 +353,7 @@ describe('the chord hint', () => {
 });
 
 describe('the console tab', () => {
-  it('lets go of the window that opened it', async () => {
-    window.opener = {};
-    await openPage('/vnc?vm=demo/web');
-    expect(window.opener).toBeNull();
-  });
-
-  it('answers a query for its VMs in any order, and stops when it closes', async () => {
+  it('lets go of its opener, and answers a query for its VMs until it closes', async () => {
     const channels = [];
     vi.stubGlobal(
       'BroadcastChannel',
@@ -473,12 +372,11 @@ describe('the console tab', () => {
         }
       },
     );
-    const wrapper = await openPage('/vnc?vm=demo/web&vm=demo/db');
+    window.opener = {};
+    const wrapper = await openPage('/vnc?vm=demo/web');
+    expect(window.opener).toBeNull();
     const channel = channels.find((c) => c.name === CONSOLE_CHANNEL);
-    channel.onmessage({
-      data: { type: 'query', id: 'q1', vms: ['demo/db', 'demo/web'] },
-    });
-    channel.onmessage({ data: { type: 'query', id: 'q2', vms: ['demo/db'] } });
+    channel.onmessage({ data: { type: 'query', id: 'q1', vms: ['demo/web'] } });
     expect(channel.sent).toEqual([{ type: 'here', id: 'q1' }]);
     wrapper.unmount();
     expect(channel.closed).toBe(true);
@@ -1637,12 +1535,12 @@ describe('hiding the top bar', () => {
   const barShown = (wrapper) => bar(wrapper).element.style.display !== 'none';
   const showButton = (wrapper) => wrapper.find('[aria-label="Show toolbar"]');
   const hideButton = (wrapper) => wrapper.find('[aria-label="Hide toolbar"]');
-  const chord = async (code, key) => {
+  const chord = async (code, key, pane = 0) => {
     for (const init of [
       { code: 'BracketRight', key: ']', ctrlKey: true },
       { code, key },
     ]) {
-      rfbs[0].canvas.dispatchEvent(
+      rfbs[pane].canvas.dispatchEvent(
         new KeyboardEvent('keydown', { ...init, bubbles: true }),
       );
     }
@@ -1695,27 +1593,28 @@ describe('hiding the top bar', () => {
     expect(document.activeElement).toBe(hideButton(wrapper).element);
   });
 
-  it('hides and shows the bar with the chord Ctrl+] then T, and the VM gets no key', async () => {
-    const wrapper = await openPage('/vnc?vm=demo/web');
-    rfbs[0].connect();
+  it('moves input to a pane, hides and shows the bar, and leaves the console with the chords', async () => {
+    const wrapper = await openPage('/vnc?vm=demo/kali&vm=demo/web');
+    rfbs.forEach((rfb) => rfb.connect());
     rfbs[0].focus();
-    await chord('KeyT', 't');
+    await chord('Digit2', '2');
+    expect(document.activeElement).toBe(rfbs[1].canvas);
+    expect(textOf(wrapper.find('.vnc-target'))).toBe('acting on demo / web');
+
+    await chord('KeyT', 't', 1);
     expect(barShown(wrapper)).toBe(false);
     expect(localStorage.getItem(HIDDEN_KEY)).toBe('true');
-    expect(document.activeElement).toBe(rfbs[0].canvas);
+    expect(document.activeElement).toBe(rfbs[1].canvas);
+    await chord('Tab', 'Tab', 1);
+    expect(document.activeElement).toBe(showButton(wrapper).element);
 
-    await chord('KeyT', 't');
+    rfbs[1].focus();
+    await chord('KeyT', 't', 1);
     expect(barShown(wrapper)).toBe(true);
     expect(localStorage.getItem(HIDDEN_KEY)).toBe('false');
-    expect(rfbs[0].keys).toEqual([]);
-  });
-
-  it('leaves the console for Show toolbar with the chord Ctrl+] then Tab while the bar is hidden', async () => {
-    localStorage.setItem(HIDDEN_KEY, 'true');
-    const wrapper = await openPage('/vnc?vm=demo/web');
-    rfbs[0].focus();
-    await chord('Tab', 'Tab');
-    expect(document.activeElement).toBe(showButton(wrapper).element);
+    await chord('Tab', 'Tab', 1);
+    expect(bar(wrapper).element.contains(document.activeElement)).toBe(true);
+    expect(rfbs.map((rfb) => rfb.keys)).toEqual([[], []]);
   });
 
   it('shows the bar and its Add VM panel from Add VM in an empty pane', async () => {

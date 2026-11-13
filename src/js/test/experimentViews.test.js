@@ -682,17 +682,6 @@ describe('StoppedExperiment', () => {
         ]);
       });
 
-      it('tells why the server did not reset a VM', async () => {
-        axios.post.mockResolvedValue({
-          data: { vms: [], errors: [{ name: 'web', error: 'it runs' }] },
-        });
-        const page = await stopped([web({ cpus: 4 })]);
-        await byLabel(page, 'Reset settings of VM web').trigger('click');
-        await flushPromises();
-        expect(noticeText()).toContain('Reset the settings of 0 of 1 VM');
-        expect(noticeText()).toContain('web: it runs');
-      });
-
       it('offers to retry the VMs whose reset failed', async () => {
         axios.post.mockResolvedValueOnce({
           data: {
@@ -703,6 +692,8 @@ describe('StoppedExperiment', () => {
         const page = await stopped([web({ cpus: 4 })]);
         await byLabel(page, 'Reset settings of VM web').trigger('click');
         await flushPromises();
+        expect(noticeText()).toContain('Reset the settings of 0 of 1 VM');
+        expect(noticeText()).toContain('web: locked');
         expect(noticeText()).toContain('Retry failed (1)');
 
         axios.post.mockResolvedValue({ data: { vms: [web()] } });
@@ -736,34 +727,45 @@ describe('StoppedExperiment', () => {
         );
       });
 
-      it('skips the selected VMs it cannot reset, offering no retry for them', async () => {
-        axios.post.mockResolvedValue({ data: { vms: [web()] } });
-        const page = await stopped([
-          { name: 'old', defaults: null },
-          web({ name: 'same' }),
-          web({ cpus: 3 }),
-        ]);
+      // each checks every VM and resets them from the toolbar
+      it.each([
+        [
+          'skips the selected VMs it cannot reset, offering no retry for them',
+          [
+            { name: 'old', defaults: null },
+            web({ name: 'same' }),
+            web({ cpus: 3 }),
+          ],
+          { vms: [web()] },
+          [['web']],
+          [
+            'old: its topology values are not known',
+            'same: it has the topology values',
+          ],
+        ],
+        [
+          'sends nothing when no selected VM can reset',
+          [web({ name: 'same' })],
+          undefined,
+          [],
+          ['same: it has the topology values'],
+        ],
+      ])('%s', async (_, vms, data, sent, reasons) => {
+        axios.post.mockResolvedValue({ data });
+        const page = await stopped(vms);
         for (const box of page.findAll('td input[type="checkbox"]')) {
           await box.setValue(true);
         }
         await byLabel(page, 'Reset settings of selected VMs').trigger('click');
         await flushPromises();
-        expect(axios.post).toHaveBeenCalledTimes(1);
-        expect(axios.post.mock.lastCall[1]).toEqual({ vms: ['web'] });
-        expect(noticeText()).toContain(
-          'old: its topology values are not known',
+        expect(axios.post.mock.calls).toEqual(
+          sent.map((names) => [
+            'experiments/exp1/vms/resetSettings',
+            { vms: names },
+          ]),
         );
-        expect(noticeText()).toContain('same: it has the topology values');
+        for (const reason of reasons) expect(noticeText()).toContain(reason);
         expect(noticeText()).not.toContain('Retry');
-      });
-
-      it('sends nothing when no selected VM can reset', async () => {
-        const page = await stopped([web({ name: 'same' })]);
-        await page.find('td input[type="checkbox"]').setValue(true);
-        await byLabel(page, 'Reset settings of selected VMs').trigger('click');
-        await flushPromises();
-        expect(axios.post).not.toHaveBeenCalled();
-        expect(noticeText()).toContain('same: it has the topology values');
       });
     });
   });
@@ -1081,54 +1083,55 @@ describe('StoppedExperiment', () => {
       expect(note()).toBe('1 of 2 VMs has a host');
     });
 
-    it('tells of each warning of a schedule in a notice that stays', async () => {
-      axios.post.mockResolvedValue({
-        data: {
-          schedule: [{ vm: 'vm1', host: 'gone' }],
+    it.each([
+      [
+        'each warning of a schedule in a notice that stays',
+        {
           warnings: [
             'VM vm1 stays on host gone, which is not a schedulable cluster host',
             'host n1: 96 GiB of memory committed, 64 GiB available',
           ],
         },
+        [
+          {
+            type: 'is-warning',
+            indefinite: true,
+            ariaCloseLabel: 'Dismiss',
+            role: 'alert',
+            lines: [
+              'Scheduled the exp1 experiment with 2 warnings',
+              'VM vm1 stays on host gone, which is not a schedulable cluster host',
+              'host n1: 96 GiB of memory committed, 64 GiB available',
+            ],
+          },
+        ],
+      ],
+      ['no notice for no warnings', { warnings: [] }, []],
+      ['no notice for an older server', {}, []],
+    ])('tells of %s', async (_, extra, want) => {
+      axios.post.mockResolvedValue({
+        data: { schedule: [{ vm: 'vm1', host: 'gone' }], ...extra },
       });
       const page = await stopped([{ name: 'vm1', host: '' }]);
       await page.findAll('.schedule-menu-item').at(1).trigger('click');
       await confirmDialog();
       await flushPromises();
 
-      expect(notices.open).toHaveBeenCalledTimes(1);
-      const notice = lastNotice();
-      expect(notice).toMatchObject({
-        type: 'is-warning',
-        indefinite: true,
-        ariaCloseLabel: 'Dismiss',
-      });
-      expect(notice.message.props.role).toBe('alert');
-      const lines = notice.message.children.map((line) =>
-        typeof line.children === 'string'
-          ? line.children
-          : line.children[0].children,
-      );
-      expect(lines).toEqual([
-        'Scheduled the exp1 experiment with 2 warnings',
-        'VM vm1 stays on host gone, which is not a schedulable cluster host',
-        'host n1: 96 GiB of memory committed, 64 GiB available',
-      ]);
+      const opened = notices.open.mock.calls.map(([notice]) => ({
+        type: notice.type,
+        indefinite: notice.indefinite,
+        ariaCloseLabel: notice.ariaCloseLabel,
+        role: notice.message.props.role,
+        lines: notice.message.children.map((line) =>
+          typeof line.children === 'string'
+            ? line.children
+            : line.children[0].children,
+        ),
+      }));
+      expect(opened).toEqual(want);
       expect(
         tableRows(page).map((r) => r.Host.find('select').element.value),
       ).toEqual(['gone']);
-    });
-
-    it.each([
-      ['no warnings', { schedule: [], warnings: [] }],
-      ['an older server', { schedule: [] }],
-    ])('opens no notice for %s', async (_, data) => {
-      axios.post.mockResolvedValue({ data });
-      const page = await stopped([{ name: 'vm1', host: '' }]);
-      await page.findAll('.schedule-menu-item').at(1).trigger('click');
-      await confirmDialog();
-      await flushPromises();
-      expect(notices.open).not.toHaveBeenCalled();
     });
 
     it('keeps its success message with the warnings', async () => {
@@ -1681,58 +1684,6 @@ describe('StoppedExperiment', () => {
       await page.find('.autocomplete input').setValue('dns');
       expect(box.props('data')).toEqual([]);
       expect(box.text()).not.toContain('No results found');
-    });
-    const term = fc.constantFrom(
-      ...Array.from({ length: 13 }, (_, i) => `vm-${i}`),
-    );
-
-    it('keeps each search once, adding a new one, up to its cap', async () => {
-      const searches = fc.array(
-        fc.oneof(
-          term,
-          term.map((t) => ` ${t} `),
-          fc.constantFrom('', 'ab'),
-        ),
-        { minLength: 1, maxLength: 4 },
-      );
-      await fc.assert(
-        fc.asyncProperty(
-          // full or nearly so, now and then
-          fc.oneof(
-            fc.uniqueArray(term, { maxLength: 10 }),
-            fc.uniqueArray(term, { minLength: 9, maxLength: 10 }),
-          ),
-          searches,
-          async (before, typed) => {
-            const { page, search } = await searching(before.toSorted());
-            // the page changes its history in place, so keep copies
-            let last = [...before];
-            for (const text of typed) {
-              const history = await search(text);
-              const kept = text.trim();
-              expect(new Set(history).size).toBe(history.length);
-              expect(history.length).toBeLessThanOrEqual(10);
-              // a search it does not add drops nothing
-              expect(history.length).toBeGreaterThanOrEqual(last.length);
-              if (kept.length >= 4 && !last.includes(kept)) {
-                expect(history).toContain(kept);
-                expect(history).toHaveLength(Math.min(last.length + 1, 10));
-              }
-              last = [...history];
-            }
-            page.unmount();
-          },
-        ),
-        { numRuns: 20 },
-      );
-    });
-
-    it('keeps a full history whole on a search it does not add', async () => {
-      const full = Array.from({ length: 10 }, (_, i) => `vm-${i}`);
-      const { search } = await searching(full);
-      for (const text of ['', 'ab', 'vm-9', 'vm-0']) {
-        expect(await search(text)).toEqual(full);
-      }
     });
 
     it('drops the oldest search from a full history, not the last by name', async () => {

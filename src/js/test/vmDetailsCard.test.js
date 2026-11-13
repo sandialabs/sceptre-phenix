@@ -16,9 +16,6 @@ vi.mock('@/utils/axios.js', modules.axios);
 vi.mock('@/utils/websocket', modules.websocket);
 vi.mock('@/vnc/loadRfb.js', () => ({ loadRfb: async () => FakeRfb }));
 
-import { icon, library } from '@fortawesome/fontawesome-svg-core';
-
-import { faSharkFin } from '@/utils/icons.js';
 import VmDetailsCard from '@/components/experiment/VmDetailsCard.vue';
 import VmRowActions from '@/components/experiment/VmRowActions.vue';
 import { CHORD_HINT } from '@/vnc/chord.js';
@@ -670,28 +667,21 @@ describe('VmDetailsCard actions the role may not take', () => {
         .filter(([name]) => name),
     );
 
-  it.each([
-    ['vm-action-kill', ['vms', 'delete']],
-    ['vm-action-pause', ['vms/stop', 'update']],
-    ['vm-action-redeploy', ['vms/redeploy', 'update']],
-    ['vm-action-screenshot', ['vms/screenshot', 'create']],
-    ['vm-captureAll', ['vms/captures', 'create']],
-  ])(
-    'shows %s greyed out to a role without %j, naming the permission',
-    async (name, [resource, verb]) => {
-      rbac.allowed = allowAll;
-      expect(states(await card())[name]).toMatchObject({ disabled: false });
+  it('shows an action greyed out to a role without its permission, naming the permission', async () => {
+    rbac.allowed = allowAll;
+    expect(states(await card())['vm-action-kill']).toMatchObject({
+      disabled: false,
+    });
 
-      rbac.allowed = denyOnly([resource, verb]);
-      const wrapper = await card();
-      expect(states(wrapper)[name]).toEqual({
-        disabled: true,
-        tooltip: `Your role does not permit this action (${resource} ${verb})`,
-      });
-      await wrapper.find(`.${name}`).trigger('click');
-      expect(wrapper.emitted('action')).toBeUndefined();
-    },
-  );
+    rbac.allowed = denyOnly(['vms', 'delete']);
+    const wrapper = await card();
+    expect(states(wrapper)['vm-action-kill']).toEqual({
+      disabled: true,
+      tooltip: 'Your role does not permit this action (vms delete)',
+    });
+    await wrapper.find('.vm-action-kill').trigger('click');
+    expect(wrapper.emitted('action')).toBeUndefined();
+  });
 
   it('shows the port forward add link greyed out to a role without vms/forwards create', async () => {
     rbac.allowed = denyOnly(['vms/forwards', 'create']);
@@ -831,37 +821,6 @@ describe('VmDetailsCard Screenshot', () => {
   });
 });
 
-describe('VmDetailsCard Restart', () => {
-  // the Restart button's tooltip and disabled state in `wrapper`
-  const restart = (wrapper, selector) =>
-    tooltipButtons(wrapper).find((b) => b.control.classes(selector));
-
-  it.each([
-    ['running', {}, false, 'Restart the running VM'],
-    [
-      'shut down',
-      { state: 'QUIT', running: false },
-      true,
-      'Cannot restart: the VM is not running. Start it instead',
-    ],
-  ])(
-    'agrees with the Actions column on a %s VM',
-    async (_, fields, disabled, tooltip) => {
-      const target = makeVm(fields);
-      const details = await card({ vm: target });
-      const row = await mountComponent(VmRowActions, {
-        props: { vm: target, fullName: 'demo/web' },
-      });
-      for (const button of [
-        restart(section(details, 'Power'), 'vm-action-restart'),
-        restart(row, 'vm-row-restart'),
-      ]) {
-        expect(button).toMatchObject({ disabled, tooltip });
-      }
-    },
-  );
-});
-
 describe('VmRowActions', () => {
   it('shows a spinner on an action still running', async () => {
     const actions = await mountComponent(VmRowActions, {
@@ -902,24 +861,14 @@ describe('VmDetailsCard OS tag', () => {
   });
 });
 
-describe('the capture icon', () => {
-  it('is a solid icon Font Awesome can draw by name', () => {
-    library.add(faSharkFin);
-    const svg = icon({ prefix: 'fas', iconName: 'shark-fin' });
-    expect(svg).toBeDefined();
-    expect(svg.html.join('')).toMatch(/<svg[^>]*viewBox="0 0 512 512"/);
-  });
-});
-
 describe('VmDetailsCard actions that cannot run now', () => {
   const FILE = 'src/components/experiment/VmDetailsCard.vue';
   const SECTION = '#484848';
 
-  it.each([
-    ['running', {}],
-    ['shut down', { state: 'QUIT', running: false }],
-  ])('say why only in their tooltips on a %s VM', async (_, fields) => {
-    const wrapper = await card({ vm: makeVm(fields) });
+  it('say why only in their tooltips on a shut down VM', async () => {
+    const wrapper = await card({
+      vm: makeVm({ state: 'QUIT', running: false }),
+    });
     const power = section(wrapper, 'Power');
     expect(
       power

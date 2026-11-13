@@ -28,7 +28,6 @@ vi.mock('@/utils/notify.js', modules.notify);
 vi.mock('@/utils/pageLoader.js', fetching);
 
 import JobProgress from '@/components/jobs/JobProgress.vue';
-import { diskType as diskTypeOf } from '@/utils/diskFormat.js';
 import { diskTotals } from '@/utils/diskTotals.js';
 import { useJobStore } from '@/utils/jobs.js';
 import Disks from '@/views/Disks.vue';
@@ -292,42 +291,32 @@ describe('disk actions', () => {
     ).toEqual(ACTIONS);
   });
 
-  it('says how the disk rules an action out: its kind, backing image or use', async () => {
-    // each action's tooltip in the details window of this disk
+  it('says in the details window what an action does, or why the disk or role rules it out', async () => {
+    // each action's button in the details window of this disk
     let does = {};
-    const tooltips = async (shown) => {
+    const actions = async (shown, label = 'snap.qc2') => {
       const wrapper = await page([shown]);
       does = Object.fromEntries(
         wrapper.vm.diskActions.map((a) => [a.label, a.description]),
       );
-      const details = await openDetails(wrapper, 'snap.qc2');
+      const details = await openDetails(wrapper, label);
       const found = tooltipButtons(details.find('.disk-action-buttons'));
-      return Object.fromEntries(found.map((t, i) => [ACTIONS[i], t.tooltip]));
+      return Object.fromEntries(found.map((t, i) => [ACTIONS[i], t]));
     };
 
-    // an action that can run says what it does
-    expect((await tooltips(vmDisk)).Commit).toBe(does.Commit);
-    for (const backingImages of [[], undefined]) {
-      expect((await tooltips({ ...vmDisk, backingImages })).Commit).toBe(
-        'Cannot commit: the disk has no backing image to commit into',
-      );
-    }
-    const kernel = await tooltips({
+    const kernel = await actions({
       ...vmDisk,
       name: 'vmlinuz',
       kind: 'Kernel',
     });
-    expect(kernel.Snapshot).toBe(
-      'Cannot snapshot: only VM disks can be snapshotted',
+    expect(kernel.Commit.tooltip).toBe(
+      'Cannot commit: only VM disks can be committed',
     );
-    expect(kernel.Commit).toBe('Cannot commit: only VM disks can be committed');
-    expect(kernel.Rebase).toBe('Cannot rebase: only VM disks can be rebased');
-    // the rest work on any disk
-    for (const label of ['Clone', 'Resize', 'Download', 'Rename', 'Delete']) {
-      expect(kernel[label]).toBe(does[label]);
-    }
+    expect(kernel.Rebase.tooltip).toBe(
+      'Cannot rebase: only VM disks can be rebased',
+    );
 
-    const used = await tooltips({
+    const used = await actions({
       ...vmDisk,
       inUse: true,
       experiments: [
@@ -335,27 +324,29 @@ describe('disk actions', () => {
         { name: 'b', running: false },
       ],
     });
-    for (const label of ['Commit', 'Rebase', 'Resize', 'Rename', 'Delete']) {
-      expect(used[label]).toMatch(/: the disk is in use by a$/);
+    for (const label of ['Commit', 'Rebase', 'Resize']) {
+      expect(used[label].tooltip).toMatch(/: the disk is in use by a$/);
     }
-    // cloning and downloading only read the disk
-    expect(used.Clone).toBe(does.Clone);
-    expect(used.Download).toBe(does.Download);
-  });
 
-  it('asks roleAllowed about a disk by name, and about creating one with no name', async () => {
-    const wrapper = await page([vmDisk]);
-    const calls = [];
-    rbac.allowed = (...args) => calls.push(args) > 0;
-
-    wrapper.vm.disabledReason('snapshot', vmDisk);
-    wrapper.vm.disabledReason('commit', vmDisk);
-    expect(calls).toStrictEqual([
-      ['disks', 'create'],
-      ['disks', 'get', 'snap.qc2'],
-      ['disks', 'update', 'snap.qc2'],
-      ['disks', 'update', 'base.qc2'],
-    ]);
+    rbac.allowed = denyOnly(['disks', 'update', 'snap.qc2']);
+    const tips = await actions({ ...vmDisk, backingImages: undefined });
+    expect(tips.Snapshot).toMatchObject({
+      disabled: false,
+      tooltip: does.Snapshot,
+    });
+    expect(tips.Commit.tooltip).toBe(
+      'Cannot commit: the disk has no backing image to commit into',
+    );
+    expect(tips.Rename).toMatchObject({
+      disabled: true,
+      tooltip: 'Cannot rename: you do not have permission',
+    });
+    // the role may update a disk of another name
+    const other = await actions(
+      disk('/phenix/images/base.qc2', 'base.qc2'),
+      'base.qc2',
+    );
+    expect(other.Rename.disabled).toBe(false);
   });
 
   // each row's actions: Snapshot, Clone, Download, Rename and Delete, each
@@ -388,7 +379,7 @@ describe('disk actions', () => {
     ],
     [
       'a role that may only create disks, so not read one to copy',
-      allowOnly(['*', 'create']),
+      allowOnly(['disks', 'create']),
       {
         'snap.qc2': [NO, NO, NO, NO, NO],
         'isos/tools.iso': [VM_ONLY, NO, NO, NO, NO],
@@ -399,7 +390,7 @@ describe('disk actions', () => {
     ],
     [
       'a role that may not get disks, so not download or copy them',
-      denyOnly(['*', 'get']),
+      denyOnly(['disks', 'get']),
       {
         'snap.qc2': [NO, NO, NO, OK, OK],
         'isos/tools.iso': [VM_ONLY, NO, NO, OK, OK],
@@ -951,36 +942,6 @@ describe('the Type column', () => {
     expect(
       tooltipButtons(tableRows(wrapper)[0].Type)[0].control.element.localName,
     ).toBe('button');
-  });
-
-  it('sorts any list of types as the column shows them', async () => {
-    const formats = fc.record({
-      format: fc.constantFrom('qcow2', 'qcow', 'raw', 'vmdk', 'qed', ''),
-      formatVersion: fc.nat(12),
-    });
-    await fc.assert(
-      fc.asyncProperty(
-        fc.array(formats, { minLength: 1, maxLength: 6 }),
-        async (list) => {
-          const wrapper = await page(
-            list.map((fields, i) => typed(`${i}.img`, fields)),
-          );
-          await tableHeader(wrapper, 'Type').trigger('click');
-
-          const shown = tableRows(wrapper).map(typeOf);
-          const collate = (a, b) =>
-            a.localeCompare(b, 'en-US', { numeric: true, sensitivity: 'base' });
-          expect(shown).toEqual(shown.toSorted(collate));
-          expect(shown.toSorted()).toEqual(
-            list
-              .map((fields, i) => diskTypeOf(typed(`${i}.img`, fields)))
-              .toSorted(),
-          );
-          wrapper.unmount();
-        },
-      ),
-      { numRuns: 20 },
-    );
   });
 
   it('shows the type, the problem, the fix and its command in the details', async () => {

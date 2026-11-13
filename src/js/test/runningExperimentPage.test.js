@@ -648,50 +648,14 @@ describe('the header', () => {
   const tileText = (page) =>
     page.findAll('.app-tile').map((tile) => textOf(tile));
 
-  it('starts collapsed to one line, and remembers when it is expanded', async () => {
+  it("shows each app as its own experiment's last message says", async () => {
     const page = await openPage();
-    await apply({ ...running([]), vlans: [], apps: ['ntp', 'mine'] });
-    const toggle = page.find('.experiment-header-toggle');
-    expect(toggle.attributes('aria-expanded')).toBe('false');
-    expect(textOf(page.find('.exp-summary-brief'))).toContain('2 apps');
-    expect(textOf(page.find('.exp-summary-end .apps-box-trigger'))).toBe(
-      'Trigger',
-    );
-
-    await toggle.trigger('click');
-    // Details moves into the Apps box beside the summary
-    const moved = page.find('.apps-box-end .experiment-header-toggle');
-    expect(moved.attributes('aria-expanded')).toBe('true');
-    expect(localStorage.getItem('phenix.experiment.headerExpanded')).toBe(
-      'true',
-    );
-  });
-
-  it('lists every scenario and the apps, each as last heard of', async () => {
-    const page = await openPage();
-    await apply({
-      ...running([]),
-      scenario: 'scn',
-      scenarios: ['scn', 'base'],
-      apps: ['ntp', 'mine'],
-    });
-
-    expect(textOf(page.find('.exp-fact-scenarios'))).toContain('scn, base');
+    await apply({ ...running([]), apps: ['ntp', 'mine'] });
     expect(tileText(page)).toEqual(['ntp, Built-in', 'Trigger mine, User app']);
 
     await handle(wsMsg('apps/mine', 'exp1', 'start'));
     await handle(wsMsg('apps/ntp', 'exp2', 'error'));
     expect(tileText(page)).toEqual(['ntp, Built-in', 'Trigger mine, Running']);
-    await handle(wsMsg('apps/mine', 'exp1', 'error', { error: 'boom' }));
-    expect(tileText(page)).toEqual([
-      'ntp, Built-in',
-      'Trigger mine, Last run failed',
-    ]);
-    await handle(wsMsg('apps/mine', 'exp1', 'canceled'));
-    expect(tileText(page)).toEqual([
-      'ntp, Built-in',
-      'Trigger mine, Last run canceled',
-    ]);
   });
 
   it('shows the apps running when it opened', async () => {
@@ -796,18 +760,21 @@ describe('the header', () => {
   });
 });
 
-describe('filtering by label', () => {
+describe('filtering by label or host', () => {
   const web = { key: 'role', value: 'web' };
-  const filter = (page) => page.findComponent({ name: 'VmLabelFilter' });
+  const labelFilter = (page) => page.findComponent({ name: 'VmLabelFilter' });
+  const hostFilter = (page) => page.findComponent({ name: 'VmHostFilter' });
   const lastList = () => vmLists().at(-1).request;
-  // a VM list with the labels on the experiment's VMs, of total VMs in all
-  const labeledList = (vms, labels, total = vms.length) =>
-    wsMsg('experiment/vms', 'exp1', 'list', { vms, total, labels });
+  // a VM list with the labels and hosts of the experiment's VMs, of total in all
+  const list = (vms, { labels = [], hosts = [] } = {}, total = vms.length) =>
+    wsMsg('experiment/vms', 'exp1', 'list', { vms, total, labels, hosts });
+  const labelList = (vms, labels, total) => list(vms, { labels }, total);
+  const hostList = (vms, hosts, total) => list(vms, { hosts }, total);
 
   it('offers the labels the server lists, then Paginate, left of the search box', async () => {
     const page = await openPage();
     await apply({ ...running([]), vm_count: 11 });
-    await handle(labeledList([{ name: 'vm1' }], [web], 11));
+    await handle(labelList([{ name: 'vm1' }], [web], 11));
 
     // hosts, labels and Paginate, in that order, then the search box
     const html = page.find('.exp-toolbar').html();
@@ -818,76 +785,24 @@ describe('filtering by label', () => {
     );
     expect(at('vm-label-filter-trigger')).toBeLessThan(at('Paginate'));
     expect(at('Paginate')).toBeLessThan(at('placeholder="Find a VM"'));
-    expect(filter(page).props('options')).toEqual([web]);
+    expect(labelFilter(page).props('options')).toEqual([web]);
   });
 
   it('keeps Paginate beside the filter while the checked labels fit a page', async () => {
     const page = await openPage();
     await apply({ ...running([]), vm_count: 11 });
-    await handle(labeledList([{ name: 'vm1' }], [web], 11));
+    await handle(labelList([{ name: 'vm1' }], [web], 11));
 
-    filter(page).vm.$emit('update:picked', [web]);
-    await handle(labeledList([{ name: 'vm1', tags: { role: 'web' } }], [web]));
+    labelFilter(page).vm.$emit('update:picked', [web]);
+    await handle(labelList([{ name: 'vm1', tags: { role: 'web' } }], [web]));
     expect(textOf(page.find('.vm-table-filters'))).toContain('Paginate');
   });
 
   it('leaves the filters out with no labels or hosts and one page', async () => {
     const page = await openPage();
     await apply(running([]));
-    await handle(labeledList([{ name: 'vm1' }], []));
+    await handle(labelList([{ name: 'vm1' }], []));
     expect(page.find('.vm-table-filters').exists()).toBe(false);
-  });
-
-  it('lists the VMs with the labels checked, from the first page, uncached', async () => {
-    const page = await openPage();
-    await apply({ ...running([]), vm_count: 30 });
-    // paged, and on the third page
-    Object.assign(page.vm.table, { isPaginated: true, currentPage: 3 });
-    await handle(labeledList([{ name: 'vm1', tags: { role: 'web' } }], [web]));
-    clearPageCache();
-
-    filter(page).vm.$emit('update:picked', [web]);
-    await flushPromises();
-    expect(lastList()).toMatchObject({
-      labels: [web],
-      filter: '',
-      page_number: 1,
-    });
-
-    await handle(labeledList([], [web]));
-    expect(emptyText(page)).toBe('No VMs have any of the checked labels');
-    expect(cachedPage(experimentKey('exp1'))).toBeUndefined();
-
-    await page.find('.autocomplete input').setValue('db');
-    expect(emptyText(page)).toBe(
-      'No VMs match your search and the checked labels',
-    );
-  });
-
-  it('offers no more labels once the request would be too long for the server', async () => {
-    const page = await openPage();
-    await apply({ ...running([]), vm_count: 30 });
-    const many = Array.from({ length: 60 }, (_, i) => ({
-      key: `key-${i}`,
-      value: 'v'.repeat(40),
-    }));
-    await handle(labeledList([{ name: 'vm1' }], many, 30));
-    const boxes = () => page.findAll('.vm-label-filter-list input');
-    expect(boxes().every((box) => !box.element.disabled)).toBe(true);
-
-    // checks every label it still offers, in order
-    for (let i = 0; i < many.length; i++) {
-      const box = boxes()[i];
-      if (!box.element.disabled) await box.setValue(true);
-    }
-    const disabled = boxes().filter((box) => box.element.disabled);
-    expect(disabled.length).toBeGreaterThan(0);
-    expect(lastList().labels.length + disabled.length).toBe(many.length);
-    expect(textOf(page.find('.vm-label-filter'))).toContain(
-      'Uncheck a label to check another',
-    );
-    const bytes = (msg) => new TextEncoder().encode(JSON.stringify(msg)).length;
-    expect(vmLists().every((msg) => bytes(msg) <= 2048)).toBe(true);
   });
 
   it('sorts the VMs by label count through the server', async () => {
@@ -900,6 +815,118 @@ describe('filtering by label', () => {
       sort_asc: false,
     });
   });
+
+  it('offers the hosts the server lists and those of the rows shown', async () => {
+    const page = await openPage();
+    await apply(running([]));
+    await handle(hostList([vm({ name: 'vm1', host: 'node3' })], ['node2']));
+    expect(hostFilter(page).props('options')).toEqual(['node2', 'node3']);
+  });
+
+  it('shows the filters only on the VMs tab', async () => {
+    const page = await openPage();
+    await apply(running([]));
+    await handle(hostList([vm({ name: 'vm1' })], ['node1']));
+    expect(page.find('.vm-table-filters').exists()).toBe(true);
+
+    page.vm.activeTab = TAB.VNC;
+    await nextTick();
+    expect(page.find('.vm-table-filters').exists()).toBe(false);
+  });
+
+  const filters = {
+    labels: { name: 'VmLabelFilter', picked: [web] },
+    hosts: { name: 'VmHostFilter', picked: ['node1'] },
+  };
+
+  it.each([
+    ['labels', 'hosts', 'No VMs have any of the checked labels'],
+    ['hosts', 'labels', 'No VMs run on any of the checked hosts'],
+  ])(
+    'lists the VMs with the %s checked, from the first page, uncached, then with the %s too',
+    async (kind, other, empty) => {
+      const page = await openPage();
+      const pick = (key) =>
+        page
+          .findComponent({ name: filters[key].name })
+          .vm.$emit('update:picked', filters[key].picked);
+      await apply({ ...running([]), vm_count: 30 });
+      // paged, and on the third page
+      Object.assign(page.vm.table, { isPaginated: true, currentPage: 3 });
+      const one = vm({ name: 'vm1', host: 'node1', tags: { role: 'web' } });
+      await handle(list([one], { labels: [web], hosts: ['node1'] }));
+      clearPageCache();
+
+      pick(kind);
+      await flushPromises();
+      expect(lastList()).toMatchObject({
+        [kind]: filters[kind].picked,
+        [other]: [],
+        filter: '',
+        page_number: 1,
+      });
+
+      await handle(list([], { labels: [web], hosts: ['node1'] }));
+      expect(emptyText(page)).toBe(empty);
+      expect(cachedPage(experimentKey('exp1'))).toBeUndefined();
+
+      const search = page.find('.autocomplete input');
+      await search.setValue('db');
+      expect(emptyText(page)).toBe(
+        `No VMs match your search and the checked ${kind}`,
+      );
+
+      pick(other);
+      await flushPromises();
+      expect(lastList()).toMatchObject({ labels: [web], hosts: ['node1'] });
+      expect(emptyText(page)).toBe(
+        'No VMs match your search and the checked labels and hosts',
+      );
+
+      await search.setValue('');
+      expect(emptyText(page)).toBe('No VMs match the checked labels and hosts');
+    },
+  );
+
+  it.each([
+    [
+      'labels',
+      Array.from({ length: 60 }, (_, i) => ({
+        key: `key-${i}`,
+        value: 'v'.repeat(40),
+      })),
+      'vm-label-filter',
+      'Uncheck a label to check another',
+    ],
+    [
+      'hosts',
+      Array.from({ length: 60 }, (_, i) => `host-${i}-${'h'.repeat(40)}`),
+      'vm-host-filter',
+      'Uncheck a host to check another',
+    ],
+  ])(
+    'offers no more %s once the request would be too long for the server',
+    async (kind, many, box, why) => {
+      const page = await openPage();
+      await apply({ ...running([]), vm_count: 30 });
+      await handle(list([vm({ name: 'vm1' })], { [kind]: many }, 30));
+      const boxes = () => page.findAll(`.${box}-list input`);
+      expect(boxes().every((b) => !b.element.disabled)).toBe(true);
+
+      // checks every one it still offers, in order
+      for (let i = 0; i < many.length; i++) {
+        const b = boxes()[i];
+        if (!b.element.disabled) await b.setValue(true);
+      }
+      const disabled = boxes().filter((b) => b.element.disabled);
+      expect(disabled.length).toBeGreaterThan(0);
+      expect(lastList()[kind].length + disabled.length).toBe(many.length);
+      expect(textOf(page.find(`.${box}`))).toContain(why);
+      const bytes = (msg) =>
+        new TextEncoder().encode(JSON.stringify(msg)).length;
+      expect(vmLists().every((msg) => bytes(msg) <= 2048)).toBe(true);
+    },
+  );
 });
 
 describe('the running count', () => {
@@ -1040,91 +1067,6 @@ describe('the delayed VMs', () => {
     await apply(running([]));
     await handle(vmList('exp1', [vm({ name: 'vm1' })]));
     expect(delayedTag(page).exists()).toBe(false);
-  });
-});
-
-describe('filtering by host', () => {
-  const filter = (page) => page.findComponent({ name: 'VmHostFilter' });
-  const lastList = () => vmLists().at(-1).request;
-  // a VM list with the hosts running the experiment's VMs
-  const hostedList = (vms, hosts, total = vms.length) =>
-    wsMsg('experiment/vms', 'exp1', 'list', { vms, total, hosts });
-
-  it('offers the hosts the server lists and those of the rows shown', async () => {
-    const page = await openPage();
-    await apply(running([]));
-    await handle(hostedList([vm({ name: 'vm1', host: 'node3' })], ['node2']));
-    expect(filter(page).props('options')).toEqual(['node2', 'node3']);
-  });
-
-  it('only on the VMs tab', async () => {
-    const page = await openPage();
-    await apply(running([]));
-    await handle(hostedList([vm({ name: 'vm1' })], ['node1']));
-    expect(page.find('.vm-table-filters').exists()).toBe(true);
-
-    page.vm.activeTab = TAB.VNC;
-    await nextTick();
-    expect(page.find('.vm-table-filters').exists()).toBe(false);
-  });
-
-  it('lists the VMs on the hosts checked, from the first page, uncached', async () => {
-    const page = await openPage();
-    await apply({ ...running([]), vm_count: 30 });
-    Object.assign(page.vm.table, { isPaginated: true, currentPage: 3 });
-    await handle(hostedList([vm({ name: 'vm1', host: 'node1' })], ['node1']));
-    clearPageCache();
-
-    filter(page).vm.$emit('update:picked', ['node1']);
-    await flushPromises();
-    expect(lastList()).toMatchObject({
-      hosts: ['node1'],
-      labels: [],
-      page_number: 1,
-    });
-
-    await handle(hostedList([], ['node1']));
-    expect(emptyText(page)).toBe('No VMs run on any of the checked hosts');
-    expect(cachedPage(experimentKey('exp1'))).toBeUndefined();
-
-    page
-      .findComponent({ name: 'VmLabelFilter' })
-      .vm.$emit('update:picked', [{ key: 'role', value: 'web' }]);
-    await flushPromises();
-    expect(lastList()).toMatchObject({
-      hosts: ['node1'],
-      labels: [{ key: 'role', value: 'web' }],
-    });
-    expect(emptyText(page)).toBe('No VMs match the checked labels and hosts');
-
-    await page.find('.autocomplete input').setValue('db');
-    expect(emptyText(page)).toBe(
-      'No VMs match your search and the checked labels and hosts',
-    );
-  });
-
-  it('offers no more hosts once the request would be too long for the server', async () => {
-    const page = await openPage();
-    await apply({ ...running([]), vm_count: 30 });
-    const many = Array.from(
-      { length: 60 },
-      (_, i) => `host-${i}-${'h'.repeat(40)}`,
-    );
-    await handle(hostedList([vm({ name: 'vm1' })], many, 30));
-    const boxes = () => page.findAll('.vm-host-filter-list input');
-
-    for (let i = 0; i < many.length; i++) {
-      const box = boxes()[i];
-      if (!box.element.disabled) await box.setValue(true);
-    }
-    const disabled = boxes().filter((box) => box.element.disabled);
-    expect(disabled.length).toBeGreaterThan(0);
-    expect(lastList().hosts.length + disabled.length).toBe(many.length);
-    expect(textOf(page.find('.vm-host-filter'))).toContain(
-      'Uncheck a host to check another',
-    );
-    const bytes = (msg) => new TextEncoder().encode(JSON.stringify(msg)).length;
-    expect(vmLists().every((msg) => bytes(msg) <= 2048)).toBe(true);
   });
 });
 

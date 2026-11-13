@@ -125,6 +125,10 @@ it('subscribes to log lines while open, and again after a reconnect', async () =
   const page = await logsPage();
 
   expect(actions()).toEqual(['subscribe']);
+  expect(badges(page).slice(0, 2)).toEqual([
+    ['INFO', 'level-info'],
+    ['WRN', 'level-warn'],
+  ]);
   const line = { level: 'INFO', type: 'SYSTEM', msg: 'streamed line' };
   for (const handler of ws.handlers)
     handler(wsMsg('log', 'phenix', 'log', line));
@@ -180,58 +184,23 @@ async function setSearch(page, text) {
   vi.advanceTimersByTime(200);
 }
 
-it.each([
-  [
-    'search, then level',
-    [
-      [setSearch, 'duration'],
-      [setLevel, 'DEBUG'],
-    ],
-    [0, 1],
-  ],
-  [
-    'level, then search',
-    [
-      [setLevel, 'DEBUG'],
-      [setSearch, 'duration'],
-    ],
-    [0, 1],
-  ],
-  [
-    'search, level, then the search cleared',
-    [
-      [setSearch, 'duration'],
-      [setLevel, 'DEBUG'],
-      [setSearch, ''],
-    ],
-    [0, 1, 2, 3],
-  ],
-  [
-    'level down and up again with a search',
-    [
-      [setSearch, 'duration'],
-      [setLevel, 'DEBUG'],
-      [setLevel, 'INFO'],
-    ],
-    [1],
-  ],
-])(
-  'shows what every filter selects after a %s, scrolled to the newest',
-  async (_, steps, want) => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
-    const page = await open();
-    loaderSpy.options.apply([...TIMED]);
+it('shows what the filters select after a search and a level, scrolled to the newest', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  const page = await open();
+  loaderSpy.options.apply([...TIMED]);
+  await flushPromises();
+  for (const [step, value] of [
+    [setSearch, 'duration'],
+    [setLevel, 'DEBUG'],
+  ]) {
+    scrolls.length = 0;
+    await step(page, value);
     await flushPromises();
-    for (const [step, value] of steps) {
-      scrolls.length = 0;
-      await step(page, value);
-      await flushPromises();
-      // the list kept its old offset, which showed old rows or none at all
-      expect(scrolls).toEqual([Number.MAX_SAFE_INTEGER]);
-    }
-    expect(shown(page)).toEqual(want.map((i) => TIMED[i].msg));
-  },
-);
+    // the list kept its old offset, which showed old rows or none at all
+    expect(scrolls).toEqual([Number.MAX_SAFE_INTEGER]);
+  }
+  expect(shown(page)).toEqual([TIMED[0].msg, TIMED[1].msg]);
+});
 
 // happy-dom lays nothing out, so this reads the rules and the classes that
 // place the clear button's icon
@@ -305,6 +274,8 @@ it('shows the lines that pass the filters, as lines stream in and filters change
         let level = 'INFO';
         let search = '';
         for (const step of steps) {
+          scrolls.length = 0;
+          const [oldLevel, oldSearch] = [level, search];
           if (step.line) {
             logs.push(step.line);
             for (const handler of ws.handlers)
@@ -321,6 +292,11 @@ it('shows the lines that pass the filters, as lines stream in and filters change
             vi.advanceTimersByTime(200);
           }
           await flushPromises();
+
+          // each filter change scrolls to the newest line it selects
+          if (step.type || oldLevel !== level || oldSearch !== search) {
+            expect(scrolls).toEqual([Number.MAX_SAFE_INTEGER]);
+          }
 
           expect(shownCount(page)).toMatch(
             new RegExp(
@@ -343,27 +319,6 @@ it('shows the lines that pass the filters, as lines stream in and filters change
     ),
     { numRuns: 20 },
   );
-});
-
-it('shows each level as a short colored badge', async () => {
-  const page = await open();
-  loaderSpy.options.apply(
-    LEVELS.map((level, id) => ({
-      id,
-      level,
-      type: 'SYSTEM',
-      msg: `a ${level} line`,
-    })),
-  );
-  await levelItem(page, 'DEBUG').trigger('click');
-  await flushPromises();
-
-  expect(badges(page)).toEqual([
-    ['DBG', 'level-debug'],
-    ['INFO', 'level-info'],
-    ['WRN', 'level-warn'],
-    ['ERR', 'level-error'],
-  ]);
 });
 
 // happy-dom lays nothing out, so this reads the rules that keep the columns

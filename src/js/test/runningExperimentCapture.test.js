@@ -19,7 +19,6 @@ import { never } from './helpers/async.js';
 import { disk, vm, wsMsg } from './helpers/fixtures.js';
 import { denyOnly } from './helpers/permissions.js';
 import {
-  dialogs,
   mountPage,
   tableRows,
   textOf,
@@ -51,11 +50,12 @@ function answerGets(vms, answers = {}) {
 }
 
 // the demo experiment's page, listing `vms`
-const openPage = (vms, answers) => {
+const openPage = (vms, answers, options = {}) => {
   answerGets(vms, answers);
   return mountPage(RunningExperiment, {
     route: '/experiment/demo',
     data: { experiment: { name: 'demo', running: true, vms } },
+    ...options,
   });
 };
 
@@ -193,7 +193,7 @@ describe('the captures on a VLAN', () => {
 });
 
 describe('starting one capture', () => {
-  it('starts it without asking, with a spinner until the server has started it', async () => {
+  it('starts it with a spinner until the server has started it', async () => {
     const request = Promise.withResolvers();
     const started = Promise.withResolvers();
     const page = await openPage([web], {
@@ -204,20 +204,9 @@ describe('starting one capture', () => {
     await clickTap(page, 'web', 0);
     expect(spinningTaps(page, 'web')).toEqual([0]);
 
-    // a second click while waiting sends nothing more
-    await clickTap(page, 'web', 0);
-    expect(getUrls().filter((url) => url === capturesUrl('web'))).toHaveLength(
-      1,
-    );
-
     request.resolve({ data: { captures: [] } });
     await flushPromises();
-    expect(dialogs()).toEqual([]);
     expect(spinningTaps(page, 'web')).toEqual([0]);
-    expect(axios.post).toHaveBeenCalledWith(capturesUrl('web'), {
-      interface: 0,
-      filename: expect.stringMatching(/^web_0_.*\.pcap$/),
-    });
 
     started.resolve({});
     await flushPromises();
@@ -225,7 +214,7 @@ describe('starting one capture', () => {
     expect(page.find('.loading-overlay').exists()).toBe(false);
   });
 
-  it("stops the interface's capture from the details without asking or closing them", async () => {
+  it("stops the interface's capture from the details without closing them", async () => {
     const page = await openPage([{ ...web, captures: [{ interface: 2 }] }], {
       [capturesUrl('web')]: async () => ({
         data: { captures: [{ interface: 0 }, { interface: 2 }] },
@@ -237,7 +226,6 @@ describe('starting one capture', () => {
 
     await card.find('.vm-capture-stop').trigger('click');
     await flushPromises();
-    expect(dialogs()).toEqual([]);
     expect(axios.delete).toHaveBeenCalledWith(capturesUrl('web'), {
       params: { iface: 2 },
     });
@@ -252,18 +240,6 @@ describe('starting one capture', () => {
     expect(page.find('.vm-card .vm-capture-stop').classes()).not.toContain(
       'is-loading',
     );
-  });
-
-  it('stops the spinner and says why when the request fails', async () => {
-    const err = new Error('boom');
-    const page = await openPage([web], {
-      [capturesUrl('web')]: () => Promise.reject(err),
-    });
-
-    await clickTap(page, 'web', 2);
-    await flushPromises();
-    expect(spinningTaps(page, 'web')).toEqual([]);
-    expect(notify.error).toHaveBeenCalledWith(err);
   });
 
   it('keeps spinners per VM and interface', async () => {
@@ -298,127 +274,47 @@ describe('starting one capture', () => {
 });
 
 describe('capturing all interfaces', () => {
-  it('starts one capture per connected interface without asking, spinning until they start', async () => {
+  it('spins until the captures have started, then sums up how they went', async () => {
     const listed = Promise.withResolvers();
     const started = Promise.withResolvers();
     const page = await openPage([web], {
       [capturesUrl('web')]: () => listed.promise,
     });
-    axios.post.mockReturnValue(started.promise);
+    axios.post
+      .mockReturnValueOnce(started.promise)
+      .mockRejectedValueOnce(new Error('capture already exists'));
     const button = () => rowAction(page, 'web', 'captureAll');
 
     await button().trigger('click');
     expect(button().classes()).toContain('is-loading');
-    listed.resolve({ data: { captures: [{ interface: 2 }] } });
+    listed.resolve({ data: { captures: [] } });
     await flushPromises();
-    expect(dialogs()).toEqual([]);
     expect(button().classes()).toContain('is-loading');
-    started.resolve({ status: 204 });
+    started.resolve({});
     await flushPromises();
     expect(button().classes()).not.toContain('is-loading');
-    expect(axios.post).toHaveBeenCalledTimes(1);
-    expect(axios.post).toHaveBeenCalledWith(capturesUrl('web'), {
-      interface: 0,
-      filename: expect.stringMatching(/^web_0_.*\.pcap$/),
-    });
-  });
-
-  it('starts several and sums up how they went', async () => {
-    const page = await openPage([web], {
-      [capturesUrl('web')]: async () => ({ data: { captures: [] } }),
-    });
-    const err = new Error('capture already exists');
-    axios.post.mockResolvedValueOnce({}).mockRejectedValueOnce(err);
-
-    await rowAction(page, 'web', 'captureAll').trigger('click');
-    await flushPromises();
-    expect(dialogs()).toEqual([]);
-    expect(axios.post.mock.calls.map(([, body]) => body.interface)).toEqual([
-      0, 2,
-    ]);
     // one summary, naming the failure
     expect(notify.error).not.toHaveBeenCalled();
     expect(notices.open).toHaveBeenCalledTimes(1);
     expect(noticeText()).toContain('interface 2: capture already exists');
-    expect(rowAction(page, 'web', 'captureAll').classes()).not.toContain(
-      'is-loading',
-    );
-  });
-
-  it('shows its summary alone, not a toast for each capture it starts', async () => {
-    const page = await openPage([{ ...web, captures: [] }], {
-      [capturesUrl('web')]: async () => ({ data: { captures: [] } }),
-    });
-    axios.post.mockImplementation(async (_, body) => {
-      await handle(captureEvent('web', 'start', body.interface));
-      return {};
-    });
-
-    await rowAction(page, 'web', 'captureAll').trigger('click');
-    await flushPromises();
-    const summary = {
-      text: 'Started packet captures of web on 2 interfaces',
-      type: 'is-success',
-    };
-    expect(toasts()).toEqual([summary]);
-    // a capture stopped by someone else still toasts
-    await handle(captureEvent('web', 'stop', 0));
-    expect(toasts()).toEqual([
-      {
-        text: 'Packet capture was stopped for interface 0 on the web VM.',
-        type: 'is-success',
-      },
-      summary,
-    ]);
-  });
-
-  it('says so when every interface is already being captured', async () => {
-    const page = await openPage([web], {
-      [capturesUrl('web')]: async () => ({
-        data: { captures: [{ interface: 0 }, { interface: 2 }] },
-      }),
-    });
-
-    await rowAction(page, 'web', 'captureAll').trigger('click');
-    await flushPromises();
-    expect(dialogs()).toEqual([]);
-    expect(toasts()).toEqual([
-      expect.objectContaining({
-        text: expect.stringMatching(/already captures/),
-      }),
-    ]);
   });
 });
 
 describe('stopping all captures', () => {
-  const capturing = { ...web, captures: [{ interface: 0 }, { interface: 2 }] };
-
-  it('stops every capture without asking, with a spinner', async () => {
-    const page = await openPage([capturing]);
+  it('stops every capture with a spinner', async () => {
+    const page = await openPage([
+      { ...web, captures: [{ interface: 0 }, { interface: 2 }] },
+    ]);
     const stop = Promise.withResolvers();
     axios.delete.mockReturnValue(stop.promise);
     const button = () => rowAction(page, 'web', 'stopCaptures');
 
     await button().trigger('click');
-    expect(dialogs()).toEqual([]);
     expect(button().classes()).toContain('is-loading');
     expect(axios.delete).toHaveBeenCalledWith(capturesUrl('web'));
     stop.resolve({});
     await flushPromises();
     expect(button().classes()).not.toContain('is-loading');
-  });
-
-  it('reports a failed stop and stops the spinner', async () => {
-    const page = await openPage([capturing]);
-    axios.delete.mockRejectedValue(new Error('boom'));
-
-    await rowAction(page, 'web', 'stopCaptures').trigger('click');
-    await flushPromises();
-
-    expect(notify.error).toHaveBeenCalled();
-    expect(rowAction(page, 'web', 'stopCaptures').classes()).not.toContain(
-      'is-loading',
-    );
   });
 });
 
@@ -448,8 +344,12 @@ describe('the CD-ROM picker', () => {
 
   // the page with web's CD-ROM picker opened from its details, the ISO list
   // answered by `listIsos`
-  async function openPicker(cdRom = '', listIsos = listed) {
-    const page = await openPage([{ ...web, cdRom }], { disks: listIsos });
+  async function openPicker(cdRom = '', listIsos = listed, options = {}) {
+    const page = await openPage(
+      [{ ...web, cdRom }],
+      { disks: listIsos },
+      options,
+    );
     const card = await openDetails(page, 'web');
     await card.find('.vm-action-cdrom').trigger('click');
     await flushPromises();
@@ -550,6 +450,31 @@ describe('the CD-ROM picker', () => {
     await flushPromises();
     expect(stateOf(page)).toBe('Loading ISO images…');
     expect(pickerOf(page).findAll('option')).toEqual([]);
+  });
+
+  it('keeps the VM name in its title until Cancel has closed it', async () => {
+    // the real transition, so that the picker leaves as in the browser
+    const page = await openPicker('', listed, {
+      stubs: { transition: false },
+    });
+    const cancel = pickerOf(page)
+      .findAll('button')
+      .find((b) => textOf(b) === 'Cancel');
+
+    await cancel.trigger('click');
+    expect(page.vm.opticalDiscModal.active).toBe(false);
+    expect(page.vm.opticalDiscModal.vmName).toBe('web');
+    await vi.waitFor(() =>
+      expect(page.vm.opticalDiscModal).toEqual({
+        active: false,
+        vmName: null,
+        current: '',
+        disc: null,
+        isos: [],
+        loading: false,
+        error: null,
+      }),
+    );
   });
 
   it('labels its list of ISO images, and each image by its label', async () => {

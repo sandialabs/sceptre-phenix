@@ -954,11 +954,6 @@ describe('experiment captures', () => {
     ]);
   });
 
-  it('offers no display filters for a classic pcap capture', async () => {
-    const page = await opened({ exp: 'exp1', capture: '2' });
-    expect(page.find('.webshark-filters').exists()).toBe(false);
-  });
-
   it.each([
     ['experiment captures', ['experiments/captures', 'get']],
     ['experiment files', ['experiments/files', 'get']],

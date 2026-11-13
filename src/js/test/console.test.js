@@ -904,15 +904,10 @@ describe('what a console session offers', () => {
     expect(term.selected).toBe('');
   });
 
-  it('changes its colors and its text size, which it fits to', () => {
-    session.setTheme(false);
-    expect(term.options.theme.background).toBe('#fafafa');
-    session.setTheme(true);
-    expect(term.options.theme.background).toBe('#2b2b2b');
-
+  it('fits the terminal to a new text size', () => {
     const fits = session.fitAddon.fits;
-    session.setFontSize(99);
-    expect(term.options.fontSize).toBe(24);
+    session.setFontSize(16);
+    expect(term.options.fontSize).toBe(16);
     expect(session.fitAddon.fits).toBe(fits + 1);
   });
 

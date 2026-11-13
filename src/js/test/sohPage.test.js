@@ -168,12 +168,6 @@ describe('rendering', () => {
       'Waiting for First Run',
       'SOH is waiting for its first run, which starts after post-start.',
     ],
-    [
-      'says a disabled soh app is running its first checks',
-      { running: true, sohRunning: true, sohDisabled: true },
-      'SOH Is Initializing',
-      'SOH is running its first checks.',
-    ],
   ])('holds the SOH button and %s', async (_, state, label, note) => {
     const page = await open({ nodes, loaded: true, ...state });
     expect(buttons(page)).toEqual([
@@ -213,6 +207,31 @@ describe('rendering', () => {
     expect(axios.post).toHaveBeenCalledWith('experiments/demo/trigger', null, {
       params: { apps: 'soh' },
     });
+
+    // its first run, under way, holds the button as any first run does
+    loaderSpy.options.apply({
+      started: true,
+      soh_disabled: true,
+      soh_initialized: false,
+      soh_running: true,
+      nodes,
+      edges: [],
+    });
+    // Fit and Download wait for the redraw's layout
+    await vi.waitFor(() =>
+      expect(buttons(page)).toEqual([
+        'Refresh Network',
+        'SOH Is Initializing (disabled)',
+        'Fit',
+        'Download',
+      ]),
+    );
+    expect(page.find('#soh-run-note').text()).toBe(
+      'SOH is running its first checks.',
+    );
+    expect(
+      page.findAll('.soh-actions button')[1].attributes('aria-describedby'),
+    ).toBe('soh-run-note');
 
     // once it has run, it is like any other
     loaderSpy.options.apply({

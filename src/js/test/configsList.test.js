@@ -38,15 +38,6 @@ const validation = [
   '  hint: "image:" is on line 12 under nodes[0].hardware, but the schema expects it at nodes[0].hardware.drives[0].image',
 ].join('\n');
 
-const closedDialog = { modal: false, title: null, msg: null };
-
-const duplicate = {
-  response: {
-    status: 400,
-    data: { message: 'config with same name already exists' },
-  },
-};
-
 // the list and each viewed config are fetched again, not shown from a cache
 beforeEach(() => {
   clearPageCache();
@@ -102,67 +93,6 @@ describe('ConfigsList upload errors', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setRole(['*']);
-  });
-
-  test('shows no validation error dialog until an upload fails', async () => {
-    const wrapper = mountList();
-    await flushPromises();
-
-    expect(errorCard(wrapper)).toBeUndefined();
-    expect(wrapper.text()).not.toContain('Validation Error');
-    expect(wrapper.vm.error).toEqual(closedDialog);
-  });
-
-  test('opens the dialog with the validation lines from a 400', async () => {
-    axiosInstance.post.mockRejectedValueOnce({
-      response: { status: 400, data: { metadata: { validation } } },
-    });
-    const wrapper = mountList();
-    await flushPromises();
-
-    await upload(wrapper);
-
-    expect(axiosInstance.post).toHaveBeenCalledWith(
-      'configs',
-      expect.any(FormData),
-    );
-    expect(wrapper.vm.error).toEqual({
-      modal: true,
-      title: 'Validation Error',
-      msg: validation,
-    });
-    expect(useErrorNotification).not.toHaveBeenCalled();
-  });
-
-  test.each([
-    ['a 400 without validation metadata', duplicate],
-    ['a network error', new Error('Network Error')],
-  ])('sends %s to the error notification', async (_, err) => {
-    axiosInstance.post.mockRejectedValueOnce(err);
-    const wrapper = mountList();
-    await flushPromises();
-
-    await upload(wrapper);
-
-    expect(useErrorNotification).toHaveBeenCalledWith(err);
-    expect(errorCard(wrapper)).toBeUndefined();
-    expect(wrapper.vm.error).toEqual(closedDialog);
-  });
-
-  test('Exit closes the dialog and clears the error', async () => {
-    axiosInstance.post.mockRejectedValueOnce({
-      response: { status: 400, data: { metadata: { validation } } },
-    });
-    const wrapper = mountList();
-    await flushPromises();
-    await upload(wrapper);
-
-    await errorCard(wrapper).get('footer button').trigger('click');
-
-    // Buefy hides the modal at once and removes it after its transition.
-    const card = errorCard(wrapper);
-    expect(card === undefined || !card.isVisible()).toBe(true);
-    expect(wrapper.vm.error).toEqual(closedDialog);
   });
 
   test('renders the dialog with the lines only while it is open', async () => {

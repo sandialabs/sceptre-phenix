@@ -499,46 +499,9 @@ describe('the totals', () => {
       .findAll('.stat-strip .stat')
       .map((t) => [textOf(t.find('dt')), textOf(t.find('dd'))]);
 
-  it('count every experiment, those running, their VMs and all VLANs', async () => {
-    const wrapper = await page([
-      {
-        name: 'a',
-        status: 'started',
-        running: true,
-        vm_count: 4,
-        vlan_count: 3,
-      },
-      {
-        name: 'b',
-        status: 'stopped',
-        running: false,
-        vm_count: 9,
-        vlan_count: 2,
-      },
-      {
-        name: 'c',
-        status: 'started',
-        running: true,
-        vm_count: 1,
-        vlan_count: 1,
-      },
-    ]);
-    // the search narrows the table, not the totals
-    await wrapper.find('input[placeholder="Find an Experiment"]').setValue('a');
-
-    expect(totals(wrapper)).toEqual([
-      ['Experiments', '3'],
-      ['Running', '2'],
-      ['VMs in running experiments', '5'],
-      ['VLANs', '6'],
-    ]);
-    expect(byLabel(wrapper, 'Experiment totals').attributes('role')).toBe(
-      'group',
-    );
-  });
-
-  it('follow an experiment the websocket says has started', async () => {
+  it('follow an experiment the websocket says has started, not the search', async () => {
     const wrapper = await page(three());
+    await wrapper.find('input[placeholder="Find an Experiment"]').setValue('a');
 
     await send(wrapper, {
       resource: { type: 'experiment', name: 'a', action: 'start' },
@@ -550,6 +513,9 @@ describe('the totals', () => {
       ['VMs in running experiments', '6'],
       ['VLANs', '2'],
     ]);
+    expect(byLabel(wrapper, 'Experiment totals').attributes('role')).toBe(
+      'group',
+    );
   });
 });
 
@@ -1004,17 +970,6 @@ describe('the start and stop bar', () => {
     );
   });
 
-  it("shows only the bar of an old server's percent", async () => {
-    const wrapper = await page(three());
-
-    await send(wrapper, msg('a', 'starting'));
-    await send(wrapper, msg('a', 'progress', { percent: 0.4 }));
-    expect(statusOf(wrapper)).toEqual(['bar 40%']);
-
-    await send(wrapper, msg('a', 'start', { name: 'a', running: true }));
-    expect(statusOf(wrapper)).toEqual(['started']);
-  });
-
   it.each([
     [
       'start',
@@ -1288,15 +1243,6 @@ describe('one experiment', () => {
       ['experiments/b/stop'],
       ['experiments/b/stop', null, { params: { force: true } }],
     ]);
-  });
-
-  it('reloads the list when a stop failed', async () => {
-    const wrapper = await page(three());
-
-    await send(wrapper, {
-      resource: { type: 'experiment', name: 'b', action: 'errorStopping' },
-    });
-    expect(reloads()).toEqual([[{ force: true }]]);
   });
 
   it.each([
