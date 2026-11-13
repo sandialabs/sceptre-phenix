@@ -2619,10 +2619,10 @@
 </script>
 
 <style scoped>
-  /* Room for the tabs drawn beside the toolbar's last row: the VM filters
-     wrap onto a row of their own above the search box when it runs out. */
+  /* Room for the five tabs drawn beside the toolbar's last row: the selection
+     actions and VM filters wrap onto rows above the search box when it runs out. */
   .exp-toolbar {
-    padding-left: 25rem;
+    padding-left: 35rem;
   }
 
   .exp-toolbar :deep(.field.is-grouped.is-grouped-right) {

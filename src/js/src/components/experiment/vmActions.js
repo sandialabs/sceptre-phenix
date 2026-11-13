@@ -473,6 +473,10 @@ export function vmActionState(name, vm, { can, features = [] }) {
     : state;
 }
 
+// Whether a page shows an action's button: one the role may not take shows
+// greyed out with the permission it needs; one the server lacks does not.
+export const shownAction = (state) => state.permitted || !!state.denied;
+
 // the action states for a list of action names
 export function vmActionStates(names, vm, opts) {
   return names.map((name) => vmActionState(name, vm, opts));

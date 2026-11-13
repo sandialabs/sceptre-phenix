@@ -20,6 +20,12 @@ The `Power` section holds the `Start` (or `Resume`), `Pause`, `Restart`,
 `Shut down` and `Kill` buttons. `More actions`, under the screenshot, holds
 the other actions.
 
+An action that the role cannot do is grayed out. Its tooltip names the
+permission that the role needs, for example
+`Your role does not permit this action (vms delete)`. This also applies to the
+`Actions` column of the VM table, the selection toolbar and the bar of a live
+tile. The server still checks each permission.
+
 ### From the Command Line Binary
 
 There are two options for displaying the information for VMs in an experiment. First run

@@ -626,13 +626,6 @@ describe('VmDetailsCard permissions', () => {
       null,
     ],
     [
-      'Capture all interfaces',
-      ['vms/captures', 'create'],
-      {},
-      ['.vm-captureAll'],
-      '.vm-stopCaptures',
-    ],
-    [
       'annotation editing',
       ['vms', 'patch'],
       { vm: makeVm({ annotations: {} }) },
@@ -663,6 +656,58 @@ describe('VmDetailsCard permissions', () => {
       if (kept) expect(has(denied, kept)).toBe(true);
     },
   );
+});
+
+describe('VmDetailsCard actions the role may not take', () => {
+  // each action button by its class: its tooltip and disabled state
+  const states = (wrapper) =>
+    Object.fromEntries(
+      tooltipButtons(wrapper)
+        .map((t) => [
+          t.control.classes().find((c) => /^vm-(action-|captureAll$)/.test(c)),
+          { disabled: t.disabled, tooltip: t.tooltip },
+        ])
+        .filter(([name]) => name),
+    );
+
+  it.each([
+    ['vm-action-kill', ['vms', 'delete']],
+    ['vm-action-pause', ['vms/stop', 'update']],
+    ['vm-action-redeploy', ['vms/redeploy', 'update']],
+    ['vm-action-screenshot', ['vms/screenshot', 'create']],
+    ['vm-captureAll', ['vms/captures', 'create']],
+  ])(
+    'shows %s greyed out to a role without %j, naming the permission',
+    async (name, [resource, verb]) => {
+      rbac.allowed = allowAll;
+      expect(states(await card())[name]).toMatchObject({ disabled: false });
+
+      rbac.allowed = denyOnly([resource, verb]);
+      const wrapper = await card();
+      expect(states(wrapper)[name]).toEqual({
+        disabled: true,
+        tooltip: `Your role does not permit this action (${resource} ${verb})`,
+      });
+      await wrapper.find(`.${name}`).trigger('click');
+      expect(wrapper.emitted('action')).toBeUndefined();
+    },
+  );
+
+  it('shows the port forward add link greyed out to a role without vms/forwards create', async () => {
+    rbac.allowed = denyOnly(['vms/forwards', 'create']);
+    const wrapper = await card();
+    const add = section(wrapper, 'Port forwards').find('.vm-section-link');
+    expect(add.attributes('aria-disabled')).toBe('true');
+    await add.trigger('click');
+    expect(wrapper.emitted('action')).toBeUndefined();
+  });
+
+  it('leaves out Mount disk when the server does not support it', async () => {
+    expect(has(await card(), '.vm-action-mount')).toBe(false);
+    expect(
+      has(await card({ features: ['vm-mount'] }), '.vm-action-mount'),
+    ).toBe(true);
+  });
 });
 
 describe('VmDetailsCard Screenshot', () => {
@@ -716,12 +761,12 @@ describe('VmDetailsCard Screenshot', () => {
   });
 
   it.each([
-    [allowAll, true],
-    [denyOnly(['vms/screenshot', 'create']), false],
-  ])('needs vms/screenshot create', async (allowed, shown) => {
+    [allowAll, false],
+    [denyOnly(['vms/screenshot', 'create']), true],
+  ])('needs vms/screenshot create', async (allowed, greyed) => {
     rbac.allowed = allowed;
     const wrapper = await card();
-    expect(has(wrapper, '.vm-action-screenshot')).toBe(shown);
+    expect(action(wrapper, 'screenshot').disabled).toBe(greyed);
   });
 
   it('spins while the page saves the screenshot', async () => {

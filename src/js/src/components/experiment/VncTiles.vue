@@ -99,9 +99,10 @@
               :key="action.name"
               type="button"
               :class="['button', 'is-small', action.type]"
-              :aria-label="`${action.label} VM ${vm.name}`"
-              :title="action.label"
-              @click="$emit('action', action.name, vm)">
+              :aria-label="toolLabel(action, vm)"
+              :title="action.reason || action.label"
+              :aria-disabled="action.disabled ? 'true' : undefined"
+              @click="action.disabled || $emit('action', action.name, vm)">
               <b-icon :icon="action.icon" size="is-small" />
             </button>
             <button
@@ -166,7 +167,7 @@
   import VncTile from '@/vnc/VncTile.vue';
   import VncTileToolbar from '@/vnc/VncTileToolbar.vue';
   import { consoleAvailable } from '@/vnc/vmScreen.js';
-  import { POWER_ACTIONS, vmButtonStates } from './vmActions.js';
+  import { POWER_ACTIONS, shownAction, vmButtonStates } from './vmActions.js';
   import { consoleLinkAlt, screenshotAlt, vmScreenshot } from './vmScreens.js';
 
   // the tools of a tile's hover bar, after its power actions
@@ -301,20 +302,22 @@
         return consoleHref(this.$router, [this.keyOf(vm)]);
       },
 
-      // the power actions the role may run on the VM now
+      // the power actions the VM's state allows now, greyed out with the
+      // permission they need when the role may not run them
       powerOf(vm) {
+        const allowed = vmButtonStates(POWER_ACTIONS, vm, { can: () => true });
         return vmButtonStates(POWER_ACTIONS, vm, {
           can: this.canOn(vm),
-        }).filter((action) => action.permitted && !action.disabled);
+        }).filter((action, i) => shownAction(action) && !allowed[i].disabled);
       },
 
-      // in Live mode, the tools the role may use on the VM, greyed out with
-      // the reason when the VM's state rules them out
+      // in Live mode, the tools on the VM, greyed out with the reason when
+      // the VM's state or the role rules them out
       toolsOf(vm) {
         if (!this.liveMode) return [];
         const pending = this.actionPending[vm.name] ?? [];
         return vmButtonStates(TILE_TOOLS, vm, { can: this.canOn(vm) })
-          .filter((tool) => tool.permitted)
+          .filter(shownAction)
           .map((tool) => ({ ...tool, pending: pending.includes(tool.name) }));
       },
 

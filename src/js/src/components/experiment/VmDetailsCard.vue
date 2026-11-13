@@ -616,13 +616,21 @@
             <div v-else-if="canListForwards" class="vm-section">
               <h3 class="vm-section-title">
                 Port forwards
-                <button
-                  v-if="forwardAction.permitted && !forwardAction.disabled"
-                  type="button"
-                  class="plain-button vm-section-link"
-                  @click="$emit('action', 'portForward')">
-                  <b-icon icon="plus" size="is-small" /> add
-                </button>
+                <b-tooltip
+                  v-if="forwardAction.permitted || forwardAction.denied"
+                  :label="forwardAction.reason || forwardAction.description"
+                  type="is-dark"
+                  multilined>
+                  <button
+                    type="button"
+                    class="plain-button vm-section-link"
+                    :aria-disabled="forwardAction.disabled ? 'true' : undefined"
+                    @click="
+                      forwardAction.disabled || $emit('action', 'portForward')
+                    ">
+                    <b-icon icon="plus" size="is-small" /> add
+                  </button>
+                </b-tooltip>
               </h3>
               <p v-if="!forwards.length" class="vm-empty">None</p>
               <div
@@ -703,6 +711,7 @@
     POWER_ACTIONS,
     TOOL_ACTIONS,
     restorePendingKey,
+    shownAction,
     vlanPendingKey,
     vmActionState,
     vmActionStates,
@@ -868,16 +877,16 @@
       agentClass() {
         return this.vm.ccActive ? 'is-positive' : 'is-muted';
       },
-      // the actions the role may take; the ones the VM's state rules out stay
-      // visible, disabled, with the reason in their tooltip
+      // The actions, disabled with the reason in their tooltip when the VM's
+      // state or the role rules them out; those the server lacks are left out
       power() {
         return vmButtonStates(POWER_ACTIONS, this.vm, this.opts).filter(
-          (a) => a.permitted,
+          shownAction,
         );
       },
       tools() {
         return vmActionStates(TOOL_ACTIONS, this.vm, this.opts).filter(
-          (a) => a.permitted,
+          shownAction,
         );
       },
       forwardAction() {
@@ -905,7 +914,7 @@
               this.captureAllPending &&
               (button.name == 'stopCaptures') == capturing,
           }))
-          .filter((action) => action.permitted);
+          .filter(shownAction);
       },
       // The WebShark tab: on the VM's first running capture, or on the
       // experiment, where its saved captures are

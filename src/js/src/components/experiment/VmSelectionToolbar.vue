@@ -1,41 +1,28 @@
 <template>
-  <b-field position="is-center" grouped>
-    <template v-if="!modifyOpen">
-      <template v-for="button in MAIN_BAR" :key="button.action">
-        <b-field v-if="button.action == 'modify' || allows(button.action)">
-          <b-tooltip :label="button.tooltip" type="is-light">
-            <b-button
-              :aria-label="button.label"
-              :class="['button', button.type]"
-              :icon-left="button.icon"
-              @click="click(button.action)">
-            </b-button>
-          </b-tooltip>
-        </b-field>
-      </template>
-    </template>
-    <template v-else>
-      <b-field v-for="button in STATE_BAR" :key="button.action">
-        <b-tooltip
-          v-if="button.action == 'close' || allows(button.action)"
-          :label="button.tooltip"
-          type="is-light">
-          <b-button
-            :aria-label="button.label"
-            :class="['button', button.type]"
-            :icon-left="button.icon"
-            @click="click(button.action)">
-          </b-button>
-        </b-tooltip>
-      </b-field>
-    </template>
+  <b-field position="is-center" grouped group-multiline>
+    <b-field
+      v-for="button in modifyOpen ? STATE_BAR : MAIN_BAR"
+      :key="button.action">
+      <b-tooltip
+        :label="deniedReason(button.action) ?? button.tooltip"
+        type="is-light"
+        multilined>
+        <b-button
+          :aria-label="button.label"
+          :aria-disabled="deniedReason(button.action) ? 'true' : undefined"
+          :class="['button', button.type]"
+          :icon-left="button.icon"
+          @click="deniedReason(button.action) || click(button.action)">
+        </b-button>
+      </b-tooltip>
+    </b-field>
     <hr style="width: 1px; height: 100%; margin: 0" />
   </b-field>
 </template>
 
 <script>
   import { roleAllowed } from '@/utils/rbac.js';
-  import { actionPermitted } from './vmActions.js';
+  import { VM_ACTIONS, notPermittedReason } from './vmActions.js';
 
   // the toolbar's buttons, and those that take the place of all but the last
   // while the modify state actions are open
@@ -128,9 +115,10 @@
     },
   ];
 
-  // The toolbar of actions on the VMs selected in the VM table, each shown
-  // when the role may take it on every one of them. It asks the page, by
-  // event, to take an action on the selection.
+  // The toolbar of actions on the VMs selected in the VM table. An action
+  // that the role may not take on every one of them is greyed out, with the
+  // permission it needs in its tooltip. It asks the page, by event, to take
+  // an action on the selection.
   export default {
     name: 'VmSelectionToolbar',
     setup() {
@@ -151,13 +139,18 @@
     ],
 
     methods: {
-      // whether the role may take the action on every selected VM
-      allows(action) {
-        return this.selected.every((vm) =>
-          actionPermitted(action, (resource, verb) =>
-            roleAllowed(resource, verb, `${this.experiment}/${vm}`),
-          ),
-        );
+      // Why the role may not take the action on the selection: the first
+      // permission it lacks on one of the VMs, or null when it may.
+      deniedReason(action) {
+        const rbac = VM_ACTIONS[action]?.rbac ?? [];
+        for (const vm of this.selected) {
+          const missing = rbac.find(
+            ([resource, verb]) =>
+              !roleAllowed(resource, verb, `${this.experiment}/${vm}`),
+          );
+          if (missing) return notPermittedReason(...missing);
+        }
+        return null;
       },
 
       click(action) {

@@ -2222,13 +2222,22 @@ describe('the selection toolbar', () => {
     ['Shut down selected VMs', 'vms/shutdown', 'update', true],
     ['Kill selected VMs', 'vms', 'delete', true],
   ])(
-    'hides %s from a role without %s %s on one of them',
+    'greys out %s for a role without %s %s on one of them',
     async (label, resource, verb, showModifyStateBar) => {
       rbac.allowed = denyOnly([resource, verb, 'demo/db']);
+      const page = await open({
+        experiment,
+        vmSelectedArray: ['web', 'db'],
+        showModifyStateBar,
+      });
       const bar = showModifyStateBar ? STATE_BAR : MAIN_BAR;
-      expect(await toolbar({ showModifyStateBar })).toEqual(
-        bar.filter((shown) => shown !== label),
-      );
+      expect(toolbarOf(page)).toEqual(bar);
+      expect(
+        page
+          .findAll('button[aria-disabled="true"]')
+          .map((button) => button.attributes('aria-label'))
+          .filter((name) => bar.includes(name)),
+      ).toEqual([label]);
     },
   );
 

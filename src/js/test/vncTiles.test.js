@@ -230,16 +230,36 @@ describe('the hover bar', () => {
   });
 
   it.each([
-    ['vms/screenshot', 'create', ['Snapshot VM web']],
-    ['vms/snapshots', 'create', ['Screenshot VM web']],
-  ])('leaves out a tool without %s %s', async (resource, verb, shown) => {
-    rbac.allowed = denyOnly([resource, verb]);
-    const wrapper = await render({ vms: [vm()] });
-    const tools = bar(wrapper, 'web')
-      .findAll('.vnc-tile-screenshot, .vnc-tile-snapshot')
-      .map((b) => b.attributes('aria-label'));
-    expect(tools).toEqual(shown);
-  });
+    [
+      'vms/screenshot',
+      'create',
+      [
+        'Screenshot VM web: Your role does not permit this action (vms/screenshot create)',
+        'Snapshot VM web',
+      ],
+    ],
+    [
+      'vms/snapshots',
+      'create',
+      [
+        'Screenshot VM web',
+        'Snapshot VM web: Your role does not permit this action (vms/snapshots create)',
+      ],
+    ],
+  ])(
+    'greys out a tool without %s %s, naming the permission',
+    async (resource, verb, shown) => {
+      rbac.allowed = denyOnly([resource, verb]);
+      const wrapper = await render({ vms: [vm()] });
+      const tools = bar(wrapper, 'web').findAll(
+        '.vnc-tile-screenshot, .vnc-tile-snapshot',
+      );
+      expect(tools.map((b) => b.attributes('aria-label'))).toEqual(shown);
+      const denied = tools.find((b) => b.attributes('aria-disabled'));
+      await denied.trigger('click');
+      expect(wrapper.emitted('action')).toBeUndefined();
+    },
+  );
 
   it('keeps the bar shown while focus is in the tile', () => {
     expect(
@@ -264,11 +284,22 @@ describe('the hover bar', () => {
     },
   );
 
-  it('offers nothing a role may not do', async () => {
+  it('greys out the actions a role may not take, and links nothing', async () => {
     rbac.allowed = denyAll;
     const wrapper = await render({ vms: [vm()] });
-    expect(buttons(bar(wrapper, 'web'))).toEqual([]);
+    const denied = (label, resource, verb) =>
+      `${label} VM web: Your role does not permit this action (${resource} ${verb}) (disabled)`;
+    expect(buttons(bar(wrapper, 'web'))).toEqual([
+      denied('Pause', 'vms/stop', 'update'),
+      denied('Restart', 'vms/restart', 'update'),
+      denied('Shut down', 'vms/shutdown', 'update'),
+      denied('Kill', 'vms', 'delete'),
+      denied('Screenshot', 'vms/screenshot', 'create'),
+      denied('Snapshot', 'vms/snapshots', 'create'),
+    ]);
     expect(bar(wrapper, 'web').find('a').exists()).toBe(false);
+    await bar(wrapper, 'web').find('button').trigger('click');
+    expect(wrapper.emitted('action')).toBeUndefined();
   });
 });
 

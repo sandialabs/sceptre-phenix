@@ -9,7 +9,7 @@ vi.mock('@/utils/rbac.js', modules.rbac);
 
 import VmSelectionToolbar from '@/components/experiment/VmSelectionToolbar.vue';
 import { denyOnly } from './helpers/permissions.js';
-import { byLabel, mountComponent } from './helpers/mount.js';
+import { byLabel, mountComponent, tooltipButtons } from './helpers/mount.js';
 
 beforeEach(() => resetMocks());
 
@@ -45,14 +45,21 @@ describe('the actions it offers', () => {
     ['Start selected VMs', ['vms/start', 'update', 'demo/db'], false],
     ['Kill selected VMs', ['vms', 'delete', 'demo/db'], true],
   ])(
-    'hides %s from a role without its permission on one VM',
+    'greys out %s for a role without its permission on one VM, and names it',
     async (label, perm, modifyOpen) => {
-      expect(labels(await render({ modifyOpen }))).toContain(label);
       rbac.allowed = denyOnly(perm);
       const wrapper = await render({ modifyOpen });
-      expect(labels(wrapper)).not.toContain(label);
-      // the rest stay, and the modify state button whatever the role
-      expect(labels(wrapper)).toHaveLength(5);
+      expect(labels(wrapper)).toHaveLength(6);
+      const states = tooltipButtons(wrapper);
+      const denied = states.find((t) => t.label === label);
+      expect(denied).toMatchObject({
+        disabled: true,
+        tooltip: `Your role does not permit this action (${perm[0]} ${perm[1]})`,
+      });
+      // the rest stay enabled, and the modify state button whatever the role
+      expect(states.filter((t) => t.disabled)).toHaveLength(1);
+      await denied.control.trigger('click');
+      expect(wrapper.emitted('act')).toBeUndefined();
     },
   );
 });
