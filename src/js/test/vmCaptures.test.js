@@ -116,6 +116,20 @@ describe('one interface', () => {
     ]);
   });
 
+  it('stops nothing when a start-only call finds the interface captured', async () => {
+    const { captures } = await useCaptures();
+    listCaptures([{ interface: 2 }])();
+    await captures.handlePcap(web, 2, undefined, { startOnly: true });
+    expect(axios.delete).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(toasts()).toEqual([
+      {
+        text: 'phēnix already captures interface 2 of the web VM.',
+        type: 'is-info',
+      },
+    ]);
+  });
+
   it('marks the interface pending until the server answers, asking nothing', async () => {
     const { captures } = await useCaptures();
     const release = listCaptures([]);
@@ -125,16 +139,16 @@ describe('one interface', () => {
     captures.handlePcap(web, 2);
     // a second press while waiting sends nothing more
     captures.handlePcap(web, 2);
-    expect(captures.capturePending.value).toEqual({ 'web/2': true });
-    expect(captures.pendingCaptureIfaces('web')).toEqual([2]);
-    expect(captures.pendingCaptureIfaces('db')).toEqual([]);
+    expect(captures.capturePending.value).toEqual({ 'demo/web/2': true });
+    expect(captures.pendingCaptureIfaces(web)).toEqual([2]);
+    expect(captures.pendingCaptureIfaces({ name: 'db' })).toEqual([]);
     expect(axios.get).toHaveBeenCalledTimes(1);
 
     release();
     await flushPromises();
     // still waiting on the start, which no dialog asked about
     expect(dialogs()).toEqual([]);
-    expect(captures.pendingCaptureIfaces('web')).toEqual([2]);
+    expect(captures.pendingCaptureIfaces(web)).toEqual([2]);
 
     start.resolve({});
     await flushPromises();
@@ -256,7 +270,7 @@ describe('every interface', () => {
     const started = captures.captureAllInterfaces(web);
     await flushPromises();
     expect(dialogs()).toEqual([]);
-    expect(captures.captureAllPending.value).toEqual({ web: true });
+    expect(captures.captureAllPending.value).toEqual({ 'demo/web': true });
     // a second press while starting sends nothing more
     await captures.captureAllInterfaces(web);
     expect(axios.get).toHaveBeenCalledTimes(1);
@@ -304,7 +318,7 @@ describe('every interface', () => {
     const stopped = captures.stopAllCaptures(vm);
     await flushPromises();
     expect(dialogs()).toEqual([]);
-    expect(captures.captureAllPending.value).toEqual({ web: true });
+    expect(captures.captureAllPending.value).toEqual({ 'demo/web': true });
     expect(axios.delete).toHaveBeenCalledWith(url);
 
     // a second press while stopping sends nothing more

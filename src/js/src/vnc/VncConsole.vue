@@ -2,9 +2,18 @@
      value (from useVncSession) and disconnects it when the value becomes
      null. The parent gives the RFB events to the session: connect →
      connected(), disconnect → disconnected(), securityfailure →
-     securityFailure(reason). -->
+     securityFailure(reason). Actual scaling at a zoom other than 100 % sizes
+     the screen box to the zoomed VM screen, and noVNC fits the screen to the
+     box, so the pointer still maps to the VM screen. -->
 <script setup>
-  import { markRaw, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
+  import {
+    computed,
+    markRaw,
+    onBeforeUnmount,
+    ref,
+    shallowRef,
+    watch,
+  } from 'vue';
 
   import { loadRfb } from './loadRfb.js';
 
@@ -22,6 +31,8 @@
       default: 'fit',
       validator: (value) => ['fit', 'actual', 'remote'].includes(value),
     },
+    // the zoom of Actual scaling, 1 for the size of the VM screen
+    zoom: { type: Number, default: 1 },
     // the Tight JPEG quality, 0 to 9
     quality: { type: Number, default: 6 },
     // the compression level, 0 to 9
@@ -42,11 +53,35 @@
   // each connection makes the RFB of an older one stale
   let generation = 0;
   let detachListeners = () => {};
+  // the size of the VM screen, which the canvas size attributes follow
+  const frame = ref({ width: 0, height: 0 });
+  let frameObserver = null;
+
+  const zoomed = computed(() => props.scaling === 'actual' && props.zoom !== 1);
+  const screenStyle = computed(() =>
+    zoomed.value
+      ? {
+          width: `${Math.round(frame.value.width * props.zoom)}px`,
+          height: `${Math.round(frame.value.height * props.zoom)}px`,
+        }
+      : null,
+  );
+
+  function followFrame(canvas) {
+    frameObserver?.disconnect();
+    frameObserver = null;
+    if (!canvas) return;
+    const read = () =>
+      (frame.value = { width: canvas.width, height: canvas.height });
+    read();
+    frameObserver = new MutationObserver(read);
+    frameObserver.observe(canvas, { attributeFilter: ['width', 'height'] });
+  }
 
   function applySettings(target) {
     target.viewOnly = props.viewOnly;
     target.clipViewport = false;
-    target.scaleViewport = props.scaling === 'fit';
+    target.scaleViewport = props.scaling === 'fit' || zoomed.value;
     target.resizeSession = props.scaling === 'remote';
     target.qualityLevel = props.quality;
     target.compressionLevel = props.compression;
@@ -82,6 +117,7 @@
     const old = rfb.value;
     rfb.value = null;
     detachListeners();
+    followFrame(null);
     old?.disconnect();
   }
 
@@ -100,6 +136,7 @@
       rfb.value = target;
       const canvas = screen.value.querySelector('canvas');
       canvas?.setAttribute('aria-label', props.label);
+      followFrame(canvas);
     } catch (err) {
       if (mine !== generation) return;
       console.warn('failed to open the VNC console', err);
@@ -109,7 +146,13 @@
 
   watch(() => props.connection, open, { immediate: true });
   watch(
-    () => [props.viewOnly, props.scaling, props.quality, props.compression],
+    () => [
+      props.viewOnly,
+      props.scaling,
+      props.zoom,
+      props.quality,
+      props.compression,
+    ],
     () => rfb.value && applySettings(rfb.value),
   );
 
@@ -184,12 +227,12 @@
 
 <template>
   <div
-    class="vnc-console"
+    :class="['vnc-console', { 'is-zoomed': zoomed }]"
     role="application"
     :aria-label="label"
     :tabindex="viewOnly ? -1 : 0"
     @focus="onFocus">
-    <div ref="screen" class="vnc-screen"></div>
+    <div ref="screen" class="vnc-screen" :style="screenStyle"></div>
   </div>
 </template>
 
@@ -210,5 +253,18 @@
   .vnc-screen {
     position: absolute;
     inset: 0;
+  }
+
+  /* the zoomed screen scrolls in the pane, centered while it is smaller */
+  .vnc-console.is-zoomed {
+    display: flex;
+    overflow: auto;
+  }
+
+  .is-zoomed .vnc-screen {
+    position: relative;
+    inset: auto;
+    flex: none;
+    margin: auto;
   }
 </style>

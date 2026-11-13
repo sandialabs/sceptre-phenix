@@ -87,12 +87,16 @@ const SCALING_TEXT = {
 };
 
 /**
- * How the console scales the screen, for example "scaled 118%".
+ * How the console scales the screen, for example "scaled 118%" or
+ * "zoomed 150%".
  *
- * @param {{ scaling: string, scale?: number|null }} details
+ * @param {{ scaling: string, scale?: number|null, zoom?: number }} details
  */
-export function scalingText({ scaling, scale }) {
+export function scalingText({ scaling, scale, zoom }) {
   if (scaling === 'fit' && scale) return `scaled ${Math.round(scale * 100)}%`;
+  if (scaling === 'actual' && zoom && zoom !== 1) {
+    return `zoomed ${Math.round(zoom * 100)}%`;
+  }
   return SCALING_TEXT[scaling] ?? SCALING_TEXT.fit;
 }
 

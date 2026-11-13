@@ -23,14 +23,17 @@ export function useVmCaptures({ fanOut, experimentOf }) {
   const route = useRoute();
   const exp = (vm) => experimentOf?.(vm) ?? route.params.id;
 
-  // "vm/interface" keys of the capture buttons waiting on the server
+  // "experiment/vm/interface" keys of the capture buttons waiting on the server
   const capturePending = ref({});
-  // names of the VMs starting or stopping captures on all their interfaces
+  // "experiment/vm" keys of the VMs starting or stopping captures on all
+  // their interfaces
   const captureAllPending = ref({});
   // aliases of the VLANs starting or stopping captures
   const vlanCapturePending = ref({});
 
   const captureKey = (vmName, iface) => `${vmName}/${iface}`;
+  const vmKey = (vm) => `${exp(vm)}/${vm.name}`;
+  const pendingKey = (vm, iface) => `${vmKey(vm)}/${iface}`;
 
   // the capture events of this page's bulk requests, which show no toast
   const quiet = new Set();
@@ -66,8 +69,8 @@ export function useVmCaptures({ fanOut, experimentOf }) {
     return false;
   }
 
-  function setCapturePending(vmName, iface, pending) {
-    const key = captureKey(vmName, iface);
+  function setCapturePending(vm, iface, pending) {
+    const key = pendingKey(vm, iface);
     if (pending) {
       capturePending.value = { ...capturePending.value, [key]: true };
     } else {
@@ -76,14 +79,18 @@ export function useVmCaptures({ fanOut, experimentOf }) {
     }
   }
 
-  function setAllPending(vmName, pending) {
-    const { [vmName]: _, ...rest } = captureAllPending.value;
-    captureAllPending.value = pending ? { ...rest, [vmName]: true } : rest;
+  function setAllPending(vm, pending) {
+    const key = vmKey(vm);
+    const { [key]: _, ...rest } = captureAllPending.value;
+    captureAllPending.value = pending ? { ...rest, [key]: true } : rest;
   }
 
+  // whether the VM starts or stops captures on all its interfaces
+  const isAllPending = (vm) => !!captureAllPending.value[vmKey(vm)];
+
   // the interfaces of a VM whose capture buttons are waiting
-  function pendingCaptureIfaces(vmName) {
-    const prefix = `${vmName}/`;
+  function pendingCaptureIfaces(vm) {
+    const prefix = `${vmKey(vm)}/`;
     return Object.keys(capturePending.value)
       .filter((key) => key.startsWith(prefix))
       .map((key) => Number(key.slice(prefix.length)));
@@ -94,18 +101,19 @@ export function useVmCaptures({ fanOut, experimentOf }) {
   // moment), then starts or stops this interface's capture. The button
   // spins until the server has answered both. With a format (pcapng or
   // pcap), picked in the format dialog, it only starts one in that format.
-  async function handlePcap(vm, iface, format) {
-    if (capturePending.value[captureKey(vm.name, iface)]) return;
+  // With `startOnly`, it only starts one, as an interface picker asks.
+  async function handlePcap(vm, iface, format, { startOnly = false } = {}) {
+    if (capturePending.value[pendingKey(vm, iface)]) return;
 
     const time = uniqueStamp();
     const expName = exp(vm);
 
-    setCapturePending(vm.name, iface, true);
+    setCapturePending(vm, iface, true);
     try {
       const resp = await vmsApi.listVmCaptures(expName, vm.name);
       // the row updates from the capture's websocket event
       const capturing = isInterfaceCapturing(resp.data?.captures ?? [], iface);
-      if (capturing && format) {
+      if (capturing && (format || startOnly)) {
         proxy.$buefy.toast.open({
           message: `phēnix already captures interface ${iface} of the ${vm.name} VM.`,
           type: 'is-info',
@@ -126,7 +134,7 @@ export function useVmCaptures({ fanOut, experimentOf }) {
     } catch (err) {
       useErrorNotification(err);
     } finally {
-      setCapturePending(vm.name, iface, false);
+      setCapturePending(vm, iface, false);
     }
   }
 
@@ -135,12 +143,12 @@ export function useVmCaptures({ fanOut, experimentOf }) {
   // named <vm>_<interface>_<stamp>.pcap. Its buttons spin while the server
   // is asked and while the captures start.
   async function captureAllInterfaces(vm) {
-    if (captureAllPending.value[vm.name]) return;
+    if (isAllPending(vm)) return;
 
     const time = uniqueStamp();
     const expName = exp(vm);
 
-    setAllPending(vm.name, true);
+    setAllPending(vm, true);
     let release;
     try {
       const resp = await vmsApi.listVmCaptures(expName, vm.name);
@@ -180,23 +188,23 @@ export function useVmCaptures({ fanOut, experimentOf }) {
       useErrorNotification(err);
     } finally {
       release?.();
-      setAllPending(vm.name, false);
+      setAllPending(vm, false);
     }
   }
 
   // Stops every packet capture running on a VM, from its stop all button,
   // which spins until the server answers.
   async function stopAllCaptures(vm) {
-    if (captureAllPending.value[vm.name]) return;
+    if (isAllPending(vm)) return;
 
-    setAllPending(vm.name, true);
+    setAllPending(vm, true);
     try {
       // the row updates from the captures' websocket events
       await vmsApi.deleteVmCaptures(exp(vm), vm.name);
     } catch (err) {
       useErrorNotification(err);
     } finally {
-      setAllPending(vm.name, false);
+      setAllPending(vm, false);
     }
   }
 
@@ -254,6 +262,7 @@ export function useVmCaptures({ fanOut, experimentOf }) {
   return {
     capturePending,
     captureAllPending,
+    isAllPending,
     vlanCapturePending,
     captureVlan,
     quietCaptureEvent,

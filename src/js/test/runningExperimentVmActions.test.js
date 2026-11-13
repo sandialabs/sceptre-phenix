@@ -158,6 +158,10 @@ const CONSOLE_ONLY = [
   ['annotations', 'showAnnotationsModal', (vm) => [vm]],
 ];
 
+// the console page asks for the interface of these; the experiment page
+// offers them for each interface in its network menu instead
+const PER_INTERFACE = ['captureInterface', 'linkQuality'];
+
 // the page's handler for each other VM action, and whether it takes the VM
 // itself rather than its name
 const handlers = [
@@ -180,7 +184,7 @@ const handlers = [
 
 it('runs every VM action', () => {
   expect(
-    [...UNASKED, ...handlers, ...CONSOLE_ONLY]
+    [...UNASKED, ...handlers, ...CONSOLE_ONLY, ...PER_INTERFACE]
       .map((entry) => [entry].flat()[0])
       .sort(),
   ).toEqual(Object.keys(VM_ACTIONS).sort());

@@ -250,6 +250,36 @@ export const VM_ACTIONS = {
       return null;
     },
   },
+  // the console page's Actions item that asks which interface to capture
+  captureInterface: {
+    label: 'Capture interface…',
+    verb: 'capture an interface',
+    description: 'Pick an interface of the VM and start a packet capture on it',
+    icon: CAPTURE_ICON,
+    rbac: [['vms/captures', 'create']],
+    blocked: (vm) => {
+      if (!vm.running) return NOT_RUNNING;
+      if (!(vm.networks ?? []).length) return 'the VM has no interfaces';
+      if (!captureTargets(vm).length) {
+        return 'each connected interface is already captured';
+      }
+      return null;
+    },
+  },
+  // the console page's Actions item that asks which interface to shape
+  linkQuality: {
+    label: 'Link quality…',
+    verb: 'set the link quality',
+    description:
+      'Pick an interface of the VM and set or clear its loss, delay and rate',
+    icon: 'network-wired',
+    rbac: [['vms', 'patch']],
+    blocked: (vm) => {
+      if (!vm.running) return NOT_RUNNING;
+      if (!(vm.networks ?? []).length) return 'the VM has no interfaces';
+      return null;
+    },
+  },
   // takes captureAll's place in the Actions column while the VM is capturing
   stopCaptures: {
     label: 'Stop all packet captures',

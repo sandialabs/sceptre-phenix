@@ -176,17 +176,25 @@ and these controls:
   names.
 * `Clipboard`: send text to the VM (see [Copy and Paste](#copy-and-paste)).
   `Clear` empties the text box.
-* `Actions`: a menu with `Snapshot`, `Memory snapshot`, `Backing image` and
-  `Capture all interfaces` (or `Stop all packet captures`), then
-  `Insert CD-ROM` (or `Change CD-ROM`), then `Edit labels` and
-  `Edit annotations`, then `Redeploy`, `Reset disk` and `Kill` in red. They
-  open the same dialogs as on the experiment page.
+* `Actions`: a menu with `Snapshot`, `Memory snapshot` and `Backing image`,
+  then `Capture interface…`, `Capture all interfaces` (or
+  `Stop all packet captures`) and `Link quality…`, then `Insert CD-ROM` (or
+  `Change CD-ROM`), then `Edit labels` and `Edit annotations`, then
+  `Redeploy`, `Reset disk` and `Kill` in red. Most open the same dialogs as
+  on the experiment page.
+* `Capture interface…` and `Link quality…` ask for the interface when the
+  VM has more than one. A capture cannot use a disconnected interface or an
+  interface that phēnix already captures. `Link quality…` then opens the
+  same dialog as `Set link quality…` on the experiment page.
 * `Keys`: send Ctrl+Alt+Del, Esc, Tab, PrintScreen and Ctrl+Alt+F1 to F12. Hold
   Ctrl, Alt or Win, and release all held keys. It also shows the keyboard
   shortcuts (see [The Keyboard Chord](#the-keyboard-chord)).
-* `View`: the scaling (`Fit`, `Actual` or `Resize VM`), the quality, the
-  compression, `View only` and full screen for the pane. The browser keeps
-  these settings for each user. With `View only`, the console shows the VM
+* `View`: the scaling (`Fit`, `Actual` or `Resize VM`), the zoom of `Actual`
+  (50% to 200%), the quality, the compression, `View only`, full screen for
+  the pane, and `Open alone in a new tab`. `Pane headers` and `Banners` show
+  or hide the pane headers and the banners of the VMs. A zoom level also
+  selects `Actual`. The browser keeps these settings for each user, except
+  `View only`. With `View only`, the console shows the VM
   screen, but sends no keyboard or mouse input to the VM.
   `Resize VM` needs a VM with `vga` `virtio`.
   To set it, add `vga: virtio` to the `advanced` settings of the VM in the

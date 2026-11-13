@@ -164,6 +164,12 @@ describe('the connection indicator', () => {
         clipboardMode: 'bidirectional',
       }),
     ).toBe('actual size · Tight · quality 3 · bidirectional copy/paste');
+    expect(detailsLine({ scaling: 'actual', zoom: 1.5, quality: 6 })).toBe(
+      'zoomed 150% · Tight · quality 6',
+    );
+    expect(detailsLine({ scaling: 'actual', zoom: 1, quality: 6 })).toBe(
+      'actual size · Tight · quality 6',
+    );
     expect(
       detailsLine({ scaling: 'remote', quality: 6, clipboardMode: null }),
     ).toBe('VM resized to fit · Tight · quality 6');

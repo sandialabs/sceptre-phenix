@@ -91,7 +91,8 @@
   // the groups of the Actions menu; the last one, in red, kills or
   // replaces the VM
   const MENU_GROUPS = [
-    ['snapshot', 'memorySnapshot', 'commit', 'captureAll'],
+    ['snapshot', 'memorySnapshot', 'commit'],
+    ['captureInterface', 'captureAll', 'linkQuality'],
     ['cdrom'],
     ['labels', 'annotations'],
     ['redeploy', 'resetDisk', 'kill'],
@@ -256,7 +257,11 @@
     if (d.width && d.height) {
       list.push(['Resolution', `${d.width}×${d.height}`]);
     }
-    const scaled = d.scaling === 'fit' && d.scale ? `, ${scalingText(d)}` : '';
+    const scaled =
+      (d.scaling === 'fit' && d.scale) ||
+      (d.scaling === 'actual' && d.zoom !== 1)
+        ? `, ${scalingText(d)}`
+        : '';
     list.push(['Scaling', `${SCALING_NAMES[d.scaling] ?? 'Fit'}${scaled}`]);
     list.push(['Encoding', ENCODING]);
     list.push(['Quality', String(d.quality)]);

@@ -91,6 +91,8 @@
     'memorySnapshot',
     'commit',
     'redeploy',
+    'captureInterface',
+    'linkQuality',
   ];
 
   // what a pane says while its VM restarts for the action
@@ -284,6 +286,7 @@
     return {
       ...screen.value,
       scaling: scalingOf(controller),
+      zoom: settings.zoom,
       quality: settings.quality,
       compression: settings.compression,
       clipboardMode: controller.session.info?.clipboard?.mode ?? null,
@@ -383,7 +386,7 @@
 
   const {
     capturePending,
-    captureAllPending,
+    isAllPending,
     handlePcap,
     captureAllInterfaces,
     stopAllCaptures,
@@ -400,8 +403,13 @@
   function pendingOf(controller) {
     if (!controller) return null;
     if (controller.pending) return controller.pending;
-    if (capturePending.value[`${controller.vm}/0`]) return 'captureIface';
-    if (captureAllPending.value[controller.vm]) {
+    const prefix = `${controller.experiment}/${controller.vm}/`;
+    if (capturePending.value[`${prefix}0`]) return 'captureIface';
+    const capturing = Object.keys(capturePending.value).some(
+      (key) => key.startsWith(prefix) && capturePending.value[key],
+    );
+    if (capturing) return 'captureInterface';
+    if (isAllPending(captureTarget(controller))) {
       return (controller.row?.captures ?? []).length
         ? 'stopCaptures'
         : 'captureAll';
@@ -518,8 +526,10 @@
     return captureOn(controller);
   }
 
-  async function captureOn(controller, format) {
-    await handlePcap(captureTarget(controller), 0, format);
+  // The dialogs pass `startOnly`, so that a capture that started after
+  // the dialog opened does not stop.
+  async function captureOn(controller, format, iface = 0, options) {
+    await handlePcap(captureTarget(controller), iface, format, options);
     await controller.reloadCaptures();
   }
 
@@ -799,14 +809,18 @@
       <template #view>
         <VncSettingsPanel
           v-model:scaling="settings.scaling"
+          v-model:zoom="settings.zoom"
           v-model:quality="settings.quality"
           v-model:compression="settings.compression"
+          v-model:pane-headers="settings.paneHeaders"
+          v-model:banners="settings.banners"
           :view-only="active?.viewOnly ?? false"
           :remote-resize="Boolean(active?.session.info?.display?.remoteResize)"
           @update:view-only="(on) => active && (active.viewOnly = on)"
           @fullscreen="
             fullscreen(active && paneRefs.get(active.key)?.element())
-          " />
+          "
+          @open-alone="active && openAlone(active.key)" />
       </template>
       <template #forwards="{ open }">
         <VncForwardsPanel
@@ -844,6 +858,9 @@
         :vm-row="controller.row"
         :view-only="controller.viewOnly"
         :scaling="scalingOf(controller)"
+        :zoom="settings.zoom"
+        :header="settings.paneHeaders"
+        :banners="settings.banners"
         :quality="settings.quality"
         :compression="settings.compression"
         :can-resume="can(controller, 'vms/start', 'update')"
@@ -877,9 +894,13 @@
     <div class="is-sr-only" aria-live="polite">{{ live }}</div>
     <VncVmModals
       ref="vmModals"
+      :ask-format="captureSupport(null, store.features).available"
       @done="dialogDone"
       @redeploy="redeploy"
-      @capture="captureOn" />
+      @capture="
+        (controller, format, iface) =>
+          captureOn(controller, format, iface, { startOnly: true })
+      " />
   </div>
 </template>
 

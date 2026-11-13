@@ -1,5 +1,6 @@
 <!-- One pane of the console page: in split view a thin header with the VM
-     name, state, a link to its details, pane number and menu; the top and bottom banners of the VM;
+     name, state, a link to its details, pane number and menu; the top and
+     bottom banners of the VM (the View panel can hide each of the two);
      the console; and the connection state over the screen when it is not
      connected, or that the VM restarts, or that Kill removed it. The page
      owns the VNC session and gives its values here. -->
@@ -33,6 +34,10 @@
     vmRow: { type: Object, default: null },
     viewOnly: { type: Boolean, default: false },
     scaling: { type: String, default: 'fit' },
+    zoom: { type: Number, default: 1 },
+    // the View panel shows the header (in split view) and the banners
+    header: { type: Boolean, default: true },
+    banners: { type: Boolean, default: true },
     quality: { type: Number, default: 6 },
     compression: { type: Number, default: 2 },
     // the role may resume the VM
@@ -185,7 +190,7 @@
     @pointerdown="emit('activate')"
     @focusin="onFocusIn"
     @focusout="onFocusOut">
-    <div v-if="split" class="vnc-pane-header">
+    <div v-if="split && header" class="vnc-pane-header">
       <strong :title="nameTitle">{{ vm }}</strong
       >{{ ' '
       }}<b-tag v-if="state" :type="state.type ?? 'is-dark'" size="is-small">{{
@@ -268,7 +273,7 @@
         </div>
       </div>
     </div>
-    <VncBanner :banner="info?.banners?.top" position="top" />
+    <VncBanner v-if="banners" :banner="info?.banners?.top" position="top" />
     <div class="vnc-pane-screen">
       <VncConsole
         ref="screenConsole"
@@ -276,6 +281,7 @@
         :label="label"
         :view-only="viewOnly"
         :scaling="scaling"
+        :zoom="zoom"
         :quality="quality"
         :compression="compression"
         @connect="onConnect"
@@ -326,6 +332,9 @@
         </b-button>
       </div>
     </div>
-    <VncBanner :banner="info?.banners?.bottom" position="bottom" />
+    <VncBanner
+      v-if="banners"
+      :banner="info?.banners?.bottom"
+      position="bottom" />
   </section>
 </template>

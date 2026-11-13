@@ -1,7 +1,8 @@
 <!-- The dialogs of the VM actions of the console top bar that ask for more:
      the CD-ROM picker, a new port forward, the name of a memory snapshot or
-     a disk image, the settings of a redeploy, and the format of a packet
-     capture. They are the dialogs of the experiment page. The page opens
+     a disk image, the settings of a redeploy, the interface and the format
+     of a packet capture, and the interface and the link quality to set.
+     Most are the dialogs of the experiment page. The page opens
      one for the controller of a pane, whose pending action spins while the
      request runs. The page sends a redeploy and a capture itself. -->
 <script setup>
@@ -20,7 +21,11 @@
   import PortForwardModal from '@/components/experiment/PortForwardModal.vue';
   import RedeployModal from '@/components/experiment/RedeployModal.vue';
   import VmFilenamesModal from '@/components/experiment/VmFilenamesModal.vue';
-  import { MEMORY_SNAPSHOT_DOES } from '@/components/experiment/vmActions.js';
+  import VmLinkQualityModal from '@/components/experiment/VmLinkQualityModal.vue';
+  import {
+    MEMORY_SNAPSHOT_DOES,
+    vmInterfaces,
+  } from '@/components/experiment/vmActions.js';
   import {
     diskImageEntry,
     emptyOpticalDiscModal,
@@ -35,13 +40,20 @@
   import { useErrorNotification } from '@/utils/errorNotif';
   import { escapeHTML } from '@/utils/escapeHTML.js';
   import { roleAllowed } from '@/utils/rbac.js';
+  import VncInterfaceModal from './VncInterfaceModal.vue';
+
+  const props = defineProps({
+    // minimega takes a capture format: the format dialog asks for one
+    askFormat: { type: Boolean, default: false },
+  });
 
   const emit = defineEmits([
     // (action, controller): the request of a dialog succeeded
     'done',
     // (controller, body): redeploy the VM with the settings picked
     'redeploy',
-    // (controller, format): start a capture on interface 0 in the format
+    // (controller, format, iface): start a capture on the interface in the
+    // format, or on interface 0
     'capture',
   ]);
 
@@ -54,7 +66,16 @@
   const redeploy = ref({ active: false, vm: [] });
   // the disk images the redeploy dialog offers, null until they load
   const disks = ref(null);
-  const format = ref({ active: false, title: '' });
+  const format = ref({ active: false, title: '', iface: 0 });
+  // the interface picker, and what it picks the interface for
+  const picker = ref({ active: false, title: '', for: null, interfaces: [] });
+  const quality = ref({
+    active: false,
+    experiment: '',
+    vm: '',
+    index: 0,
+    network: '',
+  });
   // the controller that each dialog acts for
   let target = null;
 
@@ -80,7 +101,7 @@
    * Opens the dialog of the action for the VM of the controller.
    *
    * @param {'cdrom'|'portForward'|'memorySnapshot'|'commit'|'redeploy'|
-   *   'captureIface'} action
+   *   'captureIface'|'captureInterface'|'linkQuality'} action
    * @param {{ experiment: string, vm: string, row: object|null,
    *   pending: string|null }} controller
    */
@@ -102,10 +123,9 @@
       };
       loadDisks(controller.experiment);
     } else if (action === 'captureIface') {
-      format.value = {
-        active: true,
-        title: `Start capture on interface 0 of ${controller.vm}`,
-      };
+      askCaptureFormat(0);
+    } else if (action === 'captureInterface' || action === 'linkQuality') {
+      pickInterface(action, controller);
     } else if (action === 'cdrom') {
       disc.value = openOpticalDiscModal({
         name: controller.vm,
@@ -114,6 +134,61 @@
       const modal = disc.value;
       await loadIsoChoices(modal, () => disc.value === modal);
     }
+  }
+
+  // Asks for the interface, unless the VM has only one that the action can
+  // use. A capture cannot use a disconnected or captured interface.
+  function pickInterface(action, controller) {
+    const capture = action === 'captureInterface';
+    const interfaces = vmInterfaces(controller.row).map((iface) => ({
+      index: iface.index,
+      network: iface.network,
+      ip: iface.ip,
+      reason: !capture
+        ? null
+        : iface.disconnected
+          ? 'The interface is disconnected.'
+          : iface.capturing
+            ? 'A capture of the interface runs.'
+            : null,
+    }));
+    if (interfaces.length === 1 && !interfaces[0].reason) {
+      interfacePicked(action, interfaces[0].index);
+      return;
+    }
+    picker.value = {
+      active: true,
+      for: action,
+      interfaces,
+      title: capture
+        ? `Start capture on an interface of ${controller.vm}`
+        : `Set the link quality of an interface of ${controller.vm}`,
+    };
+  }
+
+  function interfacePicked(action, index) {
+    const controller = target;
+    if (action === 'linkQuality') {
+      quality.value = {
+        active: true,
+        experiment: controller.experiment,
+        vm: controller.vm,
+        index,
+        network: (controller.row?.networks?.[index] ?? '').toLowerCase(),
+      };
+    } else if (props.askFormat) {
+      askCaptureFormat(index);
+    } else {
+      emit('capture', controller, undefined, index);
+    }
+  }
+
+  function askCaptureFormat(iface) {
+    format.value = {
+      active: true,
+      iface,
+      title: `Start capture on interface ${iface} of ${target.vm}`,
+    };
   }
 
   // the disk images inside the minimega files directory and those the
@@ -199,8 +274,9 @@
   }
 
   function startCapture(picked) {
-    format.value = { active: false, title: '' };
-    emit('capture', target, picked);
+    const { iface } = format.value;
+    format.value = { active: false, title: '', iface: 0 };
+    emit('capture', target, picked, iface);
   }
 
   function insertDisc() {
@@ -266,6 +342,19 @@
     @close="redeploy = { active: false, vm: [] }"
     @edit="(index, field, value) => (redeploy.vm[index][field] = value)"
     @redeploy="sendRedeploy" />
+  <VncInterfaceModal
+    v-model:active="picker.active"
+    :title="picker.title"
+    :interfaces="picker.interfaces"
+    :submit="picker.for === 'captureInterface' && !askFormat ? 'Start' : 'Next'"
+    @pick="(index) => interfacePicked(picker.for, index)" />
+  <VmLinkQualityModal
+    v-if="quality.experiment"
+    v-model:active="quality.active"
+    :experiment="quality.experiment"
+    :vm-name="quality.vm"
+    :index="quality.index"
+    :network="quality.network" />
   <CaptureFormatModal
     v-model:active="format.active"
     :title="format.title"

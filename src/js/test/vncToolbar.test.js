@@ -503,7 +503,10 @@ describe('the Actions menu', () => {
       'Snapshot',
       'Memory snapshot',
       'Backing image',
+      '---',
+      'Capture interface…',
       'Capture all interfaces',
+      'Link quality…',
       '---',
       'Insert CD-ROM',
       '---',
@@ -538,7 +541,9 @@ describe('the Actions menu', () => {
     ['Snapshot', 'snapshot'],
     ['Memory snapshot', 'memorySnapshot'],
     ['Backing image', 'commit'],
+    ['Capture interface…', 'captureInterface'],
     ['Capture all interfaces', 'captureAll'],
+    ['Link quality…', 'linkQuality'],
     ['Insert CD-ROM', 'cdrom'],
     ['Edit labels', 'labels'],
     ['Edit annotations', 'annotations'],
@@ -556,6 +561,8 @@ describe('the Actions menu', () => {
     ['Redeploy', ['vms/redeploy', 'update'], vm()],
     ['Edit labels', ['vms', 'patch'], vm()],
     ['Backing image', ['vms/commit', 'create'], vm()],
+    ['Capture interface…', ['vms/captures', 'create'], vm()],
+    ['Link quality…', ['vms', 'patch'], vm()],
   ])(
     'greys out %s for a role without %j, and names the permission',
     async (text, [resource, verb], row) => {
@@ -578,12 +585,43 @@ describe('the Actions menu', () => {
       'Reset disk',
       'Cannot reset disk: the VM is paused. Resume paused VMs first',
     ],
+    [
+      'Capture interface…',
+      'Cannot capture an interface: the VM is not running',
+    ],
+    ['Link quality…', 'Cannot set the link quality: the VM is not running'],
   ])(
     'greys out %s when the VM state rules it out, with the reason',
     async (text, reason) => {
       const wrapper = await mountToolbar({
         vmRow: vm({ state: 'PAUSED', running: false }),
       });
+      const item = menuItem(wrapper, text);
+      expect(item.attributes('aria-disabled')).toBe('true');
+      expect(tipOf(item)).toBe(reason);
+    },
+  );
+
+  it.each([
+    [
+      'Capture interface…',
+      vm({ captures: [{ interface: 0 }, { interface: 1 }] }),
+      'Cannot capture an interface: each connected interface is already captured',
+    ],
+    [
+      'Capture interface…',
+      vm({ networks: [], ipv4: [], taps: [] }),
+      'Cannot capture an interface: the VM has no interfaces',
+    ],
+    [
+      'Link quality…',
+      vm({ networks: [], ipv4: [], taps: [] }),
+      'Cannot set the link quality: the VM has no interfaces',
+    ],
+  ])(
+    'greys out %s when the interfaces rule it out, with the reason',
+    async (text, row, reason) => {
+      const wrapper = await mountToolbar({ vmRow: row });
       const item = menuItem(wrapper, text);
       expect(item.attributes('aria-disabled')).toBe('true');
       expect(tipOf(item)).toBe(reason);

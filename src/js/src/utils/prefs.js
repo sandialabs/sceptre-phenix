@@ -66,14 +66,21 @@ const vncSettingsKey = (username) => `phenix.vnc.settings.${username ?? ''}`;
 
 const VNC_SCALINGS = ['fit', 'actual', 'remote'];
 
+/** The zoom levels of Actual scaling, 1 for the size of the VM screen. */
+export const VNC_ZOOMS = Object.freeze([0.5, 0.75, 1, 1.5, 2]);
+
 /**
- * The console settings when the browser keeps none: Fit, and the noVNC
- * defaults for quality and compression.
+ * The console settings when the browser keeps none: Fit at 100 %, the noVNC
+ * defaults for quality and compression, and the pane headers and banners
+ * shown.
  */
 export const DEFAULT_VNC_SETTINGS = Object.freeze({
   scaling: 'fit',
+  zoom: 1,
   quality: 6,
   compression: 2,
+  paneHeaders: true,
+  banners: true,
 });
 
 const level = (value) =>
@@ -84,8 +91,9 @@ const level = (value) =>
  * not valid gives its default.
  *
  * @param {string} username
- * @returns {{ scaling: 'fit'|'actual'|'remote', quality: number,
- *   compression: number }}
+ * @returns {{ scaling: 'fit'|'actual'|'remote', zoom: number,
+ *   quality: number, compression: number, paneHeaders: boolean,
+ *   banners: boolean }}
  */
 export function loadVncSettings(username) {
   let stored;
@@ -101,8 +109,19 @@ export function loadVncSettings(username) {
     scaling: VNC_SCALINGS.includes(stored.scaling)
       ? stored.scaling
       : DEFAULT_VNC_SETTINGS.scaling,
+    zoom: VNC_ZOOMS.includes(stored.zoom)
+      ? stored.zoom
+      : DEFAULT_VNC_SETTINGS.zoom,
     quality: level(stored.quality) ?? DEFAULT_VNC_SETTINGS.quality,
     compression: level(stored.compression) ?? DEFAULT_VNC_SETTINGS.compression,
+    paneHeaders:
+      typeof stored.paneHeaders === 'boolean'
+        ? stored.paneHeaders
+        : DEFAULT_VNC_SETTINGS.paneHeaders,
+    banners:
+      typeof stored.banners === 'boolean'
+        ? stored.banners
+        : DEFAULT_VNC_SETTINGS.banners,
   };
 }
 
@@ -110,12 +129,23 @@ export function loadVncSettings(username) {
  * Keeps the console settings of the user.
  *
  * @param {string} username
- * @param {{ scaling: string, quality: number, compression: number }} settings
+ * @param {{ scaling: string, zoom: number, quality: number,
+ *   compression: number, paneHeaders: boolean, banners: boolean }} settings
  */
-export function saveVncSettings(username, { scaling, quality, compression }) {
+export function saveVncSettings(
+  username,
+  { scaling, zoom, quality, compression, paneHeaders, banners },
+) {
   writePref(
     vncSettingsKey(username),
-    JSON.stringify({ scaling, quality, compression }),
+    JSON.stringify({
+      scaling,
+      zoom,
+      quality,
+      compression,
+      paneHeaders,
+      banners,
+    }),
   );
 }
 

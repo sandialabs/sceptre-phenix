@@ -1007,7 +1007,14 @@ describe('what the top bar does', () => {
     ]);
     expect(
       JSON.parse(localStorage.getItem('phenix.vnc.settings.alice')),
-    ).toEqual({ scaling: 'actual', quality: 3, compression: 2 });
+    ).toEqual({
+      scaling: 'actual',
+      zoom: 1,
+      quality: 3,
+      compression: 2,
+      paneHeaders: true,
+      banners: true,
+    });
     expect(buttons(view)).toContain('Resize VM (disabled)');
     expect(textOf(view)).toContain('Resize VM needs vga virtio.');
   });
@@ -1017,6 +1024,88 @@ describe('what the top bar does', () => {
     await button(wrapper, 'View').trigger('click');
     await panel(wrapper, 'view').find('input[type="checkbox"]').setValue(true);
     expect(rfbs.map((rfb) => rfb.viewOnly)).toEqual([true, false]);
+  });
+
+  it('zooms Actual to the level picked: noVNC fits the screen to a box of the zoomed size', async () => {
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await button(wrapper, 'View').trigger('click');
+    const view = panel(wrapper, 'view');
+    await button(view, '150%').trigger('click');
+    await nextTick();
+    expect(button(view, 'Actual').attributes('aria-pressed')).toBe('true');
+    expect(button(view, '150%').attributes('aria-pressed')).toBe('true');
+    expect(rfbs[0].scaleViewport).toBe(true);
+    const screen = wrapper.find('.vnc-screen').element;
+    expect([screen.style.width, screen.style.height]).toEqual([
+      '1536px',
+      '1152px',
+    ]);
+    expect(
+      JSON.parse(localStorage.getItem('phenix.vnc.settings.alice')),
+    ).toMatchObject({ scaling: 'actual', zoom: 1.5 });
+
+    // 100 % is the size of the VM screen: noVNC scales nothing
+    await button(view, '100%').trigger('click');
+    await nextTick();
+    expect(rfbs[0].scaleViewport).toBe(false);
+    expect(wrapper.find('.vnc-screen').element.style.width).toBe('');
+
+    // Fit leaves the zoom level, which no button then shows
+    await button(view, 'Fit').trigger('click');
+    await nextTick();
+    expect(button(view, '100%').attributes('aria-pressed')).toBe('false');
+  });
+
+  it('follows a new size of the VM screen while zoomed', async () => {
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await button(wrapper, 'View').trigger('click');
+    await button(panel(wrapper, 'view'), '50%').trigger('click');
+    rfbs[0].canvas.width = 800;
+    rfbs[0].canvas.height = 600;
+    await flushPromises();
+    const screen = wrapper.find('.vnc-screen').element;
+    expect([screen.style.width, screen.style.height]).toEqual([
+      '400px',
+      '300px',
+    ]);
+  });
+
+  it('hides the pane headers and the banners with two separate settings', async () => {
+    const wrapper = await connected('/vnc?vm=demo/kali&vm=demo/web');
+    await button(wrapper, 'View').trigger('click');
+    const view = panel(wrapper, 'view');
+    const box = (name) =>
+      view
+        .findAll('label')
+        .find((label) => textOf(label) === name)
+        .find('input');
+    expect(wrapper.findAll('.vnc-pane-header')).toHaveLength(2);
+    expect(wrapper.findAll('.vnc-banner')).toHaveLength(4);
+
+    await box('Pane headers').setValue(false);
+    expect(wrapper.findAll('.vnc-pane-header')).toHaveLength(0);
+    expect(wrapper.findAll('.vnc-banner')).toHaveLength(4);
+
+    await box('Pane headers').setValue(true);
+    await box('Banners').setValue(false);
+    expect(wrapper.findAll('.vnc-pane-header')).toHaveLength(2);
+    expect(wrapper.findAll('.vnc-banner')).toHaveLength(0);
+    expect(
+      JSON.parse(localStorage.getItem('phenix.vnc.settings.alice')),
+    ).toMatchObject({ paneHeaders: true, banners: false });
+  });
+
+  it('opens the VM of the active pane alone in a new tab', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue({});
+    const wrapper = await connected('/vnc?vm=demo/kali&vm=demo/web');
+    await wrapper.findAll('.vnc-pane')[1].trigger('pointerdown');
+    await button(wrapper, 'View').trigger('click');
+    await button(panel(wrapper, 'view'), 'Open alone in a new tab').trigger(
+      'click',
+    );
+    await vi.waitFor(() => expect(open).toHaveBeenCalledOnce());
+    expect(open.mock.calls[0][0]).toBe('/vnc?vm=demo/web');
+    open.mockRestore();
   });
 
   it('adds a running VM in a new pane and keeps it in the URL', async () => {
@@ -1280,6 +1369,147 @@ describe('the new VM actions of the top bar', () => {
       },
     );
     expect(reads()).toBeGreaterThan(before + 1);
+  });
+
+  it('asks for the interface to capture, greys out a captured one, and starts the capture on the one picked', async () => {
+    store.features = ['minimega-captures'];
+    answers['experiments/demo/vms/web'] = vm({
+      networks: ['DMZ (149)', 'MGMT (151)', 'OT (152)'],
+      ipv4: ['10.0.0.5', '10.1.0.5', ''],
+      captures: [{ interface: 0 }],
+    });
+    answers['experiments/demo/vms/web/captures'] = {
+      captures: [{ interface: 0 }],
+    };
+    axios.post.mockResolvedValue({ data: {} });
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await control(wrapper, 'Capture interface…').trigger('click');
+    await flushPromises();
+    const picker = wrapper.find('.vnc-interface-card');
+    expect(textOf(picker.find('.modal-card-title'))).toBe(
+      'Start capture on an interface of web',
+    );
+    const radios = picker.findAll('input[type="radio"]');
+    expect(radios.map((r) => r.element.disabled)).toEqual([true, false, false]);
+    expect(textOf(picker)).toContain('A capture of the interface runs.');
+    // the first interface it can use is picked
+    expect(radios[1].element.checked).toBe(true);
+    await radios[2].setValue(true);
+    await picker.trigger('submit');
+    await flushPromises();
+    const format = wrapper.find('.capture-format-card');
+    expect(textOf(format.find('.modal-card-title'))).toBe(
+      'Start capture on interface 2 of web',
+    );
+    await format.trigger('submit');
+    await flushPromises();
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith(
+      'experiments/demo/vms/web/captures',
+      {
+        interface: 2,
+        filename: expect.stringMatching(/^web_2_.*\.pcapng$/),
+        format: 'pcapng',
+      },
+    );
+  });
+
+  it('asks for no interface when the VM has only one, and for no format when minimega takes none', async () => {
+    answers['experiments/demo/vms/web'] = vm({
+      networks: ['DMZ (149)'],
+      ipv4: ['10.0.0.5'],
+    });
+    answers['experiments/demo/vms/web/captures'] = { captures: [] };
+    axios.post.mockResolvedValue({ data: {} });
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await control(wrapper, 'Capture interface…').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('.vnc-interface-card').exists()).toBe(false);
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith(
+      'experiments/demo/vms/web/captures',
+      expect.objectContaining({ interface: 0 }),
+    );
+  });
+
+  it('stops no capture from the picker when one started on the interface after the picker opened', async () => {
+    answers['experiments/demo/vms/web/captures'] = { captures: [] };
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await control(wrapper, 'Capture interface…').trigger('click');
+    await flushPromises();
+    const picker = wrapper.find('.vnc-interface-card');
+    const radios = picker.findAll('input[type="radio"]');
+    expect(radios.map((r) => r.element.disabled)).toEqual([false, false]);
+    // a capture starts on interface 1 while the picker is open
+    answers['experiments/demo/vms/web/captures'] = {
+      captures: [{ interface: 1 }],
+    };
+    await radios[1].setValue(true);
+    await picker.trigger('submit');
+    await flushPromises();
+    expect(axios.delete).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(toasts()).toEqual([
+      {
+        text: 'phēnix already captures interface 1 of the web VM.',
+        type: 'is-info',
+      },
+    ]);
+  });
+
+  it('keeps a pending capture to the pane of its experiment when two panes show VMs of the same name', async () => {
+    const list = Promise.withResolvers();
+    const get = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url) =>
+      url === 'experiments/demo/vms/web/captures'
+        ? list.promise.then(() => ({ data: { captures: [] } }))
+        : get(url),
+    );
+    answers['experiments/train/vms/web/captures'] = { captures: [] };
+    axios.post.mockResolvedValue({ data: {} });
+    const wrapper = await connected('/vnc?vm=demo/web&vm=train/web');
+    const capture = () => wrapper.find('[aria-label="Capture interface 0"]');
+    await capture().trigger('click');
+    await nextTick();
+    expect(capture().attributes('aria-busy')).toBe('true');
+
+    await wrapper.findAll('.vnc-pane')[1].trigger('pointerdown');
+    await nextTick();
+    expect(capture().attributes('aria-busy')).toBeUndefined();
+    await capture().trigger('click');
+    await flushPromises();
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith(
+      'experiments/train/vms/web/captures',
+      expect.objectContaining({ interface: 0 }),
+    );
+
+    list.resolve();
+    await flushPromises();
+  });
+
+  it('asks for the interface, then sets its link quality', async () => {
+    answers['experiments/demo/vms/web/qos'] = { interfaces: [] };
+    axios.put.mockResolvedValue({ data: {} });
+    const wrapper = await connected('/vnc?vm=demo/web');
+    await control(wrapper, 'Link quality…').trigger('click');
+    await flushPromises();
+    const picker = wrapper.find('.vnc-interface-card');
+    expect(
+      picker.findAll('input[type="radio"]').map((r) => r.element.disabled),
+    ).toEqual([false, false]);
+    await picker.findAll('input[type="radio"]')[1].setValue(true);
+    await picker.trigger('submit');
+    await flushPromises();
+    const card = wrapper.find('.link-quality-card');
+    expect(textOf(card.find('.modal-card-title'))).toBe(
+      'Link quality of interface 1 of web',
+    );
+    expect(textOf(card)).toContain('mgmt (151)');
+    await card.find('#link-quality-loss').setValue('5');
+    await card.find('.link-quality-apply').trigger('click');
+    await flushPromises();
+    expect(axios.put).toHaveBeenCalledExactlyOnceWith(
+      'experiments/demo/vms/web/interfaces/1/qos',
+      { loss: '5' },
+    );
   });
 
   it('stops every capture of the VM while one runs, and shows the capture button again', async () => {

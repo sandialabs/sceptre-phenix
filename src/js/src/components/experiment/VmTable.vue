@@ -347,7 +347,7 @@
         :vm="props.row"
         :full-name="experiment + '/' + props.row.name"
         :pending="[
-          ...(captureAllPending[props.row.name]
+          ...(captureAllPending[consoleKey(props.row)]
             ? ['captureAll', 'stopCaptures']
             : []),
           ...(actionPending[props.row.name] ?? []),
@@ -516,7 +516,7 @@
         return !vm.busy && !vm.external;
       },
 
-      // the VM as the console page names it
+      // the VM as the console page and the capture keys name it
       consoleKey(vm) {
         return `${this.experiment || this.$route.params.id}/${vm.name}`;
       },
@@ -539,7 +539,9 @@
       },
 
       isCapturePending(vmName, iface) {
-        return !!this.capturePending[`${vmName}/${iface}`];
+        return !!this.capturePending[
+          `${this.consoleKey({ name: vmName })}/${iface}`
+        ];
       },
 
       captureLabel(vm, iface) {

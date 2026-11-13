@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_LIVE_TILE_LIMIT,
   DEFAULT_VNC_SETTINGS,
+  VNC_ZOOMS,
   LIVE_TILE_LIMITS,
   loadLiveTileLimit,
   loadVncSettings,
@@ -121,28 +122,34 @@ describe('the live tile limit', () => {
 describe('the VNC console settings', () => {
   const key = (user) => `phenix.vnc.settings.${user}`;
 
-  it('starts at Fit, quality 6 and compression 2', () => {
+  // the settings with the defaults for those that `values` does not give
+  const withDefaults = (values) => ({ ...DEFAULT_VNC_SETTINGS, ...values });
+
+  it('starts at Fit at 100 %, quality 6 and compression 2, with the pane headers and banners shown', () => {
     expect(DEFAULT_VNC_SETTINGS).toEqual({
       scaling: 'fit',
+      zoom: 1,
       quality: 6,
       compression: 2,
+      paneHeaders: true,
+      banners: true,
     });
     expect(loadVncSettings('alice')).toEqual(DEFAULT_VNC_SETTINGS);
   });
 
   it('keeps the settings of each user apart', () => {
-    saveVncSettings('alice', { scaling: 'actual', quality: 3, compression: 9 });
-    expect(loadVncSettings('alice')).toEqual({
+    const alice = {
       scaling: 'actual',
+      zoom: 1.5,
       quality: 3,
       compression: 9,
-    });
+      paneHeaders: false,
+      banners: false,
+    };
+    saveVncSettings('alice', alice);
+    expect(loadVncSettings('alice')).toEqual(alice);
     expect(loadVncSettings('bob')).toEqual(DEFAULT_VNC_SETTINGS);
-    expect(JSON.parse(readPref(key('alice')))).toEqual({
-      scaling: 'actual',
-      quality: 3,
-      compression: 9,
-    });
+    expect(JSON.parse(readPref(key('alice')))).toEqual(alice);
   });
 
   it.each([
@@ -152,27 +159,30 @@ describe('the VNC console settings', () => {
     ['a quality above 9', '{"quality":10,"compression":4}'],
     ['a quality that is not a whole number', '{"quality":2.5}'],
     ['a compression below 0', '{"compression":-1}'],
+    ['a zoom that is not a level', '{"zoom":1.25}'],
+    ['headers that are not true or false', '{"paneHeaders":"no"}'],
+    ['banners that are not true or false', '{"banners":0}'],
   ])('uses the default for each value that %s gives', (_, text) => {
     writePref(key('alice'), text);
     const settings = loadVncSettings('alice');
-    expect(Object.keys(settings)).toEqual([
-      'scaling',
-      'quality',
-      'compression',
-    ]);
+    expect(Object.keys(settings)).toEqual(Object.keys(DEFAULT_VNC_SETTINGS));
     expect(['fit', 'actual', 'remote']).toContain(settings.scaling);
+    expect(VNC_ZOOMS).toContain(settings.zoom);
+    expect(settings.paneHeaders).toBe(true);
+    expect(settings.banners).toBe(true);
     for (const level of [settings.quality, settings.compression]) {
       expect(Number.isInteger(level) && level >= 0 && level <= 9).toBe(true);
     }
   });
 
   it('keeps a good value beside a bad one', () => {
-    writePref(key('alice'), '{"scaling":"remote","quality":12}');
-    expect(loadVncSettings('alice')).toEqual({
-      scaling: 'remote',
-      quality: 6,
-      compression: 2,
-    });
+    writePref(
+      key('alice'),
+      '{"scaling":"remote","quality":12,"zoom":3,"banners":false}',
+    );
+    expect(loadVncSettings('alice')).toEqual(
+      withDefaults({ scaling: 'remote', banners: false }),
+    );
   });
 
   it('starts at the defaults when storage throws', () => {

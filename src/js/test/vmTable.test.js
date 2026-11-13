@@ -176,7 +176,9 @@ describe('the rows', () => {
   });
 
   it('marks the captured interfaces and the ones waiting on the server', async () => {
-    const wrapper = await render([web], { capturePending: { 'web/0': true } });
+    const wrapper = await render([web], {
+      capturePending: { 'demo/web/0': true },
+    });
     const { IP } = rowOf(wrapper, 'web');
     const ifaces = IP.findAll('.field button');
     expect(ifaces.map((d) => d.classes('is-success'))).toEqual([false, true]);
@@ -336,7 +338,9 @@ describe('what it asks the page for', () => {
   });
 
   it('spins the capture actions of a VM starting or stopping them all', async () => {
-    const wrapper = await render([web], { captureAllPending: { web: true } });
+    const wrapper = await render([web], {
+      captureAllPending: { 'demo/web': true },
+    });
     expect(wrapper.findComponent(VmRowActions).props('pending')).toEqual([
       'captureAll',
       'stopCaptures',
@@ -707,7 +711,7 @@ describe('the network menus', () => {
     rbac.allowed = allowOnly(['vms/captures']);
     const off = vm({ running: false, state: 'QUIT' });
     const wrapper = await render([off], {
-      capturePending: { 'web/0': true },
+      capturePending: { 'demo/web/0': true },
     });
     await openMenu(wrapper, 'web', 0);
     expect(itemTexts()).toEqual([
@@ -725,7 +729,7 @@ describe('the network menus', () => {
         experiment: 'demo',
         table: useTable().table,
         columns: COLUMNS,
-        capturePending: { 'web/0': true },
+        capturePending: { 'demo/web/0': true },
         vlanCapturePending: { DMZ: true },
       },
       attachTo: document.body,
@@ -812,7 +816,7 @@ describe('the network menus', () => {
     ],
     [
       "the interface's capture",
-      { capturePending: { 'web/0': true } },
+      { capturePending: { 'demo/web/0': true } },
       [
         ...VLAN_ITEMS,
         'Start capture on this interface (disabled)',
