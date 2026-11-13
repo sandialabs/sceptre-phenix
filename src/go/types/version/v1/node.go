@@ -10,6 +10,7 @@ import (
 	"time"
 
 	ifaces "phenix/types/interfaces"
+	"phenix/util/mm"
 	"phenix/util/plog"
 )
 
@@ -751,7 +752,31 @@ func (c C2Delay) UseUUID() bool {
 	return c.UseUUIDF
 }
 
+// DiskInjects returns the minimega commands that inject the node's files into,
+// and delete its deletions from, partition part of disk.
+func (n Node) DiskInjects(disk string, part int, baseDir string) []string {
+	var (
+		target = fmt.Sprintf("%s:%d", disk, part)
+		osType = n.HardwareF.OSType()
+		cmds   []string
+	)
+
+	if len(n.InjectionsF) > 0 {
+		cmds = mm.InjectCommands(target, osType, n.fileInjects(baseDir)...)
+	}
+
+	if len(n.DeletionsF) > 0 {
+		cmds = append(cmds, mm.DeleteCommand(target, osType, n.FileDeletions()))
+	}
+
+	return cmds
+}
+
 func (n Node) FileInjects(baseDir string) string {
+	return strings.Join(n.fileInjects(baseDir), " ")
+}
+
+func (n Node) fileInjects(baseDir string) []string {
 	injects := make([]string, len(n.InjectionsF))
 
 	for i, inject := range n.InjectionsF {
@@ -770,7 +795,7 @@ func (n Node) FileInjects(baseDir string) string {
 		}
 	}
 
-	return strings.Join(injects, " ")
+	return injects
 }
 
 func (n Node) FileDeletions() string {

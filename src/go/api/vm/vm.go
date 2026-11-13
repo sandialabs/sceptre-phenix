@@ -736,7 +736,10 @@ func Redeploy(expName, vmName string, opts ...RedeployOption) error {
 
 	o := newRedeployOptions(opts...)
 
-	var injects []string
+	var (
+		injects []string
+		osType  string
+	)
 
 	if o.inject {
 		exp, err := experiment.Get(expName)
@@ -754,6 +757,8 @@ func Redeploy(expName, vmName string, opts ...RedeployOption) error {
 				o.part = *n.Hardware().Drives()[0].InjectPartition()
 			}
 
+			osType = n.Hardware().OSType()
+
 			for _, i := range n.Injections() {
 				injects = append(injects, fmt.Sprintf("%s:%s", i.Src(), i.Dst()))
 			}
@@ -770,6 +775,7 @@ func Redeploy(expName, vmName string, opts ...RedeployOption) error {
 		mm.Disk(o.disk),
 		mm.Injects(injects...),
 		mm.InjectPartition(o.part),
+		mm.OSType(osType),
 	}
 
 	err := mm.RedeployVM(mmOpts...)

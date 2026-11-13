@@ -23,6 +23,7 @@ type options struct {
 
 	injectPart int
 	injects    []string
+	osType     string
 
 	connectIface int
 	connectVLAN  string
@@ -100,6 +101,14 @@ func InjectPartition(p int) Option {
 func Injects(i ...string) Option {
 	return func(o *options) {
 		o.injects = i
+	}
+}
+
+// OSType sets the OS type of the VM's disk, which decides how files are
+// injected into it.
+func OSType(t string) Option {
+	return func(o *options) {
+		o.osType = t
 	}
 }
 

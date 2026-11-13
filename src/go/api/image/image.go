@@ -21,6 +21,7 @@ import (
 	"phenix/tmpl"
 	"phenix/types"
 	v1 "phenix/types/version/v1"
+	"phenix/util/mm"
 	"phenix/util/mm/mmcli"
 	"phenix/util/shell"
 )
@@ -525,9 +526,14 @@ func InjectMiniExe(exe, disk, svc string) error { //nolint:funlen // complex log
 
 	defer func() { _ = os.RemoveAll(tmp) }()
 
-	var injects []string
+	var (
+		injects []string
+		osType  = "linux"
+	)
 
 	if path.Ext(exe) == ".exe" { // assume Windows
+		osType = "windows"
+
 		// /opt/minimega/bin/miniccc.exe --> miniccc
 		base := strings.TrimSuffix(path.Base(exe), path.Ext(exe))
 
@@ -649,7 +655,7 @@ func InjectMiniExe(exe, disk, svc string) error { //nolint:funlen // complex log
 		}
 	}
 
-	if err = inject(disk, injects...); err != nil {
+	if err = inject(disk, osType, injects...); err != nil {
 		return fmt.Errorf("injecting files into disk: %w", err)
 	}
 
@@ -712,15 +718,16 @@ func addScriptToImage(img *v1.Image, name, script string) error {
 	return nil
 }
 
-func inject(disk string, injects ...string) error {
-	files := strings.Join(injects, " ")
-
+func inject(disk, osType string, injects ...string) error {
 	cmd := mmcli.NewCommand()
-	cmd.Command = fmt.Sprintf("disk inject %s files %s", disk, files)
 
-	err := mmcli.ErrorResponse(mmcli.Run(cmd))
-	if err != nil {
-		return fmt.Errorf("injecting files into disk %s: %w", disk, err)
+	for _, command := range mm.InjectCommands(disk, osType, injects...) {
+		cmd.Command = command
+
+		err := mmcli.ErrorResponse(mmcli.Run(cmd))
+		if err != nil {
+			return fmt.Errorf("injecting files into disk %s: %w", disk, err)
+		}
 	}
 
 	return nil
