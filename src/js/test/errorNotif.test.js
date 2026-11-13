@@ -198,6 +198,7 @@ describe('showError', () => {
     );
   });
 
+  // Main bug: server error text showed as markup in the notice.
   it('draws no markup from any server text', () => {
     fc.assert(
       fc.property(
@@ -224,7 +225,7 @@ describe('showError', () => {
           );
         },
       ),
-      // a script hook in the title (main bug #17)
+      // a script hook in the title
       { examples: [['<img src=x onerror=alert(1)>', undefined]] },
     );
   });

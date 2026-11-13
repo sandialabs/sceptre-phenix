@@ -366,6 +366,7 @@ describe('a page whose build file the server no longer has', () => {
     sessionStorage.clear();
   });
 
+  // Main bug: an open tab could not load page files after a server update.
   it('reloads once to the page asked for, under the base path', async () => {
     await servedFrom('/igor/bb-8/phenix/');
     let pendingSeen;
@@ -389,6 +390,7 @@ describe('a page whose build file the server no longer has', () => {
     );
   });
 
+  // Main bug: an open tab could not load page files after a server update.
   it('does not reload for another error', async () => {
     await servedFrom('/');
     await expect(router.push('/broken')).rejects.toThrow('syntax error');
@@ -397,6 +399,7 @@ describe('a page whose build file the server no longer has', () => {
     expect(notice).not.toHaveBeenCalled();
   });
 
+  // Main bug: an open tab could not load page files after a server update.
   it('forgets the navigation once it ends', async () => {
     await servedFrom('/');
     await router.push('/tunneler');
@@ -404,6 +407,7 @@ describe('a page whose build file the server no longer has', () => {
     expect(pendingNavigationHref()).toBeNull();
   });
 
+  // Main bug: an open tab could not load page files after a server update.
   it('keeps the navigation under way when an older one is cancelled', async () => {
     await servedFrom('/');
     const { pendingNavigationHref } = await import('@/router.js');

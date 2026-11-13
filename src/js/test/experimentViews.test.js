@@ -988,6 +988,7 @@ describe('StoppedExperiment', () => {
       );
     });
 
+    // Main bug: the page offered scheduler names that do not exist.
     it('falls back to the built-in schedulers when the list fails', async () => {
       axios.get.mockImplementation(
         answers(() => Promise.reject(new Error('gone'))),
@@ -1000,6 +1001,7 @@ describe('StoppedExperiment', () => {
       ]);
     });
 
+    // Main bug: the page sent round_robin, not round-robin.
     it('asks before it schedules, then spins until the server answers', async () => {
       const answer = Promise.withResolvers();
       axios.post.mockReturnValue(answer.promise);
@@ -1664,6 +1666,7 @@ describe('StoppedExperiment', () => {
     }
 
     // the box lists past searches, not VMs, so it never says "No results found"
+    // Main bug: the search box listed all past searches, not the matches.
     it('suggests the past searches that hold the text typed', async () => {
       const page = await stopped(undefined, {
         searchHistory: ['web-1', 'db-1', 'web-2'],
@@ -1941,6 +1944,7 @@ describe('VMLabelsModal', () => {
     expect(labels.emitted('close')).toEqual([[]]);
   });
 
+  // Main bug: a label save showed no progress and could be sent twice.
   it('spins and disables Save while it saves, and stays open with the edits on a failure', async () => {
     const answer = Promise.withResolvers();
     axios.patch.mockReturnValue(answer.promise);

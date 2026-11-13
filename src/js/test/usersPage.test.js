@@ -105,6 +105,7 @@ describe('the Users page totals', () => {
 });
 
 // the column ends at the window's right edge
+// Main bug: a tooltip side set in type opened off screen.
 it('opens the Actions tooltips to the left, inside the window', async () => {
   rbac.allowed = denyOnly(['roles', 'list']);
   const page = await mountPage(Users, { route: '/users' });
@@ -120,6 +121,7 @@ it('opens the Actions tooltips to the left, inside the window', async () => {
 });
 
 // the button ends the toolbar at the window's right edge
+// Main bug: a tooltip side set in type opened off screen.
 it('opens the Create a new user tooltip to the left', async () => {
   const page = await mountPage(Users, { route: '/users' });
   const create = page.get('[aria-label="Create a new user"]');

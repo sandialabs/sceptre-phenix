@@ -122,6 +122,7 @@ beforeEach(() => {
   });
 });
 
+// Main bug: the full message opened in a tooltip that the list cut off.
 it('opens one named, modal dialog outside the list on a click, and focuses it', async () => {
   const page = await logsPage();
   expect(openDialogs()).toHaveLength(0);

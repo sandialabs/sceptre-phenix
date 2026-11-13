@@ -249,6 +249,7 @@ describe('CreateExperimentCard', () => {
     });
   });
 
+  // Main bug: the names minimega and __phenix__ were allowed.
   it('checks names as the server does', async () => {
     const nameError = async (name, options) => {
       const wrapper = await card({

@@ -216,6 +216,7 @@ test("answers from the signed-in role's own policies after a new sign in", () =>
   expect(roleAllowed('experiments', 'get', 'exp2')).toBe(true);
 });
 
+// Main bug: a policy with null resource names broke the role check.
 test('a policy with null resource names allows no resource name', () => {
   signIn({
     name: 'Null Resource Names',

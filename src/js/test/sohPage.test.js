@@ -185,6 +185,7 @@ describe('rendering', () => {
     }
   });
 
+  // Main bug: a disabled soh app showed as initializing and could not run.
   it('offers Run SOH for a disabled soh app that has not run, saying so', async () => {
     axios.post.mockResolvedValue({});
     const page = await open({ nodes, loaded: true, running: true });
@@ -551,6 +552,7 @@ describe('the layout drawn', () => {
     return open({ nodes, edges, loaded: true }, fresh);
   }
 
+  // Main bug: an open tab could not load page files after a server update.
   it('offers a reload when a layout file is gone after a server update', async () => {
     const page = await failingLayout(
       'elk',

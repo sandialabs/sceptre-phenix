@@ -586,6 +586,7 @@ describe("a run's Download button", () => {
     return { control, links };
   };
 
+  // Main bug: a tooltip side set in type opened off screen.
   it("links each of the run's archives, newest first, with its start time and size", async () => {
     store.token = 't';
     listing(
@@ -834,6 +835,7 @@ describe("a run's pipeline box", () => {
 });
 
 describe("the page's header", () => {
+  // Main bug: a tooltip side set in type opened off screen.
   it('spaces Start all, Stop all and Clear all apart, also when they wrap', async () => {
     const wrapper = await open([{}]);
     const actions = wrapper.get('.runs-header .runs-actions');
@@ -904,6 +906,7 @@ describe("a run's header", () => {
   });
 
   // the loop button is at the run's left edge and the controls at its right
+  // Main bug: a tooltip side set in type opened off screen.
   it('opens the loop tooltip to the right and the control tooltips to the left', async () => {
     const wrapper = await open([
       {

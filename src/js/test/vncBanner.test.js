@@ -42,6 +42,7 @@ describe('a console banner', () => {
     expect(wrapper.find('.vnc-banner').exists()).toBe(false);
   });
 
+  // Main bug: a vncBanner line showed as markup.
   it('shows any line exactly as the server sent it', async () => {
     await fc.assert(
       fc.asyncProperty(
@@ -55,7 +56,7 @@ describe('a console banner', () => {
       ),
       {
         numRuns: 8,
-        // markup must stay text (main bug #17)
+        // markup must stay text
         examples: [
           [
             [

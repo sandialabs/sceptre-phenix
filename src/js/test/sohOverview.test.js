@@ -592,6 +592,7 @@ describe('SohOverview view', () => {
     expect(axios.post).not.toHaveBeenCalled();
   });
 
+  // Main bug: a disabled soh app showed as initializing and could not run.
   it('runs a disabled soh app that has not run, and says so', async () => {
     axios.post.mockResolvedValue({});
     const never = {

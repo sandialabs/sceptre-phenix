@@ -184,6 +184,7 @@ async function setSearch(page, text) {
   vi.advanceTimersByTime(200);
 }
 
+// Main bug: a filter change kept the old scroll position.
 it('shows what the filters select after a search and a level, scrolled to the newest', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
   const page = await open();
@@ -246,6 +247,7 @@ const logArb = fc.record({
     .map((words) => words.join(' ')),
 });
 
+// Main bug: a filter change kept the old scroll position.
 it('shows the lines that pass the filters, as lines stream in and filters change', async () => {
   // a step: a streamed line, a type toggled, a level or a search chosen
   const stepArb = fc.oneof(

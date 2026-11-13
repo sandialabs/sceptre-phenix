@@ -5,6 +5,7 @@ import { expect, it } from 'vitest';
 
 import { escapeHTML } from '@/utils/escapeHTML.js';
 
+// Main bug: user and server text showed as markup.
 it('escapes markup and attribute quotes', () => {
   expect(escapeHTML('<b a="1">&</b>')).toBe(
     '&lt;b a=&quot;1&quot;&gt;&amp;&lt;/b&gt;',
@@ -25,6 +26,7 @@ const text = fc
   )
   .map((parts) => parts.join('').replace(/[\0\r]/g, ''));
 
+// Main bug: user and server text showed as markup.
 it('reads back as the same text, in an element or a quoted attribute', () => {
   const box = document.createElement('div');
   fc.assert(

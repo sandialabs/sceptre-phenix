@@ -231,6 +231,7 @@ describe('listing files', () => {
     expect(emptyText(tab)).toBe('This experiment has no files yet');
   });
 
+  // Main bug: a null file list from the server broke the Files tab.
   it('treats a null file list as empty', async () => {
     const tab = await filesTab({ selectedFiles: ['a.log'] });
     axios.get.mockResolvedValue({ data: { files: null } });

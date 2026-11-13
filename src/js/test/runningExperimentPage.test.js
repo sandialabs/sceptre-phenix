@@ -631,6 +631,7 @@ describe('searching', () => {
   });
 
   // the box lists past searches, not VMs, so it never says "No results found"
+  // Main bug: the search box listed all past searches, not the matches.
   it('suggests the past searches that hold the text typed', async () => {
     const page = await openPage({ searchHistory: ['web-1', 'db-1', 'web-2'] });
     await apply(running([]));

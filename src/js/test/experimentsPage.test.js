@@ -763,6 +763,7 @@ describe('the start and stop bar', () => {
     ];
   };
 
+  // Main bug: the start bar showed VMs left to launch, not the part done.
   it('follows a start from the click to its post-start apps', async () => {
     const answer = Promise.withResolvers();
     axios.post.mockReturnValue(answer.promise);
@@ -1018,6 +1019,7 @@ describe('the start and stop bar', () => {
       error: 'no image',
     };
 
+    // Main bug: other tabs kept a failed start as starting until a reload.
     it('shows where a start failed under the status, until the next start', async () => {
       axios.post.mockReturnValue(never());
       const wrapper = await page(three());

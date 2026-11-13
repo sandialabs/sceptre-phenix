@@ -396,6 +396,7 @@ describe('the Settings page', () => {
     expect(buttons(page)).toEqual(UNCHANGED);
   });
 
+  // Main bug: the page showed log file limits that phenix ui did not use.
   it('loads the log file limits into their fields and names the runtime setting of each', async () => {
     const page = await open();
     const logging = {

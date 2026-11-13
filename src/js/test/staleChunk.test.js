@@ -55,6 +55,7 @@ describe('isChunkLoadError', () => {
 });
 
 describe('reloadForStaleChunk', () => {
+  // Main bug: an open tab could not load page files after a server update.
   it('reloads to the page asked for, once, and records when', () => {
     const storage = memoryStorage();
     const loc = location();
@@ -185,6 +186,7 @@ describe('handlePreloadError', () => {
     'Failed to fetch dynamically imported module: /assets/Builder-9f.js',
   );
 
+  // Main bug: an open tab could not load page files after a server update.
   it('reloads to the page of a navigation under way', () => {
     const loc = location();
     const notify = vi.fn();

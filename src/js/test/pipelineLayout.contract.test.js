@@ -36,6 +36,7 @@ const edgesOf = (nodes) =>
   );
 
 describe('calculateAllPosition', () => {
+  // Main bug: a node with several parents went left of one of them.
   test('a node with several parents goes right of each of them', () => {
     expect(layout([[1, 2, 4, 6], [3], [], [5, 6], [], [], []])).toEqual([
       [0, 0],
@@ -48,6 +49,7 @@ describe('calculateAllPosition', () => {
     ]);
   });
 
+  // Main bug: a branch drew over a node that it had already placed.
   test('a branch does not take a cell that another branch holds', () => {
     // node 4's path (4, 5) must not take the cell of node 3
     expect(layout([[1, 4], [2, 3, 5], [], [], [5], []])).toEqual([
@@ -60,6 +62,7 @@ describe('calculateAllPosition', () => {
     ]);
   });
 
+  // Main bug: a graph with two or more start nodes threw and drew nothing.
   test('a graph with two roots puts the second root on a new row', () => {
     expect(layout([[2], [2], []])).toEqual([
       [0, 0],
@@ -68,6 +71,7 @@ describe('calculateAllPosition', () => {
     ]);
   });
 
+  // Main bug: a graph with two or more start nodes threw and drew nothing.
   test('a graph whose node 0 is not a root starts at its roots', () => {
     expect(layout([[], [0], [0]])).toEqual([
       [1, 0],
@@ -106,6 +110,7 @@ describe('getLines', () => {
 });
 
 describe('hasCircle', () => {
+  // Main bug: a graph whose node 0 is not a start node showed a false cycle.
   test('is false for a graph whose node 0 is not a root', () => {
     expect(pipelineOf(nodesOf([[], [0], [0]])).hasCircle()).toBe(false);
   });
