@@ -111,31 +111,20 @@ func NewConfigFromFile(path string) (*Config, error) {
 		return nil, fmt.Errorf("cannot read config: %w", err)
 	}
 
-	file = envsubst.Expand(file, os.LookupEnv)
+	return DecodeConfigFile(path, envsubst.Expand(file, os.LookupEnv))
+}
 
-	var c Config
-
+// DecodeConfigFile decodes body, the text of the config file at path, as it is
+// written: JSON for a .json file, and YAML for a .yaml or .yml file.
+func DecodeConfigFile(path string, body []byte) (*Config, error) {
 	switch filepath.Ext(path) {
 	case ".json":
-		err := json.Unmarshal(file, &c)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrInvalidFormat, err)
-		}
+		return DecodeConfigJSON(body)
 	case ".yaml", ".yml":
-		err := yaml.Unmarshal(file, &c)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrInvalidFormat, err)
-		}
+		return DecodeConfigYAML(body)
 	default:
 		return nil, errors.New("invalid config extension")
 	}
-
-	// ensure users aren't trying to set these values
-	c.Metadata.Created = ""
-	c.Metadata.Updated = ""
-	c.Metadata.Revision = 0
-
-	return &c, nil
 }
 
 // NewConfigFromYAML decodes a YAML config after it replaces each ${NAME}
@@ -144,10 +133,14 @@ func NewConfigFromYAML(body []byte) (*Config, error) {
 	return DecodeConfigYAML(envsubst.Expand(body, os.LookupEnv))
 }
 
-// ExpandBranchName replaces each ${BRANCH_NAME} placeholder in body as
-// [envsubst.Expand] does. It keeps every other placeholder as it is written.
-func ExpandBranchName(body []byte) []byte {
-	return envsubst.ExpandOnly(body, "BRANCH_NAME", os.LookupEnv)
+// BranchNameVar is the variable that holds the workflow branch name.
+const BranchNameVar = "BRANCH_NAME"
+
+// ExpandBranchName replaces each ${BRANCH_NAME} placeholder in body with the
+// value from lookup, as [envsubst.Expand] does. It keeps every other
+// placeholder as it is written.
+func ExpandBranchName(body []byte, lookup envsubst.Lookup) []byte {
+	return envsubst.ExpandOnly(body, BranchNameVar, lookup)
 }
 
 // DecodeConfigJSON decodes a JSON config as it is written. It keeps each

@@ -217,11 +217,8 @@ func applyWorkflowRequest(role rbac.Role, rawQuery, contentType string, body io.
 
 // serveApplyWorkflow serves req with ApplyWorkflow behind weberror's error
 // handler, as the router does, and returns the recorded response.
-// ApplyWorkflow sets BRANCH_NAME in the process environment, so the variable
-// is restored when the test ends.
 func serveApplyWorkflow(t *testing.T, req *http.Request) *httptest.ResponseRecorder {
 	t.Helper()
-	t.Setenv("BRANCH_NAME", "")
 
 	rec := httptest.NewRecorder()
 	weberror.ErrorHandler(ApplyWorkflow).ServeHTTP(rec, req)
@@ -1724,8 +1721,6 @@ func TestApplyWorkflowDryRunChecksPendingReferences(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("BRANCH_NAME", "") // the config dry runs set it
-
 			// Each config dry run checks whether its config is stored: none
 			// is. The apply dry run then lists the experiments: there are none.
 			m := installValidationTestStore(t)
@@ -1808,8 +1803,6 @@ func TestApplyWorkflowDryRunChecksPendingIncludes(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("BRANCH_NAME", "") // the config dry runs set it
-
 			m := installValidationTestStore(t)
 			expectWorkflowReadFails(m, "topology/main")
 			expectWorkflowReadFails(m, "topology/main-net")

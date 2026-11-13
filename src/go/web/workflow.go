@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -23,6 +22,7 @@ import (
 	"phenix/types/version"
 	v1 "phenix/types/version/v1"
 	"phenix/util/common"
+	"phenix/util/envsubst"
 	"phenix/util/plog"
 	"phenix/web/audit"
 	"phenix/web/broker"
@@ -260,7 +260,7 @@ func readWorkflowConfig(r *http.Request, branch string) (map[string]any, []byte,
 	)
 
 	// Only ${BRANCH_NAME} expands, to the branch, as in the configs.
-	_ = os.Setenv("BRANCH_NAME", branch)
+	lookup := envsubst.Fixed(branch)
 
 	switch typ {
 	case mimeJSON: // default to JSON if not set
@@ -271,7 +271,7 @@ func readWorkflowConfig(r *http.Request, branch string) (map[string]any, []byte,
 			return nil, nil, err.SetStatus(http.StatusInternalServerError)
 		}
 
-		err = json.Unmarshal(store.ExpandBranchName(src), &doc)
+		err = json.Unmarshal(store.ExpandBranchName(src, lookup), &doc)
 	case mimeYAML:
 		src, err = io.ReadAll(r.Body)
 		if err != nil {
@@ -280,7 +280,7 @@ func readWorkflowConfig(r *http.Request, branch string) (map[string]any, []byte,
 			return nil, nil, err.SetStatus(http.StatusInternalServerError)
 		}
 
-		err = yaml.Unmarshal(store.ExpandBranchName(src), &doc)
+		err = yaml.Unmarshal(store.ExpandBranchName(src, lookup), &doc)
 	default:
 		return nil, nil, weberror.NewWebError(
 			nil,
@@ -708,11 +708,7 @@ func configStoreError(err error, format string, args ...any) *weberror.WebError 
 // expanded to u.scope, and creates or updates it, or with u.dryRun only checks
 // it; it returns the config as stored or checked.
 func upsertWorkflowConfig(src []byte, u configUpsert) (*store.Config, error) {
-	// ExpandBranchName reads the branch name from the environment. It keeps
-	// every other placeholder as it is written.
-	_ = os.Setenv("BRANCH_NAME", u.scope)
-
-	cfg, err := u.parse(store.ExpandBranchName(src))
+	cfg, err := u.parse(store.ExpandBranchName(src, envsubst.Fixed(u.scope)))
 	if err != nil {
 		return nil, weberror.NewWebError(err, "unable to parse %s config", u.format)
 	}

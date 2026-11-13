@@ -13,6 +13,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -484,7 +485,7 @@ func CreateConfig(w http.ResponseWriter, r *http.Request) error {
 
 	// Only ${BRANCH_NAME} expands, so a client cannot read the server's
 	// environment through a stored config.
-	c, err := parse(store.ExpandBranchName(body))
+	c, err := parse(store.ExpandBranchName(body, os.LookupEnv))
 	if err != nil {
 		audit.Failure(r, audit.ConfigCreate, "creating config failed", audit.Fields{}, err)
 
@@ -812,7 +813,7 @@ func decodeUpdateConfigBody(r *http.Request) (*store.Config, []byte, error) {
 		return nil, nil, weberror.NewWebError(err, "%s", msg).SetStatus(http.StatusInternalServerError)
 	}
 
-	c, err := parse(store.ExpandBranchName(src))
+	c, err := parse(store.ExpandBranchName(src, os.LookupEnv))
 	if err != nil {
 		return nil, nil, weberror.NewWebError(err, "%s", msg)
 	}

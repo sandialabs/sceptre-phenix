@@ -442,9 +442,6 @@ Use absolute paths for both. See the
   job on another machine can call the REST API, but has to get the injects
   onto the phēnix host itself.
 * There is no web UI for workflow apply.
-* Avoid sending workflow requests for different branches at the same moment:
-  the server sets `BRANCH_NAME` for the whole process while it parses a
-  request.
 * A dry run can't find every error. It doesn't merge the topologies that a
   not yet stored topology includes, and it checks only the schema of an
   `Experiment` config. The real apply can then fail after the injects are

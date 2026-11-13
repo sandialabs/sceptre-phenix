@@ -21,6 +21,13 @@ var placeholder = regexp.MustCompile(`\$?\$\{(\w+)(?::([^}]*))?\}`)
 // Lookup returns the value of a variable and whether the variable is set.
 type Lookup func(name string) (string, bool)
 
+// Fixed returns a Lookup that gives value for each name.
+func Fixed(value string) Lookup {
+	return func(string) (string, bool) {
+		return value, true
+	}
+}
+
 // Token is one placeholder of a text. Start and End are byte offsets, and Line
 // counts from 1. Raw is the text as written. Escaped marks the $${...} form.
 type Token struct {

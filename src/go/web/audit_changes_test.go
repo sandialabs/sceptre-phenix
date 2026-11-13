@@ -181,8 +181,6 @@ func TestWorkflowConfigUpsertIsAudited(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("BRANCH_NAME", "")
-
 			m := installValidationTestStore(t)
 			if tc.exists != nil {
 				expectUpsertExists(m, workflowTestKey("topology/main-topo"), *tc.exists)
@@ -214,7 +212,6 @@ func TestWorkflowConfigUpsertIsAudited(t *testing.T) {
 func TestUnixSocketWorkflowIsAudited(t *testing.T) {
 	useTestStore(t)
 	useGlobalAdmin(t)
-	t.Setenv("BRANCH_NAME", "")
 
 	original := o
 	t.Cleanup(func() { o = original })

@@ -36,7 +36,7 @@ func configName(body []byte, typ, branch string) (string, error) {
 
 	src := envsubst.Replace(body, func(tok envsubst.Token) ([]byte, bool) {
 		switch {
-		case tok.Name != "BRANCH_NAME":
+		case tok.Name != store.BranchNameVar:
 			n++
 
 			return []byte(strconv.Itoa(n)), true

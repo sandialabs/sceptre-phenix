@@ -16,6 +16,7 @@ import (
 	"pgregory.net/rapid"
 
 	"phenix/types/version"
+	"phenix/util/envsubst"
 )
 
 func TestNewConfigKindCaseInsensitive(t *testing.T) {
@@ -1095,52 +1096,42 @@ func TestConfigFullNames(t *testing.T) {
 }
 
 // TestExpandBranchName checks that ExpandBranchName fills in only the
-// ${BRANCH_NAME} placeholders and keeps every other one as it is written.
+// ${BRANCH_NAME} placeholders, from the lookup and not from the environment,
+// and keeps every other placeholder as it is written.
 func TestExpandBranchName(t *testing.T) {
-	t.Setenv("BRANCH_NAME", "lab")
+	t.Setenv("BRANCH_NAME", "from-the-environment")
 	t.Setenv("PHENIX_STORE_TEST_SECRET", "server-secret")
 
+	const secret = "${PHENIX_STORE_TEST_SECRET}"
+
+	set := envsubst.Fixed("lab")
+	unset := func(string) (string, bool) { return "", false }
+
 	tests := []struct {
-		input string
-		want  string
+		name   string
+		lookup envsubst.Lookup
+		input  string
+		want   string
 	}{
-		{input: "${BRANCH_NAME}", want: "lab"},
-		{input: "/phenix/injects/${BRANCH_NAME}/motd", want: "/phenix/injects/lab/motd"},
-		{input: "${BRANCH_NAME:other}", want: "lab"},
-		{input: "${PHENIX_STORE_TEST_SECRET}", want: "${PHENIX_STORE_TEST_SECRET}"},
-		{input: "${PHENIX_STORE_TEST_SECRET:x}", want: "${PHENIX_STORE_TEST_SECRET:x}"},
-		{input: "$PHENIX_STORE_TEST_SECRET", want: "$PHENIX_STORE_TEST_SECRET"},
-		{input: "$BRANCH_NAME", want: "$BRANCH_NAME"},
-		{input: "${BRANCH_NAME}-${PHENIX_STORE_TEST_SECRET}", want: "lab-${PHENIX_STORE_TEST_SECRET}"},
+		{name: "the name", lookup: set, input: "${BRANCH_NAME}", want: "lab"},
+		{name: "in a path", lookup: set, input: "/phenix/injects/${BRANCH_NAME}/motd", want: "/phenix/injects/lab/motd"},
+		{name: "with a default", lookup: set, input: "${BRANCH_NAME:other}", want: "lab"},
+		{name: "another name", lookup: set, input: secret, want: secret},
+		{name: "another name with a default", lookup: set, input: "${PHENIX_STORE_TEST_SECRET:x}", want: "${PHENIX_STORE_TEST_SECRET:x}"},
+		{name: "another name without braces", lookup: set, input: "$PHENIX_STORE_TEST_SECRET", want: "$PHENIX_STORE_TEST_SECRET"},
+		{name: "the name without braces", lookup: set, input: "$BRANCH_NAME", want: "$BRANCH_NAME"},
+		{name: "both names", lookup: set, input: "${BRANCH_NAME}-" + secret, want: "lab-" + secret},
+		{name: "the escaped name", lookup: set, input: "$${BRANCH_NAME}", want: "${BRANCH_NAME}"},
+		{name: "another escaped name", lookup: set, input: "$" + secret, want: "$" + secret},
+		{name: "not set, with a default", lookup: unset, input: "${BRANCH_NAME:main}", want: "main"},
+		{name: "not set", lookup: unset, input: "[${BRANCH_NAME}]", want: "[]"},
 	}
 
 	for _, tt := range tests {
-		if got := string(ExpandBranchName([]byte(tt.input))); got != tt.want {
-			t.Errorf("ExpandBranchName(%q) = %q, want %q", tt.input, got, tt.want)
-		}
-	}
-}
-
-// TestExpandBranchNameUnset checks that ExpandBranchName uses the default of
-// a ${BRANCH_NAME:default} placeholder when BRANCH_NAME is not set.
-func TestExpandBranchNameUnset(t *testing.T) {
-	t.Setenv("BRANCH_NAME", "")
-
-	if err := os.Unsetenv("BRANCH_NAME"); err != nil {
-		t.Fatalf("os.Unsetenv(BRANCH_NAME) returned error: %v", err)
-	}
-
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{input: "${BRANCH_NAME:main}", want: "main"},
-		{input: "${BRANCH_NAME}", want: ""},
-	}
-
-	for _, tt := range tests {
-		if got := string(ExpandBranchName([]byte(tt.input))); got != tt.want {
-			t.Errorf("ExpandBranchName(%q) = %q, want %q", tt.input, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			if got := string(ExpandBranchName([]byte(tt.input), tt.lookup)); got != tt.want {
+				t.Errorf("ExpandBranchName(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
 	}
 }

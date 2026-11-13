@@ -573,7 +573,8 @@ func TestConfigWritesExpandOnlyBranchName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// The workflow handler sets BRANCH_NAME to its branch.
+			// The config handlers read BRANCH_NAME from the environment. The
+			// workflow handler uses its branch.
 			t.Setenv("BRANCH_NAME", "env-branch")
 
 			var stored []store.Annotations

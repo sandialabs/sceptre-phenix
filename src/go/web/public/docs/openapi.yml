@@ -10589,8 +10589,8 @@ paths:
       summary: Create or update a phenix config for a workflow branch
       description: >
         Creates the config if it does not exist and updates it otherwise. The
-        server sets BRANCH_NAME to the branch before parsing the body, so
-        ${BRANCH_NAME} placeholders expand to the branch name. The server
+        server replaces each ${BRANCH_NAME} placeholder in the body with the
+        branch name of the request. The server
         stores every other ${NAME} placeholder as written. The Content-Type
         header must be exactly application/json or application/x-yaml. A
         Topology is also checked for a node an experiment could not use, such
@@ -10720,10 +10720,9 @@ paths:
         the same checks and changes nothing. A dry run of a plan that starts the
         experiment lists in `warnings` what that disk check finds. A dry run
         before a first deploy names the configs the caller will store with
-        pending. The server sets BRANCH_NAME
-        to the branch before parsing the body, so ${BRANCH_NAME} placeholders
-        expand to the branch name. The server keeps every other ${NAME}
-        placeholder as written. The Content-Type header must be
+        pending. The server replaces each ${BRANCH_NAME} placeholder in the
+        body with the branch name of the request. The server keeps every
+        other ${NAME} placeholder as written. The Content-Type header must be
         exactly application/json or application/x-yaml.
       operationId: postWorkflowApplyBranch
       parameters:

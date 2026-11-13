@@ -289,8 +289,6 @@ func TestWorkflowUpsertConfigExplainsValidationErrors(t *testing.T) {
 	for _, exists := range []bool{false, true} {
 		for _, tt := range bodies {
 			t.Run(fmt.Sprintf("%s, exists=%t", tt.name, exists), func(t *testing.T) {
-				t.Setenv("BRANCH_NAME", "") // the handler sets it; t.Setenv restores it
-
 				m := installValidationTestStore(t)
 				key, _ := store.NewConfig("topology/demo")
 

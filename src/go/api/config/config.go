@@ -20,6 +20,7 @@ import (
 	"phenix/util"
 	"phenix/util/common"
 	"phenix/util/editor"
+	"phenix/util/envsubst"
 )
 
 //go:embed default
@@ -195,15 +196,16 @@ func Init() error {
 			return nil
 		}
 
-		var c store.Config
-
-		// Set BRANCH_NAME to parent directory name of config file being processed
-		// e.g. /phenix/configs/foo/topology.yaml -> BRANCH_NAME=foo
-		_ = os.Setenv("BRANCH_NAME", filepath.Base(filepath.Dir(filepath.Clean(path))))
+		var (
+			c    store.Config
+			body []byte
+		)
 
 		switch filepath.Ext(path) {
 		case ".yaml", ".yml":
-			body, err := os.ReadFile(path)
+			var err error
+
+			body, err = os.ReadFile(path)
 			if err != nil {
 				return fmt.Errorf("reading %s: %w", path, err)
 			}
@@ -212,7 +214,9 @@ func Init() error {
 				return fmt.Errorf("parsing %s: %w", path, err)
 			}
 		case ".json":
-			body, err := os.ReadFile(path)
+			var err error
+
+			body, err = os.ReadFile(path)
 			if err != nil {
 				return fmt.Errorf("reading %s: %w", path, err)
 			}
@@ -238,11 +242,23 @@ func Init() error {
 			return nil
 		}
 
-		opts := []CreateOption{CreateFromPath(path)}
+		// BRANCH_NAME is the name of the folder that holds the config file,
+		// e.g. /phenix/configs/foo/topology.yaml -> foo.
+		branch := filepath.Base(filepath.Dir(filepath.Clean(path)))
+
+		lookup := func(name string) (string, bool) {
+			if name == store.BranchNameVar {
+				return branch, true
+			}
+
+			return os.LookupEnv(name)
+		}
 
 		// Not checking error here since if there is one it's likely due to the
 		// current path not being a valid phenix config (which is OK).
-		_, _ = Create(opts...)
+		if cfg, err := store.DecodeConfigFile(path, envsubst.Expand(body, lookup)); err == nil {
+			_, _ = Create(CreateFromConfig(cfg))
+		}
 
 		return nil
 	}
