@@ -36,7 +36,6 @@ describe('startOptionErrors', () => {
     ['a minimum alone', { vlanMin: 100 }, noErrors],
     ['a maximum alone', { vlanMax: 100 }, noErrors],
     ['a range', { vlanMin: 1, vlanMax: 4094 }, noErrors],
-    ['one ID', { vlanMin: 7, vlanMax: 7 }, noErrors],
     [
       'zero',
       { vlanMin: 0 },

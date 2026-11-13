@@ -111,12 +111,6 @@ describe('the live tile limit', () => {
     saveLiveTileLimit(12);
     expect(loadLiveTileLimit()).toBe(8);
   });
-
-  it('starts at 16 when storage throws', () => {
-    vi.stubGlobal('localStorage', blockedStorage());
-    expect(loadLiveTileLimit()).toBe(16);
-    expect(() => saveLiveTileLimit(4)).not.toThrow();
-  });
 });
 
 describe('the VNC console settings', () => {
@@ -184,12 +178,6 @@ describe('the VNC console settings', () => {
       withDefaults({ scaling: 'remote', banners: false }),
     );
   });
-
-  it('starts at the defaults when storage throws', () => {
-    vi.stubGlobal('localStorage', blockedStorage());
-    expect(loadVncSettings('alice')).toEqual(DEFAULT_VNC_SETTINGS);
-    expect(() => saveVncSettings('alice', DEFAULT_VNC_SETTINGS)).not.toThrow();
-  });
 });
 
 describe('the hidden top bar of the VNC console page', () => {
@@ -206,10 +194,29 @@ describe('the hidden top bar of the VNC console page', () => {
     writePref('phenix.vnc.toolbarHidden', value);
     expect(loadVncToolbarHidden()).toBe(false);
   });
+});
 
-  it('shows the bar, and drops the choice, when the browser blocks storage', () => {
-    vi.stubGlobal('localStorage', blockedStorage());
-    expect(() => saveVncToolbarHidden(true)).not.toThrow();
-    expect(loadVncToolbarHidden()).toBe(false);
-  });
+it.each([
+  [
+    'the live tile limit',
+    loadLiveTileLimit,
+    () => saveLiveTileLimit(4),
+    DEFAULT_LIVE_TILE_LIMIT,
+  ],
+  [
+    'the VNC console settings',
+    () => loadVncSettings('alice'),
+    () => saveVncSettings('alice', DEFAULT_VNC_SETTINGS),
+    DEFAULT_VNC_SETTINGS,
+  ],
+  [
+    'the hidden top bar',
+    loadVncToolbarHidden,
+    () => saveVncToolbarHidden(true),
+    false,
+  ],
+])('%s starts at its default when storage throws', (_, load, save, want) => {
+  vi.stubGlobal('localStorage', blockedStorage());
+  expect(save).not.toThrow();
+  expect(load()).toEqual(want);
 });

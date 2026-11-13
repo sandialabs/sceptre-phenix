@@ -79,9 +79,10 @@ test('any text gives nothing or a reading', () => {
   );
 });
 
-test('a time reads the same in any UTC offset', () => {
+test('an RFC 3339 time reads as its moment, whatever the offset', () => {
   fc.assert(
     fc.property(isoTimeArb, span, fc.boolean(), ({ time, ms }, s, ahead) => {
+      expect(rfc3339Ms(time)).toBe(ms);
       const at = ms + (ahead ? s : -s) * 1000;
       expect(relativeTime(time, at)).toBe(
         relativeTime(new Date(ms).toISOString(), at),
@@ -124,14 +125,6 @@ test.each([[''], ['N/A'], ['1'], ['2026-10-28'], ['tomorrow'], [null], [3]])(
     expect(rfc3339Ms(raw)).toBeNull();
   },
 );
-
-test('an RFC 3339 time reads as its moment, whatever the offset', () => {
-  fc.assert(
-    fc.property(isoTimeArb, ({ time, ms }) => {
-      expect(rfc3339Ms(time)).toBe(ms);
-    }),
-  );
-});
 
 test.each([
   ['2026-10-28T14:03:22Z', ['2026-10-28T', '14:03:22Z']],

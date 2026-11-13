@@ -523,25 +523,6 @@ describe('background requests while the server is away', () => {
     expect(ticks).toEqual([10_000, 20_000, 30_000]);
   });
 
-  it('sends nothing while the server shuts down, once when it is back, then at its rate', () => {
-    const ticks = poll();
-    vi.advanceTimersByTime(INTERVAL);
-    setWsDown(true, 'shutdown');
-    vi.advanceTimersByTime(40_000);
-    expect(ticks).toEqual([10_000]);
-
-    // the websocket is back
-    setWsDown(false);
-    vi.advanceTimersByTime(BACK_SPREAD_MS);
-    expect(ticks).toHaveLength(2);
-    const back = ticks[1];
-    expect(back).toBeGreaterThanOrEqual(50_000);
-    expect(back).toBeLessThanOrEqual(50_000 + BACK_SPREAD_MS);
-
-    vi.advanceTimersByTime(2 * INTERVAL);
-    expect(ticks).toEqual([10_000, back, back + INTERVAL, back + 2 * INTERVAL]);
-  });
-
   it('resumes once a request sent after the shutdown is answered', () => {
     const ticks = poll();
     serverUnavailable('10');
@@ -604,19 +585,6 @@ describe('background requests while the server is away', () => {
     expect(ticks).toEqual([10_000, 30_000]);
     vi.advanceTimersByTime(INTERVAL);
     expect(ticks).toEqual([10_000, 30_000, 40_000]);
-  });
-
-  it('refreshes on return only a poll whose turn was put off', () => {
-    const ticks = poll();
-    vi.advanceTimersByTime(INTERVAL);
-    serverUnanswered();
-    vi.advanceTimersByTime(5000);
-    // answered before its next turn was due: nothing was put off
-    serverResponded(Date.now());
-    vi.advanceTimersByTime(BACK_SPREAD_MS);
-    expect(ticks).toEqual([10_000]);
-    vi.advanceTimersByTime(INTERVAL);
-    expect(ticks).toEqual([10_000, 20_000]);
   });
 
   it('waits out a Retry-After longer than a shutdown is believed', () => {

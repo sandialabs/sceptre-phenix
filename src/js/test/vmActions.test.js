@@ -757,43 +757,6 @@ describe('rowActionNames', () => {
 });
 
 describe('vmButtonStates', () => {
-  it.each([
-    [
-      'shut down',
-      { state: 'QUIT' },
-      { label: 'Start', disabled: false },
-      'the VM is not running. Start it instead',
-    ],
-    [
-      'paused',
-      { state: 'PAUSED' },
-      { label: 'Resume', disabled: false },
-      'the VM is paused. Resume paused VMs first',
-    ],
-    [
-      'busy',
-      { state: 'QUIT', busy: true },
-      { label: 'Start', disabled: true },
-      'the VM is busy with another action',
-    ],
-  ])(
-    'greys out restart beside the start of a %s VM, saying why',
-    (_, fields, start, why) => {
-      const vm = { name: 'vm1', running: false, ...fields };
-      const byName = Object.fromEntries(
-        vmButtonStates(rowActionNames(vm), vm, { can: allowAll }).map((a) => [
-          a.name,
-          a,
-        ]),
-      );
-      expect(byName.start).toMatchObject(start);
-      expect(byName.restart).toMatchObject({
-        disabled: true,
-        reason: `Cannot restart: ${why}`,
-      });
-    },
-  );
-
   it('greys out restart unless the VM is running', () => {
     const vm = fc.record({
       name: fc.constant('vm1'),
@@ -820,7 +783,20 @@ describe('vmButtonStates', () => {
             ? { ...rule, reason: `${rule.reason}. Start it instead` }
             : rule,
         );
+        for (const state of states.filter((a) => a.name !== 'restart')) {
+          expect(state).toEqual(
+            vmActionState(state.name, target, { can: allowAll }),
+          );
+        }
       }),
+      {
+        // shut down, paused, and busy VMs
+        examples: [
+          [{ ...quit, busy: false, captures: [] }],
+          [{ ...paused, busy: false, captures: [] }],
+          [{ ...quit, busy: true, captures: [] }],
+        ],
+      },
     );
   });
 });

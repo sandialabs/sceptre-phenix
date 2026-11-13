@@ -270,32 +270,11 @@ describe('CreateExperimentCard', () => {
     ).toMatch(/15 or fewer characters/);
   });
 
-  it('needs both ends of a VLAN range, in order', async () => {
-    const wrapper = await card();
-    const vlanError = async (min, max) => {
-      if (min !== null) {
-        await byLabel(wrapper, 'VLAN range minimum').setValue(min);
-      }
-      if (max !== null) {
-        await byLabel(wrapper, 'VLAN range maximum').setValue(max);
-      }
-      return message(
-        byLabel(wrapper, 'VLAN range minimum'),
-        '.create-exp-vlans',
-      );
-    };
-
-    expect(await vlanError(null, null)).toBe(null);
-    expect(await vlanError('100', null)).toMatch(/both/);
-    expect(await vlanError(null, '200')).toBe(null);
-    expect(await vlanError('200', '100')).toMatch(/below/);
-  });
-
-  it('orders the ends of a VLAN range as numbers', async () => {
+  it('needs both ends of a VLAN range or neither, ordered as numbers', async () => {
     const wrapper = await card();
     const vlan = fc.integer({ min: 0, max: 4094 });
     // a minimum, often where one more digit begins, and a maximum often
-    // next to it
+    // next to it; null is an empty end
     const range = fc
       .oneof(vlan, fc.constantFrom(9, 10, 99, 100, 999, 1000))
       .chain((min) =>
@@ -308,20 +287,34 @@ describe('CreateExperimentCard', () => {
               .filter((max) => max >= 0 && max <= 4094),
           ),
         ),
+      )
+      .chain(([min, max]) =>
+        fc.tuple(fc.option(fc.constant(min)), fc.option(fc.constant(max))),
       );
     await fc.assert(
       fc.asyncProperty(range, async ([min, max]) => {
-        await byLabel(wrapper, 'VLAN range minimum').setValue(String(min));
-        await byLabel(wrapper, 'VLAN range maximum').setValue(String(max));
+        await byLabel(wrapper, 'VLAN range minimum').setValue(
+          String(min ?? ''),
+        );
+        await byLabel(wrapper, 'VLAN range maximum').setValue(
+          String(max ?? ''),
+        );
         const error = message(
           byLabel(wrapper, 'VLAN range minimum'),
           '.create-exp-vlans',
         );
-        expect(error).toEqual(
-          max < min ? expect.stringMatching(/below/) : null,
-        );
+        if ((min === null) !== (max === null)) {
+          expect(error).toMatch(/both/);
+        } else {
+          expect(error).toEqual(
+            max < min ? expect.stringMatching(/below/) : null,
+          );
+        }
       }),
-      { numRuns: 30 },
+      {
+        numRuns: 8,
+        examples: [[[null, null]], [[100, null]], [[null, 200]], [[10, 9]]],
+      },
     );
   });
 

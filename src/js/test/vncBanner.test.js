@@ -4,7 +4,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import VncBanner from '@/vnc/VncBanner.vue';
-import { mountComponent, textOf } from './helpers/mount.js';
+import { mountComponent } from './helpers/mount.js';
 
 const banner = (lines, fields = {}) => ({
   lines,
@@ -42,19 +42,6 @@ describe('a console banner', () => {
     expect(wrapper.find('.vnc-banner').exists()).toBe(false);
   });
 
-  it('draws markup in a line as text, not as elements', async () => {
-    const lines = [
-      '<img src=x onerror="alert(1)">',
-      '<b>SECRET</b> &amp; <script>alert(2)</script>',
-    ];
-    const wrapper = await mountBanner({ banner: banner(lines) });
-    expect(lineTexts(wrapper)).toEqual(lines);
-    expect(wrapper.find('img').exists()).toBe(false);
-    expect(wrapper.find('b').exists()).toBe(false);
-    expect(wrapper.find('script').exists()).toBe(false);
-    expect(textOf(wrapper)).toContain('<b>SECRET</b> &amp;');
-  });
-
   it('shows any line exactly as the server sent it', async () => {
     await fc.assert(
       fc.asyncProperty(
@@ -66,7 +53,18 @@ describe('a console banner', () => {
           wrapper.unmount();
         },
       ),
-      { numRuns: 20 },
+      {
+        numRuns: 20,
+        // markup must stay text (main bug #17)
+        examples: [
+          [
+            [
+              '<img src=x onerror="alert(1)">',
+              '<b>SECRET</b> &amp; <script>alert(2)</script>',
+            ],
+          ],
+        ],
+      },
     );
   });
 });

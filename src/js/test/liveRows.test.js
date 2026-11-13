@@ -93,15 +93,6 @@ it('a list read after an update replaces the row and forgets the update', () => 
   expect(rows.merge(older, newer, 25)).toEqual(older);
 });
 
-it('a list without a seq loses to every recorded change', () => {
-  const rows = createLiveRows();
-  rows.touch('demo', 20);
-  const current = [{ name: 'demo', status: 'stopped' }];
-  expect(rows.merge([{ name: 'demo', status: 'started' }], current)).toEqual(
-    current,
-  );
-});
-
 it('reset forgets updates and deletions', () => {
   const rows = createLiveRows();
   rows.touch('demo', 20);
@@ -199,15 +190,6 @@ it('takes a list read after every change as it is, and forgets those changes', (
       },
     ),
   );
-});
-
-it("keeps the page's own change made before any seq over the next list, and forgets it once a newer list loads", () => {
-  const rows = createLiveRows();
-  rows.touch('demo');
-  const loaded = [{ name: 'demo', status: 'started' }];
-  const pending = [{ name: 'demo', status: 'pending' }];
-  expect(rows.merge(loaded, pending, 30)).toEqual(pending);
-  expect(rows.merge(loaded, pending, 31)).toEqual(loaded);
 });
 
 it('forgets every change once two lists with a seq have loaded after it', () => {

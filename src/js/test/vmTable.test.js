@@ -46,7 +46,7 @@ const web = vm({ captures: [{ interface: 1 }], host: 'node1' });
 const db = vm({ name: 'db', busy: true, percent: 40 });
 
 // the table on the demo experiment showing `vms`, with these props
-const render = (vms = [web, db], props = {}) =>
+const render = (vms = [web, db], props = {}, attachTo = undefined) =>
   mountComponent(VmTable, {
     route: '/experiment/demo',
     props: {
@@ -56,6 +56,7 @@ const render = (vms = [web, db], props = {}) =>
       columns: COLUMNS,
       ...props,
     },
+    attachTo,
   });
 
 const rowOf = (wrapper, name) =>
@@ -415,13 +416,17 @@ describe('the network menus', () => {
   const triggers = (wrapper, name) =>
     rowOf(wrapper, name).Network.findAll('.vm-network-trigger');
 
-  // Opens the menu of a VM's interface. Vue ignores an event sent in the
+  // Opens a menu by a click on its button. Vue ignores an event sent in the
   // millisecond its handler was attached, so the test waits past it.
-  async function openMenu(wrapper, name, iface) {
-    await triggers(wrapper, name)[iface].trigger('click');
+  async function open(trigger) {
+    await trigger.trigger('click');
     await flushPromises();
     await new Promise((resolve) => setTimeout(resolve, 2));
   }
+
+  // opens the menu of a VM's interface
+  const openMenu = (wrapper, name, iface) =>
+    open(triggers(wrapper, name)[iface]);
 
   // the open menu's items, buttons and links, drawn on the page body
   const items = () => [
@@ -720,87 +725,6 @@ describe('the network menus', () => {
     ]);
   });
 
-  it('closes a menu with no item to press by Escape on its button', async () => {
-    rbac.allowed = allowOnly(['vms/captures']);
-    const wrapper = await mountComponent(VmTable, {
-      route: '/experiment/demo',
-      props: {
-        vms: [web],
-        experiment: 'demo',
-        table: useTable().table,
-        columns: COLUMNS,
-        capturePending: { 'demo/web/0': true },
-        vlanCapturePending: { DMZ: true },
-      },
-      attachTo: document.body,
-    });
-    const trigger = triggers(wrapper, 'web')[0];
-    trigger.element.focus();
-    await openMenu(wrapper, 'web', 0);
-    expect(itemTexts()).toEqual([
-      'Start capture on this interface (disabled)',
-      'Start interface captures on VLAN dmz (disabled)',
-    ]);
-    expect(document.activeElement).toBe(trigger.element);
-
-    await trigger.trigger('keydown', { key: 'Escape' });
-    expect(items()).toEqual([]);
-    expect(document.activeElement).toBe(trigger.element);
-
-    // Tab on its button closes it too
-    await openMenu(wrapper, 'web', 0);
-    await trigger.trigger('keydown', { key: 'Tab' });
-    expect(items()).toEqual([]);
-  });
-
-  it.each([
-    ['change order', [app, web]],
-    ['show another VM in its place', [app]],
-  ])('closes an open menu when the rows %s', async (_, vms) => {
-    const wrapper = await render([web, app]);
-    await openMenu(wrapper, 'web', 0);
-    await wrapper.setProps({ vms });
-    await flushPromises();
-    expect(items()).toEqual([]);
-    expect(
-      rowOf(wrapper, 'app').Network.find('[aria-expanded="true"]').exists(),
-    ).toBe(false);
-  });
-
-  it('closes when it is given another VM', async () => {
-    const wrapper = await mountComponent(VmNetworkMenu, {
-      route: '/experiment/demo',
-      props: { vm: web, index: 0, experiment: 'demo' },
-    });
-    await wrapper.find('.vm-network-trigger').trigger('click');
-    await flushPromises();
-    expect(items()).toHaveLength(8);
-    await wrapper.setProps({ vm: { ...web, name: 'db' } });
-    expect(items()).toEqual([]);
-  });
-
-  it('closes on a scroll of the page or of a scrolled box, but not of the menu itself', async () => {
-    const wrapper = await render([web]);
-    const removed = vi.spyOn(window, 'removeEventListener');
-    await openMenu(wrapper, 'web', 0);
-    document
-      .querySelector('.vm-network-items')
-      .dispatchEvent(new Event('scroll'));
-    await flushPromises();
-    expect(items()).toHaveLength(8);
-    window.dispatchEvent(new Event('scroll'));
-    await flushPromises();
-    expect(items()).toEqual([]);
-    expect(removed).toHaveBeenCalledWith('scroll', expect.any(Function), true);
-
-    await openMenu(wrapper, 'web', 0);
-    const box = document.body.appendChild(document.createElement('div'));
-    box.dispatchEvent(new Event('scroll'));
-    await flushPromises();
-    expect(items()).toEqual([]);
-    removed.mockRestore();
-  });
-
   it.each([
     [
       'a VLAN change',
@@ -857,29 +781,147 @@ describe('the network menus', () => {
     expect(textOf(cell)).toBe('dmz (149), mgmt (151)');
   });
 
-  it('moves the focus into the menu, between its items, and back', async () => {
-    const wrapper = await mountComponent(VmTable, {
-      route: '/experiment/demo',
-      props: {
-        vms: [web],
-        experiment: 'demo',
-        table: useTable().table,
-        columns: COLUMNS,
+  // presses a key on the focused element
+  async function key(name) {
+    document.activeElement.dispatchEvent(
+      new KeyboardEvent('keydown', { key: name, bubbles: true }),
+    );
+    await flushPromises();
+  }
+
+  it.each([
+    {
+      on: 'Escape in the menu, giving the focus back to its button',
+      act: () => key('Escape'),
+      refocus: true,
+    },
+    {
+      on: 'Tab in the menu, giving the focus back to its button',
+      act: () => key('Tab'),
+      refocus: true,
+    },
+    {
+      on: 'Escape on the button of a menu with no item to press',
+      noItems: true,
+      act: ({ trigger }) => trigger.trigger('keydown', { key: 'Escape' }),
+      refocus: true,
+    },
+    {
+      on: 'Tab on the button of a menu with no item to press',
+      noItems: true,
+      act: ({ trigger }) => trigger.trigger('keydown', { key: 'Tab' }),
+    },
+    {
+      on: 'a click elsewhere, but not a click in the menu',
+      act: async () => {
+        document.querySelector('.vm-network-items').click();
+        expect(items()).toHaveLength(8);
+        document.body.click();
       },
-      attachTo: document.body,
-    });
-    const trigger = triggers(wrapper, 'web')[1].element;
-    trigger.focus();
-    await openMenu(wrapper, 'web', 1);
+    },
+    {
+      on: 'a second click of its button',
+      act: ({ trigger }) => open(trigger),
+    },
+    {
+      on: 'a resize of the window',
+      act: () => window.dispatchEvent(new Event('resize')),
+    },
+    {
+      on: 'a scroll of the page, but not a scroll of the menu',
+      act: async () => {
+        const removed = vi.spyOn(window, 'removeEventListener');
+        document
+          .querySelector('.vm-network-items')
+          .dispatchEvent(new Event('scroll'));
+        await flushPromises();
+        expect(items()).toHaveLength(8);
+        window.dispatchEvent(new Event('scroll'));
+        expect(removed).toHaveBeenCalledWith(
+          'scroll',
+          expect.any(Function),
+          true,
+        );
+        removed.mockRestore();
+      },
+    },
+    {
+      on: 'a scroll of a scrolled box',
+      act: () => {
+        const box = document.body.appendChild(document.createElement('div'));
+        box.dispatchEvent(new Event('scroll'));
+        box.remove();
+      },
+    },
+    {
+      on: 'the VM turning busy',
+      act: ({ wrapper }) => wrapper.setProps({ vms: [{ ...web, busy: true }] }),
+    },
+    {
+      on: 'the rows changing order',
+      vms: [web, app],
+      act: ({ wrapper }) => wrapper.setProps({ vms: [app, web] }),
+    },
+    {
+      on: 'the rows showing another VM in its place',
+      vms: [web, app],
+      act: ({ wrapper }) => wrapper.setProps({ vms: [app] }),
+    },
+    {
+      on: 'the menu being given another VM',
+      alone: true,
+      act: ({ wrapper }) => wrapper.setProps({ vm: { ...web, name: 'db' } }),
+    },
+  ])('closes on $on', async ({ vms = [web], noItems, alone, act, refocus }) => {
+    if (noItems) rbac.allowed = allowOnly(['vms/captures']);
+    const pending = noItems
+      ? {
+          capturePending: { 'demo/web/0': true },
+          vlanCapturePending: { DMZ: true },
+        }
+      : {};
+    // the table, or the menu of web's interface 0 alone, attached to the page
+    const wrapper = alone
+      ? await mountComponent(VmNetworkMenu, {
+          route: '/experiment/demo',
+          props: { vm: web, index: 0, experiment: 'demo' },
+          attachTo: document.body,
+        })
+      : await render(vms, pending, document.body);
+    const trigger = wrapper.find('.vm-network-trigger');
+    trigger.element.focus();
+    await open(trigger);
+    if (noItems) {
+      expect(itemTexts()).toEqual([
+        'Start capture on this interface (disabled)',
+        'Start interface captures on VLAN dmz (disabled)',
+      ]);
+      expect(document.activeElement).toBe(trigger.element);
+    } else {
+      expect(items()).not.toEqual([]);
+      expect(textOf(document.activeElement)).toBe('Change VLAN…');
+    }
+
+    await act({ wrapper, trigger });
+    await flushPromises();
+    expect(items()).toEqual([]);
+    expect(wrapper.find('[aria-expanded="true"]').exists()).toBe(false);
+    if (refocus) expect(document.activeElement).toBe(trigger.element);
+    wrapper.unmount();
+  });
+
+  it('moves the focus between the items of a menu the down arrow opens', async () => {
+    const wrapper = await render([web], {}, document.body);
+    const trigger = triggers(wrapper, 'web')[1];
+    trigger.element.focus();
+    await trigger.trigger('keydown', { key: 'ArrowDown' });
+    await flushPromises();
     const focused = () => textOf(document.activeElement);
     expect(focused()).toBe('Change VLAN…');
+    expect(trigger.attributes('aria-controls')).toBe(
+      document.querySelector('.vm-network-items').id,
+    );
 
-    const key = async (name) => {
-      document.activeElement.dispatchEvent(
-        new KeyboardEvent('keydown', { key: name, bubbles: true }),
-      );
-      await flushPromises();
-    };
     await key('ArrowDown');
     expect(focused()).toBe('Disconnect');
     // the last item is a link, which the keys reach as they do the buttons
@@ -897,43 +939,6 @@ describe('the network menus', () => {
     // a key that moves nothing is left alone
     await key('a');
     expect(focused()).toBe('Change VLAN…');
-
-    await key('Escape');
-    expect(document.activeElement).toBe(trigger);
-    expect(items()).toEqual([]);
-
-    // the down arrow opens it too, and Tab closes it
-    await triggers(wrapper, 'web')[1].trigger('keydown', { key: 'ArrowDown' });
-    await flushPromises();
-    expect(focused()).toBe('Change VLAN…');
-    expect(trigger.getAttribute('aria-controls')).toBe(
-      document.querySelector('.vm-network-items').id,
-    );
-    await key('Tab');
-    expect(document.activeElement).toBe(trigger);
-    expect(items()).toEqual([]);
-  });
-
-  it('closes on a click elsewhere, on a second click of its button, or when the VM turns busy', async () => {
-    const wrapper = await render([web]);
-    await openMenu(wrapper, 'web', 0);
-    document.querySelector('.vm-network-items').click();
-    expect(items()).toHaveLength(8);
-    document.body.click();
-    await flushPromises();
-    expect(items()).toEqual([]);
-
-    await openMenu(wrapper, 'web', 0);
-    await openMenu(wrapper, 'web', 0);
-    expect(items()).toEqual([]);
-
-    await openMenu(wrapper, 'web', 0);
-    window.dispatchEvent(new Event('resize'));
-    await flushPromises();
-    expect(items()).toEqual([]);
-
-    await openMenu(wrapper, 'web', 0);
-    await wrapper.setProps({ vms: [{ ...web, busy: true }] });
-    expect(items()).toEqual([]);
+    wrapper.unmount();
   });
 });

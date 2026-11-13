@@ -398,30 +398,6 @@ describe('live updates of cached pages', () => {
     joined.release();
     expect(isLoadingPage(experimentKey('a'))).toBe(false);
     expect(cachedPage(experimentKey('a'))).toBeUndefined();
-
-    // an experiment of that name created since is cached again
-    cachePage(experimentKey('a'), { name: 'a' }, loadedAt(12));
-    expect(cachedPage(experimentKey('a')).data).toEqual({ name: 'a' });
-  });
-
-  it("keep the SCORCH list from putting back a deleted experiment's runs", async () => {
-    const pipelines = Promise.withResolvers();
-    axiosInstance.get.mockImplementation(async (url, { meta }) => {
-      meta.seq = 10;
-      if (url === 'experiments?vms=false') {
-        return { data: { experiments: [{ name: 'a', apps: ['scorch'] }] } };
-      }
-      return { data: await pipelines.promise };
-    });
-
-    const request = fetchIntoCache('scorch', pageFetchers.scorch);
-    await flush();
-    invalidatePages(deleted('a', 11));
-    pipelines.resolve({ pipelines: [] });
-    await request.promise;
-    request.release();
-
-    expect(cachedPage(scorchRunsKey('a'))).toBeUndefined();
   });
 
   it('without seqs, cache nothing for a deleted experiment until loads outlast the delete', () => {

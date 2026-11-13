@@ -209,19 +209,6 @@ describe('GEXF export', () => {
     return m?.[0] ?? '';
   };
 
-  it('escapes labels, tags and SOH text', () => {
-    const n = nodeXml(dmz0.id);
-    expect(n).toContain(
-      'label="dmz-0 &lt;a&amp;b &quot;q&quot; &apos;x&apos;&gt;"',
-    );
-    expect(n).not.toContain('<script>');
-    expect(n).not.toContain('\u0001');
-    expect(n).toContain('value="[&quot;role=web, public&quot;, team=blue]"');
-    expect(n).toContain(
-      '<attvalue for="notes" value="line one&#10;line two"/>',
-    );
-  });
-
   it('carries VM details and SOH results', () => {
     const n = nodeXml(dmz0.id);
     expect(n).toContain('<attvalue for="node_type" value="vm"/>');
@@ -241,6 +228,10 @@ describe('GEXF export', () => {
     );
     expect(n).toContain(
       '<attvalue for="soh_last_check" value="2026-09-28 10:00:04"/>',
+    );
+    expect(n).not.toContain('\u0001');
+    expect(n).toContain(
+      '<attvalue for="notes" value="line one&#10;line two"/>',
     );
   });
 
@@ -304,12 +295,12 @@ describe('GEXF export', () => {
 });
 
 describe('GEXF values', () => {
-  // the <node> of one VM with these tags and SOH results
-  const exported = (tags, soh = null) => {
+  // the <node> of one VM with these tags
+  const exported = (tags) => {
     const node = { id: 1, label: 'web', image: 'linux', status: 'running' };
     const xml = buildGexf({
       experiment: 'x',
-      nodes: [{ ...node, tags, soh }],
+      nodes: [{ ...node, tags }],
       edges: [],
     });
     return /<node id="1"[\s\S]*?<\/node>/.exec(xml)[0];
@@ -327,29 +318,6 @@ describe('GEXF values', () => {
     expect(exported({ a: 'x\u0001y', b: 'z\uFFFE' })).toContain(
       '<attvalue for="tags" value="[&quot;a=x\\u0001y&quot;, &quot;b=z\\ufffe&quot;]"/>',
     );
-  });
-
-  it('counts passed and failed checks per category', () => {
-    const n = exported(
-      {},
-      {
-        networking: [{ error: '' }, { error: 'down', metadata: {} }],
-        filesAbsent: [{ error: 'present', metadata: { path: '/tmp/x' } }],
-      },
-    );
-    for (const [id, value] of [
-      ['soh_networking_ok', 1],
-      ['soh_networking_failed', 1],
-      ['soh_files_absent_ok', 0],
-      ['soh_files_absent_failed', 1],
-      ['soh_reachability_ok', 0],
-      ['soh_reachability_failed', 0],
-      ['soh_failed_total', 2],
-      ['soh_errors', true],
-      ['soh_failures', 'networking: down; files absent /tmp/x: present'],
-    ]) {
-      expect(n).toContain(`<attvalue for="${id}" value="${value}"/>`);
-    }
   });
 });
 
@@ -499,6 +467,17 @@ describe('GEXF of any graph', () => {
     containers: 'containers',
     customTests: 'custom_tests',
   };
+  // the metadata that names the target of a failed check; networking has none
+  const TARGETS = {
+    reachability: 'target',
+    processes: 'proc',
+    listeners: 'port',
+    services: 'service',
+    files: 'path',
+    filesAbsent: 'path',
+    containers: 'container',
+    customTests: 'test',
+  };
 
   it('counts every check once, and lists each failure or how many are left out', () => {
     const word = fc.stringMatching(/^[a-z0-9 .:/-]{0,40}$/);
@@ -570,6 +549,18 @@ describe('GEXF of any graph', () => {
         expect((v.soh_failures ?? '').length).toBeLessThanOrEqual(2000 + 20);
         // "files absent <path>: <error, cut at 160 characters>"
         for (const item of listed) expect(item.length).toBeLessThanOrEqual(215);
+        const expected = Object.entries(CATEGORIES).flatMap(([key, name]) =>
+          (results[key] ?? [])
+            .filter((c) => c.error)
+            .map((c) => {
+              const target = TARGETS[key] ? c.metadata[TARGETS[key]] : '';
+              const text = c.error.replace(/\s+/g, ' ').trim();
+              const error = text.length > 160 ? text.slice(0, 159) + '…' : text;
+              return `${name.replace('_', ' ')}${target ? ' ' + target : ''}: ${error}`;
+            }),
+        );
+        const shown = listed.slice(0, more ? -1 : undefined);
+        expect(shown).toEqual(expected.slice(0, shown.length));
       }),
     );
   });

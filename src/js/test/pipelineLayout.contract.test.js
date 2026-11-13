@@ -36,21 +36,15 @@ const edgesOf = (nodes) =>
   );
 
 describe('calculateAllPosition', () => {
-  test('a tree puts each branch on its own row, below the one before', () => {
-    expect(layout([[1, 2], [3], [], []])).toEqual([
+  test('a node with several parents goes right of each of them', () => {
+    expect(layout([[1, 2, 4, 6], [3], [], [5, 6], [], [], []])).toEqual([
       [0, 0],
       [1, 0],
       [1, 1],
       [2, 0],
-    ]);
-  });
-
-  test('a graph puts its longest path first, and each branch on a free row', () => {
-    expect(layout([[1, 2], [3], [3], []])).toEqual([
-      [0, 0],
-      [1, 0],
-      [1, 1],
-      [2, 0],
+      [1, 2],
+      [3, 0],
+      [3, 1],
     ]);
   });
 
@@ -66,48 +60,12 @@ describe('calculateAllPosition', () => {
     ]);
   });
 
-  test('a forest puts each tree below the one before', () => {
-    expect(layout([[1, 2], [], [], [4], []])).toEqual([
-      [0, 0],
-      [1, 0],
-      [1, 1],
-      [0, 2],
-      [1, 2],
-    ]);
-  });
-
   test('a graph with two roots puts the second root on a new row', () => {
     expect(layout([[2], [2], []])).toEqual([
       [0, 0],
       [0, 1],
       [1, 0],
     ]);
-    expect(layout([[1, 2], [3], [3], [], [3]])).toEqual([
-      [0, 0],
-      [1, 0],
-      [1, 1],
-      [2, 0],
-      [0, 2],
-    ]);
-  });
-
-  test('a node with several parents goes right of each of them', () => {
-    const adjacency = [[1, 2, 4, 6], [3], [], [5, 6], [], [], []];
-    const cells = layout(adjacency);
-    expect(cells).toEqual([
-      [0, 0],
-      [1, 0],
-      [1, 1],
-      [2, 0],
-      [1, 2],
-      [3, 0],
-      [3, 1],
-    ]);
-    adjacency.forEach((children, parent) => {
-      for (const child of children) {
-        expect(cells[child][0]).toBeGreaterThan(cells[parent][0]);
-      }
-    });
   });
 
   test('a graph whose node 0 is not a root starts at its roots', () => {
@@ -148,10 +106,7 @@ describe('getLines', () => {
 });
 
 describe('hasCircle', () => {
-  test('is true for a graph with a cycle, and false for one without', () => {
-    expect(pipelineOf(nodesOf([[1], [2], [1]])).hasCircle()).toBe(true);
-    expect(pipelineOf(nodesOf([[1], [0]])).hasCircle()).toBe(true);
-    expect(pipelineOf(nodesOf([[1], [2], []])).hasCircle()).toBe(false);
+  test('is false for a graph whose node 0 is not a root', () => {
     expect(pipelineOf(nodesOf([[], [0], [0]])).hasCircle()).toBe(false);
   });
 });

@@ -659,29 +659,6 @@ describe('the config list', () => {
       }
     }
 
-    it('send any file whose name ends in .yaml, .yml or .json, in any case', async () => {
-      axios.post.mockResolvedValue({});
-      await fc.assert(
-        fc.asyncProperty(base, valid, async (name, ext) => {
-          expect(await sends(`${name}.${ext}`)).toBe(1);
-        }),
-        { numRuns: 15 },
-      );
-    });
-
-    it('refuse a file whose name has no yaml, yml or json in it', async () => {
-      const name = fc
-        .tuple(base, fc.stringMatching(/^[a-zA-Z]{0,5}$/))
-        .map(([b, e]) => `${b}.${e}`)
-        .filter((n) => !/yaml|yml|json/i.test(n));
-      await fc.assert(
-        fc.asyncProperty(name, async (n) => {
-          expect(await sends(n)).toBe(0);
-        }),
-        { numRuns: 15 },
-      );
-    });
-
     it('send a file only when its name ends in .yaml, .yml or .json', async () => {
       axios.post.mockResolvedValue({});
       const ext = fc.oneof(
@@ -699,7 +676,15 @@ describe('the config list', () => {
           const full = `${name}.${e}`;
           expect(await sends(full)).toBe(endsValid(full) ? 1 : 0);
         }),
-        { numRuns: 15, examples: [['web', 'yml.txt']] },
+        {
+          numRuns: 15,
+          examples: [
+            ['web', 'yml.txt'],
+            ['web', 'YAML'],
+            ['web', 'Json'],
+            ['notes', 'txt'],
+          ],
+        },
       );
     });
 

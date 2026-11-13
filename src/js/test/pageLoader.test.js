@@ -301,37 +301,13 @@ test('a cached page lands newer data only, ending on the last request, however l
   );
 });
 
-test('a forced request starts once the one it replaces settles, so the older never lands last', async () => {
+test('a load joins a queued forced request, and clearing the cache cancels the one it replaced', async () => {
   const { fetch, calls } = manualFetch();
   const older = fetchIntoCache('disks', fetch);
   const newer = fetchIntoCache('disks', fetch, { force: true });
-  const joined = fetchIntoCache('disks', fetch, { force: true });
   const plain = fetchIntoCache('disks', fetch);
-  expect(joined.promise).toBe(newer.promise);
   expect(plain.promise).toBe(newer.promise);
   expect(newer.startedAt).toBeUndefined();
-
-  // nobody waits on the older one any more, but the newer has not run yet
-  older.release();
-  expect(calls).toHaveLength(1);
-  expect(calls[0].signal.aborted).toBe(false);
-
-  calls[0].resolve(['old']);
-  expect(await older.promise).toEqual(['old']);
-  await flush();
-  expect(calls).toHaveLength(2);
-  expect(newer.startedAt).toBeDefined();
-
-  calls[1].resolve(['new']);
-  expect(await newer.promise).toEqual(['new']);
-  expect(cachedPage('disks').data).toEqual(['new']);
-  for (const request of [newer, joined, plain]) request.release();
-});
-
-test('clearing the cache cancels a request a forced load replaced', async () => {
-  const { fetch, calls } = manualFetch();
-  const older = fetchIntoCache('disks', fetch);
-  const newer = fetchIntoCache('disks', fetch, { force: true });
 
   clearPageCache();
   expect(calls[0].signal.aborted).toBe(true);
@@ -340,8 +316,7 @@ test('clearing the cache cancels a request a forced load replaced', async () => 
   await newer.promise.catch(() => {});
   expect(calls).toHaveLength(1);
   expect(cachedPage('disks')).toBeUndefined();
-  older.release();
-  newer.release();
+  for (const request of [older, newer, plain]) request.release();
 });
 
 test("a page left behind does not clear the next page's header", () => {

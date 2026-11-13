@@ -206,14 +206,6 @@ describe('SVG serialization', () => {
     );
   });
 
-  it('points paint servers at the file, not the page', () => {
-    expect(localUrls('url("http://host:3000/experiment/x/soh#switch")')).toBe(
-      'url(#switch)',
-    );
-    expect(localUrls('url(#linux)')).toBe('url(#linux)');
-    expect(localUrls('rgb(1, 2, 3)')).toBe('rgb(1, 2, 3)');
-  });
-
   it('points any paint server at its fragment, and leaves the rest alone', () => {
     const id = fc.stringMatching(/^[A-Za-z][\w.-]{0,8}$/);
     // the page's address, as a computed style quotes it

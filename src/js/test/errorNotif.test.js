@@ -161,12 +161,6 @@ describe('showError', () => {
       ['<b>Error:</b> bad request', '<b>line one<br>line &lt;two&gt;</b>'],
     ],
     [
-      'escapes server text so it cannot inject markup',
-      '<img src=x onerror=alert(1)>',
-      undefined,
-      ['<b>Error:</b> &lt;img src=x onerror=alert(1)&gt;'],
-    ],
-    [
       'names an error with no text',
       '',
       undefined,
@@ -230,6 +224,8 @@ describe('showError', () => {
           );
         },
       ),
+      // a script hook in the title (main bug #17)
+      { examples: [['<img src=x onerror=alert(1)>', undefined]] },
     );
   });
 

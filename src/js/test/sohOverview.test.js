@@ -207,40 +207,6 @@ describe('summaries', () => {
       },
     ],
   });
-  const all = [
-    degraded,
-    summary(),
-    summary({ name: 'red-team-range', running: false, status: 'starting' }),
-    summary({ name: 'dns-lab', configured: false, running: false }),
-  ];
-
-  it('counts experiments per filter', () => {
-    expect(filterCounts(all)).toEqual({
-      all: 4,
-      attention: 1,
-      healthy: 1,
-      nodata: 2,
-    });
-  });
-
-  it('sums the line above the table over running experiments', () => {
-    expect(overview(all)).toEqual({
-      active: 2,
-      total: 4,
-      hostsFailing: 6,
-      vmsDown: 3,
-    });
-  });
-
-  it('splits the VM bar into the non-empty states', () => {
-    expect(vmSegments(degraded).map(({ key, count }) => [key, count])).toEqual([
-      ['ok', 21],
-      ['failing', 6],
-      ['down', 3],
-      ['external', 1],
-    ]);
-  });
-
   it('lists failing checks, then down VMs', () => {
     const list = problems(degraded);
     expect(list.map((p) => [p.host, p.check])).toEqual([
@@ -252,23 +218,6 @@ describe('summaries', () => {
     // counts the failing checks the server left out of its list
     expect(problemCount(degraded)).toBe(18);
     expect(problemCount(summary({ running: false }))).toBe(0);
-  });
-
-  it('takes the trend from the newest runs', () => {
-    const history = Array.from({ length: 20 }, (_, i) => ({ failing: i }));
-    expect(trend(summary({ history }), 3)).toEqual([17, 18, 19]);
-    expect(trend(summary({ history: undefined }))).toEqual([]);
-  });
-
-  it('draws the sparkline inside its box', () => {
-    expect(sparkPoints([0, 5, 10], 100, 20)).toEqual([
-      [0, 18],
-      [50, 10],
-      [100, 2],
-    ]);
-    // a flat line of zeros sits at the bottom
-    expect(sparkPoints([0, 0], 100, 20).map(([, y]) => y)).toEqual([18, 18]);
-    expect(sparkPoints([], 100, 20)).toEqual([]);
   });
 });
 
@@ -403,9 +352,18 @@ describe('any summary', () => {
           return;
         }
         expect(segments.every((g) => g.count > 0)).toBe(true);
-        const keys = segments.map((g) => g.key);
-        expect(keys).toEqual(order.filter((k) => keys.includes(k)));
         const { total, notboot, external, delayed } = s.vms;
+        const counts = {
+          ok: s.vms.running - s.vms.failing,
+          failing: s.vms.failing,
+          down: vmsDown(s),
+          delayed,
+          notboot,
+          external,
+        };
+        expect(segments.map((g) => [g.key, g.count])).toEqual(
+          order.filter((k) => counts[k] > 0).map((k) => [k, counts[k]]),
+        );
         expect(segments.reduce((n, g) => n + g.count, 0)).toBe(total);
         expect(total - notboot - external - delayed).toBe(
           s.vms.running + vmsDown(s),
@@ -421,7 +379,7 @@ describe('any summary', () => {
     });
     fc.assert(
       fc.property(
-        fc.array(fc.nat(500), { minLength: 1 }),
+        fc.array(fc.oneof(fc.constant(0), fc.nat(500))),
         box,
         (values, { width, height }) => {
           const points = sparkPoints(values, width, height);
@@ -431,7 +389,11 @@ describe('any summary', () => {
             expect(x).toBeLessThanOrEqual(width);
             expect(y).toBeGreaterThanOrEqual(2);
             expect(y).toBeLessThanOrEqual(height - 2);
-            if (i > 0) expect(x).toBeGreaterThan(points[i - 1][0]);
+            if (i === 0) expect(x).toBe(0);
+            else expect(x).toBeGreaterThan(points[i - 1][0]);
+            // no failures sit at the bottom, the most failures at the top
+            if (values[i] === 0) expect(y).toBe(height - 2);
+            else if (values[i] === Math.max(...values)) expect(y).toBe(2);
             for (let j = 0; j < i; j++) {
               if (values[j] < values[i])
                 expect(y).toBeLessThanOrEqual(points[j][1]);
@@ -441,6 +403,11 @@ describe('any summary', () => {
         },
       ),
     );
+    expect(sparkPoints([0, 5, 10], 100, 20)).toEqual([
+      [0, 18],
+      [50, 10],
+      [100, 2],
+    ]);
   });
 
   it('takes the trend from the newest runs, oldest first', () => {
@@ -448,8 +415,13 @@ describe('any summary', () => {
       fc.property(
         fc.array(fc.nat(50)),
         fc.integer({ min: 0, max: 30 }),
-        (failing, count) => {
-          const history = failing.map((n) => ({ failing: n }));
+        fc.boolean(),
+        (failing, count, absent) => {
+          // a summary without history has an empty trend
+          const history = absent
+            ? undefined
+            : failing.map((n) => ({ failing: n }));
+          if (absent) failing = [];
           const out = trend(summary({ history }), count);
           expect(out).toHaveLength(Math.min(count, failing.length));
           if (out.length)

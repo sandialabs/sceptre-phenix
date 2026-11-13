@@ -187,22 +187,8 @@ describe('an annotation list', () => {
       return opens;
     };
 
-    it('opens upward when there is no room for it below', async () => {
-      vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(800);
-      expect(await opensAt(100)).toBe('bottom');
-      expect(await opensAt(700)).toBe('top');
-    });
-
     // the menu's max-height in AnnotationList.vue
     const MENU = 360;
-
-    it('opens upward from the first pixel too few for it below', async () => {
-      vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(800);
-      // the trigger is 30 high, so this leaves exactly MENU below it
-      const fits = 800 - MENU - 30;
-      expect(await opensAt(fits)).toBe('bottom');
-      expect(await opensAt(fits + 1)).toBe('top');
-    });
 
     it('opens upward only when there is too little room below and more above', async () => {
       const height = vi.spyOn(window, 'innerHeight', 'get');
@@ -229,7 +215,16 @@ describe('an annotation list', () => {
           height.mockReturnValue(above + 30 + below);
           expect(await opensAt(above)).toBe(opens);
         }),
-        { numRuns: 30 },
+        {
+          numRuns: 30,
+          // far from the edge, then exactly MENU and one pixel less below
+          examples: [
+            [{ above: 100, below: 670, opens: 'bottom' }],
+            [{ above: 700, below: 70, opens: 'top' }],
+            [{ above: 410, below: MENU, opens: 'bottom' }],
+            [{ above: 411, below: MENU - 1, opens: 'top' }],
+          ],
+        },
       );
     });
   });
