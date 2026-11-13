@@ -105,15 +105,6 @@ func NewConfig(name string) (*Config, error) {
 	return &c, nil
 }
 
-func NewConfigFromFile(path string) (*Config, error) {
-	file, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("cannot read config: %w", err)
-	}
-
-	return DecodeConfigFile(path, envsubst.Expand(file, os.LookupEnv))
-}
-
 // DecodeConfigFile decodes body, the text of the config file at path, as it is
 // written: JSON for a .json file, and YAML for a .yaml or .yml file.
 func DecodeConfigFile(path string, body []byte) (*Config, error) {

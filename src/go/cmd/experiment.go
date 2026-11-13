@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +26,7 @@ import (
 	"phenix/types"
 	"phenix/util"
 	"phenix/util/common"
+	"phenix/util/envsubst"
 	"phenix/util/notes"
 	"phenix/util/plog"
 	"phenix/util/printer"
@@ -245,14 +248,15 @@ func newExperimentCreateCmd() *cobra.Command {
   Used to create an experiment from existing configurations; can be a
   topology, or topology and scenario, or paths to topology/scenario
   configuration files (YAML or JSON). (Optional are the arguments for
-  scenario or base directory.)`
+  scenario or base directory.)` + configVarsHelp
 
 	example := `
   phenix experiment create <experiment name> -t <topology name or /path/to/filename>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> -d </path/to/dir/>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> --disabled-apps "app1,app2"
-  phenix experiment create <experiment name> -t <topology name> --node-annotation phenix/default-apps=false --annotation phenix.workflow/tags=nightly`
+  phenix experiment create <experiment name> -t <topology name> --node-annotation phenix/default-apps=false --annotation phenix.workflow/tags=nightly
+  phenix experiment create <experiment name> -t </path/to/filename> -e NODES=3 --env-file site.env`
 
 	cmd := &cobra.Command{
 		Use:     "create <experiment name>",
@@ -268,49 +272,18 @@ func newExperimentCreateCmd() *cobra.Command {
 				ctx = notes.Context(sigterm.CancelContext(commandContext(cmd)), false)
 			)
 
-			if ext := filepath.Ext(topology); ext != "" {
-				opts := []config.CreateOption{
-					config.CreateFromPath(topology),
-					config.CreateWithValidation(),
-					config.CreateWithContext(ctx),
-				}
-
-				c, err := config.Create(opts...)
-				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Unable to create configuration from "+topology,
-					)
-
-					return err.Humanized()
-				}
-
-				topology = c.Metadata.Name
+			vars, err := configVarsFromFlags(cmd)
+			if err != nil {
+				return err
 			}
 
-			// If scenario is not provided, then ext will be an empty string, so the
-			// following won't be run.
-			if ext := filepath.Ext(scenario); ext != "" {
-				opts := []config.CreateOption{
-					config.CreateFromPath(scenario),
-					config.CreateWithValidation(),
-					config.CreateWithContext(ctx),
-				}
-
-				c, err := config.Create(opts...)
-				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Unable to create configuration from "+scenario,
-					)
-
-					return err.Humanized()
-				}
-
-				scenario = c.Metadata.Name
+			// A scenario that is not given has no extension, so it is not a file.
+			names, err := createFileConfigs(ctx, vars, topology, scenario)
+			if err != nil {
+				return err
 			}
+
+			topology, scenario = names[0], names[1]
 
 			disabledApps, err := cmd.Flags().GetStringSlice("disabled-apps")
 			if err != nil {
@@ -386,12 +359,63 @@ func newExperimentCreateCmd() *cobra.Command {
 		"Annotation for every VM as key=value; true, false and JSON lists or objects keep their type; may be repeated",
 	)
 
+	addVarFlags(cmd)
+
 	_ = cmd.RegisterFlagCompletionFunc("topology", completeConfigNamesOrFiles("Topology"))
 	_ = cmd.RegisterFlagCompletionFunc("scenario", completeConfigNamesOrFiles("Scenario"))
 	_ = cmd.RegisterFlagCompletionFunc("disabled-apps", completeAppNames)
 	_ = cmd.MarkFlagDirname("base-dir")
 
 	return cmd
+}
+
+// createFileConfigs stores the config of each value that names a file: a value
+// with an extension. It returns the values, with the name of the stored
+// config in place of each file. It fills in the variables of all the files in
+// one pass before it stores a config.
+func createFileConfigs(ctx context.Context, vars *envsubst.Set, values ...string) ([]string, error) {
+	var (
+		files []envsubst.File
+		at    []int
+	)
+
+	for i, value := range values {
+		if filepath.Ext(value) == "" {
+			continue
+		}
+
+		text, err := os.ReadFile(value)
+		if err != nil {
+			err := util.HumanizeError(fmt.Errorf("cannot read config: %w", err), "%s", "Unable to create configuration from "+value)
+
+			return nil, err.Humanized()
+		}
+
+		at = append(at, i)
+		files = append(files, envsubst.File{Path: value, Text: text})
+	}
+
+	files, err := substituteVars(vars, files)
+	if err != nil {
+		return nil, err
+	}
+
+	names := slices.Clone(values)
+
+	for i, file := range files {
+		c, err := store.DecodeConfigFile(file.Path, file.Text)
+		if err == nil {
+			c, err = config.Create(config.CreateFromConfig(c), config.CreateWithValidation(), config.CreateWithContext(ctx))
+		}
+
+		if err != nil {
+			return nil, util.HumanizeError(err, "%s", "Unable to create configuration from "+file.Path).Humanized()
+		}
+
+		names[at[i]] = c.Metadata.Name
+	}
+
+	return names, nil
 }
 
 // parseAnnotationFlags turns key=value flag values into annotations.

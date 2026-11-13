@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strings"
 
@@ -14,6 +13,7 @@ import (
 	"phenix/api/config"
 	"phenix/store"
 	"phenix/types"
+	"phenix/util/envsubst"
 	"phenix/util/sigterm"
 )
 
@@ -22,9 +22,11 @@ const configFileFlag = "filename"
 
 // fileConfig is a config that config apply or config diff read from a file,
 // or the error that stopped the read. Name is the kind/name of the config as
-// the CLI spells it, "" when it is not known.
+// the CLI spells it, "" when it is not known. Src is the text of the file
+// with its variables filled in.
 type fileConfig struct {
 	path   string
+	src    []byte
 	name   string
 	config *store.Config
 	err    error
@@ -39,48 +41,34 @@ func (f fileConfig) label() string {
 	return f.path
 }
 
-// loadFileConfigs reads the configs of the JSON and YAML files at paths (files
-// or directories) as config create does: it skips a Builder file in a directory
-// and refuses one in paths. Unreadable files come first, then the configs by
-// kind (see [config.ApplyOrder]) in path order. A second file with the same
-// kind and name is an error.
-func loadFileConfigs(paths []string) []fileConfig {
-	var configs []fileConfig
+// loadFileConfigs reads the configs of the JSON and YAML files at paths, as
+// [readConfigInputs] does, with the variables of vars filled in. Unreadable
+// files come first, then the configs by kind (see [config.ApplyOrder]) in
+// path order. A second file with the same kind and name is an error. A
+// problem with a variable is the error of the call: no config is then read.
+func loadFileConfigs(paths []string, vars *envsubst.Set) ([]fileConfig, error) {
+	inputs, err := readConfigInputs(paths, vars)
+	if err != nil {
+		return nil, err
+	}
 
-	for _, arg := range paths {
-		files, err := configFilesAt(arg)
-		if err != nil {
-			configs = append(configs, fileConfig{path: arg, name: "", config: nil, err: err})
+	configs := make([]fileConfig, 0, len(inputs))
+
+	for _, in := range inputs {
+		if in.err != nil {
+			configs = append(configs, fileConfig{path: in.path, src: nil, name: "", config: nil, err: in.err})
 
 			continue
 		}
 
-		if len(files) == 0 {
-			configs = append(configs, fileConfig{
-				path: arg, name: "", config: nil, err: errors.New("no JSON or YAML files found"),
-			})
+		c, err := store.DecodeConfigFile(in.path, in.text)
+		if err != nil {
+			configs = append(configs, fileConfig{path: in.path, src: in.text, name: "", config: nil, err: err})
+
+			continue
 		}
 
-		for _, path := range files {
-			if kind := builderFileKind(path); kind != "" {
-				if path == arg {
-					configs = append(configs, fileConfig{path: path, name: "", config: nil, err: builderFileRefusal(kind, path)})
-				} else {
-					skipBuilderFile(kind, path)
-				}
-
-				continue
-			}
-
-			c, err := store.NewConfigFromFile(path)
-			if err != nil {
-				configs = append(configs, fileConfig{path: path, name: "", config: nil, err: err})
-
-				continue
-			}
-
-			configs = append(configs, fileConfig{path: path, name: cliConfigName(c), config: c, err: nil})
-		}
+		configs = append(configs, fileConfig{path: in.path, src: in.text, name: cliConfigName(c), config: c, err: nil})
 	}
 
 	slices.SortStableFunc(configs, func(a, b fileConfig) int {
@@ -113,7 +101,7 @@ func loadFileConfigs(paths []string) []fileConfig {
 		definedBy[f.name] = f.path
 	}
 
-	return configs
+	return configs, nil
 }
 
 // cliConfigName returns the kind/name of c as the CLI spells it, with the
@@ -122,10 +110,11 @@ func cliConfigName(c *store.Config) string {
 	return strings.ToLower(c.Kind) + "/" + c.Metadata.Name
 }
 
-// configFileError returns the text of err for the config of the file at path.
-// A schema validation failure adds the lines from
-// [types.ExplainValidationError], each on its own indented line.
-func configFileError(path string, err error) string {
+// configFileError returns the text of err for the config whose file has the
+// text src, with its variables filled in. A schema validation failure adds
+// the lines from [types.ExplainValidationError], each on its own indented
+// line. The lines point into src, which has the lines of the file.
+func configFileError(src []byte, err error) string {
 	if errors.Is(err, store.ErrConflict) {
 		return "the config changed while phenix applied it, so run the command again: " + err.Error()
 	}
@@ -134,9 +123,6 @@ func configFileError(path string, err error) string {
 		return err.Error()
 	}
 
-	// The explained lines point into the file; if it is gone, the explainer
-	// falls back to the validator's text.
-	src, _ := os.ReadFile(path)
 	lines := types.ExplainValidationError(src, err)
 
 	return err.Error() + "\n  " + strings.Join(lines, "\n  ")
@@ -171,11 +157,12 @@ func newConfigApplyCmd() *cobra.Command {
 
   With --dry-run, the command checks each configuration as for an apply,
   shows the configurations that it would create or update, and changes
-  nothing.`
+  nothing.` + configVarsHelp
 
 	example := `
   phenix config apply -f topology.yml -f scenario.yml
-  phenix config apply -f ./configs --dry-run`
+  phenix config apply -f ./configs --dry-run
+  phenix config apply -f topology.yml -e NODES=3 --env-file site.env`
 
 	var dry dryRun
 
@@ -202,13 +189,24 @@ func newConfigApplyCmd() *cobra.Command {
 				opts = append(opts, config.ApplySkipCreateValidation())
 			}
 
-			return applyConfigs(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), loadFileConfigs(paths), dry, opts...)
+			vars, err := configVarsFromFlags(cmd)
+			if err != nil {
+				return err
+			}
+
+			configs, err := loadFileConfigs(paths, vars)
+			if err != nil {
+				return err
+			}
+
+			return applyConfigs(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), configs, dry, opts...)
 		},
 	}
 
 	cmd.Flags().StringArrayP(configFileFlag, "f", nil, "Configuration file or directory to apply (repeatable)")
 	dry = addDryRunFlag(cmd)
 	cmd.Flags().Bool("skip-validation", false, "Skip schema validation of new configurations (updates are always validated)")
+	addVarFlags(cmd)
 
 	_ = cmd.MarkFlagRequired(configFileFlag)
 	_ = cmd.MarkFlagFilename(configFileFlag, "json", "yaml", "yml")
@@ -234,7 +232,7 @@ func applyConfigs(
 		if f.err != nil {
 			failed++
 
-			fmt.Fprintf(errOut, "%s: error: %s\n", f.label(), configFileError(f.path, f.err))
+			fmt.Fprintf(errOut, "%s: error: %s\n", f.label(), configFileError(f.src, f.err))
 
 			continue
 		}
@@ -249,7 +247,7 @@ func applyConfigs(
 
 			failed++
 
-			fmt.Fprintf(errOut, "%s: error: %s\n", f.label(), configFileError(f.path, err))
+			fmt.Fprintf(errOut, "%s: error: %s\n", f.label(), configFileError(f.src, err))
 
 			continue
 		}

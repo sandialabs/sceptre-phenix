@@ -285,12 +285,7 @@ func TestGet(t *testing.T) {
 func TestCreateSourcesAndErrors(t *testing.T) {
 	storetest.UseBolt(t)
 
-	dir := t.TempDir()
-	writeFiles(t, dir, map[string]string{
-		"t.yaml":  "apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: from-path\nspec:\n  nodes: []\n",
-		"t.txt":   "kind: Topology\n",
-		"bad.yml": "kind: [unclosed\n",
-	})
+	fromYAML := []byte("apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: from-yaml\nspec:\n  nodes: []\n")
 
 	errCheck := errors.New("injected check failure")
 
@@ -307,10 +302,7 @@ func TestCreateSourcesAndErrors(t *testing.T) {
 		wantErr bool
 		is      error
 	}{
-		{
-			name: "from path",
-			opts: []config.CreateOption{config.CreateFromPath(filepath.Join(dir, "t.yaml")), config.CreateWithValidation()},
-		},
+		{name: "from YAML", opts: []config.CreateOption{config.CreateFromYAML(fromYAML), config.CreateWithValidation()}},
 		{name: "from config", opts: []config.CreateOption{config.CreateFromConfig(fromConfig)}},
 		{name: "checked", opts: []config.CreateOption{
 			config.CreateFromYAML(
@@ -319,11 +311,9 @@ func TestCreateSourcesAndErrors(t *testing.T) {
 			config.CreateWithCheck(func(*store.Config) error { return nil }),
 		}},
 		{name: "no source", wantErr: true},
-		{name: "missing path", opts: []config.CreateOption{config.CreateFromPath(filepath.Join(dir, "missing.yaml"))}, wantErr: true},
-		{name: "wrong extension", opts: []config.CreateOption{config.CreateFromPath(filepath.Join(dir, "t.txt"))}, wantErr: true},
 		{name: "bad YAML", opts: []config.CreateOption{config.CreateFromYAML([]byte("kind: [unclosed\n"))}, wantErr: true},
 		{name: "check fails", opts: []config.CreateOption{
-			config.CreateFromPath(filepath.Join(dir, "t.yaml")),
+			config.CreateFromYAML(fromYAML),
 			config.CreateWithCheck(func(*store.Config) error { return errCheck }),
 		}, wantErr: true, is: errCheck},
 		{name: "invalid spec", opts: []config.CreateOption{
@@ -338,7 +328,7 @@ func TestCreateSourcesAndErrors(t *testing.T) {
 			),
 			config.CreateWithValidation(),
 		}, wantErr: true},
-		{name: "already stored", opts: []config.CreateOption{config.CreateFromPath(filepath.Join(dir, "t.yaml"))}, wantErr: true},
+		{name: "already stored", opts: []config.CreateOption{config.CreateFromYAML(fromYAML)}, wantErr: true},
 	}
 
 	for _, test := range tests {

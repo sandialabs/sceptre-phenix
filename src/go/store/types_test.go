@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"maps"
-	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -915,19 +913,19 @@ func TestConfigNameProperties(t *testing.T) {
 	})
 }
 
-// NewConfigFromFile parses a config by its file's extension, expanding
-// environment placeholders, and clears the fields only the store sets.
-func TestNewConfigFromFile(t *testing.T) {
+// DecodeConfigFile decodes a config by the extension of its file, keeps each
+// placeholder as written, and clears the fields only the store sets.
+func TestDecodeConfigFile(t *testing.T) {
 	t.Parallel()
 
 	const (
 		jsonBody = `{"apiVersion":"phenix.sandia.gov/v1","kind":"Topology",` +
-			`"metadata":{"name":"${PHENIX_TYPES_TEST_UNSET:a}","created":"x","updated":"y","revision":7}}`
+			`"metadata":{"name":"${NAME:a}","created":"x","updated":"y","revision":7}}`
 		yamlBody = "apiVersion: phenix.sandia.gov/v1\nkind: Topology\n" +
-			"metadata:\n  name: ${PHENIX_TYPES_TEST_UNSET:a}\n  created: x\n  updated: y\n  revision: 7\n"
+			"metadata:\n  name: ${NAME:a}\n  created: x\n  updated: y\n  revision: 7\n"
 	)
 
-	want := &Config{Version: "phenix.sandia.gov/v1", Kind: "Topology", Metadata: ConfigMetadata{Name: "a"}}
+	want := &Config{Version: "phenix.sandia.gov/v1", Kind: "Topology", Metadata: ConfigMetadata{Name: "${NAME:a}"}}
 
 	for name, tc := range map[string]struct {
 		file, body string
@@ -937,53 +935,39 @@ func TestNewConfigFromFile(t *testing.T) {
 	}{
 		"json":         {file: "a.json", body: jsonBody, want: want},
 		"yaml":         {file: "a.yaml", body: yamlBody, want: want},
-		"yml":          {file: "a.yml", body: yamlBody, want: want},
+		"yml":          {file: "dir/a.yml", body: yamlBody, want: want},
 		"bad json":     {file: "a.json", body: "{", wantErr: ErrInvalidFormat},
 		"bad yaml":     {file: "a.yaml", body: "kind: [", wantErr: ErrInvalidFormat},
 		"no extension": {file: "a", body: jsonBody, wantMsg: "invalid config extension"},
 		"other":        {file: "a.txt", body: jsonBody, wantMsg: "invalid config extension"},
-		"missing":      {file: "missing.json", wantErr: os.ErrNotExist, wantMsg: "cannot read config"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			path := filepath.Join(t.TempDir(), tc.file)
-
-			if tc.body != "" {
-				if err := os.WriteFile(path, []byte(tc.body), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-
-			got, err := NewConfigFromFile(path)
+			got, err := DecodeConfigFile(tc.file, []byte(tc.body))
 			if (err != nil) != (tc.want == nil) || (tc.wantErr != nil && !errors.Is(err, tc.wantErr)) {
-				t.Fatalf("NewConfigFromFile(%s) error = %v, want error %t (%v)", tc.file, err, tc.want == nil, tc.wantErr)
+				t.Fatalf("DecodeConfigFile(%s) error = %v, want error %t (%v)", tc.file, err, tc.want == nil, tc.wantErr)
 			}
 
 			if tc.wantMsg != "" && (err == nil || !strings.Contains(err.Error(), tc.wantMsg)) {
-				t.Fatalf("NewConfigFromFile(%s) error = %v, want it to contain %q", tc.file, err, tc.wantMsg)
+				t.Fatalf("DecodeConfigFile(%s) error = %v, want it to contain %q", tc.file, err, tc.wantMsg)
 			}
 
 			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("NewConfigFromFile(%s) mismatch (-want +got):\n%s", tc.file, diff)
+				t.Errorf("DecodeConfigFile(%s) mismatch (-want +got):\n%s", tc.file, diff)
 			}
 		})
 	}
 }
 
-// TestDecodeConfigKeepsPlaceholders checks that DecodeConfigJSON and
-// DecodeConfigYAML keep each ${NAME} placeholder, and that NewConfigFromYAML
-// and NewConfigFromFile, which the CLI uses, still expand them.
+// TestDecodeConfigKeepsPlaceholders checks that DecodeConfigJSON,
+// DecodeConfigYAML and DecodeConfigFile keep each ${NAME} placeholder, and
+// that NewConfigFromYAML fills them in from the environment.
 func TestDecodeConfigKeepsPlaceholders(t *testing.T) {
 	t.Setenv("PHENIX_STORE_TEST_SECRET", "server-secret")
 
 	fromFile := func(body []byte) (*Config, error) {
-		path := filepath.Join(t.TempDir(), "topology.yml")
-		if err := os.WriteFile(path, body, 0o600); err != nil {
-			t.Fatalf("os.WriteFile(%q) returned error: %v", path, err)
-		}
-
-		return NewConfigFromFile(path)
+		return DecodeConfigFile("topology.yml", body)
 	}
 
 	const (
@@ -1007,7 +991,7 @@ func TestDecodeConfigKeepsPlaceholders(t *testing.T) {
 		{name: "DecodeConfigJSON", decode: DecodeConfigJSON, input: jsonDoc, want: verbatim},
 		{name: "DecodeConfigYAML", decode: DecodeConfigYAML, input: yamlDoc, want: verbatim},
 		{name: "NewConfigFromYAML", decode: NewConfigFromYAML, input: yamlDoc, want: expanded},
-		{name: "NewConfigFromFile", decode: fromFile, input: yamlDoc, want: expanded},
+		{name: "DecodeConfigFile", decode: fromFile, input: yamlDoc, want: verbatim},
 	}
 
 	for _, tt := range tests {

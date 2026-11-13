@@ -74,6 +74,14 @@ Create or update configurations from files
   With --dry-run, the command checks each configuration as for an apply,
   shows the configurations that it would create or update, and changes
   nothing.
+
+  The command fills in the ${NAME} and ${NAME:default} placeholders of each
+  file before it reads the file. A value comes from -e, else from an env
+  file of --env-file, else from the shell. The shell gives no PHENIX_
+  variable unless -e NAME names it. A placeholder with no value and no
+  default is an error, and so is a -e variable that no file uses: the
+  command then changes nothing. Write ${NAME:} for an optional variable and
+  $${NAME} for the literal text ${NAME}.
 ```
 
 ```text
@@ -85,12 +93,15 @@ phenix config apply -f <file|dir> [-f <file|dir>]... [flags]
 ```text
 phenix config apply -f topology.yml -f scenario.yml
 phenix config apply -f ./configs --dry-run
+phenix config apply -f topology.yml -e NODES=3 --env-file site.env
 ```
 
 ### Options
 
 ```text
       --dry-run                Show what the command would change, and change nothing
+  -e, --env stringArray        set a variable for the ${NAME} placeholders: NAME=value, or NAME to copy the value from the shell (repeatable)
+      --env-file stringArray   read variables from an env file of NAME=value lines; a relative path starts at the working directory (repeatable)
   -f, --filename stringArray   Configuration file or directory to apply (repeatable)
   -h, --help                   help for apply
       --skip-validation        Skip schema validation of new configurations (updates are always validated)
@@ -121,17 +132,38 @@ Create a configuration(s)
   a document and publish it to create its topology. Use Import templates to
   add the templates of a template file. Use Upload to open a package. Use
   Upload layer set on the Layers tab to add a layer set file.
+
+  The command fills in the ${NAME} and ${NAME:default} placeholders of each
+  file before it reads the file. A value comes from -e, else from an env
+  file of --env-file, else from the shell. The shell gives no PHENIX_
+  variable unless -e NAME names it. A placeholder with no value and no
+  default is an error, and so is a -e variable that no file uses: the
+  command then changes nothing. Write ${NAME:} for an optional variable and
+  $${NAME} for the literal text ${NAME}.
+
+  The command reads every file and checks every variable before it stores a
+  configuration.
 ```
 
 ```text
 phenix config create </path/to/filename> ... [flags]
 ```
 
+### Examples
+
+```text
+phenix config create topology.yml scenario.yml
+phenix config create ./configs
+phenix config create topology.yml -e NODES=3 --env-file site.env
+```
+
 ### Options
 
 ```text
-  -h, --help              help for create
-      --skip-validation   Skip configuration spec validation against schema
+  -e, --env stringArray        set a variable for the ${NAME} placeholders: NAME=value, or NAME to copy the value from the shell (repeatable)
+      --env-file stringArray   read variables from an env file of NAME=value lines; a relative path starts at the working directory (repeatable)
+  -h, --help                   help for create
+      --skip-validation        Skip configuration spec validation against schema
 ```
 
 ### SEE ALSO
@@ -250,6 +282,14 @@ Show how configuration files differ from the stored configurations
 
   The command exits with 0 when no configuration differs, 1 when one or more
   differ, and 2 when it cannot read or compare a configuration.
+
+  The command fills in the ${NAME} and ${NAME:default} placeholders of each
+  file before it reads the file. A value comes from -e, else from an env
+  file of --env-file, else from the shell. The shell gives no PHENIX_
+  variable unless -e NAME names it. A placeholder with no value and no
+  default is an error, and so is a -e variable that no file uses: the
+  command then changes nothing. Write ${NAME:} for an optional variable and
+  $${NAME} for the literal text ${NAME}.
 ```
 
 ```text
@@ -261,12 +301,15 @@ phenix config diff <file|dir>... [flags]
 ```text
 phenix config diff topology.yml
 phenix config diff ./configs
+phenix config diff topology.yml -e NODES=3 --env-file site.env
 ```
 
 ### Options
 
 ```text
-  -h, --help   help for diff
+  -e, --env stringArray        set a variable for the ${NAME} placeholders: NAME=value, or NAME to copy the value from the shell (repeatable)
+      --env-file stringArray   read variables from an env file of NAME=value lines; a relative path starts at the working directory (repeatable)
+  -h, --help                   help for diff
 ```
 
 ### SEE ALSO

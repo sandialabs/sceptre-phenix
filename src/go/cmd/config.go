@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -244,12 +245,21 @@ func newConfigCreateCmd() *cobra.Command {
   UI, or the Builder REST API below /api/v1/builder/, for these files. Upload
   a document and publish it to create its topology. Use Import templates to
   add the templates of a template file. Use Upload to open a package. Use
-  Upload layer set on the Layers tab to add a layer set file.`
+  Upload layer set on the Layers tab to add a layer set file.` + configVarsHelp + `
+
+  The command reads every file and checks every variable before it stores a
+  configuration.`
+
+	example := `
+  phenix config create topology.yml scenario.yml
+  phenix config create ./configs
+  phenix config create topology.yml -e NODES=3 --env-file site.env`
 
 	cmd := &cobra.Command{
-		Use:   "create </path/to/filename> ...",
-		Short: "Create a configuration(s)",
-		Long:  desc,
+		Use:     "create </path/to/filename> ...",
+		Short:   "Create a configuration(s)",
+		Long:    desc,
+		Example: example,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return errors.New("must provide at least one configuration file")
@@ -258,51 +268,46 @@ func newConfigCreateCmd() *cobra.Command {
 			skip := mustGet(cmd.Flags().GetBool, "skip-validation")
 			ctx := sigterm.CancelContext(commandContext(cmd))
 
-			for _, f := range args {
-				configs, err := configFilesAt(f)
+			vars, err := configVarsFromFlags(cmd)
+			if err != nil {
+				return err
+			}
+
+			inputs, err := readConfigInputs(args, vars)
+			if err != nil {
+				return err
+			}
+
+			// The command stores no config when it cannot read an argument.
+			// A directory with no config file is not an error.
+			for _, in := range inputs {
+				switch {
+				case in.err == nil, errors.Is(in.err, errNoConfigFiles):
+				case in.builder:
+					return in.err
+				default:
+					return configCreateError(in.path, nil, in.err)
+				}
+			}
+
+			for _, in := range inputs {
+				if in.err != nil {
+					continue
+				}
+
+				c, err := createConfigInput(ctx, in, skip)
 				if err != nil {
-					err := util.HumanizeError(err, "%s", "Unable to create configuration from "+f)
-
-					return err.Humanized()
+					return configCreateError(in.path, in.text, err)
 				}
 
-				for _, path := range configs {
-					if err := ctx.Err(); err != nil {
-						return configCreateError(path, err)
-					}
-
-					if kind := builderFileKind(path); kind != "" {
-						// Refuse only the file named on the command line, not
-						// a file found in a directory it names.
-						if path == f {
-							return builderFileRefusal(kind, path)
-						}
-
-						skipBuilderFile(kind, path)
-
-						continue
-					}
-
-					opts := []config.CreateOption{config.CreateFromPath(path), config.CreateWithContext(ctx)}
-
-					if !skip {
-						opts = append(opts, config.CreateWithValidation())
-					}
-
-					c, err := config.Create(opts...)
-					if err != nil {
-						return configCreateError(path, err)
-					}
-
-					plog.Info(
-						plog.TypeSystem,
-						"configuration created",
-						"kind",
-						c.Kind,
-						"name",
-						c.Metadata.Name,
-					)
-				}
+				plog.Info(
+					plog.TypeSystem,
+					"configuration created",
+					"kind",
+					c.Kind,
+					"name",
+					c.Metadata.Name,
+				)
 			}
 
 			return nil
@@ -310,8 +315,30 @@ func newConfigCreateCmd() *cobra.Command {
 	}
 
 	cmd.Flags().Bool("skip-validation", false, "Skip configuration spec validation against schema")
+	addVarFlags(cmd)
 
 	return cmd
+}
+
+// createConfigInput stores the config of in, a file that was read with no
+// error. It validates the config against its schema unless skip is set.
+func createConfigInput(ctx context.Context, in configInput, skip bool) (*store.Config, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	c, err := store.DecodeConfigFile(in.path, in.text)
+	if err != nil {
+		return nil, fmt.Errorf("creating new config from file: %w", err)
+	}
+
+	opts := []config.CreateOption{config.CreateFromConfig(c), config.CreateWithContext(ctx)}
+
+	if !skip {
+		opts = append(opts, config.CreateWithValidation())
+	}
+
+	return config.Create(opts...)
 }
 
 // configFilesAt returns the JSON and YAML files at path: the file itself, or
@@ -426,18 +453,17 @@ func builderFileRefusal(kind, path string) error {
 }
 
 // configCreateError is the error "config create" returns when the config in
-// path cannot be created. A schema validation failure adds the lines from
-// [types.ExplainValidationError], each on its own indented line.
-func configCreateError(path string, err error) error {
+// path cannot be created. src is the text of the file with its variables
+// filled in. A schema validation failure adds the lines from
+// [types.ExplainValidationError], which point into src, each on its own
+// indented line.
+func configCreateError(path string, src []byte, err error) error {
 	h := util.HumanizeError(err, "%s", canceled("Unable to create configuration from "+path, err))
 
 	if !errors.Is(err, types.ErrValidationFailed) {
 		return h.Humanized()
 	}
 
-	// Re-read the file: the explained lines point into it. If it is gone, the
-	// explainer falls back to the validator's text.
-	src, _ := os.ReadFile(path)
 	lines := types.ExplainValidationError(src, err)
 
 	return fmt.Errorf("%w\n  %s", h.Humanized(), strings.Join(lines, "\n  "))

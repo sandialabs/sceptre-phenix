@@ -372,7 +372,7 @@ func Validate(c *store.Config) error {
 	return nil
 }
 
-// Create reads a config file from the given path, validates it, and persists it
+// Create takes a config, or the YAML text of one, validates it, and persists it
 // to the store. Validation of configs is done against OpenAPIv3 schema
 // definitions. In the event the config file being read defines an experiment,
 // additional validations are done to ensure the annotated topology (required)
@@ -386,13 +386,6 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 	switch {
 	case o.config != nil:
 		c = o.config
-	case o.path != "":
-		var err error
-
-		c, err = store.NewConfigFromFile(o.path)
-		if err != nil {
-			return nil, fmt.Errorf("creating new config from file: %w", err)
-		}
 	case o.data != nil:
 		var err error
 
@@ -401,7 +394,7 @@ func Create(opts ...CreateOption) (*store.Config, error) {
 			return nil, fmt.Errorf("creating new config from YAML: %w", err)
 		}
 	default:
-		return nil, errors.New("no config, path, or data provided")
+		return nil, errors.New("no config or data provided")
 	}
 
 	if o.check != nil {

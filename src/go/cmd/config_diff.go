@@ -31,11 +31,12 @@ func newConfigDiffCmd() *cobra.Command {
   shows as the same is one that config apply does not change.
 
   The command exits with 0 when no configuration differs, 1 when one or more
-  differ, and 2 when it cannot read or compare a configuration.`
+  differ, and 2 when it cannot read or compare a configuration.` + configVarsHelp
 
 	example := `
   phenix config diff topology.yml
-  phenix config diff ./configs`
+  phenix config diff ./configs
+  phenix config diff topology.yml -e NODES=3 --env-file site.env`
 
 	cmd := &cobra.Command{
 		Use:     "diff <file|dir>...",
@@ -50,9 +51,21 @@ func newConfigDiffCmd() *cobra.Command {
 				}
 			}
 
-			return diffConfigs(cmd.OutOrStdout(), cmd.ErrOrStderr(), loadFileConfigs(args))
+			vars, err := configVarsFromFlags(cmd)
+			if err != nil {
+				return &exitCodeError{err: err, code: exitDiffError}
+			}
+
+			configs, err := loadFileConfigs(args, vars)
+			if err != nil {
+				return &exitCodeError{err: err, code: exitDiffError}
+			}
+
+			return diffConfigs(cmd.OutOrStdout(), cmd.ErrOrStderr(), configs)
 		},
 	}
+
+	addVarFlags(cmd)
 
 	return cmd
 }
@@ -67,7 +80,7 @@ func diffConfigs(out, errOut io.Writer, configs []fileConfig) error {
 		if f.err != nil {
 			failed++
 
-			fmt.Fprintf(errOut, "%s: error: %s\n", f.label(), configFileError(f.path, f.err))
+			fmt.Fprintf(errOut, "%s: error: %s\n", f.label(), configFileError(f.src, f.err))
 
 			continue
 		}
@@ -76,7 +89,7 @@ func diffConfigs(out, errOut io.Writer, configs []fileConfig) error {
 		if err != nil {
 			failed++
 
-			fmt.Fprintf(errOut, "%s: error: %s\n", f.label(), configFileError(f.path, err))
+			fmt.Fprintf(errOut, "%s: error: %s\n", f.label(), configFileError(f.src, err))
 
 			continue
 		}
