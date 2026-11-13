@@ -149,13 +149,13 @@ func builderLayerSetError(w http.ResponseWriter, err error, id string) *weberror
 		w.Header().Set("ETag", stale.ETag)
 
 		return weberror.NewWebError(nil, "layer set %s changed after you last read it", stale.ID).
-			SetStatus(http.StatusPreconditionFailed).WithCode(string(bdoc.CodeLayerSetStale))
+			SetStatus(http.StatusPreconditionFailed).WithCode(weberror.Code(bdoc.CodeLayerSetStale))
 	case errors.Is(err, bapi.ErrForbidden):
 		return weberror.NewWebError(nil, "you cannot change or delete a built-in layer set. Duplicate it and change the copy").
-			SetStatus(http.StatusForbidden).WithCode(string(bdoc.CodeLayerSetReadOnly))
+			SetStatus(http.StatusForbidden).WithCode(weberror.Code(bdoc.CodeLayerSetReadOnly))
 	case errors.As(err, &full):
 		return weberror.NewWebError(nil, "the layer set library holds %d sets, the most it can hold", full.Limit).
-			SetStatus(http.StatusRequestEntityTooLarge).WithCode(string(bdoc.CodeLayerSetLibraryFull))
+			SetStatus(http.StatusRequestEntityTooLarge).WithCode(weberror.Code(bdoc.CodeLayerSetLibraryFull))
 	case errors.Is(err, bdoc.ErrInvalidLayerSet):
 		return weberror.NewWebError(err, "the layer set is not valid").SetStatus(http.StatusUnprocessableEntity)
 	case errors.Is(err, bapi.ErrNotFound):
@@ -411,10 +411,10 @@ func (b *builderAPI) putDefaultLayerSet(w http.ResponseWriter, r *http.Request) 
 		w.Header().Set("ETag", stale.ETag)
 
 		return weberror.NewWebError(nil, "the default layer set changed after you last read it").
-			SetStatus(http.StatusPreconditionFailed).WithCode(string(bdoc.CodeLayerSetStale))
+			SetStatus(http.StatusPreconditionFailed).WithCode(weberror.Code(bdoc.CodeLayerSetStale))
 	case errors.Is(err, bapi.ErrNotFound):
 		return weberror.NewWebError(nil, "layer set %s does not exist", id).
-			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodeLayerSetDefaultUnknown))
+			SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(bdoc.CodeLayerSetDefaultUnknown))
 	case err != nil:
 		return builderLayerSetError(w, err, id)
 	}

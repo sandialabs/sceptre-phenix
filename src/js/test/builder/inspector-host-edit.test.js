@@ -3,8 +3,8 @@
 // in its fields: beside the canvas, in the template editor ('template') and
 // in the Node Editor ('editor'). Its markup is in inspector-host.test.js.
 
-import { afterEach, describe, expect, test } from 'vitest';
-import { enableAutoUnmount, flushPromises } from '@vue/test-utils';
+import { describe, expect, test } from 'vitest';
+import { flushPromises } from '@vue/test-utils';
 
 import { inspectorTarget } from '@/builder/adapters/forms.js';
 import { addNode, createDocument, findNode } from '@/builder/model.js';
@@ -18,8 +18,6 @@ import {
   oneDevice,
   sendFormData,
 } from './inspector-mount.js';
-
-enableAutoUnmount(afterEach);
 
 const TEMPLATE = { variant: 'template', labelledby: 'template-fields-title' };
 const EDITOR = { variant: 'editor', labelledby: 'node-editor-title' };

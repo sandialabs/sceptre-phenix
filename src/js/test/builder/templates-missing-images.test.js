@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import BuilderTemplates from '@/components/builder/BuilderTemplates.vue';
 import { createDocument } from '@/builder/model.js';
@@ -33,8 +33,6 @@ function template(id, drives) {
     },
   };
 }
-
-enableAutoUnmount(afterEach);
 
 afterEach(() => {
   vi.restoreAllMocks();

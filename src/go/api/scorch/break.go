@@ -80,19 +80,16 @@ func (b Break) breakPoint(ctx context.Context, stage Action) error {
 			return fmt.Errorf("setting up tap for break: %w", err)
 		}
 
+		defer func() { _ = md.Tap.Delete(mm.Headnode()) }()
+
 		var status scorchmd.ScorchStatus
 
-		err := b.options.Exp.Status.ParseAppStatus("scorch", &status)
+		err := b.options.Exp.Status.ParseAppStatus(appName, &status)
 		if err != nil {
 			return fmt.Errorf("getting experiment status for scorch app: %w", err)
 		}
 
-		status.Taps[b.options.Name] = md.Tap
-
-		b.options.Exp.Status.SetAppStatus("scorch", status)
-		_ = b.options.Exp.WriteToStore(true)
-
-		defer func() { _ = md.Tap.Delete(mm.Headnode()) }()
+		_ = setScorchStatus(&b.options.Exp, func(s *scorchmd.ScorchStatus) { s.Taps[b.options.Name] = md.Tap })
 	}
 
 	var (

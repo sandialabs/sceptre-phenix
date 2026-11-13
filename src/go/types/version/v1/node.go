@@ -10,6 +10,7 @@ import (
 	"time"
 
 	ifaces "phenix/types/interfaces"
+	"phenix/util/mm"
 	"phenix/util/plog"
 )
 
@@ -41,15 +42,15 @@ func (n Node) Type() string {
 	return n.TypeF
 }
 
-func (n Node) General() ifaces.NodeGeneral { //nolint:ireturn // interface
+func (n Node) General() ifaces.NodeGeneral {
 	return n.GeneralF
 }
 
-func (n Node) Hardware() ifaces.NodeHardware { //nolint:ireturn // interface
+func (n Node) Hardware() ifaces.NodeHardware {
 	return n.HardwareF
 }
 
-func (n Node) Network() ifaces.NodeNetwork { //nolint:ireturn // interface
+func (n Node) Network() ifaces.NodeNetwork {
 	return n.NetworkF
 }
 
@@ -73,7 +74,7 @@ func (n Node) Deletions() []ifaces.NodeDeletion {
 	return deletions
 }
 
-func (n Node) Delay() ifaces.NodeDelay { //nolint:ireturn // interface
+func (n Node) Delay() ifaces.NodeDelay {
 	if n.DelayF == nil {
 		return new(Delay)
 	}
@@ -135,6 +136,10 @@ func (n *Node) SetLabels(m map[string]string) {
 	n.LabelsF = m
 }
 
+func (n *Node) SetAnnotations(m map[string]any) {
+	n.AnnotationsF = m
+}
+
 func (n *Node) AddAnnotation(k string, i any) {
 	if n.AnnotationsF == nil {
 		n.AnnotationsF = make(map[string]any)
@@ -144,19 +149,25 @@ func (n *Node) AddAnnotation(k string, i any) {
 }
 
 func (n *Node) AddTimerDelay(delay string) {
-	n.DelayF.TimerF = delay
+	n.delay().TimerF = delay
 }
 
 func (n *Node) AddUserDelay(delay bool) {
-	n.DelayF.UserF = delay
+	n.delay().UserF = delay
 }
 
 func (n *Node) AddC2Delay(hostname string, useuuid bool) {
-	n.DelayF = new(Delay)
-	d := new(C2Delay)
-	d.HostnameF = hostname
-	d.UseUUIDF = useuuid
-	n.DelayF.C2F = append(n.DelayF.C2F, *d)
+	d := n.delay()
+	d.C2F = append(d.C2F, C2Delay{HostnameF: hostname, UseUUIDF: useuuid})
+}
+
+// delay returns the delay of the node, and makes it first when the node has none.
+func (n *Node) delay() *Delay {
+	if n.DelayF == nil {
+		n.DelayF = new(Delay)
+	}
+
+	return n.DelayF
 }
 
 func (n *Node) AddLabel(k, v string) {
@@ -167,7 +178,7 @@ func (n *Node) AddLabel(k, v string) {
 	n.LabelsF[k] = v
 }
 
-func (n *Node) AddHardware(os string, vcpu, memory int) ifaces.NodeHardware { //nolint:ireturn // interface
+func (n *Node) AddHardware(os string, vcpu, memory int) ifaces.NodeHardware {
 	h := &Hardware{ //nolint:exhaustruct // partial initialization
 		OSTypeF: os,
 		VCPUF:   vcpu,
@@ -179,7 +190,7 @@ func (n *Node) AddHardware(os string, vcpu, memory int) ifaces.NodeHardware { //
 	return h
 }
 
-func (n *Node) AddNetworkInterface(typ, name, vlan string) ifaces.NodeNetworkInterface { //nolint:ireturn // interface
+func (n *Node) AddNetworkInterface(typ, name, vlan string) ifaces.NodeNetworkInterface {
 	i := &Interface{ //nolint:exhaustruct // partial initialization
 		TypeF: typ,
 		NameF: name,
@@ -499,7 +510,7 @@ func (h *Hardware) SetMemory(m int) {
 	h.MemoryF = m
 }
 
-func (h *Hardware) AddDrive(disk string, part int) ifaces.NodeDrive { //nolint:ireturn // interface
+func (h *Hardware) AddDrive(disk string, part int) ifaces.NodeDrive {
 	d := &Drive{ //nolint:exhaustruct // partial initialization
 		ImageF:           disk,
 		InjectPartitionF: &part,
@@ -614,6 +625,18 @@ func (n Node) validate() error {
 		)
 	}
 
+	if n.HardwareF != nil && n.HardwareF.CPUF != "" {
+		if err := mm.ValidateUnexpanded(n.HardwareF.CPUF); err != nil {
+			return fmt.Errorf("hardware cpu: %w", err)
+		}
+	}
+
+	if n.DelayF != nil && n.DelayF.TimerF != "" {
+		if _, err := time.ParseDuration(n.DelayF.TimerF); err != nil {
+			return fmt.Errorf("delay timer %q is not a duration such as 5m: %w", n.DelayF.TimerF, err)
+		}
+	}
+
 	if n.NetworkF == nil {
 		return nil
 	}
@@ -637,6 +660,10 @@ func (n Node) validate() error {
 			seenIfaces[name] = struct{}{}
 		}
 
+		if err := iface.validateUnexpanded(); err != nil {
+			return err
+		}
+
 		if iface.GatewayF == "" {
 			continue
 		}
@@ -654,6 +681,26 @@ func (n Node) validate() error {
 		gateways++
 		if gateways > 1 {
 			return errors.New("internal nodes should not have more than one gateway interface")
+		}
+	}
+
+	return nil
+}
+
+// validateUnexpanded returns an error for a value of iface that phenix writes
+// into a minimega command and that minimega would change (see
+// [mm.ValidateUnexpanded]).
+func (iface *Interface) validateUnexpanded() error {
+	for _, field := range []struct{ name, value string }{
+		{"bridge", iface.BridgeF}, {"vlan", iface.VLANF}, {"driver", iface.DriverF},
+		{"address", iface.AddressF}, {"gateway", iface.GatewayF},
+	} {
+		if field.value == "" {
+			continue
+		}
+
+		if err := mm.ValidateUnexpanded(field.value); err != nil {
+			return fmt.Errorf("interface %q %s: %w", iface.NameF, field.name, err)
 		}
 	}
 
@@ -755,17 +802,18 @@ func (n Node) FileInjects(baseDir string) string {
 	injects := make([]string, len(n.InjectionsF))
 
 	for i, inject := range n.InjectionsF {
-		if strings.HasPrefix(inject.SrcF, "/") {
-			injects[i] = fmt.Sprintf(`"%s":"%s"`, inject.SrcF, inject.DstF)
-		} else {
-			injects[i] = fmt.Sprintf(`"%s/%s":"%s"`, baseDir, inject.SrcF, inject.DstF)
+		src := inject.SrcF
+		if !strings.HasPrefix(src, "/") {
+			src = baseDir + "/" + src
 		}
 
+		injects[i] = fmt.Sprintf(`"%s":"%s"`, src, inject.DstF)
+
 		if inject.PermissionsF != "" && len(inject.PermissionsF) <= 4 {
-			if perms, err := strconv.ParseInt(inject.PermissionsF, 8, 64); err == nil {
+			if perms, err := strconv.ParseUint(strings.TrimPrefix(inject.PermissionsF, "+"), 8, 32); err == nil {
 				// Update file permissions on local disk before it gets injected into
 				// disk image.
-				_ = os.Chmod(inject.SrcF, os.FileMode(perms)) //nolint:gosec // integer overflow conversion int64 -> uint32
+				_ = os.Chmod(src, os.FileMode(perms))
 			}
 		}
 	}

@@ -143,7 +143,7 @@ by default `/phenix/topologies/NAME`, so the command works from any directory.
 
 | Flag | Default | Description |
 | :--- | :--- | :--- |
-| `-b, --branch-name` | the directory's name | The workflow [branch name](#branch-name). |
+| `-b, --branch-name`, `--name` | the directory's name | The workflow [branch name](#branch-name). `--name` is the same flag. Give only one of them, or give them the same value. |
 | `-c, --config` | `phenix.yml` | Workflow config file, relative to the directory unless absolute. |
 | `-n, --dry-run` | `false` | Validate everything, log the server's plan, and change nothing. |
 | `-f, --force` | `false` | Allow restarting a running experiment. |
@@ -252,7 +252,7 @@ spec:
 | `deployMode` | the server's `deploy-mode` | Which minimega VMs to deploy: `all`, `no-headnode` or `only-headnode`. |
 | `useGREMesh` | `false` | Use GRE tunnels between mesh nodes for VLAN trunking. |
 | `vlanRange.min`, `vlanRange.max` | `0` | The lowest and highest VLAN IDs minimega may assign. `0` leaves that end unset. |
-| `defaultBridge` | `phenix` | The bridge VMs connect to by default: at most 15 characters and, unless it's `phenix`, used by no other experiment. |
+| `defaultBridge` | `phenix` | The bridge VMs connect to by default: at most 15 ASCII letters, digits, `_`, `@`, `.`, or `-` and, unless it's `phenix`, used by no other experiment. |
 
 ### Schema
 
@@ -284,6 +284,14 @@ branch:
 It is also an error when `auto.create` names an existing experiment that
 isn't mapped to the branch.
 
+A `restart` checks the disks of its start before it stops the experiment. If
+the start would fail, the apply fails, and the experiment continues to run.
+See [Disk Check Before a Start](experiments.md#disk-check-before-a-start).
+
+After a start or a restart, the server runs the apps of the scenario that
+have `runPeriodically` in an `experiments.periodic`
+[background job](jobs.md), as a start from the Web-UI does.
+
 ## Dry Run
 
 `phenix workflow apply -n` asks the server to check everything the command
@@ -300,6 +308,13 @@ The server checks that:
 
 A first deploy can be checked too: the topology and scenario may come from
 the directory's `phenix-configs/` before they are stored in phēnix.
+
+When the plan starts the experiment (`createAndStart`, `updateAndStart` or
+`restart`), the dry run also runs the
+[disk check](experiments.md#disk-check-before-a-start) of that start. A
+problem does not fail the dry run. The CLI logs it as a warning, and the REST
+response lists it in `warnings`, with `the start would fail:` in front of a
+problem that would refuse the start.
 
 ## Validation Errors
 

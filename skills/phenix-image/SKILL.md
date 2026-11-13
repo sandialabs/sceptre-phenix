@@ -226,7 +226,7 @@ apt-get install -y --no-install-recommends <packages>
 | `vmdb2 app does not exist in your path` | Run inside the phenix container, or install the fork and symlink `/opt/vmdb2/vmdb2 → /usr/bin/vmdb2` |
 | `getting image config <name> from store` | No config by that name — check `phenix image list`; `create` first |
 | `config already exists` on `create` | `phenix image delete <name>` first; `create` never overwrites |
-| `must provide a valid unit for disk size option` | `--size` needs an `M` or `G` suffix |
+| `invalid --size "<value>": give a number followed by M or G, such as 10G` | `--size` needs a positive number and an `M` or `G` suffix, such as `10G` or `1.5G` |
 | `must provide an image name as the only argument` | A multi-value flag was space-separated; use commas |
 | `opening script file: no such file or directory` | `-T` path does not resolve where phenix runs (inside the container) |
 | `scheme <x> not supported for scripts` | `-T` accepts local paths and `http(s)://` URLs only |

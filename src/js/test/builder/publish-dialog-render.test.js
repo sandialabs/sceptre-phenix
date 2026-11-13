@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The Publish dialog rendered on the server: its titles, Open draft and hints.
 // publish-dialog.test.js drives what publishing changes in a page.
 

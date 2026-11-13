@@ -2,8 +2,7 @@
 // The Grid size field of the Inspector's Diagram section, mounted and typed
 // in: a size applies on change or Enter, and other text stays with an error.
 
-import { afterEach, describe, expect, test } from 'vitest';
-import { enableAutoUnmount } from '@vue/test-utils';
+import { describe, expect, test } from 'vitest';
 
 import InspectorDiagram from '@/components/builder/inspector/InspectorDiagram.vue';
 
@@ -11,8 +10,6 @@ import { DEFAULT_GRID_SIZE } from '@/builder/model.js';
 
 import { sampleDocument } from './fixtures.js';
 import { mountInspector, type } from './inspector-mount.js';
-
-enableAutoUnmount(afterEach);
 
 const ERROR = 'Grid size must be a whole number from 4 to 200.';
 

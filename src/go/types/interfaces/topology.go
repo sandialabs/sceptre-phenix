@@ -41,6 +41,7 @@ type NodeSpec interface { //nolint:interfacebloat // legacy interface
 	SetDeletions([]NodeDeletion)
 	SetType(string)
 	SetLabels(map[string]string)
+	SetAnnotations(map[string]any)
 
 	AddAnnotation(string, any)
 	AddTimerDelay(delay string)

@@ -12,7 +12,7 @@ authorization (authz).
 When in `disabled` mode, no user authentication or authorization occurs. Users
 do not have to authenticate, and all actions are allowed.
 
-To use `disabled` mode, the UI should be built with `VUE_APP_AUTH=disabled` (if
+To use `disabled` mode, the UI should be built with `VITE_AUTH=disabled` (if
 Docker is being used to build the UI, use Docker build arg
 `PHENIX_WEB_AUTH=disabled`) and the UI server should be started without the
 `-k/--jwt-signing-key` option set.
@@ -23,7 +23,7 @@ When in `enabled` mode, user authentication and authorization occurs within
 phenix directly. Users have to authenticate to the phenix UI, and certain
 actions are prohibited based on the role assigned to the user.
 
-To use `enabled` mode, the UI should be built with `VUE_APP_AUTH=enabled` (if
+To use `enabled` mode, the UI should be built with `VITE_AUTH=enabled` (if
 Docker is being used to build the UI, use Docker build arg
 `PHENIX_WEB_AUTH=enabled`) and the UI server should be started with the
 `-k/--jwt-signing-key` (and optionally the `--jwt-lifetime`) option set.
@@ -35,7 +35,7 @@ proxy that sits in front of phenix but user authorization still occurs within
 phenix directly. Users authenticate to the proxy, and certain actions are
 prohibited based on the role assigned to the user.
 
-To use `proxy` mode, the UI should be built with `VUE_APP_AUTH=proxy` (if Docker
+To use `proxy` mode, the UI should be built with `VITE_AUTH=proxy` (if Docker
 is being used to build the UI, use Docker build arg `PHENIX_WEB_AUTH=proxy`) and
 the UI server should be started with the `-k/--jwt-signing-key` and
 `--proxy-auth-header` (and optionally the `--jwt-lifetime`) options set.
@@ -52,22 +52,25 @@ role.
 
 ## Create a new user
 
-There are three primary ways to create new users.
+There are three primary ways to create new users. A username must start with
+a letter or digit and contain only letters, digits, `.`, `_`, `@`, `+` and `-`.
+phenix refuses other usernames and stores no user.
 
 1. Choose the `Create Account` link off the login page and complete all fields
    in the `Create a New Account` dialogue. This will initiate a message to an
    administrator's account who can then activate the account, setting the
    role(s) and resource name(s).
 
-    ![screenshot](images/login_create.png){: width=400 .center}
+    ![Sign-in form with Username and Password fields and the Create Account link circled in red.](images/login_create.png){: width=400 .center}
 
-    ![screenshot](images/create_new_account.png){: width=400 .center}
+    ![Create a New Account dialog with User Name, First Name, Last Name, Password and Confirm Password fields and a Create User button.](images/create_new_account.png){: width=400 .center}
 
-2. From the `Users` tab, click the `+` button to create a new user. Here the
-   administrator will add the [role(s) and resource
-   name(s)](#user-administration).
+2. From the `Users` page in the `Admin` menu, click the `+` button to create
+   a new user. Here the administrator will add the [role(s) and resource
+   name(s)](#user-administration). phenix refuses a username that is already
+   taken or a role that does not exist, and stores no user.
 
-    ![screenshot](images/create_a_new_user.png){: width=400 .center}
+    ![Create a New User dialog with name and password fields, a Role drop-down, a Resource Name(s) field and a Create User button.](images/create_a_new_user.png){: width=400 .center}
 
 3. Create a YAML or JSON file at `/etc/phenix/users.[yml|json]` with the
    following structure. When the `phenix` UI starts, it looks for this file and
@@ -75,12 +78,14 @@ There are three primary ways to create new users.
    For users in the file that already exist, `phenix` ensures the user role
    matches what's in the file and updates it as necessary. This file is also
    automatically watched, so any users added to the file while `phenix` is
-   running will automatically be added to `phenix`.
+   running will automatically be added to `phenix`. An entry may end with
+   resource names that scope the role, each after its own `:`. phenix skips
+   and logs an entry whose role does not exist, and stores no user for it.
 
 ```yaml
 ui:
   users:
-    - <username>:<password>:<role name>
+    - <username>:<password>:<role name>[:<resource name>...]
     - ...
 ```
 
@@ -101,7 +106,10 @@ Without the `-k` (or `--jwt-signing-key`), authentication is disabled.
 
 ## Generating User Authentication Tokens
 
-From the `Users` tab, click the key icon next to the given user's name. A dialog
+From the `Users` page in the `Admin` menu, click the key icon next to the
+given user's name. The icon shows for your own user, and for another user
+only when your role has [`users/tokens`](#resource-userstokens) `create` on
+them. A dialog
 box will pop up where you can enter in a description for the token to be created
 and an expiration date. This expiration date should be entered in Golang time
 duration. For example, `4320h` is valid and represents 4320 hours or about 6
@@ -111,16 +119,35 @@ date.
 This token can be used to authenticate when using the Phenix API. Specifically, you would include the following as a header in HTTP requests.
 
 ```http
-X-phenix-auth-token: ******
+X-Phenix-Auth-Token: Bearer ******
+```
+
+On the phēnix server, `phenix admin token create` creates a token for a user.
+The running `phenix ui` signs the token with its JWT signing key. The command
+writes the token to standard output and its expiry to standard error.
+`--lifetime` is a duration, such as `12h`, or a whole number of days.
+
+```shell
+TOKEN=$(phenix admin token create ci-bot --lifetime 30 --description "CI runner")
 ```
 
 ## User Administration
 
+The `Users` link in the `Admin` menu shows for a role with
+[`users`](#resource-users) `list`, or with `users` `get` on your own user, which then lists only you.
+
 ### Updating Users
 
-An administrator is able to click on the username on the table in the Users tab
+An administrator is able to click on the username on the table on the Users page
 to update a user. They can update `First Name` or `Last Name`, `Role`,
 `Experiment Names`, and `Resource Name(s)`.
+
+The `Find a User` search box above the table matches user names, first and
+last names, and role names. The table can be sorted by `User`, `First Name`,
+`Last Name` or `Role`, and the counts above it give how many users and roles
+it lists.
+
+![Users page with its Users and Roles totals, a Find a User box, and a table of five example users with first and last names, roles, and change password, delete and edit actions.](images/users_search.png){: width=800 .center}
 
 ### Roles
 
@@ -133,13 +160,16 @@ available roles and their access rights.
 |-------------------|:-------------------------------------------------------------------------------------------------------------------------|:-----:|:-----:|:------:|:------:|:-----:|:------:|
 | Global Admin      | Can see and control absolutely anything/everything.                                                                      | E V U | E V U | E V U  | E V U  | E V U | E V U  |
 | Global Viewer     | Can see absolutely anything/everything, but cannot make any changes.                                                     | E V U | E V U |        |        |       |        |
-| Experiment Admin  | Can see and control anything/everything for assigned experiments, including VMs, but cannot create new experiments.      | E V   | E V   |   V    | E V    |   V   |   V    |
+| Experiment Admin  | Can see and control anything/everything for assigned experiments, including VMs, but cannot create new experiments.      | E V   | E V   |   V    | E V    |   V   | E\* V  |
 | Experiment User   | Can see assigned experiments, and can control VMs within assigned experiments, but cannot modify experiments themselves. | E V   | E V   |        |        |   V   |        |
 | Experiment Viewer | Can see assigned experiments and VMs within assigned experiments, but cannot modify or control experiments or VMs.       | E V   | E V   |        |        |       |        |
 | VM Admin          | Can see assigned experiments, and has full administrative control over VMs in assigned experiments.                       | E V   | E V   |   V    |   V    |   V   |   V    |
 | VM Viewer         | Can only see VM screenshots and access VM VNC, nothing else.                                                             |   V   |       |        |        |       |        |
 
 Key: E - experiment resource, V - VM resource, U - user resource
+
+E\* in the Experiment Admin row means the role can delete an experiment's
+files, but not the experiment itself.
 
 The built-in **Builder** role is for users of the [Builder](builder/index.md).
 It holds `builder` `use`, which gives access to the Builder and all its
@@ -149,6 +179,104 @@ get, create and update experiments.
 Global Viewer does not have `builder` `use`. See the policies in
 [Builder (`builder`)](#builder-builder) and
 [The Builder role](builder/details/administration.md#the-builder-role).
+
+The web UI hides or disables what your role cannot do, using the same
+permissions the server checks. If you open a page your role cannot use, phēnix
+sends you to the first page your role can use.
+
+### From the Command Line Binary
+
+The `phenix admin` commands manage users, custom roles and API tokens on the
+phēnix server (see [phenix admin](cli/admin.md)). The `list` and `get`
+commands read the store. The commands that make a change call the running
+`phenix ui` through its unix socket, as the user `global-admin`.
+
+```shell
+# Create a user. The command asks for the password two times.
+phenix admin user create alice --role experiment-user --resource-names 'lab-*'
+
+# Give the user another role
+phenix admin user update alice --role experiment-admin
+
+# Create a custom role
+phenix admin role create "Lab Viewer" --policy 'resources=experiments,vms;verbs=list,get;names=lab-*'
+```
+
+`--password-stdin` reads the password from standard input. A password change
+with `phenix admin user update --password` needs the current password. With
+`--dry-run`, `phenix admin user delete` and `phenix admin role delete` read
+only the store, and do not call the server.
+
+### Manage Custom Roles Through the API
+
+A Global Admin can create, update and delete custom roles through the REST
+API. The built-in roles cannot be changed or deleted. The
+[`roles`](#resource-roles) resource controls these routes. The caller must
+also hold each permission that the role gives. A policy without resource names
+counts as a policy for `*`. A custom role cannot give `create`, `patch` or
+`delete` on `roles`.
+
+To create a role:
+
+1. Send `POST /api/v1/roles` with the name and the policies of the role.
+2. Optionally, add `metadataName` to set the config name.
+3. Read the config name from the `Location` header of the `201` response.
+
+```json
+{
+  "name": "Lab Operator",
+  "metadataName": "lab-operator",
+  "policies": [
+    {"resources": ["experiments"], "verbs": ["list", "get"]},
+    {"resources": ["vms", "vms/*"], "verbs": ["list", "get", "update"]}
+  ]
+}
+```
+
+If you do not set `metadataName`, phēnix makes the config name from the name.
+phēnix changes the name to lower case and changes other characters to `-`.
+For example, `Lab Operator` becomes `lab-operator`. The config name and the
+name must not be a name of another role. phēnix compares these names without
+case, so `GLOBAL ADMIN` is the name of a built-in role.
+
+A request body can have 1 MiB. A role can have 256 policies. A policy can have
+64 resources, 64 verbs and 64 resource names.
+
+To give the role to a user, send `PATCH /api/v1/users/{username}` with
+`role_name` and `resource_names`. You must hold each permission that the role
+gives with those resource names. Permissions that the user already holds do
+not count.
+
+To update a role:
+
+1. Send `PATCH /api/v1/roles/{name}` with all of the new policies.
+2. Read `count` and the `users` list in the response.
+
+An empty `policies` list leaves the role with no policies. The `users`
+list names only the users that you can list. The UI of each changed user
+connects again with the new role.
+
+`{name}` is the config name or the name of the role. The update replaces the
+policies of the role. It also changes the copy of the role that each user with
+the role holds. Each user keeps the resource names that the user got with the
+role. If the old role has no policy without resource names, phēnix cannot find
+those names. Then the new policies without resource names give the user no
+named resource. Give the role to the user again to set the names. A role
+cannot get a new name.
+
+If phēnix cannot change the copy of some users, the response is `500`. The
+`details.users` list names those users. Send the same request again to update
+them. A user copy that is not a copy of the old role keeps its resource names.
+
+To delete a role:
+
+1. Give each user of the role a different role.
+2. Send `DELETE /api/v1/roles/{name}`.
+
+phēnix does not delete a role that a user has. phēnix also does not delete a
+role that a default user in `ui.users` or the development key in
+`ui.jwt-signing-key` names. The `409` response gives the number of users of the
+role.
 
 ### Resources
 
@@ -212,7 +340,7 @@ Global Viewer does not have `builder` `use`. See the policies in
 |      |      |
 |------|------|
 | Verb | create |
-| Desc | schedule an experiment using schedule algorithm |
+| Desc | schedule an experiment using schedule algorithm; on any experiment, list the schedule algorithms |
 | Exp. Scoped | yes |
 | Res. Scoped | no |
 
@@ -221,7 +349,7 @@ Global Viewer does not have `builder` `use`. See the policies in
 |      |      |
 |------|------|
 | Verb | create |
-| Desc | trigger the running stage of an experiment |
+| Desc | trigger a lifecycle stage of an experiment's apps, and type into or exit a SCORCH break terminal |
 | Exp. Scoped | yes |
 | Res. Scoped | no |
 
@@ -233,6 +361,27 @@ Global Viewer does not have `builder` `use`. See the policies in
 | Desc | get list of packet captures for an experiment |
 | Exp. Scoped | yes (list is filtered to only include experiments in scope) |
 | Res. Scoped | yes (list is filtered to only include VMs in scope) |
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | start an [experiment capture](packet-captures.md) |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | get a specific experiment capture (with `experiments/files` get, also stream it and open it in WebShark) |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | stop a specific experiment capture |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
 
 #### Resource: `experiments/files`
 
@@ -247,6 +396,20 @@ Global Viewer does not have `builder` `use`. See the policies in
 |------|------|
 | Verb | get |
 | Desc | get specific experiment file |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | upload one or more files to an experiment |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | delete one or more experiment files |
 | Exp. Scoped | yes |
 | Res. Scoped | no |
 
@@ -269,7 +432,7 @@ Global Viewer does not have `builder` `use`. See the policies in
 |      |      |
 |------|------|
 | Verb | patch |
-| Desc | update a specific experiment VM |
+| Desc | update a specific experiment VM, reset its saved settings, or get and change its link quality |
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
@@ -316,12 +479,19 @@ Global Viewer does not have `builder` `use`. See the policies in
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | save a full-size screenshot of a specific experiment VM in the experiment files |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
+
 #### Resource: `vms/vnc`
 
 |      |      |
 |------|------|
 | Verb | get |
-| Desc | get VNC address for a specific experiment VM |
+| Desc | open the console of a specific experiment VM and read its VNC session information |
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
@@ -337,16 +507,32 @@ Global Viewer does not have `builder` `use`. See the policies in
 |      |      |
 |------|------|
 | Verb | create |
-| Desc | start a packet capture on a specific experiment VM |
+| Desc | start a packet capture on a specific experiment VM, also as part of a VLAN capture |
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
 |      |      |
 |------|------|
 | Verb | delete |
-| Desc | stop all packet captures on a specific experiment VM |
+| Desc | stop all packet captures on a specific experiment VM, also as part of a VLAN capture |
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
+
+#### Resource: `exp/captureSubnet`
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | start packet captures on every VM interface in a subnet of an experiment |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | stop the packet captures of a subnet of an experiment (roles that may start them gain it on startup) |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
 
 #### Resource: `vms/snapshots`
 
@@ -368,6 +554,13 @@ Global Viewer does not have `builder` `use`. See the policies in
 |------|------|
 | Verb | update |
 | Desc | restore a specific experiment VM to a previous snapshot |
+| Exp. Scoped | yes |
+| Res. Scoped | yes |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | delete a snapshot of a specific experiment VM |
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
@@ -400,12 +593,51 @@ Global Viewer does not have `builder` `use`. See the policies in
 
 #### Resource: `disks`
 
+A `disks` resource name is a disk image's file name, such as `win10.qcow2`,
+and matches the files of that name in every folder of the minimega files
+directory. See [Disks](disks.md#permissions).
+
 |      |      |
 |------|------|
 | Verb | list |
-| Desc | get list of available backing images |
+| Desc | get list of disk images |
+| Exp. Scoped | no (listing one experiment's images also needs `get` on that experiment) |
+| Res. Scoped | yes (list is filtered to only include images in scope; an image outside the minimega files directory also needs `get` on an experiment using it, unless it backs a listed image) |
+
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | download a disk image |
 | Exp. Scoped | no |
-| Res. Scoped | yes (list is filtered to only include backing images in scope) |
+| Res. Scoped | yes |
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | snapshot or clone a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | yes (the new image's file name; the image copied also needs `get`) |
+
+|      |      |
+|------|------|
+| Verb | update |
+| Desc | commit, rebase, resize, or rename a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | yes (commit also needs it for the backing image) |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | delete a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | yes |
+
+|      |      |
+|------|------|
+| Verb | upload |
+| Desc | upload a disk image |
+| Exp. Scoped | no |
+| Res. Scoped | no |
 
 #### Resource: `hosts`
 
@@ -415,6 +647,51 @@ Global Viewer does not have `builder` `use`. See the policies in
 | Desc | get list of minimega cluster hosts |
 | Exp. Scoped | no |
 | Res. Scoped | yes (list is filtered to only include hosts in scope) |
+
+#### Resource: `vlans`
+
+A `vlans` resource name is an experiment name. The blacklist and the
+minimega namespaces that no experiment owns need the resource name `*`. See
+[VLANs](vlans.md#permissions).
+
+|      |      |
+|------|------|
+| Verb | list |
+| Desc | get the VLAN IDs of the cluster, find free IDs, and check proposed IDs (with `*`, also the blacklist and the unowned namespaces) |
+| Exp. Scoped | yes (list is filtered to only include experiments in scope) |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | get one VLAN ID with its VMs, or the VLANs of a specific experiment |
+| Exp. Scoped | yes |
+| Res. Scoped | no |
+
+A change to the VLAN pins or the range of an experiment needs `experiments`
+`patch` on that experiment.
+
+#### Resource: `vlans/blacklist`
+
+|      |      |
+|------|------|
+| Verb | create, delete |
+| Desc | add a VLAN ID to, or remove one from, the minimega VLAN blacklist (needs the resource name `*`) |
+| Exp. Scoped | no |
+| Res. Scoped | no |
+
+By default only `Global Admin` has this permission.
+
+#### Resource: `vlans/allocations`
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | release the VLAN IDs of a minimega namespace that no experiment owns (needs the resource name `*`) |
+| Exp. Scoped | no |
+| Res. Scoped | no |
+
+By default only `Global Admin` has this permission.
 
 #### Resource: `users`
 
@@ -453,6 +730,18 @@ Global Viewer does not have `builder` `use`. See the policies in
 | Exp. Scoped | no |
 | Res. Scoped | yes |
 
+#### Resource: `users/tokens`
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | create an API token for another user (also needs `users` `patch` on them) |
+| Exp. Scoped | no |
+| Res. Scoped | yes |
+
+By default only `Global Admin` has this permission. A user with `users`
+`patch` on themselves creates their own tokens without it.
+
 #### Resource: `users/roles`
 
 |      |      |
@@ -461,6 +750,53 @@ Global Viewer does not have `builder` `use`. See the policies in
 | Desc | update user role assignments |
 | Exp. Scoped | no |
 | Res. Scoped | yes |
+
+#### Resource: `roles`
+
+|      |      |
+|------|------|
+| Verb | list |
+| Desc | get list of roles (`GET /roles`) |
+| Exp. Scoped | no |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | get a specific role by its config name or display name (`GET /roles/{name}`) |
+| Exp. Scoped | no |
+| Res. Scoped | yes (the name in the request) |
+
+Add `?permissions=true` to either request to also get the permissions that
+each role gives. The `list` verb also allows `GET /permissions`, which lists
+each resource that phēnix checks and its verbs, as `phenix util role-table`
+does.
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | create a new custom role (`POST /roles`) |
+| Exp. Scoped | no |
+| Res. Scoped | no |
+
+|      |      |
+|------|------|
+| Verb | patch |
+| Desc | update the policies of a custom role, and of the users that have it (`PATCH /roles/{name}`) |
+| Exp. Scoped | no |
+| Res. Scoped | yes (the name in the request) |
+
+|      |      |
+|------|------|
+| Verb | delete |
+| Desc | delete a custom role that no user has (`DELETE /roles/{name}`) |
+| Exp. Scoped | no |
+| Res. Scoped | yes (the name in the request) |
+
+Only the built-in Global Admin role has `create`, `patch` and `delete` on
+`roles`. A custom role cannot get them. For `get`, `patch` and `delete`, the
+resource name is the role name in the request path. That name can be the
+config name or the name of the role.
 
 #### Resource: `configs`
 
@@ -471,11 +807,18 @@ Global Viewer does not have `builder` `use`. See the policies in
 | Exp. Scoped | no |
 | Res. Scoped | yes |
 
-Resource names are `<Kind>/<name>`, such as `Topology/riverside-water`.
-`Topology/*` covers every topology, and `*/*` covers every config, User and
-Role configs included. phēnix also checks create and update against the kind
-and name of the config in the request body. So a role scoped to `Topology/*`
-cannot create or overwrite a User or Role config.
+Config permissions are matched against the config's `Kind/name`, not its name
+alone, so write `resourceNames` that way: `Topology/my-topo` rather than
+`my-topo`. A `*` in a resource name never crosses the `/`, so use `*/*` or
+`Topology/*` to cover every config or every topology. `create` and `update`
+are also checked against the `Kind/name` of the config in the request body, so
+a role scoped to `Topology/*` cannot create or overwrite a `User` or `Role`
+config. An update that renames a config or changes its kind also needs
+`create` for the new `Kind/name`.
+
+A `User` config read or written through the configs API never carries the
+user's password hash or API tokens, and an update keeps the stored ones.
+Change a password or a token from the `Users` page or the users API.
 
 #### Resource: `builder`
 
@@ -495,6 +838,28 @@ cannot create or overwrite a User or Role config.
 | Exp. Scoped | no |
 | Res. Scoped | no |
 
+#### Resource: `runtimeSettings`
+
+|      |      |
+|------|------|
+| Verb | read, update |
+| Desc | read and change the runtime settings of `phenix ui` (`/runtimeSettings`), as `phenix settings` does |
+| Exp. Scoped | no |
+| Res. Scoped | no |
+
+By default only `Global Admin` has this permission.
+
+#### Resource: `minimega/commands`
+
+|      |      |
+|------|------|
+| Verb | create |
+| Desc | send one command to minimega (`POST /minimega/commands`), as `phenix mm` does |
+| Exp. Scoped | no |
+| Res. Scoped | no |
+
+By default only `Global Admin` has this permission.
+
 #### Resource: `vms/mount`
 
 |      |      |
@@ -513,6 +878,10 @@ cannot create or overwrite a User or Role config.
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
 
+`create` is also needed to give a VM the `phenix/startup-autotunnel`
+annotation through the web UI or API, when creating an experiment or editing
+the VM.
+
 #### Resource: `vms/cdrom`
 
 |      |      |
@@ -530,6 +899,24 @@ cannot create or overwrite a User or Role config.
 | Desc | create ELF memory dumps of experiment VMs |
 | Exp. Scoped | yes |
 | Res. Scoped | yes |
+
+#### Resource: `jobs`
+
+|      |      |
+|------|------|
+| Verb | list, get, update, delete |
+| Desc | list, read (and download the artifact of), cancel, and dismiss [background jobs](jobs.md) other users started; a user always may for their own |
+| Exp. Scoped | yes (the job's experiment; a job of no experiment needs `jobs/global` instead) |
+| Res. Scoped | no |
+
+#### Resource: `jobs/global`
+
+|      |      |
+|------|------|
+| Verb | list, get, update, delete |
+| Desc | as for `jobs`, for the background jobs of no experiment, such as disk clones, that other users started |
+| Exp. Scoped | no |
+| Res. Scoped | no |
 
 ### Built-In Roles
 
@@ -685,6 +1072,19 @@ spec:
     - "experiments/files"
     verbs:
     - create
+    - delete
+  - resources:
+    - jobs
+    verbs:
+    - list
+    - get
+    - update
+    - delete
+  - resources:
+    - vlans
+    verbs:
+    - list
+    - get
   - resources:
     - hosts
     resourceNames:
@@ -692,6 +1092,13 @@ spec:
     verbs:
     - list
 ```
+
+!!! note
+    On startup the UI server adds `experiments/files` `delete` to stored
+    `Experiment Admin` roles, and a `jobs` policy scoped to each user's
+    experiments. `Experiment User` can upload but not delete experiment files.
+    It also adds `vlans` `list` and `get` to stored `Experiment Admin`,
+    `Experiment User` and `Experiment Viewer` roles.
 
 #### Experiment User (`experiment-user`)
 
@@ -732,9 +1139,18 @@ spec:
     - create
     - update
   - resources:
+    - "vms/screenshot"
+    verbs:
+    - create
+  - resources:
     - "experiments/files"
     verbs:
     - create
+  - resources:
+    - vlans
+    verbs:
+    - list
+    - get
   - resources:
     - hosts
     resourceNames:
@@ -762,6 +1178,11 @@ spec:
     - list
     - get
   - resources:
+    - vlans
+    verbs:
+    - list
+    - get
+  - resources:
     - hosts
     resourceNames:
     - "*"
@@ -773,6 +1194,11 @@ spec:
     - post
     - delete
 ```
+
+!!! note
+    On startup the UI server scopes the `vms/mount` policy of every user
+    assigned `Experiment Viewer` to the same resource names as the user's
+    `vms` policy.
 
 #### VM Admin (`vm-admin`)
 

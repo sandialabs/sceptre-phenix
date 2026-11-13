@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 
 import BuilderPalette from '@/components/builder/BuilderPalette.vue';
 import BuilderTemplates from '@/components/builder/BuilderTemplates.vue';
@@ -32,8 +32,6 @@ function template(id, init = {}) {
     ...init,
   };
 }
-
-enableAutoUnmount(afterEach);
 
 afterEach(() => {
   window.localStorage.clear();

@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import PublishDialog from '@/components/builder/dialogs/PublishDialog.vue';
 import { PREVIEW_DELAY_MS } from '@/components/builder/dialogs/publishPreview.js';
@@ -16,8 +16,6 @@ import { sampleDocument } from './fixtures.js';
 
 // Only Publish itself reaches the client: the store's other reads are spied.
 vi.mock('@/utils/axios.js', () => ({ default: { post: vi.fn() } }));
-
-enableAutoUnmount(afterEach);
 
 afterEach(() => {
   vi.useRealTimers();

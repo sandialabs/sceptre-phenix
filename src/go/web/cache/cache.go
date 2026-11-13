@@ -26,11 +26,12 @@ const (
 
 type WebCache interface {
 	Get(string) ([]byte, bool)
-	Set(string, []byte) error
 	SetWithExpire(string, []byte, time.Duration) error
 
 	Lock(string, Status, time.Duration) Status
 	Locked(string) Status
+	// Renew sets the expiration of the lock key, when it holds the status, and reports whether it did.
+	Renew(string, Status, time.Duration) bool
 	Unlock(string)
 }
 
@@ -53,12 +54,6 @@ func (gwc GoWebCache) Get(key string) ([]byte, bool) {
 		return nil, false
 	}
 	return val, true
-}
-
-func (gwc *GoWebCache) Set(key string, val []byte) error {
-	gwc.c.Set(key, val, -1)
-
-	return nil
 }
 
 func (gwc *GoWebCache) SetWithExpire(key string, val []byte, exp time.Duration) error {
@@ -103,6 +98,21 @@ func (gwc *GoWebCache) Locked(key string) Status {
 		return ""
 	}
 	return val
+}
+
+func (gwc *GoWebCache) Renew(key string, status Status, exp time.Duration) bool {
+	key = "LOCK|" + key
+
+	v, ok := gwc.c.Get(key)
+	if !ok {
+		return false
+	}
+
+	if held, _ := v.(Status); held != status {
+		return false
+	}
+
+	return gwc.c.Replace(key, status, exp) == nil
 }
 
 func (gwc *GoWebCache) Unlock(key string) {

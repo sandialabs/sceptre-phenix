@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/go-cmp/cmp"
 
 	"phenix/app"
 	"phenix/store"
 	"phenix/types"
+	"phenix/util/plog/plogtest"
 )
 
 // stubApp is a minimal user app that records lifecycle calls and whose running
@@ -56,6 +59,19 @@ func (a *stubApp) Cleanup(context.Context, *types.Experiment) error {
 	return nil
 }
 
+// registerUserApp registers a test's user app until the test ends.
+func registerUserApp(t *testing.T, name string, factory app.AppFactory) error {
+	t.Helper()
+
+	if err := app.RegisterUserApp(name, factory); err != nil {
+		return err //nolint:wrapcheck // test helper
+	}
+
+	t.Cleanup(func() { app.UnregisterUserApp(name) })
+
+	return nil
+}
+
 // runningStageExperiment builds a minimal experiment whose scenario contains
 // the given apps, backed by a store mock so WriteToStore/Reload calls are
 // absorbed.
@@ -68,7 +84,10 @@ func runningStageExperiment(t *testing.T, appNames ...string) *types.Experiment 
 	m := store.NewMockStore(ctrl)
 	m.EXPECT().Get(gomock.Any()).Return(errors.New("store unavailable")).AnyTimes()
 
+	oldStore := store.DefaultStore
 	store.DefaultStore = m //nolint:reassign // monkey patching for test
+
+	t.Cleanup(func() { store.DefaultStore = oldStore }) //nolint:reassign // restore the patched store
 
 	appConfigs := make([]map[string]any, 0, len(appNames))
 	for _, name := range appNames {
@@ -102,7 +121,7 @@ func runningStageExperiment(t *testing.T, appNames ...string) *types.Experiment 
 func TestApplyAppsRunningStageErrorPropagates(t *testing.T) {
 	name := "test-running-fails"
 
-	if err := app.RegisterUserApp(name, func() app.App {
+	if err := registerUserApp(t, name, func() app.App {
 		return &stubApp{name: name, err: errors.New("checks failed")}
 	}); err != nil {
 		t.Fatalf("registering user app: %v", err)
@@ -126,7 +145,7 @@ func TestApplyAppsRunningStageErrorPropagates(t *testing.T) {
 func TestApplyAppsRunningStageSuccess(t *testing.T) {
 	name := "test-running-succeeds"
 
-	if err := app.RegisterUserApp(name, func() app.App {
+	if err := registerUserApp(t, name, func() app.App {
 		return &stubApp{name: name, err: nil}
 	}); err != nil {
 		t.Fatalf("registering user app: %v", err)
@@ -149,14 +168,14 @@ func TestApplyAppsFiltersNonRunningLifecycleStage(t *testing.T) {
 	var selectedCalls, skippedCalls []app.Action
 
 	selected := "test-cleanup-selected"
-	if err := app.RegisterUserApp(selected, func() app.App {
+	if err := registerUserApp(t, selected, func() app.App {
 		return &stubApp{name: selected, calls: &selectedCalls}
 	}); err != nil {
 		t.Fatalf("registering selected user app: %v", err)
 	}
 
 	skipped := "test-cleanup-skipped"
-	if err := app.RegisterUserApp(skipped, func() app.App {
+	if err := registerUserApp(t, skipped, func() app.App {
 		return &stubApp{name: skipped, calls: &skippedCalls}
 	}); err != nil {
 		t.Fatalf("registering skipped user app: %v", err)
@@ -187,7 +206,7 @@ func TestApplyAppsQueuesTriggeredAppCleanup(t *testing.T) {
 	var calls []app.Action
 
 	name := "test-triggered-cleanup"
-	if err := app.RegisterUserApp(name, func() app.App {
+	if err := registerUserApp(t, name, func() app.App {
 		return &stubApp{name: name, calls: &calls}
 	}); err != nil {
 		t.Fatalf("registering user app: %v", err)
@@ -236,7 +255,7 @@ func TestApplyAppsQueuesTriggeredAppCleanup(t *testing.T) {
 
 func TestApplyAppsQueuesCleanupBeforeTriggeredAppFailure(t *testing.T) {
 	name := "test-triggered-cleanup-failure"
-	if err := app.RegisterUserApp(name, func() app.App {
+	if err := registerUserApp(t, name, func() app.App {
 		return &stubApp{
 			name:         name,
 			configureErr: errors.New("configure failed"),
@@ -266,7 +285,7 @@ func TestApplyAppsQueuesCleanupBeforeTriggeredAppFailure(t *testing.T) {
 
 func TestApplyAppsTriggeredPreStartPreservesAppStatus(t *testing.T) {
 	name := "test-triggered-pre-start"
-	if err := app.RegisterUserApp(name, func() app.App {
+	if err := registerUserApp(t, name, func() app.App {
 		return &stubApp{name: name}
 	}); err != nil {
 		t.Fatalf("registering user app: %v", err)
@@ -301,7 +320,7 @@ func TestApplyAppsTriggeredPreStartPreservesAppStatus(t *testing.T) {
 
 func TestExperimentAppsIncludesDefaultAndScenarioApps(t *testing.T) {
 	name := "test-experiment-apps-scenario"
-	if err := app.RegisterUserApp(name, func() app.App {
+	if err := registerUserApp(t, name, func() app.App {
 		return &stubApp{name: name}
 	}); err != nil {
 		t.Fatalf("registering user app: %v", err)
@@ -327,6 +346,18 @@ func TestExperimentAppsIncludesDefaultAndScenarioApps(t *testing.T) {
 	}
 }
 
+// The default apps run in one fixed order, so logs and progress list them the
+// same way on each start.
+func TestDefaultAppsHaveAFixedOrder(t *testing.T) {
+	want := []string{"ntp", "serial", "startup", "vrouter"}
+
+	for range 20 {
+		if diff := cmp.Diff(want, app.DefaultApps()); diff != "" {
+			t.Fatalf("DefaultApps() mismatch (-want +got):\n%s", diff)
+		}
+	}
+}
+
 func TestStageApplicableExcludesRunningForDefaultApps(t *testing.T) {
 	for _, d := range app.DefaultApps() {
 		if app.StageApplicable(app.ActionRunning, d) {
@@ -342,5 +373,39 @@ func TestStageApplicableExcludesRunningForDefaultApps(t *testing.T) {
 func TestStageApplicableAllowsRunningForUserApps(t *testing.T) {
 	if !app.StageApplicable(app.ActionRunning, "some-user-app") {
 		t.Fatal("expected running stage to be applicable for a non-default app")
+	}
+}
+
+// Each app result line gives the time the app took for the stage, for a success and for a failure.
+func TestApplyAppsLogsAppDuration(t *testing.T) { //nolint:paralleltest // replaces the default store
+	name := "test-app-duration"
+
+	if err := registerUserApp(t, name, func() app.App {
+		return &stubApp{name: name, configureErr: errors.New("boom")}
+	}); err != nil {
+		t.Fatalf("registering user app: %v", err)
+	}
+
+	exp := runningStageExperiment(t, name)
+	logs := plogtest.Capture(t)
+
+	for _, tc := range []struct {
+		stage app.Action
+		msg   string
+	}{
+		{app.ActionPostStart, "[✓] '" + name + "' user app (post-start)"},
+		{app.ActionConfigure, "[✗] '" + name + "' user app (configure)"},
+	} {
+		_ = app.ApplyApps(context.Background(), exp, app.Stage(tc.stage), app.FilterApp(name))
+
+		records := logs.Records(t, plogtest.Message(tc.msg))
+		if len(records) != 1 {
+			t.Fatalf("ApplyApps(%s) logged %d %q records, want 1", tc.stage, len(records), tc.msg)
+		}
+
+		got, _ := records[0]["duration"].(string)
+		if _, err := time.ParseDuration(got); err != nil {
+			t.Errorf("ApplyApps(%s) %q duration = %q, want a duration", tc.stage, tc.msg, records[0]["duration"])
+		}
 	}
 }

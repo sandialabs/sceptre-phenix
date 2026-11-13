@@ -116,6 +116,9 @@ function selfContained(schema) {
 // these keywords stay as they are.
 const NON_MERGEABLE = ['if', 'then', 'else', 'not', 'oneOf', 'anyOf', '$ref'];
 
+// Keywords that only describe a schema: the first part's value stays.
+const ANNOTATIONS = ['title', 'description', 'example', 'examples', '$comment'];
+
 function flattenAllOf(value) {
   if (Array.isArray(value)) {
     return value.map(flattenAllOf);
@@ -166,6 +169,8 @@ function mergeParts(parts) {
         merged.required = [...new Set([...(merged.required || []), ...value])];
       } else if (!(key in merged)) {
         merged[key] = value;
+      } else if (ANNOTATIONS.includes(key)) {
+        continue;
       } else if (JSON.stringify(merged[key]) !== JSON.stringify(value)) {
         return null;
       }
@@ -239,9 +244,9 @@ export const MAP_VALUES_KEYWORD = 'x-builder-values';
 // line style left to the canvas is "Auto". Validation ignores it.
 export const UNSET_KEYWORD = 'x-builder-unset';
 
-// Node fields that phenix reads from a topology but that its schema does
-// not include. A served schema that has them wins. phenix stores an unset
-// field as null, in experiments and the topologies generated from them.
+// Node fields that phenix reads from a topology. A served schema's keywords for
+// them win, and the Builder's own keywords stay. phenix stores an unset field
+// as null, in experiments and the topologies generated from them.
 const NODE_MAPS = {
   labels: {
     type: ['object', 'null'],
@@ -290,10 +295,12 @@ function withNodeMaps(spec) {
     return spec;
   }
 
-  return {
-    ...spec,
-    properties: { ...NODE_MAPS, ...spec.properties },
-  };
+  const properties = { ...NODE_MAPS, ...spec.properties };
+  for (const [key, map] of Object.entries(NODE_MAPS)) {
+    properties[key] = { ...map, ...spec.properties[key] };
+  }
+
+  return { ...spec, properties };
 }
 
 // The spec schema with each interface's VLAN optional. phenix requires one,
@@ -351,7 +358,7 @@ function optionalVLANs(spec) {
 
 // Labels for phenix spec fields whose key makes a poor label: JSON Forms
 // start-cases untitled keys into "Vm Type", "C 2" or "Qinq". A key matches
-// anywhere in the spec. A title that the served schema sets itself wins.
+// anywhere in the spec. These labels win over the served schema's titles.
 const SPEC_TITLES = {
   advanced: 'Advanced settings',
   area_id: 'Area ID',
@@ -523,8 +530,10 @@ function annotated(schema, trail) {
     }
   }
 
-  if (format && types.includes('string')) {
-    next.format ??= format;
+  // The format checks what a served pattern does, with a plain-language error.
+  if (format && types.includes('string') && !next.format) {
+    next.format = format;
+    delete next.pattern;
   }
 
   if (suggest && types.includes('string')) {
@@ -576,7 +585,10 @@ function branchTitle(branch, key, index, branches) {
   }
 
   return (
-    BRANCH_TITLES[key]?.[type] || TYPE_TITLES[type] || `Option ${index + 1}`
+    BRANCH_TITLES[key]?.[type] ||
+    branch.title ||
+    TYPE_TITLES[type] ||
+    `Option ${index + 1}`
   );
 }
 
@@ -599,7 +611,7 @@ function isFreeForm(schema) {
 function asMap(schema, key) {
   return {
     ...schema,
-    title: schema.title || SPEC_TITLES[key] || startCase(key),
+    title: SPEC_TITLES[key] || schema.title || startCase(key),
     [MAP_KEYWORD]: schema[MAP_KEYWORD] || 'text',
     ...(key === 'advanced' && !schema[MAP_KEYS_KEYWORD]
       ? { [MAP_KEYS_KEYWORD]: ADVANCED_KEYS }
@@ -617,7 +629,7 @@ function readable(schema, key, trail = []) {
 
   const next = annotated(schema, trail);
 
-  if (key && !next.title && SPEC_TITLES[key]) {
+  if (key && SPEC_TITLES[key]) {
     next.title = SPEC_TITLES[key];
   }
 
@@ -660,7 +672,7 @@ function readable(schema, key, trail = []) {
       );
 
       next[keyword] = branches.map((titled, index) =>
-        titled && typeof titled === 'object' && !titled.title
+        titled && typeof titled === 'object'
           ? { ...titled, title: branchTitle(titled, key, index, branches) }
           : titled,
       );

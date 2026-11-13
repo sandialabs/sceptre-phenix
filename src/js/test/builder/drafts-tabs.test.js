@@ -2,8 +2,8 @@
 // The drafts landing, mounted and used from the keyboard and the mouse: its
 // tabs, the cards' keys and selection, Delete and what follows it.
 
-import { afterEach, describe, expect, test } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { describe, expect, test } from 'vitest';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import BuilderDrafts from '@/components/builder/BuilderDrafts.vue';
 
@@ -19,8 +19,6 @@ const PUBLISHED = [
 ];
 // The five tabs every user has: the view adds the last three.
 const TABS = ['drafts', 'published', 'templates', 'layers', 'icons'];
-
-enableAutoUnmount(afterEach);
 
 function landing(props = {}) {
   return mount(BuilderDrafts, {

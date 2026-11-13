@@ -5,7 +5,8 @@ machine to forward TCP traffic from VMs in a running experiment down to
 local ports. This lets a user interact with a VM directly using command line tools, instead of having to go through noVNC in a browser. A common
 example is using a real RDP client to connect to a Windows VM instead of
 interacting with it through noVNC (which enables things like copy/paste
-support that noVNC does not).
+support that noVNC does not). For copy and paste in the web console, see
+[Copy and Paste](vms.md#copy-and-paste).
 
 Traffic is proxied through the phēnix UI server over a WebSocket
 connection, so the local machine only needs network access to the phēnix
@@ -13,29 +14,35 @@ UI.
 
 ## Downloading the Tunneler
 
-Click on the `Tunneler` tab in the banner near the top of the phēnix UI.
+Click the `Tunneler` button (an archway icon) near the right-hand end of the
+banner at the top of the phēnix UI.
 
-![screenshot](images/tunneler_tab.png)
+![The Tunneler page, opened from the Tunneler button in the banner, with the Tunneler Downloads table above the Quick Start, and the Tunneler Documentation button after the Quick Start text](images/tunneler_page.png)
 
-This page lists the `phenix-tunneler` binaries built for the phēnix
-instance's version, along with a download link for each supported OS and
-architecture:
+The page starts with a `Tunneler Downloads` table of the `phenix-tunneler`
+builds installed on the phēnix server, with a `Download` link for each OS and
+architecture. Below it, a `Quick Start` summarizes the steps described below.
+
+phēnix ships these builds:
 
 | OS      | Architecture |
 | ------- | ------------ |
 | Linux   | amd64        |
-| MacOS   | arm64        |
-| MacOS   | amd64        |
+| macOS   | arm64        |
+| macOS   | amd64        |
 | Windows | amd64        |
 
+If the server holds no builds, the table says so. If the server does not
+serve tunneler binaries at all, the page says that in place of the table.
+
 Download the binary that matches your local machine and make it
-executable (on Linux/MacOS, `chmod +x phenix-tunneler-<os>-<arch>`).
+executable (on Linux/macOS, `chmod +x phenix-tunneler-<os>-<arch>`).
 
 !!! note
-    The `Tunneler` tab, and its downloads, are only available if the
+    The `Tunneler` button, and its downloads, are only available if the
     phēnix server has been configured to serve tunneler binaries (a
-    `downloads/tunneler` directory must exist alongside the phēnix
-    binary on the server). This will be the case if you have a typical deployment using the Docker image.
+    `downloads/tunneler` directory must exist in the directory the phēnix
+    server runs from when it starts). This will be the case if you have a typical deployment using the Docker image.
 
 ## Starting the Tunneler Server
 
@@ -88,10 +95,12 @@ While it runs, it:
 With `phenix-tunneler serve` running locally, create a port forward for a
 VM from the phēnix UI:
 
-1. Open a running experiment and click on a VM tile to open its VM
-   information modal.
-2. Click the `create port forward` button (the arrow icon). This button
-   requires the VM to be running with an active cc agent.
+1. Open a running experiment and click on a VM's name in the VM table to
+   open its details.
+2. Click the `Port forward` button under `More actions`, or the `add` link
+   beside the `Port forwards` section. Either one requires the VM to be
+   running with an active miniccc agent; the button's tooltip says so when
+   it is not.
 3. Fill out the `Create New Port Forward` dialog:
     * `Source Port` -- the port to listen on locally.
     * `Destination Host` -- the host, reachable from the phēnix server,
@@ -110,17 +119,26 @@ Once a local port is listening, connect to it with whatever application
 is appropriate (an RDP client, a database client, `ssh`, etc.) and
 traffic will be forwarded through the phēnix UI server to the VM.
 
-Existing port forwards for a VM are listed in the same VM information
-modal, and can be removed by clicking the trash icon next to a forward.
+Existing port forwards for a VM are listed in the `Port forwards` section
+of the same VM details, each with the user that created it, and can be
+removed by clicking the trash icon next to a forward.
+
+On the phēnix server, `phenix vm forward add`, `list` and `remove` do the
+same through the running `phenix ui`. A forward that the command line adds
+has the owner `global-admin`, so a tunneler of another user must activate it.
+
+```shell
+phenix vm forward add <experiment name> <vm name> 80 --host 10.0.0.5 --source-port 8080
+```
 
 ## Managing Listeners from the Local Web App
 
-The `serve`` command provides an option for also serving up a local web
+The `serve` command provides an option for also serving up a local web
 application for listing and managing listeners. It is disabled by default, and
-can be enabled with the ``--web-listen 127.0.0.1:8080` flag (the address or
+can be enabled with the `--web-listen 127.0.0.1:8080` flag (the address or
 port can be changed if needed).
 
-![screenshot](images/tunneler_web_app.png)
+![phēnix tunneler page listing three port forwards with their VM, remote and local addresses, state, Enable or Disable buttons and a port field to move them.](images/tunneler_web_app.png)
 
 ## Managing Listeners from the Command Line
 

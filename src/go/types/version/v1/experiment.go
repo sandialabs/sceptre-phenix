@@ -60,6 +60,10 @@ func (v *VLANSpec) SetMax(m int) {
 
 func (v VLANSpec) Validate() error {
 	for k, val := range v.AliasesF {
+		if val == 0 {
+			continue // ID 0 is not assigned yet; minimega assigns it at start
+		}
+
 		if v.MinF != 0 && val < v.MinF {
 			return fmt.Errorf(
 				"topology VLAN %s (VLAN ID %d) is less than experiment min VLAN ID of %d",
@@ -71,7 +75,7 @@ func (v VLANSpec) Validate() error {
 
 		if v.MaxF != 0 && val > v.MaxF {
 			return fmt.Errorf(
-				"topology VLAN %s (VLAN ID %d) is greater than experiment min VLAN ID of %d",
+				"topology VLAN %s (VLAN ID %d) is greater than experiment max VLAN ID of %d",
 				k,
 				val,
 				v.MaxF,
@@ -141,6 +145,29 @@ func (e *ExperimentSpec) Init() error {
 		}
 	}
 
+	return e.validateUnexpanded()
+}
+
+// validateUnexpanded returns an error for a value of e that phenix writes into
+// a minimega command or script and that minimega would change (see
+// [mm.ValidateUnexpanded]): the default bridge, VLAN aliases and schedules.
+func (e ExperimentSpec) validateUnexpanded() error {
+	if err := mm.ValidateUnexpanded(e.DefaultBridgeF); err != nil {
+		return fmt.Errorf("default bridge: %w", err)
+	}
+
+	for alias := range e.VLANsF.AliasesF {
+		if err := mm.ValidateUnexpanded(alias); err != nil {
+			return fmt.Errorf("VLAN alias: %w", err)
+		}
+	}
+
+	for node, host := range e.SchedulesF {
+		if err := mm.ValidateUnexpanded(node + " " + host); err != nil {
+			return fmt.Errorf("schedule of node %q: %w", node, err)
+		}
+	}
+
 	return nil
 }
 
@@ -156,7 +183,7 @@ func (e ExperimentSpec) DefaultBridge() string {
 	return e.DefaultBridgeF
 }
 
-func (e ExperimentSpec) Topology() ifaces.TopologySpec { //nolint:ireturn // interface
+func (e ExperimentSpec) Topology() ifaces.TopologySpec {
 	if e.TopologyF == nil {
 		return new(TopologySpec)
 	}
@@ -164,7 +191,7 @@ func (e ExperimentSpec) Topology() ifaces.TopologySpec { //nolint:ireturn // int
 	return e.TopologyF
 }
 
-func (e ExperimentSpec) Scenario() ifaces.ScenarioSpec { //nolint:ireturn // interface
+func (e ExperimentSpec) Scenario() ifaces.ScenarioSpec {
 	if e.ScenarioF == nil {
 		return new(v2.ScenarioSpec)
 	}
@@ -172,7 +199,7 @@ func (e ExperimentSpec) Scenario() ifaces.ScenarioSpec { //nolint:ireturn // int
 	return e.ScenarioF
 }
 
-func (e ExperimentSpec) VLANs() ifaces.VLANSpec { //nolint:ireturn // interface
+func (e ExperimentSpec) VLANs() ifaces.VLANSpec {
 	if e.VLANsF == nil {
 		return new(VLANSpec)
 	}
@@ -254,6 +281,10 @@ func (e *ExperimentSpec) SetVLANRange(minVal, maxVal int, f bool) error {
 	}
 
 	for k, v := range e.VLANsF.AliasesF {
+		if v == 0 {
+			continue // ID 0 is not assigned yet; minimega assigns it at start
+		}
+
 		if minVal != 0 && v < minVal {
 			return fmt.Errorf(
 				"topology VLAN %s (VLAN ID %d) is less than proposed experiment min VLAN ID of %d",
@@ -265,7 +296,7 @@ func (e *ExperimentSpec) SetVLANRange(minVal, maxVal int, f bool) error {
 
 		if maxVal != 0 && v > maxVal {
 			return fmt.Errorf(
-				"topology VLAN %s (VLAN ID %d) is greater than proposed experiment min VLAN ID of %d",
+				"topology VLAN %s (VLAN ID %d) is greater than proposed experiment max VLAN ID of %d",
 				k,
 				v,
 				maxVal,
@@ -324,6 +355,11 @@ func (e ExperimentSpec) VerifyScenario(ctx context.Context) error { //nolint:unp
 }
 
 func (e *ExperimentSpec) ScheduleNode(node, host string) error { //nolint:unparam // implements ifaces.ExperimentSpec
+	// a spec decoded without Init has no schedules map
+	if e.SchedulesF == nil {
+		e.SchedulesF = make(map[string]string)
+	}
+
 	e.SchedulesF[node] = host
 
 	return nil
@@ -345,6 +381,19 @@ type ExperimentStatus struct {
 	FrequencyF map[string]string `json:"appRunningStageFrequency,omitempty" mapstructure:"appRunningStageFrequency" structs:"appRunningStageFrequency" yaml:"appRunningStageFrequency,omitempty"`
 	RunningF   map[string]bool   `json:"appRunningStageStatus,omitempty"    mapstructure:"appRunningStageStatus"    structs:"appRunningStageStatus"    yaml:"appRunningStageStatus,omitempty"`
 	CleanupF   map[string]bool   `json:"appCleanupStagePending,omitempty"   mapstructure:"appCleanupStagePending"   structs:"appCleanupStagePending"   yaml:"appCleanupStagePending,omitempty"`
+
+	// The delayed VM starts and post-start apps a started experiment still
+	// waits on, kept so phenix can resume them after a restart.
+	DelayedTimersF    map[string]string          `json:"delayedTimers,omitempty"    mapstructure:"delayedTimers"    structs:"delayedTimers"    yaml:"delayedTimers,omitempty"`
+	DelayedC2F        map[string]map[string]bool `json:"delayedC2,omitempty"        mapstructure:"delayedC2"        structs:"delayedC2"        yaml:"delayedC2,omitempty"`
+	PostStartPendingF bool                       `json:"postStartPending,omitempty" mapstructure:"postStartPending" structs:"postStartPending" yaml:"postStartPending,omitempty"`
+	InterruptedF      string                     `json:"interrupted,omitempty"      mapstructure:"interrupted"      structs:"interrupted"      yaml:"interrupted,omitempty"`
+
+	// The start in progress, so another phenix process can report the experiment as starting.
+	StartingF ifaces.StartMarker `json:"starting,omitzero" mapstructure:"starting" structs:"starting,omitempty" yaml:"starting,omitempty"`
+
+	// The stop in progress, so another phenix process can report the experiment as stopping.
+	StoppingF ifaces.StopMarker `json:"stopping,omitzero" mapstructure:"stopping" structs:"stopping,omitempty" yaml:"stopping,omitempty"`
 }
 
 func (s *ExperimentStatus) Init() error { //nolint:unparam // implements ifaces.ExperimentStatus
@@ -513,4 +562,61 @@ func (s *ExperimentStatus) ResetAppStatus() {
 
 	s.FrequencyF = nil
 	s.RunningF = nil
+}
+
+func (s ExperimentStatus) DelayedTimers() map[string]string {
+	if s.DelayedTimersF == nil {
+		return make(map[string]string)
+	}
+
+	return s.DelayedTimersF
+}
+
+func (s ExperimentStatus) DelayedC2() map[string]map[string]bool {
+	if s.DelayedC2F == nil {
+		return make(map[string]map[string]bool)
+	}
+
+	return s.DelayedC2F
+}
+
+func (s ExperimentStatus) PostStartPending() bool {
+	return s.PostStartPendingF
+}
+
+func (s ExperimentStatus) Interrupted() string {
+	return s.InterruptedF
+}
+
+// SetDelayedStarts records the starts still pending; empty maps are kept as nil.
+func (s *ExperimentStatus) SetDelayedStarts(timers map[string]string, c2 map[string]map[string]bool, postStart bool) {
+	s.DelayedTimersF, s.DelayedC2F, s.PostStartPendingF = nil, nil, postStart
+
+	if len(timers) > 0 {
+		s.DelayedTimersF = timers
+	}
+
+	if len(c2) > 0 {
+		s.DelayedC2F = c2
+	}
+}
+
+func (s *ExperimentStatus) SetInterrupted(reason string) {
+	s.InterruptedF = reason
+}
+
+func (s ExperimentStatus) Starting() ifaces.StartMarker {
+	return s.StartingF
+}
+
+func (s *ExperimentStatus) SetStarting(m ifaces.StartMarker) {
+	s.StartingF = m
+}
+
+func (s ExperimentStatus) Stopping() ifaces.StopMarker {
+	return s.StoppingF
+}
+
+func (s *ExperimentStatus) SetStopping(m ifaces.StopMarker) {
+	s.StoppingF = m
 }

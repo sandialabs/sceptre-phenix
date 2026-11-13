@@ -2,9 +2,9 @@
 // Add a connection and Move to a group, mounted with a real Builder store:
 // where focus goes when a field is missing, and what a valid submit changes.
 
-import { afterEach, describe, expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 
 import ConnectDialog from '@/components/builder/dialogs/ConnectDialog.vue';
 import RegroupDialog from '@/components/builder/dialogs/RegroupDialog.vue';
@@ -12,8 +12,6 @@ import { findNode, groupNodes } from '@/builder/model.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument } from './fixtures.js';
-
-enableAutoUnmount(afterEach);
 
 // Opens `component` in the page over `doc`.
 function open(component, doc) {

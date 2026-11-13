@@ -15,6 +15,14 @@ import (
 	"phenix/util/tap"
 )
 
+// SetRunStatus sets, in memory only, the SCORCH status that exp has while it
+// executes run: the scorch app runs, with run as its run ID. The components
+// of the run get this status on stdin.
+func SetRunStatus(exp *types.Experiment, run int) {
+	exp.Status.SetAppRunning("scorch", true)
+	exp.Status.SetAppStatus("scorch", scorchmd.ScorchStatus{RunID: run}) //nolint:exhaustruct // partial initialization
+}
+
 func Execute(ctx context.Context, exp *types.Experiment, run int) error {
 	var config ifaces.ScenarioApp
 
@@ -41,8 +49,7 @@ func Execute(ctx context.Context, exp *types.Experiment, run int) error {
 		return errors.New("the Scorch app is currently already running")
 	}
 
-	exp.Status.SetAppRunning("scorch", true)
-	exp.Status.SetAppStatus("scorch", scorchmd.ScorchStatus{RunID: run}) //nolint:exhaustruct // partial initialization
+	SetRunStatus(exp, run)
 
 	err := exp.WriteToStore(true)
 	if err != nil {
