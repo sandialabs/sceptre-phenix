@@ -74,7 +74,7 @@ func experimentConfigHook(ctx context.Context, stage string, c *store.Config) er
 	case "update":
 		return hookUpdate(exp, c)
 	case "delete":
-		return hookDelete(exp, c.FilesRoot)
+		return hookDelete(ctx, exp, c.FilesRoot)
 	}
 
 	return nil
@@ -319,8 +319,11 @@ func renamedBaseDir(dir, old, name string) string {
 
 // hookDelete deletes the files of experiment exp. It removes the base
 // directory only as removeBaseDir allows, with root, the config's FilesRoot.
-func hookDelete(exp *types.Experiment, root string) error {
+// It records how long each step took in the deleteTimes that ctx carries.
+func hookDelete(ctx context.Context, exp *types.Experiment, root string) error {
 	var errors error
+
+	begun := time.Now()
 
 	// Delete any snapshot files created by this headnode for this experiment
 	// after deleting the experiment.
@@ -332,12 +335,18 @@ func hookDelete(exp *types.Experiment, root string) error {
 		)
 	}
 
+	filesDone := time.Now()
+
 	err = removeBaseDir(exp.Metadata.Name, exp.Spec.BaseDir(), root)
 	if err != nil {
 		errors = multierror.Append(
 			errors,
 			fmt.Errorf("deleting experiment base directory: %w", err),
 		)
+	}
+
+	if times := deleteTimesFrom(ctx); times != nil {
+		times.files, times.baseDir = filesDone.Sub(begun), time.Since(filesDone)
 	}
 
 	return errors //nolint:wrapcheck // returning multierror
@@ -1457,9 +1466,11 @@ func validateTriggerApps(exp *types.Experiment, stage app.Action, apps []string)
 }
 
 // Delete deletes the stopped experiment name: its config, then its files. A
-// delete through the web API passes DeleteWithBaseDirInside.
+// delete through the web API passes DeleteWithBaseDirInside. Once the config
+// is gone, it logs the time of each step and the total at info level.
 func Delete(name string, opts ...DeleteOption) error {
 	o := newDeleteOptions(opts...)
+	begun := time.Now()
 
 	if Running(name) {
 		return ErrDeleteRunning
@@ -1472,16 +1483,26 @@ func Delete(name string, opts ...DeleteOption) error {
 
 	// The delete config hook (see hookDelete) deletes the experiment's files
 	// after the store deletes the config, so its error comes once the config is gone.
-	err = config.DeleteAtRevision("experiment/"+name, 0, config.DeleteWithFilesRoot(o.baseDirRoot))
+	var times deleteTimes
+
+	err = config.DeleteAtRevision(
+		"experiment/"+name, 0,
+		config.DeleteWithFilesRoot(o.baseDirRoot),
+		config.DeleteWithContext(withDeleteTimes(context.Background(), &times)),
+	)
 	if err != nil {
 		if _, getErr := config.Get("experiment/" + name); !errors.Is(getErr, store.ErrNotExist) {
 			return fmt.Errorf("deleting experiment %s: %w", name, err)
 		}
 	}
 
+	stored := time.Now()
+
 	for _, hook := range hooks["delete"] {
 		hook("delete", name)
 	}
+
+	logDeleted(name, begun, stored, times)
 
 	if err != nil {
 		return fmt.Errorf("deleting experiment %s: %w: %w", name, ErrDeleteCleanup, err)

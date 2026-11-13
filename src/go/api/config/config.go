@@ -64,8 +64,8 @@ func storeFailed(err error) error {
 // "rename" stages of a config. It may change the config, or return an error to
 // halt the stage. "rename" gets the config under its old name after the store
 // holds only the new name. No "delete" runs for the old name. At "create", ctx
-// is the context of [CreateWithContext]. The other stages get
-// [context.Background].
+// is the context of [CreateWithContext], and at "delete" the context of
+// [DeleteWithContext]. The other stages get [context.Background].
 type ConfigHook func(ctx context.Context, stage string, c *store.Config) error
 
 var hooks = make(map[string][]ConfigHook) //nolint:gochecknoglobals // global hooks
@@ -637,7 +637,7 @@ func DeleteAtRevision(name string, revision uint64, opts ...DeleteOption) error 
 			}
 
 			for _, hook := range hooks[c.Kind] {
-				hookErr := hook(context.Background(), "delete", &c)
+				hookErr := hook(o.ctx, "delete", &c)
 				if hookErr != nil {
 					errs = multierror.Append(
 						errs,
@@ -668,7 +668,7 @@ func DeleteAtRevision(name string, revision uint64, opts ...DeleteOption) error 
 	}
 
 	for _, hook := range hooks[c.Kind] {
-		hookErr := hook(context.Background(), "delete", c)
+		hookErr := hook(o.ctx, "delete", c)
 		if hookErr != nil {
 			errs = multierror.Append(
 				errs,

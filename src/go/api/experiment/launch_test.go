@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -38,9 +39,12 @@ type deletedFiles struct {
 	mu      sync.Mutex
 	deleted []string
 	err     error
+	delay   time.Duration // how long each delete call takes
 }
 
 func (d *deletedFiles) DeleteFile(path string) error {
+	time.Sleep(d.delay)
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -50,6 +54,8 @@ func (d *deletedFiles) DeleteFile(path string) error {
 }
 
 func (d *deletedFiles) DeleteExistingFiles(names []string) error {
+	time.Sleep(d.delay)
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 

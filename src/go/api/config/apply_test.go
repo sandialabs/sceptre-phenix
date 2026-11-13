@@ -95,6 +95,33 @@ func TestCreateHooksGetTheContext(t *testing.T) {
 	}
 }
 
+// DeleteAtRevision gives the context of DeleteWithContext to the "delete" stage
+// of the config hooks, also when it deletes all configs.
+func TestDeleteHooksGetTheContext(t *testing.T) {
+	useContextHook()
+
+	for _, name := range []string{"topology/demo", "all"} {
+		t.Run(name, func(t *testing.T) {
+			storetest.UseBolt(t)
+
+			if _, err := config.Create(config.CreateFromYAML([]byte(applyTopology))); err != nil {
+				t.Fatalf("config.Create(topology demo) error = %v", err)
+			}
+
+			var stages []string
+
+			ctx := context.WithValue(t.Context(), hookStagesKey{}, &stages)
+			if err := config.DeleteAtRevision(name, 0, config.DeleteWithContext(ctx)); err != nil {
+				t.Fatalf("config.DeleteAtRevision(%s) error = %v", name, err)
+			}
+
+			if diff := cmp.Diff([]string{"delete"}, stages); diff != "" {
+				t.Errorf("config.DeleteAtRevision(%s) hook stages with its context mismatch (-want +got):\n%s", name, diff)
+			}
+		})
+	}
+}
+
 // useApplyHooks registers the test's server annotation, and a Topology hook
 // that, for a config named races, writes the stored config again during an
 // update, as another client would.

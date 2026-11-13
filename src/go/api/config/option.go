@@ -74,10 +74,11 @@ type DeleteOption func(*deleteOptions)
 
 type deleteOptions struct {
 	filesRoot string
+	ctx       context.Context
 }
 
 func newDeleteOptions(opts ...DeleteOption) deleteOptions {
-	var o deleteOptions
+	o := deleteOptions{ctx: context.Background()} //nolint:exhaustruct // functional options pattern
 
 	for _, opt := range opts {
 		opt(&o)
@@ -92,5 +93,13 @@ func newDeleteOptions(opts ...DeleteOption) deleteOptions {
 func DeleteWithFilesRoot(root string) DeleteOption {
 	return func(o *deleteOptions) {
 		o.filesRoot = root
+	}
+}
+
+// DeleteWithContext gives ctx to the "delete" stage of the config hooks of
+// each config that DeleteAtRevision deletes.
+func DeleteWithContext(ctx context.Context) DeleteOption {
+	return func(o *deleteOptions) {
+		o.ctx = ctx
 	}
 }
