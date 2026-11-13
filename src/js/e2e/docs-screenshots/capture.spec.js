@@ -632,6 +632,18 @@ test('console_tab', async ({ page }) => {
   await expect(consolePage.locator('.xterm-rows')).toContainText('site-1-hmi');
   await expect(consolePage.locator('#console-namespace')).toHaveValue('bennu');
   await page.evaluate(() => document.activeElement?.blur());
+  // the terminal shrinks to the room above the footer after it first draws
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const box = (s) => document.querySelector(s).getBoundingClientRect();
+        return (
+          box('footer').bottom <= window.innerHeight &&
+          box('.xterm-screen').bottom <= box('.console-host').bottom
+        );
+      }),
+    )
+    .toBe(true);
   await shootRegion(
     page,
     [
@@ -1386,13 +1398,20 @@ test('tunneler_page', async ({ page }) => {
   // the page has no page data to wait for
   await standIn(page);
   await page.goto('/tunneler');
-  // The docs button comes last, after the Quick Start text.
-  const docs = page.getByRole('link', { name: 'Tunneler Documentation' });
+  // The Quick Start box comes last and holds the docs button.
+  await expect(
+    page.getByRole('link', { name: 'Tunneler Documentation' }),
+  ).toBeVisible();
   await expect(page.locator('a.tunneler-button')).toBeVisible();
   await expect(
     page.getByRole('link', { name: /phenix-tunneler-windows/ }),
   ).toBeVisible();
-  await shootRegion(page, [page.locator('.navbar'), docs], 'tunneler_page', 0);
+  await shootRegion(
+    page,
+    [page.locator('.navbar'), page.locator('#quick-start')],
+    'tunneler_page',
+    0,
+  );
 });
 
 // The WebShark page on site-1-hmi's live capture before it records a packet:

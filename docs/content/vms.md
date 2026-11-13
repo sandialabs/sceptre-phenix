@@ -283,7 +283,7 @@ card, then click `Memory snapshot` in `More actions`. Type the file name and
 click `Create`, or click `Cancel` to stop. The button is disabled
 when the VM is not running.
 
-![Create memory snapshot dialog for site-1-hmi with a suggested file name, and Cancel and Create buttons.](images/vm_memory_snapshot.png){: width=500 .center}
+![Create memory snapshot dialog for site-1-hmi with a note that the snapshot goes to an ELF file in the experiment files, a suggested file name, and Cancel and Create buttons.](images/vm_memory_snapshot.png){: width=500 .center}
 
 ### From the Command Line Binary
 

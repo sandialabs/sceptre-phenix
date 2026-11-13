@@ -220,10 +220,11 @@ The web UI's `Settings` page (in the `Admin` menu) needs `update` on
 take effect as soon as they are saved, with no `config.yaml` change or
 restart. Its file logging fields change the runtime settings
 `log.system.max-size`, `log.system.max-backups` and `log.system.max-age` of
-`phenix ui`. A change applies at once, and phēnix writes it to the config
-file, as `phenix settings set` does.
+`phenix ui`. Its `minimega` field changes the runtime setting
+`minimega.read-connections`. A change applies at once, and phēnix writes it to
+the config file, as `phenix settings set` does.
 
-![Settings page with its Password, Timeout and File Logging settings and the Reset Form and Save Changes buttons.](images/settings_page.png){: width=800 .center}
+![Settings page with its Password, Timeout, File Logging and minimega settings and the Reset Form and Save Changes buttons.](images/settings_page.png){: width=800 .center}
 
 | Section | Setting | Default |
 | :--- | :--- | :--- |
@@ -236,6 +237,7 @@ file, as `phenix settings set` does.
 | `File Logging Settings` | `Max log file size (MiB)` of the system log | `100` |
 | `File Logging Settings` | `Max number of file rotations (0 for infinite)` | `3` |
 | `File Logging Settings` | `Max rotated log file age (0 for infinite)`, in days | `90` |
+| `minimega` | `Read-only connections`, 3 to 64 | `16` |
 
 The two idle timeout boxes are grayed out until the timeout is turned on. The
 idle time must be at least `0.5` minutes, and the warning time must be less
