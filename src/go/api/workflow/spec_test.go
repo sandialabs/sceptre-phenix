@@ -33,7 +33,7 @@ func TestExportedValues(t *testing.T) {
 		{name: "BranchAnnotation", got: workflow.BranchAnnotation, want: "phenix.workflow/branch"},
 		{name: "TagsAnnotation", got: workflow.TagsAnnotation, want: "phenix.workflow/tags"},
 		{name: "ErrInvalidSpec", got: workflow.ErrInvalidSpec.Error(), want: "invalid workflow config"},
-		{name: "ErrInvalidName", got: workflow.ErrInvalidName.Error(), want: "invalid workflow name"},
+		{name: "ErrInvalidName", got: workflow.ErrInvalidName.Error(), want: "invalid branch name"},
 	}
 
 	for _, tc := range cases {
@@ -253,14 +253,14 @@ func TestValidateName(t *testing.T) {
 	}
 
 	// The pattern accepts ASCII letters only, and the message says so.
-	want := `invalid workflow name "café": must start with an ASCII letter or digit` +
+	want := `invalid branch name "café": must start with an ASCII letter or digit` +
 		` and contain only ASCII letters, digits, '.', '_' and '-'`
 	if err := workflow.ValidateName("café"); err == nil || err.Error() != want {
 		t.Errorf("ValidateName(%q) error = %v, want %s", "café", err, want)
 	}
 }
 
-// specNameValid is the model of a workflow name: an ASCII letter or digit, then ASCII letters, digits, '.', '_'
+// specNameValid is the model of a branch name: an ASCII letter or digit, then ASCII letters, digits, '.', '_'
 // or '-'.
 func specNameValid(name string) bool {
 	for i, c := range []byte(name) {

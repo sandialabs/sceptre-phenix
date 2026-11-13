@@ -47,13 +47,12 @@ func isConfigFile(path string) bool {
 	}
 }
 
-// loadConfigs parses every config file under dir and returns them in upsert
-// order: Topology configs first, then the rest, each group sorted by path.
-// Hidden files and directories are skipped, and so are files that are not
-// .json, .yaml or .yml files. A symlink to a regular file is read; a symlink
-// to a directory is skipped with a warning.
-func loadConfigs(dir string) ([]configFile, error) {
-	var files []configFile
+// configPaths returns the path of every config file under dir. Hidden files
+// and directories are skipped, and so are files that are not .json, .yaml or
+// .yml files. A symlink to a regular file counts; a symlink to a directory is
+// skipped with a warning.
+func configPaths(dir string) ([]string, error) {
+	var paths []string
 
 	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -81,12 +80,7 @@ func loadConfigs(dir string) ([]configFile, error) {
 			return nil
 		}
 
-		file, err := parseConfigFile(path, true)
-		if err != nil {
-			return err
-		}
-
-		files = append(files, file)
+		paths = append(paths, path)
 
 		return nil
 	})
@@ -94,9 +88,63 @@ func loadConfigs(dir string) ([]configFile, error) {
 		return nil, err
 	}
 
-	slices.SortFunc(files, compareConfigs)
+	return paths, nil
+}
 
-	return files, nil
+// loadWorkflowFiles reads the config files at paths and the workflow config,
+// which is "" when there is none, fills in their variables in one pass, and
+// parses them. It returns the configs in upsert order: Topology configs
+// first, then the rest, each group sorted by path. Problems name each file by
+// its path relative to dir.
+func loadWorkflowFiles(dir string, paths []string, wfConfig string, vars *envsubst.Set) ([]configFile, *configFile, error) {
+	files := make([]envsubst.File, 0, len(paths)+1)
+
+	for _, path := range paths {
+		body, err := readConfigFile(path)
+		if err != nil {
+			return nil, nil, fmt.Errorf("checking configs: %w", err)
+		}
+
+		files = append(files, envsubst.File{Path: relTo(dir, path), Text: body})
+	}
+
+	if wfConfig != "" {
+		body, err := readConfigFile(wfConfig)
+		if err != nil {
+			return nil, nil, fmt.Errorf("checking the workflow config: %w", err)
+		}
+
+		files = append(files, envsubst.File{Path: relTo(dir, wfConfig), Text: body})
+	}
+
+	files, err := substituteVars(vars, files, "step", stepPreflight)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	configs := make([]configFile, 0, len(paths))
+
+	for i, path := range paths {
+		cfg, err := parseConfigBody(path, files[i].Text, true)
+		if err != nil {
+			return nil, nil, fmt.Errorf("checking configs: %w", err)
+		}
+
+		configs = append(configs, cfg)
+	}
+
+	slices.SortFunc(configs, compareConfigs)
+
+	if wfConfig == "" {
+		return configs, nil, nil
+	}
+
+	wf, err := parseConfigBody(wfConfig, files[len(paths)].Text, false)
+	if err != nil {
+		return nil, nil, fmt.Errorf("checking the workflow config: %w", err)
+	}
+
+	return configs, &wf, nil
 }
 
 // compareConfigs orders Topology configs before everything else, and each
@@ -136,16 +184,11 @@ func readConfigFile(path string) ([]byte, error) {
 	return body, nil
 }
 
-// parseConfigFile checks that path holds one YAML or JSON mapping, with the
-// placeholders masked, and returns the file as read. requireKind marks a file
-// from phenix-configs/, whose kind orders the upserts. The server checks the
-// rest.
-func parseConfigFile(path string, requireKind bool) (configFile, error) {
-	body, err := readConfigFile(path)
-	if err != nil {
-		return configFile{}, err
-	}
-
+// parseConfigBody checks that body, the text of path with its variables filled
+// in, holds one YAML or JSON mapping, with the placeholders that stay masked,
+// and returns it. requireKind marks a file from phenix-configs/, whose kind
+// orders the upserts. The server checks the rest.
+func parseConfigBody(path string, body []byte, requireKind bool) (configFile, error) {
 	masked := neutralizePlaceholders(body)
 
 	root, err := parseDocument(path, masked)

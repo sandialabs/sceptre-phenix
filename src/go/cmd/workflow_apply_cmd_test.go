@@ -192,6 +192,8 @@ func TestWorkflowApplyCommand(t *testing.T) {
 		{name: "config", shorthand: "c", def: workflowConfigName, hidden: false},
 		{name: "dry-run", shorthand: "n", def: "false", hidden: false},
 		{name: "force", shorthand: "f", def: "false", hidden: false},
+		{name: envFlagName, shorthand: "e", def: "[]", hidden: false},
+		{name: envFileFlagName, shorthand: "", def: "[]", hidden: false},
 	}
 
 	for _, want := range flags {
@@ -234,6 +236,9 @@ func TestWorkflowApplyCommand(t *testing.T) {
 		"phenix workflow apply helloworld -f",
 		"phenix workflow apply helloworld -b helloworld-2",
 		"phenix workflow apply helloworld --name helloworld-2",
+		"phenix workflow apply helloworld -e NODES=3 -e SITE=lab",
+		"phenix workflow apply helloworld -e NODES",
+		"phenix workflow apply helloworld --env-file base.env --env-file site.env",
 		"phenix workflow apply helloworld --follow-inject-symlinks",
 		"phenix workflow apply helloworld -c alt.yml",
 		"phenix workflow apply helloworld -b hw-test -c alt.yml -n",
@@ -253,7 +258,7 @@ func TestWorkflowApplyCommand(t *testing.T) {
 	// The help text with its line breaks and indents taken out.
 	long := strings.Join(strings.Fields(cmd.Long), " ")
 	reserved := "The names phenix.yml, phenix-configs and phenix-injects are reserved, in any letter case: " +
-		"they cannot be the workflow's name, and no entry of phenix-injects/ may have one of them at its top level " +
+		"they cannot be the branch name, and no entry of phenix-injects/ may have one of them at its top level " +
 		"or directly inside one of its top-level directories."
 
 	if !strings.Contains(long, reserved) {
@@ -319,6 +324,8 @@ func TestApplyOptionsFromFlags(t *testing.T) {
 		Socket:         "/run/phenix.sock",
 		InjectsBase:    "/srv/injects",
 		TopologiesBase: "/srv/topologies",
+		Env:            []string{},
+		EnvFiles:       []string{},
 	}
 
 	// globals holds the value each global flag must parse to, and wantErr
@@ -362,6 +369,15 @@ func TestApplyOptionsFromFlags(t *testing.T) {
 			name: "branch-name and name with the same value",
 			args: []string{"workflow", "apply", "helloworld", "-b", "hw-test", "--name", "hw-test"},
 			edit: func(opts *applyOptions) { opts.Name = "hw-test" },
+		},
+		{
+			name: "variables and env files",
+			args: []string{
+				"workflow", "apply", "helloworld", "-e", "NODES=3", "--env", "SITE", "--env-file", "a.env", "--env-file", "b.env",
+			},
+			edit: func(opts *applyOptions) {
+				opts.Env, opts.EnvFiles = []string{"NODES=3", "SITE"}, []string{"a.env", "b.env"}
+			},
 		},
 		{
 			name:    "branch-name and name with different values",
@@ -439,6 +455,13 @@ func TestApplyOptionsFromFlags(t *testing.T) {
 			}
 
 			got.Now = nil
+
+			// The shell is not compared, so that a failure prints no variable.
+			if len(got.Environ) != len(os.Environ()) {
+				t.Errorf("Environ has %d variables, want the %d of the process", len(got.Environ), len(os.Environ()))
+			}
+
+			got.Environ = nil
 
 			want := defaults
 			if tt.edit != nil {

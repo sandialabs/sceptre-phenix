@@ -15,6 +15,7 @@ import (
 const (
 	workflowConfigName         = "phenix.yml"
 	legacyWorkflowConfig       = ".phenix.yml"
+	defaultEnvFileName         = ".env"
 	injectsDirName             = "phenix-injects"
 	configsDirName             = "phenix-configs"
 	optionWorkflowDryRun       = "workflow-dry-run"
@@ -48,23 +49,42 @@ const (
                       files are skipped
     phenix.yml        the workflow config (any other name, such as
                       phenix.yaml, needs -c)
+    .env              variables for the configs, as NAME=value lines
 
   DIR|NAME is required. An existing path is used as is. Otherwise a NAME
   with no path separator is looked up under --base-dir.topologies. The
-  workflow name defaults to the base name of the directory; -b sets
+  branch name defaults to the base name of the directory; -b sets
   another. -b, --branch-name and --name are the same flag. Give only one of
   them, or give them the same value.
 
+  The branch name is not the experiment name. The experiment name is
+  auto.create in the workflow config. With "auto.create: ${BRANCH_NAME}",
+  -b also names the experiment, and each branch name is a separate
+  deployment. A fixed auto.create ignores -b. phenix reads auto.create
+  only when no experiment is mapped to the branch.
+
+  apply fills in the ${NAME} and ${NAME:default} placeholders of each
+  config and of the workflow config before it sends them. A value comes
+  from -e, else from an env file, else from the shell. --env-file names
+  the env files; without it, apply reads .env in the topology directory.
+  The shell gives no PHENIX_ variable unless -e NAME names it. A
+  placeholder with no value and no default is an error, and so is a -e
+  variable that no file uses. Write ${NAME:} for an optional variable and
+  $${NAME} for the literal text ${NAME}. Only -b sets BRANCH_NAME, and the
+  server fills in ${BRANCH_NAME}. Files in phenix-injects/ are not
+  changed.
+
   The names phenix.yml, phenix-configs and phenix-injects are
-  reserved, in any letter case: they cannot be the workflow's name,
+  reserved, in any letter case: they cannot be the branch name,
   and no entry of phenix-injects/ may have one of them at its top level
   or directly inside one of its top-level directories.
 
   apply talks to the server over --unix-socket and changes nothing until
   step 3. Each log record names its step in the step field:
 
-    1. preflight: check the server, and check that every file is one
-       YAML or JSON document and that every config has a kind
+    1. preflight: check the server, fill in the variables, and check that
+       every file is one YAML or JSON document and that every config has
+       a kind
     2. plan: the server dry-runs every config, then the workflow config
        with those configs as pending, and checks what they refer to;
        every rejection is logged, any rejection, or two files that
@@ -82,7 +102,7 @@ const (
   that changes no experiment (action none), are logged as warnings.`
 
 	workflowApplyExample = `
-  # Deploy by path; the workflow name is the directory name, helloworld
+  # Deploy by path; the branch name is the directory name, helloworld
   phenix workflow apply /phenix/topologies/helloworld
 
   # Look helloworld up under --base-dir.topologies; works from any directory
@@ -97,11 +117,20 @@ const (
   # Allow restarting the running experiment
   phenix workflow apply helloworld -f
 
-  # Deploy under another name; injects go to <base-dir.injects>/helloworld-2
+  # Deploy under another branch name; injects go to <base-dir.injects>/helloworld-2
   phenix workflow apply helloworld -b helloworld-2
 
   # The same; --branch-name and --name are the same as -b
   phenix workflow apply helloworld --name helloworld-2
+
+  # Set variables for the ${NAME} placeholders; -e overrides an env file
+  phenix workflow apply helloworld -e NODES=3 -e SITE=lab
+
+  # Copy NODES from the shell; it then overrides helloworld/.env
+  phenix workflow apply helloworld -e NODES
+
+  # Read the env files, and not helloworld/.env; site.env overrides base.env
+  phenix workflow apply helloworld --env-file base.env --env-file site.env
 
   # Follow symlinks in phenix-injects/ and copy targets as regular files and directories
   phenix workflow apply helloworld --follow-inject-symlinks
@@ -109,7 +138,7 @@ const (
   # Use another workflow config
   phenix workflow apply helloworld -c alt.yml
 
-  # Dry run of an alternate config under another name
+  # Dry run of an alternate config under another branch name
   phenix workflow apply helloworld -b hw-test -c alt.yml -n
 
   # A directory with only phenix-configs/: upsert the configs; injects and apply are skipped
@@ -171,12 +200,7 @@ func newWorkflowApplyCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringP(optionBranchName, "b", "", "workflow branch name (default: base name of the topology directory)")
-	cmd.Flags().String(optionBranchNameAlias, "", "same as -b/--"+optionBranchName)
-	cmd.Flags().StringP(
-		"config", "c", workflowConfigName,
-		"workflow config, relative to the topology directory unless absolute",
-	)
+	addWorkflowSourceFlags(cmd)
 	cmd.Flags().BoolP("dry-run", "n", false, "check every config and the workflow config, log the server's plan, and change nothing")
 	cmd.Flags().BoolP("force", "f", false, "allow apply to stop, reconfigure and restart a running experiment")
 	cmd.Flags().Bool(
@@ -187,26 +211,67 @@ func newWorkflowApplyCmd() *cobra.Command {
 	return cmd
 }
 
+// addWorkflowSourceFlags adds the flags that say which topology directory a
+// workflow command reads, and with which variables: -b and its alias, -c, -e
+// and --env-file.
+func addWorkflowSourceFlags(cmd *cobra.Command) {
+	cmd.Flags().StringP(
+		optionBranchName, "b", "",
+		"workflow branch name (default: base name of the topology directory); it does not rename an experiment",
+	)
+	cmd.Flags().String(optionBranchNameAlias, "", "same as -b/--"+optionBranchName)
+	cmd.Flags().StringP(
+		"config", "c", workflowConfigName,
+		"workflow config, relative to the topology directory unless absolute",
+	)
+	addVarFlags(cmd)
+}
+
+// sourceOptionsFromFlags builds the source options from the flags that
+// [addWorkflowSourceFlags] adds and the global settings the root command set
+// up. The error is that of [branchNameFromFlags].
+func sourceOptionsFromFlags(cmd *cobra.Command) (sourceOptions, error) {
+	name, err := branchNameFromFlags(cmd.Flags())
+	if err != nil {
+		return sourceOptions{}, err
+	}
+
+	vars := varOptionsFromFlags(cmd)
+
+	return sourceOptions{
+		Name:           name,
+		Config:         mustGet(cmd.Flags().GetString, "config"),
+		ConfigExplicit: cmd.Flags().Changed("config"),
+		TopologiesBase: common.TopologiesBase,
+		Env:            vars.Flags,
+		EnvFiles:       vars.EnvFiles,
+		Environ:        vars.Environ,
+	}, nil
+}
+
 // applyOptionsFromFlags builds the apply options from cmd's flags and the
 // global settings the root command set up. The error is that of
 // [branchNameFromFlags].
 func applyOptionsFromFlags(cmd *cobra.Command) (applyOptions, error) {
-	name, err := branchNameFromFlags(cmd.Flags())
+	src, err := sourceOptionsFromFlags(cmd)
 	if err != nil {
 		return applyOptions{}, err
 	}
 
 	return applyOptions{
-		Name:                 name,
-		Config:               mustGet(cmd.Flags().GetString, "config"),
-		ConfigExplicit:       cmd.Flags().Changed("config"),
+		Name:                 src.Name,
+		Config:               src.Config,
+		ConfigExplicit:       src.ConfigExplicit,
 		DryRun:               mustGet(cmd.Flags().GetBool, "dry-run"),
 		Force:                mustGet(cmd.Flags().GetBool, "force"),
 		Socket:               common.UnixSocket,
 		InjectsBase:          common.InjectsBase,
-		TopologiesBase:       common.TopologiesBase,
+		TopologiesBase:       src.TopologiesBase,
 		InjectsBaseExplicit:  cmd.Flags().Changed(optionInjectsBase),
 		FollowInjectSymlinks: mustGet(cmd.Flags().GetBool, optionFollowInjectSymlinks),
+		Env:                  src.Env,
+		EnvFiles:             src.EnvFiles,
+		Environ:              src.Environ,
 		Now:                  time.Now,
 	}, nil
 }

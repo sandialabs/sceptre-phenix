@@ -12,11 +12,143 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
 	"pgregory.net/rapid"
 
 	"phenix/util/envsubst"
 )
+
+// filesTestVars returns the variables of a topology directory at dir, as the
+// workflow commands read them, with flags and shell as the other sources.
+func filesTestVars(t *testing.T, dir string, flags, shell []string) *envsubst.Set {
+	t.Helper()
+
+	vars, err := newVarSet(envsubst.Options{
+		Flags:          flags,
+		EnvFiles:       nil,
+		DefaultEnvFile: filepath.Join(dir, defaultEnvFileName),
+		Environ:        shell,
+		Reserved:       "BRANCH_NAME",
+	})
+	if err != nil {
+		t.Fatalf("newVarSet error = %v", err)
+	}
+
+	return vars
+}
+
+// filesTestLoad loads the configs under dir, as the preflight does for a
+// configs directory, with no variable set.
+func filesTestLoad(t *testing.T, dir string) ([]configFile, error) {
+	t.Helper()
+
+	paths, err := configPaths(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	configs, _, err := loadWorkflowFiles(dir, paths, "", filesTestVars(t, dir, nil, nil))
+
+	return configs, err
+}
+
+// TestLoadWorkflowFilesFillsInVariables checks that the variables of every
+// file are filled in before the parse, that the kind can be a variable, and
+// that ${BRANCH_NAME} and an escaped placeholder stay for the server.
+func TestLoadWorkflowFilesFillsInVariables(t *testing.T) {
+	logs := captureLogs(t)
+	dir := t.TempDir()
+
+	writeWorkflowTree(t, dir, map[string]string{
+		".env":                        "SITE=lab\nNODES=from-the-file\n",
+		"phenix-configs/topology.yml": "kind: ${KIND}\nmetadata:\n  name: ${SITE}-${BRANCH_NAME}\nspec:\n  count: ${NODES}\n",
+		"phenix-configs/scenario.json": `{"kind": "Scenario", "spec": {"size": ${SIZE:4}, ` +
+			`"keep": "$${SIZE}", "home": "${HOME}"}}`,
+		"phenix.yml": "kind: Workflow\nspec:\n  auto:\n    create: ${SITE}-${BRANCH_NAME:x}\n",
+	})
+
+	configsDir := filepath.Join(dir, configsDirName)
+	wfPath := filepath.Join(dir, workflowConfigName)
+	vars := filesTestVars(t, dir, []string{"NODES=3", "KIND=Topology"}, []string{"HOME=/root", "SITE=shell", "BRANCH_NAME=shell"})
+
+	paths, err := configPaths(configsDir)
+	if err != nil {
+		t.Fatalf("configPaths() error = %v", err)
+	}
+
+	configs, wf, err := loadWorkflowFiles(dir, paths, wfPath, vars)
+	if err != nil {
+		t.Fatalf("loadWorkflowFiles() error = %v", err)
+	}
+
+	want := []configFile{
+		{
+			Path:        filepath.Join(configsDir, "topology.yml"),
+			Kind:        kindTopology,
+			ContentType: mimeYAML,
+			Body:        []byte("kind: Topology\nmetadata:\n  name: lab-${BRANCH_NAME}\nspec:\n  count: 3\n"),
+		},
+		{
+			Path:        filepath.Join(configsDir, "scenario.json"),
+			Kind:        "Scenario",
+			ContentType: mimeJSON,
+			Body:        []byte(`{"kind": "Scenario", "spec": {"size": 4, "keep": "${SIZE}", "home": "/root"}}`),
+		},
+		{
+			Path:        wfPath,
+			Kind:        "Workflow",
+			ContentType: mimeYAML,
+			Body:        []byte("kind: Workflow\nspec:\n  auto:\n    create: lab-${BRANCH_NAME:x}\n"),
+		},
+	}
+
+	if diff := cmp.Diff(want, append(configs, *wf)); diff != "" {
+		t.Errorf("loadWorkflowFiles() mismatch (-want +got):\n%s", diff)
+	}
+
+	checkFields(t, logs.first(t, "env file read"), map[string]string{"file": filepath.Join(dir, ".env"), "variables": "2"})
+	checkFields(t, logs.first(t, "variables filled in"), map[string]string{
+		"step":      stepPreflight,
+		"variables": "HOME (shell), KIND (flag), NODES (flag), SITE (env file " + filepath.Join(dir, ".env") + ")",
+	})
+}
+
+// TestLoadWorkflowFilesVariableProblems checks that the problems of every
+// file are logged with paths relative to the topology directory, and that no
+// file is returned.
+func TestLoadWorkflowFilesVariableProblems(t *testing.T) {
+	logs := captureLogs(t)
+	dir := t.TempDir()
+
+	writeWorkflowTree(t, dir, map[string]string{
+		"phenix-configs/sub/topology.yml": "kind: Topology\nspec:\n  count: ${NODES}\n",
+		"phenix.yml":                      "kind: Workflow\nspec:\n  topology: ${SITE}\n",
+	})
+
+	paths, err := configPaths(filepath.Join(dir, configsDirName))
+	if err != nil {
+		t.Fatalf("configPaths() error = %v", err)
+	}
+
+	vars := filesTestVars(t, dir, []string{"UNUSED=1"}, nil)
+
+	configs, wf, err := loadWorkflowFiles(dir, paths, filepath.Join(dir, workflowConfigName), vars)
+	if !errors.Is(err, errVariables) || configs != nil || wf != nil {
+		t.Fatalf("loadWorkflowFiles() = %v, %v, %v, want no file and errVariables", configs, wf, err)
+	}
+
+	undefined := logs.all(t, "variable is not set and has no default")
+	if len(undefined) != 2 {
+		t.Fatalf("got %d records for a variable that is not set, want 2", len(undefined))
+	}
+
+	checkFields(t, undefined[0], map[string]string{
+		"step": stepPreflight, "variable": "NODES", "file": filepath.Join(configsDirName, "sub", "topology.yml"), "line": "3",
+	})
+	checkFields(t, undefined[1], map[string]string{"variable": "SITE", "file": workflowConfigName, "line": "3"})
+	checkFields(t, logs.first(t, "no file uses the variable that -e sets"), map[string]string{"variable": "UNUSED"})
+}
 
 func TestLoadConfigs(t *testing.T) {
 	logs := captureLogs(t)
@@ -38,9 +170,9 @@ func TestLoadConfigs(t *testing.T) {
 		".git/config":      "\tnot yaml",
 	})
 
-	got, err := loadConfigs(dir)
+	got, err := filesTestLoad(t, dir)
 	if err != nil {
-		t.Fatalf("loadConfigs() error = %v", err)
+		t.Fatalf("filesTestLoad() error = %v", err)
 	}
 
 	want := []configFile{
@@ -56,7 +188,7 @@ func TestLoadConfigs(t *testing.T) {
 			t.Logf("got %s kind=%q type=%q body=%q", file.Path, file.Kind, file.ContentType, file.Body)
 		}
 
-		t.Fatal("loadConfigs() did not return the expected files in upsert order")
+		t.Fatal("filesTestLoad() did not return the expected files in upsert order")
 	}
 
 	skipped := logs.all(t, "skipping a file that is not a config")
@@ -205,14 +337,14 @@ func TestLoadConfigsErrors(t *testing.T) {
 			dir := t.TempDir()
 			writeWorkflowTree(t, dir, map[string]string{"bad.yml": tt.content})
 
-			_, err := loadConfigs(dir)
+			_, err := filesTestLoad(t, dir)
 			if err == nil {
-				t.Fatal("loadConfigs() error = nil, want a parse error")
+				t.Fatal("filesTestLoad() error = nil, want a parse error")
 			}
 
 			for _, want := range tt.want {
 				if !strings.Contains(err.Error(), want) {
-					t.Errorf("loadConfigs() error = %v, want it to contain %q", err, want)
+					t.Errorf("filesTestLoad() error = %v, want it to contain %q", err, want)
 				}
 			}
 		})
@@ -241,9 +373,9 @@ func TestLoadConfigsSymlinks(t *testing.T) {
 		}
 	}
 
-	got, err := loadConfigs(dir)
+	got, err := filesTestLoad(t, dir)
 	if err != nil {
-		t.Fatalf("loadConfigs() error = %v", err)
+		t.Fatalf("filesTestLoad() error = %v", err)
 	}
 
 	want := []configFile{
@@ -256,7 +388,7 @@ func TestLoadConfigsSymlinks(t *testing.T) {
 			t.Logf("got %s kind=%q", file.Path, file.Kind)
 		}
 
-		t.Fatal("loadConfigs() did not return the topology and the symlinked file")
+		t.Fatal("filesTestLoad() did not return the topology and the symlinked file")
 	}
 
 	skipped := logs.all(t, "skipping a symlinked directory; its configs are not deployed")
@@ -286,16 +418,16 @@ func TestLoadConfigsReadErrors(t *testing.T) {
 
 		t.Cleanup(func() { _ = os.Chmod(sub, 0o700) })
 
-		if _, err := loadConfigs(dir); !errors.Is(err, fs.ErrPermission) {
-			t.Fatalf("loadConfigs() error = %v, want a permission error", err)
+		if _, err := filesTestLoad(t, dir); !errors.Is(err, fs.ErrPermission) {
+			t.Fatalf("filesTestLoad() error = %v, want a permission error", err)
 		}
 	})
 }
 
-// TestParseConfigFileLimits checks that parseConfigFile reads only regular
+// TestReadConfigFileLimits checks that readConfigFile reads only regular
 // files of a bounded size, so a symlink to a device or a large file cannot
 // exhaust memory.
-func TestParseConfigFileLimits(t *testing.T) {
+func TestReadConfigFileLimits(t *testing.T) {
 	t.Run("symlink to a directory", func(t *testing.T) {
 		dir := t.TempDir()
 		link := filepath.Join(dir, "link.yml")
@@ -304,9 +436,9 @@ func TestParseConfigFileLimits(t *testing.T) {
 			t.Fatalf("creating symlink: %v", err)
 		}
 
-		_, err := parseConfigFile(link, true)
+		_, err := readConfigFile(link)
 		if err == nil || err.Error() != link+": not a regular file" {
-			t.Fatalf("parseConfigFile() error = %v, want %q", err, link+": not a regular file")
+			t.Fatalf("readConfigFile() error = %v, want %q", err, link+": not a regular file")
 		}
 	})
 
@@ -324,18 +456,18 @@ func TestParseConfigFileLimits(t *testing.T) {
 
 		// A regular-file check must refuse the device before any read, so the
 		// call returns at once and allocates nothing.
-		_, err := parseConfigFile(link, true)
+		_, err := readConfigFile(link)
 		if err == nil || err.Error() != link+": not a regular file" {
-			t.Fatalf("parseConfigFile() error = %v, want %q", err, link+": not a regular file")
+			t.Fatalf("readConfigFile() error = %v, want %q", err, link+": not a regular file")
 		}
 	})
 
 	t.Run("stat error keeps the reading config wording", func(t *testing.T) {
 		missing := filepath.Join(t.TempDir(), "gone.yml")
 
-		_, err := parseConfigFile(missing, true)
+		_, err := readConfigFile(missing)
 		if err == nil || !strings.HasPrefix(err.Error(), "reading config: ") {
-			t.Fatalf("parseConfigFile() error = %v, want a reading config error", err)
+			t.Fatalf("readConfigFile() error = %v, want a reading config error", err)
 		}
 	})
 
@@ -353,31 +485,28 @@ func TestParseConfigFileLimits(t *testing.T) {
 
 		t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
 
-		_, err := parseConfigFile(path, true)
+		_, err := readConfigFile(path)
 		if err == nil || !strings.HasPrefix(err.Error(), "reading config: ") {
-			t.Fatalf("parseConfigFile() error = %v, want a reading config error", err)
+			t.Fatalf("readConfigFile() error = %v, want a reading config error", err)
 		}
 	})
 }
 
-func TestParseConfigFileWithoutKind(t *testing.T) {
-	dir := t.TempDir()
-	writeWorkflowTree(t, dir, map[string]string{"workflow.json": `{"spec": {}}`})
-
-	got, err := parseConfigFile(filepath.Join(dir, "workflow.json"), false)
+func TestParseConfigBodyWithoutKind(t *testing.T) {
+	got, err := parseConfigBody("workflow.json", []byte(`{"spec": {}}`), false)
 	if err != nil {
-		t.Fatalf("parseConfigFile() error = %v", err)
+		t.Fatalf("parseConfigBody() error = %v", err)
 	}
 
 	if got.Kind != "" || got.ContentType != mimeJSON || string(got.Body) != `{"spec": {}}` {
-		t.Errorf("parseConfigFile() = kind %q type %q body %q", got.Kind, got.ContentType, got.Body)
+		t.Errorf("parseConfigBody() = kind %q type %q body %q", got.Kind, got.ContentType, got.Body)
 	}
 }
 
-// TestParseConfigFileAccepts checks files that the local syntax check must
+// TestParseConfigBodyAccepts checks bodies that the local syntax check must
 // pass, and the kind as written: placeholders the raw YAML cannot hold, and
 // what only the server checks.
-func TestParseConfigFileAccepts(t *testing.T) {
+func TestParseConfigBodyAccepts(t *testing.T) {
 	tests := []struct {
 		name     string
 		file     string
@@ -421,20 +550,17 @@ func TestParseConfigFileAccepts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dir := t.TempDir()
-			writeWorkflowTree(t, dir, map[string]string{tt.file: tt.content})
-
-			got, err := parseConfigFile(filepath.Join(dir, tt.file), true)
+			got, err := parseConfigBody(tt.file, []byte(tt.content), true)
 			if err != nil {
-				t.Fatalf("parseConfigFile() error = %v", err)
+				t.Fatalf("parseConfigBody() error = %v", err)
 			}
 
 			if string(got.Body) != tt.content || got.ContentType != contentTypeFor(tt.file) {
-				t.Errorf("parseConfigFile() = type %q body %q, want the file as read", got.ContentType, got.Body)
+				t.Errorf("parseConfigBody() = type %q body %q, want the body as given", got.ContentType, got.Body)
 			}
 
 			if got.Kind != tt.wantKind {
-				t.Errorf("parseConfigFile() kind = %q, want %q", got.Kind, tt.wantKind)
+				t.Errorf("parseConfigBody() kind = %q, want %q", got.Kind, tt.wantKind)
 			}
 		})
 	}
@@ -509,12 +635,11 @@ func TestNeutralizePlaceholdersProperties(t *testing.T) {
 	})
 }
 
-// TestParseConfigFileKindProperties checks that a one-line kind of letters
-// and placeholders, plain or quoted, comes back as the file writes it.
-func TestParseConfigFileKindProperties(t *testing.T) {
+// TestParseConfigBodyKindProperties checks that a one-line kind of letters
+// and placeholders, plain or quoted, comes back as the body writes it.
+func TestParseConfigBodyKindProperties(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
 	part := rapid.OneOf(
 		rapid.StringMatching(`[A-Za-z]{1,4}`),
 		rapid.StringMatching(`\$\{[A-Za-z_]{1,4}\}`),
@@ -531,18 +656,13 @@ func TestParseConfigFileKindProperties(t *testing.T) {
 			name, content = "topology.json", `{"kind": "`+kind+`"}`
 		}
 
-		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-			t.Fatalf("writing %s: %v", path, err)
-		}
-
-		got, err := parseConfigFile(path, true)
+		got, err := parseConfigBody(name, []byte(content), true)
 		if err != nil {
-			t.Fatalf("parseConfigFile(%q) error = %v", content, err)
+			t.Fatalf("parseConfigBody(%q) error = %v", content, err)
 		}
 
 		if got.Kind != kind {
-			t.Fatalf("parseConfigFile(%q) kind = %q, want %q", content, got.Kind, kind)
+			t.Fatalf("parseConfigBody(%q) kind = %q, want %q", content, got.Kind, kind)
 		}
 	})
 }
