@@ -1,6 +1,5 @@
-// The header: its refresh button, the page data the app preloads in the
-// background, the links for optional server features, its menus, and one row
-// of items from the burger menu's breakpoint up.
+// The header: refresh, preloaded page data, optional feature links, menus,
+// the jobs menu, and one row of items from the burger menu's breakpoint up.
 const {
   test: base,
   expect,
@@ -40,49 +39,94 @@ async function holdConfigLoads(page) {
   };
 }
 
-test('pages show preloaded data at once, and the refresh button reloads it', async ({
+// A background job as GET /api/v1/jobs lists it.
+const job = (id, fields) => ({
+  id,
+  kind: 'vms.action',
+  owner: 'global-admin',
+  experiment: 'e2e',
+  title: 'Restart 3 VMs',
+  status: 'running',
+  cancelable: true,
+  progress: { done: 1, total: 3 },
+  items: [],
+  created: '2026-10-14T15:00:00Z',
+  updated: '2026-10-14T15:00:01Z',
+  revision: 2,
+  ...fields,
+});
+const RUNNING = job('j0000000000000001', {});
+const PARTIAL = job('j0000000000000002', {
+  kind: 'files.archive',
+  title: 'Archive 2 files of e2e',
+  status: 'partial',
+  progress: { done: 2, total: 2, bytes: 10, bytesTotal: 10 },
+  artifact: { name: 'e2e-files-incomplete.zip', size: 10, incomplete: true },
+  created: '2026-10-14T14:00:00Z',
+});
+
+// Answers the job list with the jobs in `jobs` at the time of each request.
+const standInJobs = (page, jobs) =>
+  page.route(
+    (url) => url.pathname.endsWith('/api/v1/jobs'),
+    (route) => route.fulfill({ json: { jobs } }),
+  );
+
+// Gives the header every optional item, the jobs in `jobs` and the longest
+// refresh tooltip, with no experiments: other tests' experiments can widen it.
+async function standInFullHeader(page, jobs) {
+  await page.route('**/features', (route) =>
+    route.fulfill({ json: { features: ['webshark', 'tunneler-download'] } }),
+  );
+  await standInJobs(page, jobs);
+  await page.route(
+    (url) => url.pathname.endsWith('/api/v1/experiments'),
+    async (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      const response = await route.fetch();
+      const now = Date.now();
+      const { 'content-length': _, ...headers } = response.headers();
+      await route.fulfill({
+        json: { experiments: [], total: 0 },
+        headers: {
+          ...headers,
+          'x-phenix-stale': 'true',
+          'x-phenix-observed-at': new Date(now - 150_000).toUTCString(),
+          date: new Date(now).toUTCString(),
+        },
+      });
+    },
+  );
+}
+
+test('the app preloads page data once idle, and the refresh button reloads it from the server', async ({
   page,
   request,
   role,
 }) => {
   const nav = page.getByRole('navigation');
-  // the refresh button, and the same while its name says a load runs
-  const refresh = page.getByRole('button', {
-    name: "Refresh this page's data",
-  });
-  const refreshing = page.getByRole('button', {
-    name: "Refresh this page's data, refreshing…",
-  });
   const roleRow = page.locator('tbody tr', { hasText: role.metadata.name });
 
   // once the app is idle it preloads every tab's data, Configs included
   const preloaded = page.waitForResponse(isConfigs);
   await page.goto('/experiments');
-  await pageDataLoaded(page);
   await (await preloaded).finished();
 
-  const release = await holdConfigLoads(page);
-  await createConfig(request, role);
-
   // the preloaded rows show while the page's own load runs
+  const release = await holdConfigLoads(page);
   await nav.getByRole('button', { name: 'Resources' }).click();
   await nav.getByRole('link', { name: 'Configs' }).click();
   await expect(
     page.locator('tbody tr', { hasText: 'global-admin' }),
   ).toBeVisible();
-  await expect(refreshing).toBeVisible();
-  await expect(refresh).toBeDisabled();
   await release();
-  await expect(roleRow).toBeVisible();
+  await page.unroute('**/api/v1/configs');
   await pageDataLoaded(page);
-
-  // the button reloads the page's data
-  await deleteConfig(request, role);
-  await expect(roleRow).toBeVisible();
-  await refresh.click();
-  await expect(refreshing).toBeVisible();
-  await release();
+  await createConfig(request, role);
   await expect(roleRow).toBeHidden();
+
+  await page.getByRole('button', { name: "Refresh this page's data" }).click();
+  await expect(roleRow).toBeVisible();
   await pageDataLoaded(page);
 });
 
@@ -119,6 +163,67 @@ test('links for optional server features follow /features', async ({
   await nav.getByRole('link', { name: 'WebShark' }).click();
   await expect(page.getByLabel('Experiment', { exact: true })).toBeVisible();
 });
+
+test('the header jobs menu lists the jobs the server has', async ({ page }) => {
+  await standInJobs(page, [RUNNING, PARTIAL]);
+  await page.goto('/experiments');
+  await page
+    .getByRole('button', {
+      name: 'Background jobs (1 job running; 1 partly succeeded job not viewed)',
+    })
+    .click();
+
+  const panel = page.getByRole('region', { name: 'Background jobs' });
+  await expect(panel).toContainText('Restart 3 VMs');
+  await expect(panel).toContainText('Archive 2 files of e2e');
+});
+
+test(
+  'the header menus, the refresh tooltip and the jobs menu pass the scan',
+  { tag: '@axe' },
+  async ({ page }) => {
+    const nav = page.getByRole('navigation', { name: 'main navigation' });
+    const refresh = nav.getByRole('button', {
+      name: "Refresh this page's data",
+    });
+    const jobs = [];
+    await standInFullHeader(page, jobs);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/experiments');
+    await expect(refresh).toHaveAccessibleName(/may be out of date/);
+
+    await nav
+      .getByRole('button', { name: 'Background jobs (0 jobs running)' })
+      .click();
+    await expect(page.getByText('No background jobs')).toBeVisible();
+    await expectAccessible(page, 'jobs-menu-empty');
+    await page.keyboard.press('Escape');
+    await expect(page.getByText('No background jobs')).toBeHidden();
+
+    const admin = nav.getByRole('button', { name: 'Admin', exact: true });
+    const first = page.locator('#nav-admin-panel a').first();
+    await admin.focus();
+    await page.keyboard.press('Enter');
+    await expect(first).toBeVisible();
+    await expectAccessible(page, 'header-menu-open');
+    await page.keyboard.press('Escape');
+    await expect(first).toBeHidden();
+
+    await refresh.hover();
+    await expect(nav.locator('.refresh-status .tooltip-content')).toBeVisible();
+    await expectAccessible(page, 'header-refresh-tooltip');
+
+    jobs.push(RUNNING, PARTIAL);
+    await page.reload();
+    await nav
+      .getByRole('button', { name: /^Background jobs \(1 job running;/ })
+      .click();
+    await expect(
+      page.getByRole('region', { name: 'Background jobs' }),
+    ).toContainText('Archive 2 files of e2e');
+    await expectAccessible(page, 'jobs-menu');
+  },
+);
 
 // The top-level links and the links in each menu that a role allowed
 // everything gets on a server with WebShark.
@@ -176,52 +281,7 @@ test('the header stays one row from 1024 px wide, with every item in reach', asy
     name: "Refresh this page's data",
   });
 
-  // every optional item, a running job and the longest refresh tooltip, over
-  // an empty experiment list: the experiments of tests run beside this one
-  // can make the page wider than the window
-  await page.route('**/features', (route) =>
-    route.fulfill({ json: { features: ['webshark', 'tunneler-download'] } }),
-  );
-  await page.route(
-    (url) => url.pathname.endsWith('/api/v1/jobs'),
-    (route) =>
-      route.fulfill({
-        json: {
-          jobs: [
-            {
-              id: 'j0000000000000001',
-              kind: 'vms.action',
-              owner: 'global-admin',
-              title: 'Restart 3 VMs',
-              status: 'running',
-              progress: { done: 1, total: 3 },
-              items: [],
-              created: '2026-10-14T15:00:00Z',
-              updated: '2026-10-14T15:00:01Z',
-              revision: 1,
-            },
-          ],
-        },
-      }),
-  );
-  await page.route(
-    (url) => url.pathname.endsWith('/api/v1/experiments'),
-    async (route) => {
-      if (route.request().method() !== 'GET') return route.continue();
-      const response = await route.fetch();
-      const now = Date.now();
-      const { 'content-length': _, ...headers } = response.headers();
-      await route.fulfill({
-        json: { experiments: [], total: 0 },
-        headers: {
-          ...headers,
-          'x-phenix-stale': 'true',
-          'x-phenix-observed-at': new Date(now - 150_000).toUTCString(),
-          date: new Date(now).toUTCString(),
-        },
-      });
-    },
-  );
+  await standInFullHeader(page, [RUNNING]);
 
   await page.goto('/experiments');
   await expect(refresh).toHaveAccessibleName(
@@ -282,7 +342,6 @@ test('the header stays one row from 1024 px wide, with every item in reach', asy
     await expect(first).toBeVisible();
     await page.keyboard.press('Tab');
     await expect(first).toBeFocused();
-    await expectAccessible(page, 'header-menu-open');
     await page.keyboard.press('Escape');
     await expect(first).toBeHidden();
     await expect(menu).toBeFocused();
@@ -299,7 +358,6 @@ test('the header stays one row from 1024 px wide, with every item in reach', asy
     await refresh.hover();
     await expect(tip).toBeVisible();
     await expect(tip).toContainText(/Updated \d+ min ago · may be out of date/);
-    await expectAccessible(page, 'header-refresh-tooltip');
   });
 
   await test.step('the burger menu shows the link text and opens the menus in place', async () => {

@@ -1143,6 +1143,31 @@ describe('the jobs menu', () => {
     expect(trigger.classes()).toContain('is-unviewed-succeeded');
   });
 
+  it('lists the recent jobs, running ones first, each with a link to its experiment', async () => {
+    const empty = await mountComponent(JobsMenu);
+    expect(textOf(empty.find('#jobs-panel'))).toBe(
+      'Background jobs No background jobs',
+    );
+    empty.unmount();
+
+    const jobs = useJobStore();
+    jobs.put(job('1', 'running'));
+    jobs.put({ ...job('2', 'partial'), experiment: undefined });
+    const menu = await mountComponent(JobsMenu);
+    const entries = menu.findAll('#jobs-panel .jobs-entry');
+    expect(entries.map((entry) => textOf(entry.find('.job-title')))).toEqual([
+      'Job 1',
+      'Job 2',
+    ]);
+    const link = entries[0].find('.jobs-experiment');
+    expect([textOf(link), link.attributes('href')]).toEqual([
+      'Experiment exp',
+      '/experiment/exp',
+    ]);
+    expect(entries[1].find('.jobs-experiment').exists()).toBe(false);
+    expect(menu.find('.jobs-empty').exists()).toBe(false);
+  });
+
   it('says when there are none, and is not shown to no one signed in', async () => {
     store.role = viewer;
     expect(

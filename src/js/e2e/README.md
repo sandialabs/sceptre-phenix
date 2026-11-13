@@ -13,8 +13,6 @@ a CI-built binary, a container, or a full range node.
 | `performance.spec.js`          | just a running server                                                                        | yes                     |
 | `experiments.spec.js`          | just a running server                                                                        | yes                     |
 | `navbar.spec.js`               | just a running server                                                                        | yes                     |
-| `tables.spec.js`               | just a running server                                                                        | yes                     |
-| `jobs.spec.js`                 | just a running server                                                                        | yes                     |
 | `a11y-seeded.spec.js`          | just a running server (each test seeds and deletes its own data)                             | yes                     |
 | `vnc.spec.js`                  | just a running server (it stands in for the experiment, its VMs and their VNC servers)       | yes                     |
 | `health.spec.js`               | a running server with a BoltDB store and no minimega                                         | yes, in every auth mode |
@@ -71,19 +69,19 @@ Specs that need data (a topology, experiments, configs) set it up through the
 REST API and remove what they made afterwards. Their experiments are never
 started, so they need no minimega.
 
-The axe job runs the `store` and `builder` projects, and the multi-user step
+The axe job runs the `read-only`, `store` and `builder` projects, and the multi-user step
 runs only the `builder` project. The multi-user spec creates its own users
 with the built-in Builder role and signs them in (`userMaker` in
 `tests/builder-support.js`). The shards use Playwright's `--shard`, which
 splits the tests by count, not by time.
 
-Every route in `routes.spec.js` is also scanned with axe-core (WCAG 2.x A, AA
-and AAA rule tags, with `wcag2aaa`) as rendered against the empty store, and
-the Disks page and its details window once more with images in folders and
-outside the files directory. `experiments.spec.js` scans the pages it fills
-with data: the experiment list, a stopped experiment's page with a VM
-selected, its VM info modal and Files tab, and the create experiment modal
-with Advanced Options open. The server has no disk images, so these two specs
+Axe scans run only in tests with the `@axe` tag, which run in the axe job.
+`routes.spec.js` scans with axe-core (WCAG 2.x A, AA and AAA rule tags, with
+`wcag2aaa`) each route that `a11y-seeded.spec.js` does not scan, as rendered
+against the empty store. It also scans the Disks page and its details window
+with images in folders and outside the files directory. `experiments.spec.js`
+scans a stopped experiment's page with a VM selected, its VM info modal and
+its Files tab. The server has no disk images, so these two specs
 stand in for its disk list (`GET /api/v1/disks`) with `page.route`.
 `a11y-seeded.spec.js` seeds a topology, a scenario, a stopped experiment and a
 user through the REST API, without minimega. It scans the table rows, modals
@@ -110,7 +108,7 @@ no keys and no pointer events.
 
 | Project     | Browser  | Runs                                                                                     |
 | ----------- | -------- | ---------------------------------------------------------------------------------------- |
-| `read-only` | Chromium | the specs that never change the store (routes, performance, jobs, health), in parallel   |
+| `read-only` | Chromium | the specs that never change the store (routes, performance, health, vlans), in parallel  |
 | `store`     | Chromium | the rest, one at a time once `read-only` finishes                                        |
 | `builder`   | Chromium | the `builder-*.spec.js` specs, in parallel and beside `store`, once `read-only` finishes |
 | `firefox`   | Firefox  | only tests tagged `@cross-browser`, one at a time once `store` and `builder` finish      |

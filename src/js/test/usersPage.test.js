@@ -21,6 +21,7 @@ import {
   mountPage,
   tableRows,
   textOf,
+  toasts,
   tooltipPositions,
 } from './helpers/mount.js';
 import { allowOnly, denyOnly } from './helpers/permissions.js';
@@ -102,6 +103,59 @@ describe('the Users page totals', () => {
       }),
     );
   });
+});
+
+// A user the list does not show yet can have the name, so the server refuses.
+it('keeps the create dialog and its input on a taken name, marks User Name, and creates on a retry', async () => {
+  axios.post.mockRejectedValue({ response: { status: 409 } });
+  const page = await mountPage(Users, {
+    route: '/users',
+    attachTo: document.body,
+  });
+  await page.setData({
+    isCreateActive: true,
+    user: {
+      username: 'carol',
+      first_name: 'Carol',
+      last_name: 'User',
+      password: 'Testpass1!',
+      confirmPassword: 'Testpass1!',
+      role_name: 'Global Viewer',
+    },
+  });
+  const create = page
+    .findAll('button')
+    .find((b) => textOf(b) === 'Create User');
+  create.element.focus();
+  await create.trigger('click');
+  await flushPromises();
+
+  expect(axios.post).toHaveBeenCalledOnce();
+  const username = page.get('#user-create-username');
+  expect(document.activeElement).toBe(username.element);
+  expect(
+    textOf(username.element.closest('.field').querySelector('.help.is-danger')),
+  ).toBe('User already exists');
+  expect(toasts()).toContainEqual({
+    text: 'User already exists',
+    type: 'is-warning',
+  });
+  expect(page.vm.isCreateActive).toBe(true);
+  expect(page.get('#user-create-confirm-password').element.value).toBe(
+    'Testpass1!',
+  );
+
+  axios.post.mockResolvedValue({ data: {} });
+  await create.trigger('click');
+  await flushPromises();
+  expect(axios.post).toHaveBeenCalledTimes(2);
+  expect(page.vm.isCreateActive).toBe(false);
+
+  // opened again, the dialog no longer says the name is taken
+  await page.setData({ isCreateActive: true });
+  expect(page.find('#user-create-username').exists()).toBe(true);
+  expect(document.querySelector('.help.is-danger')).toBeNull();
+  page.unmount();
 });
 
 // the column ends at the window's right edge

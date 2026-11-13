@@ -30,7 +30,6 @@ function workerCount(value) {
 const readOnly = [
   'routes.spec.js',
   'performance.spec.js',
-  'jobs.spec.js',
   'health.spec.js',
   'vlans.spec.js',
 ];

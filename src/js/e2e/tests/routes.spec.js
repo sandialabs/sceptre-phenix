@@ -1,5 +1,5 @@
-// Render every route with auth disabled and fail on any JS error or any
-// WCAG 2.x A, AA or AAA violation reported by axe-core.
+// Render every route with auth disabled and fail on any JS error. The @axe
+// tests also fail on any WCAG 2.x A, AA or AAA violation reported by axe-core.
 // Works against an empty store; no experiment or configs required.
 // a11y-seeded.spec.js scans the views that need data.
 const {
@@ -67,6 +67,9 @@ const routes = [
   { path: '/disabled', lands: '/experiments', ready: dataLoaded },
 ];
 
+// a11y-seeded.spec.js scans these pages with data, so they get no scan here.
+const seeded = new Set(['/experiments', '/users', '/settings', '/configs/']);
+
 for (const r of routes) {
   test('route ' + r.path, async ({ page }) => {
     await page.goto(r.path);
@@ -74,16 +77,20 @@ for (const r of routes) {
     expect(new URL(page.url()).pathname, 'route should land here').toBe(
       r.lands ?? r.path,
     );
+  });
+}
 
+for (const r of routes.filter((r) => !seeded.has(r.lands ?? r.path))) {
+  test('scan route ' + r.path, { tag: '@axe' }, async ({ page }) => {
+    await page.goto(r.path);
+    await expect(r.ready(page)).toBeVisible();
     await expectNoAxeViolations(page, r.path);
   });
 }
 
-// The Disks page with images in folders and outside the files directory, which
-// the empty store never lists, from a stood-in disk list.
-test('route /disks/ with images in folders and outside the files directory', async ({
-  page,
-}) => {
+// Opens the Disks page with images in folders and outside the files directory,
+// which the empty store never lists, from a stood-in disk list.
+async function openDisksWithImages(page) {
   // three images named e2e.qc2, the one in a folder backed by the one outside
   await standInDisks(page, [
     diskImage('/phenix/images/win/e2e.qc2', 'win/e2e.qc2', {
@@ -92,60 +99,41 @@ test('route /disks/ with images in folders and outside the files directory', asy
     diskImage('/phenix/images/e2e.qc2', 'e2e.qc2'),
     diskImage('/data/vms/e2e.qc2', ''),
   ]);
-
   await page.goto('/disks/');
   await expect(dataLoaded(page)).toBeVisible();
+}
 
-  // named by their path within the files directory, or their full path,
-  // sorted by that name
+// disksPage.test.js checks the names, warnings and backing chain in detail;
+// this test checks that real mouse clicks reach the warnings.
+test('route /disks/ with images in folders and outside the files directory', async ({
+  page,
+}) => {
+  await openDisksWithImages(page);
   const labels = page.locator('tbody .disk-label');
   await expect(labels).toHaveText([
     '/data/vms/e2e.qc2',
     'e2e.qc2',
     'win/e2e.qc2',
   ]);
+
+  // a click explains the warning and does not open the disk's details as a
+  // click elsewhere on its row does
   const outside = page.getByRole('button', {
     name: 'Outside the standard images directory',
   });
-  await expect(outside).toHaveCount(1);
-  await expect(
-    page.locator('tbody tr', { has: outside }).locator('.disk-label'),
-  ).toHaveText('/data/vms/e2e.qc2');
-  // the warning explains itself on keyboard focus
   const explanation = page.locator('.disk-warning-content');
-  await outside.focus();
-  await expect(explanation).toBeVisible();
-  await expectNoAxeViolations(page, '/disks/ with images');
-
-  // and on a click, which does not open the disk's details as a click elsewhere
-  // on its row does; it sits on the page body, where the table cannot clip it
-  await page.keyboard.press('Escape');
-  await expect(explanation).toBeHidden();
   await outside.click();
   await expect(explanation).toBeVisible();
-  await expect(page.locator('table .disk-warning-content')).toHaveCount(0);
   const details = page.locator('.modal.is-active');
   await expect(details).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(explanation).toBeHidden();
 
-  // the details window links each backing image by its full path, not by a
-  // same-named image
   await labels.getByText('win/e2e.qc2', { exact: true }).click();
   const title = details.locator('.modal-card-title');
   await expect(title).toHaveText('win/e2e.qc2');
-  // axe checks colors as drawn, so the window has to finish fading in
-  await details.evaluate((modal) =>
-    Promise.all(modal.getAnimations({ subtree: true }).map((a) => a.finished)),
-  );
-  await expectNoAxeViolations(page, '/disks/ details with a backing chain');
   await details.getByRole('button', { name: '/data/vms/e2e.qc2' }).click();
-  // an image outside the files directory is titled by its file name; its
-  // full path, under the title, tells it from the same-named e2e.qc2
   await expect(title).toHaveText('e2e.qc2');
-  await expect(details.locator('.disk-full-path')).toHaveText(
-    '/data/vms/e2e.qc2',
-  );
 
   // Escape hides the Location row's explanation but leaves the window open (it
   // still takes a click); with no explanation showing, Escape closes the window.
@@ -165,3 +153,37 @@ test('route /disks/ with images in folders and outside the files directory', asy
   await page.keyboard.press('Escape');
   await expect(details).toHaveCount(0);
 });
+
+test(
+  'scan /disks/ with images and a backing chain',
+  { tag: '@axe' },
+  async ({ page }) => {
+    await openDisksWithImages(page);
+
+    const outside = page.getByRole('button', {
+      name: 'Outside the standard images directory',
+    });
+    const explanation = page.locator('.disk-warning-content');
+    await outside.focus();
+    await expect(explanation).toBeVisible();
+    await expectNoAxeViolations(page, '/disks/ with images');
+
+    await page.keyboard.press('Escape');
+    await expect(explanation).toBeHidden();
+    await page
+      .locator('tbody .disk-label')
+      .getByText('win/e2e.qc2', { exact: true })
+      .click();
+    const details = page.locator('.modal.is-active');
+    await expect(details.locator('.modal-card-title')).toHaveText(
+      'win/e2e.qc2',
+    );
+    // axe checks colors as drawn, so the window has to finish fading in
+    await details.evaluate((modal) =>
+      Promise.all(
+        modal.getAnimations({ subtree: true }).map((a) => a.finished),
+      ),
+    );
+    await expectNoAxeViolations(page, '/disks/ details with a backing chain');
+  },
+);

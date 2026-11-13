@@ -6,7 +6,6 @@ const crypto = require('node:crypto');
 const { test: base, expect } = require('@playwright/test');
 const {
   attachCapture,
-  settle,
   fatalOf,
   gotoSeeded,
   expectNoAxeViolations,
@@ -123,7 +122,11 @@ async function open(page, path, ready) {
   const issues = [];
   attachCapture(page, issues);
   await gotoSeeded(page, path);
-  await settle(page, 1000);
+  // Each route's page loader disables this button until its first load ends.
+  await expect(
+    page.getByRole('button', { name: /^Refresh this page's data/ }),
+  ).toBeEnabled({ timeout: 20000 });
+  await animationsDone(page);
   expect(new URL(page.url()).pathname, 'route should not redirect').toBe(path);
   if (ready) {
     await expect(ready(page)).toBeVisible({ timeout: 20000 });
@@ -181,13 +184,13 @@ const pages = [
 
 for (const { path, ready } of pages) {
   const label = path({ experiment: '<name>' });
-  test(`seeded ${label}`, async ({ page, seed }) => {
+  test(`seeded ${label}`, { tag: '@axe' }, async ({ page, seed }) => {
     const issues = await open(page, path(seed), ready);
     await scan(page, issues, label);
   });
 }
 
-test('seeded config viewer', async ({ page, seed }) => {
+test('seeded config viewer', { tag: '@axe' }, async ({ page, seed }) => {
   const issues = await open(page, '/configs/', (p) =>
     p.locator('tbody tr').first(),
   );
@@ -195,7 +198,7 @@ test('seeded config viewer', async ({ page, seed }) => {
   await scan(page, issues, 'config viewer');
 });
 
-test('seeded config editor', async ({ page, seed }) => {
+test('seeded config editor', { tag: '@axe' }, async ({ page, seed }) => {
   const issues = await open(page, '/configs/', (p) =>
     p.locator('tbody tr').first(),
   );
@@ -203,21 +206,39 @@ test('seeded config editor', async ({ page, seed }) => {
   await scan(page, issues, 'config editor');
 });
 
-test('experiment create modal, topology chosen', async ({ page, seed }) => {
-  const issues = await open(page, '/experiments');
-  await page.getByRole('button', { name: 'Create a new experiment' }).click();
-  const modal = page.locator('.modal.is-active');
-  await expect(
-    modal.getByText('Create a New Experiment', { exact: true }),
-  ).toBeVisible();
-  await modal.locator('select').first().selectOption(seed.topology);
-  await expect(modal.locator('option', { hasText: seed.scenario })).toHaveCount(
-    1,
-  );
-  await scan(page, issues, 'experiment create modal');
-});
+test(
+  'experiment create modal, topology chosen',
+  { tag: '@axe' },
+  async ({ page, seed }) => {
+    const issues = await open(page, '/experiments');
+    await page.getByRole('button', { name: 'Create a new experiment' }).click();
+    const modal = page.locator('.modal.is-active');
+    await expect(
+      modal.getByText('Create a New Experiment', { exact: true }),
+    ).toBeVisible();
+    await modal.locator('select').first().selectOption(seed.topology);
+    await expect(
+      modal.locator('option', { hasText: seed.scenario }),
+    ).toHaveCount(1);
+    await scan(page, issues, 'experiment create modal');
 
-test('user create modal', async ({ page }) => {
+    // Advanced Options open, with a custom annotation in each list
+    await modal.getByRole('button', { name: 'Advanced Options' }).click();
+    for (const name of ['Annotations for Every VM', 'Experiment Annotations']) {
+      const list = modal.getByRole('group', { name });
+      await list.getByRole('button', { name: 'Add annotation' }).click();
+      await page.getByRole('menuitem', { name: /Custom annotation/ }).click();
+      await list
+        .getByRole('textbox', { name: / key$/ })
+        .last()
+        .fill('e2e/note');
+      await list.getByRole('textbox', { name: 'e2e/note value' }).fill('a11y');
+    }
+    await scan(page, issues, 'experiment create modal, advanced options');
+  },
+);
+
+test('user create modal', { tag: '@axe' }, async ({ page }) => {
   const issues = await open(page, '/users');
   await page.getByRole('button', { name: 'Create a new user' }).click();
   await expect(
@@ -226,7 +247,7 @@ test('user create modal', async ({ page }) => {
   await scan(page, issues, 'user create modal');
 });
 
-test('user edit modal', async ({ page, seed }) => {
+test('user edit modal', { tag: '@axe' }, async ({ page, seed }) => {
   const issues = await open(page, '/users');
   await showAllUsers(page);
   await page.getByRole('button', { name: `Edit user ${seed.user}` }).click();

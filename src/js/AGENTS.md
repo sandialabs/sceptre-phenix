@@ -91,9 +91,9 @@ parallel; add a new spec there only if it creates, changes and deletes nothing.
 The `builder-*.spec.js` specs run in parallel in the `builder` project. Tests
 time out after 30 s, and Builder tests after 60 s, unless their file raises it.
 
-Default smoke tests need only a server. `routes.spec.js` also runs an axe-core
-WCAG 2.x A, AA, and AAA (`wcag2aaa`) scan on every route, and
-`a11y-seeded.spec.js` runs it on views with data; fix violations in the UI
+Default smoke tests need only a server. Axe-core WCAG 2.x A, AA, and AAA
+(`wcag2aaa`) scans run only in `@axe` tests: `routes.spec.js` scans the routes,
+and `a11y-seeded.spec.js` scans views with data. Fix violations in the UI
 (accessible names, contrast, ARIA) rather than excluding rules. Lifecycle tests
 additionally need minimega, VM images, and a topology (`E2E_LIFECYCLE=1`). Auth
 suites require a matching `VITE_AUTH` build and signing key. See

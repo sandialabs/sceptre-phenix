@@ -1151,6 +1151,20 @@ describe('the header', () => {
     expect(inputs.map((i) => i.element.value)).toEqual(['111', '126']);
   });
 
+  it('closes the free ID finder and the block it found', async () => {
+    axios.get.mockResolvedValue({ data: { start: 111, end: 126 } });
+    const wrapper = await page();
+    await click(wrapper.find('.vlans-tools'), 'Find free IDs');
+    await wrapper.find('.vlan-finder form').trigger('submit');
+    await flushPromises();
+
+    await click(wrapper.find('.vlan-finder'), 'Close');
+    expect(wrapper.find('.vlan-finder').exists()).toBe(false);
+    expect(textOf(wrapper.find('.vlan-grid-legend'))).not.toContain(
+      'Free block found',
+    );
+  });
+
   it('says when no block is free', async () => {
     axios.get.mockRejectedValue(httpError(404, {}));
     const wrapper = await page();

@@ -139,6 +139,8 @@ async function togglePaginate(wrapper) {
   await input.setValue(!input.element.checked);
 }
 
+const nextPage = (wrapper) => wrapper.find('[aria-label="Next page"]');
+
 describe('the pages with a Paginate toggle', () => {
   it.each([
     [
@@ -181,9 +183,12 @@ describe('the pages with a Paginate toggle', () => {
 
     const first = await page();
     expect(tableRows(first)).toHaveLength(ROWS);
+    expect(nextPage(first).exists()).toBe(false);
     await togglePaginate(first);
     expect(localStorage.getItem(key)).toBe('true');
     expect(tableRows(first)).toHaveLength(10);
+    await nextPage(first).trigger('click');
+    expect(tableRows(first)).toHaveLength(ROWS - 10);
     first.unmount();
 
     // opened again, the page pages until the toggle is clicked off
@@ -192,6 +197,29 @@ describe('the pages with a Paginate toggle', () => {
     await togglePaginate(again);
     expect(localStorage.getItem(key)).toBe('false');
     expect(tableRows(again)).toHaveLength(ROWS);
+    expect(nextPage(again).exists()).toBe(false);
+  });
+
+  it('pages the rows that the search finds', async () => {
+    const config = (name) => ({
+      kind: 'Role',
+      metadata: { name, updated: '2025-01-02T03:04:05Z' },
+    });
+    const configs = [
+      ...rows((i) => config(`e2e-page-${i}`)),
+      ...['other-a', 'other-b', 'other-c'].map(config),
+    ];
+    const page = await mountComponent(ConfigsList, {
+      route: '/configs/',
+      data: { configs, loaded: true },
+    });
+    await page.find('input[placeholder="Find a Config"]').setValue('e2e-page-');
+    expect(tableRows(page)).toHaveLength(ROWS);
+
+    await togglePaginate(page);
+    expect(tableRows(page)).toHaveLength(10);
+    await nextPage(page).trigger('click');
+    expect(tableRows(page)).toHaveLength(ROWS - 10);
   });
 });
 

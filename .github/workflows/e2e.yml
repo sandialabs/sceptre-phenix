@@ -153,7 +153,7 @@ jobs:
           # The @axe scans run in Chromium only.
           - name: Axe scans
             id: axe
-            tests: --grep @axe --project=store --project=builder --no-deps
+            tests: --grep @axe --project=read-only --project=store --project=builder --no-deps
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

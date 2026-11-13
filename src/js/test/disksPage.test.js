@@ -27,6 +27,7 @@ vi.mock('@/utils/notify.js', modules.notify);
 // a loader whose load() fetches as the real one does, without the cache
 vi.mock('@/utils/pageLoader.js', fetching);
 
+import DiskWarning from '@/components/DiskWarning.vue';
 import JobProgress from '@/components/jobs/JobProgress.vue';
 import { diskTotals } from '@/utils/diskTotals.js';
 import { useJobStore } from '@/utils/jobs.js';
@@ -545,6 +546,58 @@ describe('disks in folders and outside the files directory', () => {
       ],
       ...Array(5).fill([]),
     ]);
+  });
+
+  // the button of the warning in this element, its explanation, and whether
+  // the explanation shows
+  const warningIn = (node) => {
+    const tooltip = node
+      .findComponent(DiskWarning)
+      .findComponent({ name: 'BTooltip' });
+    const explanation = tooltip.vm.$refs.content;
+    return {
+      button: tooltip.find('button'),
+      explanation,
+      shows: () => explanation.style.display !== 'none',
+    };
+  };
+
+  it('explains a warning on focus, on the page body, until Escape, and opens no details on a click', async () => {
+    const wrapper = await page(disks);
+    const warning = warningIn(tableRows(wrapper)[0].Name);
+
+    await warning.button.trigger('focus');
+    expect(warning.shows()).toBe(true);
+    expect(warning.explanation.closest('table')).toBeNull();
+    await warning.button.trigger('keyup', { key: 'Escape' });
+    expect(warning.shows()).toBe(false);
+
+    await warning.button.trigger('click');
+    await flushPromises();
+    expect(wrapper.find('.modal.is-active').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('hides the Location explanation on Escape, keeping the details open, and closes them on the next Escape', async () => {
+    // attached, so that Escape reaches the modal's listener on the document
+    const wrapper = await mountPage(Disks, {
+      route: '/disks/',
+      data: { disks, loaded: true },
+      attachTo: document.body,
+    });
+    const details = await openDetails(wrapper, '/data/vms/base.qc2');
+    const warning = warningIn(details.find('.disk-location'));
+
+    await warning.button.trigger('focus');
+    expect(warning.shows()).toBe(true);
+    await warning.button.trigger('keyup', { key: 'Escape' });
+    expect(warning.shows()).toBe(false);
+    expect(wrapper.vm.detailsModal.active).toBe(true);
+
+    await warning.button.trigger('keyup', { key: 'Escape' });
+    await flushPromises();
+    expect(wrapper.vm.detailsModal.active).toBe(false);
+    wrapper.unmount();
   });
 
   it('finds and sorts disks by the names it shows', async () => {

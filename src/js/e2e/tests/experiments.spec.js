@@ -102,6 +102,32 @@ const diskList = (filesDir) => {
   ];
 };
 
+// Creates the stopped experiment and stands in the disk list for its page.
+// Returns the disk of e2e-vm-a and the files directory it is in.
+async function seedStopped(page, request, topology) {
+  const exp = await request.post('/api/v1/experiments', {
+    data: { name: STOPPED, topology },
+  });
+  expect(exp.ok(), await exp.text()).toBe(true);
+  const { vms } = await (
+    await request.get(`/api/v1/experiments/${STOPPED}`)
+  ).json();
+  const topDisk = vms.find((vm) => vm.name === 'e2e-vm-a').disk;
+  const filesDir = topDisk.slice(0, topDisk.lastIndexOf('/'));
+  await standInDisks(page, diskList(filesDir));
+  return { topDisk, filesDir };
+}
+
+const vmRow = (page, name) => page.locator('tbody tr', { hasText: name });
+
+// Selects a VM; Buefy draws its box over the native checkbox, so click the
+// label as a user does.
+async function selectVM(page, name) {
+  const select = page.getByRole('checkbox', { name: `Select VM ${name}` });
+  await page.locator('label', { has: select }).click();
+  await expect(select).toBeChecked();
+}
+
 // Adds a custom annotation to one of the card's annotation lists.
 async function addCustomAnnotation(page, list, key, value) {
   await list.getByRole('button', { name: 'Add annotation' }).click();
@@ -143,7 +169,6 @@ test('create card builds an experiment with experiment and node annotations', as
   await expList
     .getByRole('textbox', { name: 'phenix.workflow/tags value' })
     .fill('suite=e2e');
-  await expectAccessible(page, 'create-experiment-modal');
 
   // phēnix sets the topology annotation itself, so the card refuses it
   const create = card.getByRole('button', { name: 'Create Experiment' });
@@ -188,28 +213,15 @@ test('stopped experiment page lists, searches and describes its VMs', async ({
   request,
   topology,
 }) => {
-  const exp = await request.post('/api/v1/experiments', {
-    data: { name: STOPPED, topology },
-  });
-  expect(exp.ok(), await exp.text()).toBe(true);
-  // the files directory the server resolves the topology's e2e.qc2 in
-  const { vms } = await (
-    await request.get(`/api/v1/experiments/${STOPPED}`)
-  ).json();
-  const topDisk = vms.find((vm) => vm.name === 'e2e-vm-a').disk;
-  const filesDir = topDisk.slice(0, topDisk.lastIndexOf('/'));
-  await standInDisks(page, diskList(filesDir));
+  const { topDisk, filesDir } = await seedStopped(page, request, topology);
 
   await page.goto('/experiments');
   await pageDataLoaded(page);
-  const link = page.getByRole('link', { name: STOPPED, exact: true });
-  await expect(link).toBeVisible();
-  await expectAccessible(page, 'experiments-list');
-  await link.click();
+  await page.getByRole('link', { name: STOPPED, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/experiment/${STOPPED}$`));
   await pageDataLoaded(page);
 
-  const row = (name) => page.locator('tbody tr', { hasText: name });
+  const row = (name) => vmRow(page, name);
   await expect(row('e2e-vm-a')).toBeVisible();
   await expect(row('e2e-vm-b')).toBeVisible();
 
@@ -252,15 +264,11 @@ test('stopped experiment page lists, searches and describes its VMs', async ({
   await expect(page.getByPlaceholder('Find a VM')).toHaveValue('');
   await expect(clear).toBeHidden();
 
-  // selecting a VM shows the boot buttons; Buefy draws its box over the
-  // native checkbox, so click the label as a user does
-  const select = page.getByRole('checkbox', { name: 'Select VM e2e-vm-a' });
-  await page.locator('label', { has: select }).click();
-  await expect(select).toBeChecked();
+  // selecting a VM shows the boot buttons
+  await selectVM(page, 'e2e-vm-a');
   await expect(
     page.getByRole('button', { name: 'Set selected VMs to boot' }),
   ).toBeVisible();
-  await expectAccessible(page, 'stopped-experiment');
 
   // the VM's name opens its details card, in its stopped form
   await row('e2e-vm-a')
@@ -271,7 +279,6 @@ test('stopped experiment page lists, searches and describes its VMs', async ({
   await expect(info.locator('.vm-card-description')).toHaveText('first e2e VM');
   await expect(info.locator('.vm-iface-ip').first()).toHaveText('10.0.0.1');
   await expect(info.locator('.vm-settings')).toBeVisible();
-  await expectAccessible(page, 'vm-info-modal');
   await page.keyboard.press('Escape');
   await expect(info).toBeHidden();
 
@@ -280,5 +287,39 @@ test('stopped experiment page lists, searches and describes its VMs', async ({
     page.getByText('This experiment has no files yet'),
   ).toBeVisible();
   await expect(page.getByPlaceholder('Find a File')).toBeVisible();
-  await expectAccessible(page, 'experiment-files');
 });
+
+test(
+  'stopped experiment page, VM card and Files tab are accessible',
+  { tag: '@axe' },
+  async ({ page, request, topology }) => {
+    await seedStopped(page, request, topology);
+    await page.goto(`/experiment/${STOPPED}`);
+    await pageDataLoaded(page);
+
+    // a selected VM, and a VM on an image outside the files directory
+    await expect(
+      vmRow(page, 'e2e-vm-c').getByRole('button', { name: OUTSIDE }),
+    ).toBeVisible();
+    await selectVM(page, 'e2e-vm-a');
+    await expect(
+      page.getByRole('button', { name: 'Set selected VMs to boot' }),
+    ).toBeVisible();
+    await expectAccessible(page, 'stopped-experiment');
+
+    await vmRow(page, 'e2e-vm-a')
+      .getByRole('button', { name: 'e2e-vm-a', exact: true })
+      .click();
+    const info = page.locator('.vm-card');
+    await expect(info.locator('.vm-settings')).toBeVisible();
+    await expectAccessible(page, 'vm-info-modal');
+    await page.keyboard.press('Escape');
+    await expect(info).toBeHidden();
+
+    await page.getByRole('tab', { name: 'Files' }).click();
+    await expect(
+      page.getByText('This experiment has no files yet'),
+    ).toBeVisible();
+    await expectAccessible(page, 'experiment-files');
+  },
+);

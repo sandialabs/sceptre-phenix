@@ -2,12 +2,7 @@
 //   phenix ui --jwt-signing-key secret --users 'e2e-admin:Testpass1!:Global Admin'
 //   E2E_AUTH_MODE=enabled npx playwright test auth-enabled
 const { test, expect } = require('@playwright/test');
-const {
-  attachCapture,
-  settle,
-  fatalOf,
-  expectTextContrast,
-} = require('./helpers');
+const { attachCapture, fatalOf, expectTextContrast } = require('./helpers');
 
 const ADMIN_USER = process.env.E2E_ADMIN_USER || 'e2e-admin';
 const ADMIN_PASS = process.env.E2E_ADMIN_PASS || 'Testpass1!';
@@ -46,8 +41,9 @@ test('unauthenticated visit redirects to signin', async ({ page }) => {
   const issues = [];
   attachCapture(page, issues);
   await page.goto('/');
-  await settle(page);
-  expect(new URL(page.url()).pathname).toBe('/signin');
+  await expect
+    .poll(() => new URL(page.url()).pathname, { timeout: 15000 })
+    .toBe('/signin');
   await expect(page.getByRole('button', { name: 'Submit' })).toBeVisible();
   const fatal = fatalOf(issues);
   expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
@@ -59,7 +55,7 @@ test('wrong password shows an inline alert and keeps the username', async ({
   const issues = [];
   attachCapture(page, issues);
   await page.goto('/signin');
-  await settle(page);
+  await expect(page.getByRole('button', { name: 'Submit' })).toBeVisible();
   await page.locator('.signin-form input[type="text"]').fill(ADMIN_USER);
   await page
     .locator('.signin-form input[type="password"]')
@@ -79,7 +75,7 @@ test('wrong password shows an inline alert and keeps the username', async ({
 
 async function signIn(page) {
   await page.goto('/signin');
-  await settle(page);
+  await expect(page.getByRole('button', { name: 'Submit' })).toBeVisible();
   await page.locator('.signin-form input[type="text"]').fill(ADMIN_USER);
   await page.locator('.signin-form input[type="password"]').fill(ADMIN_PASS);
   await page.getByRole('button', { name: 'Submit' }).click();
@@ -110,6 +106,7 @@ test(
   },
 );
 
+// Main bug: signed-in pages got 403 answers when they loaded their data.
 test('signed-in pages load their data', async ({ page }) => {
   await signIn(page);
   // only what follows sign-in, which must all be authorized
@@ -141,7 +138,7 @@ test('create account via signup modal lands on disabled page', async ({
   // Left behind only by a run that failed before its end.
   await deleteSignupUser(request);
   await page.goto('/signin');
-  await settle(page);
+  await expect(page.getByRole('button', { name: 'Submit' })).toBeVisible();
 
   const signInName = page
     .locator('.signin-form')
