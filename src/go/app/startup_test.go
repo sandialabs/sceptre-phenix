@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"phenix/store"
@@ -332,6 +333,116 @@ func TestStartupPreStartLinuxDomainScriptUsesC2(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(mmDir, "exp1", "linux1-domain.sh")); err != nil {
 		t.Fatalf("expected staged domain script: %v", err)
+	}
+}
+
+func TestStartupSetHostnameAnnotationValues(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]any
+		want        bool
+	}{
+		{name: "absent defaults to true", annotations: nil, want: true},
+		{name: "bool true", annotations: map[string]any{startupSetHostnameAnnotation: true}, want: true},
+		{name: "bool false", annotations: map[string]any{startupSetHostnameAnnotation: false}, want: false},
+		{name: "string true", annotations: map[string]any{startupSetHostnameAnnotation: "true"}, want: true},
+		{name: "string false", annotations: map[string]any{startupSetHostnameAnnotation: "false"}, want: false},
+		{name: "string zero", annotations: map[string]any{startupSetHostnameAnnotation: "0"}, want: false},
+		{name: "int zero", annotations: map[string]any{startupSetHostnameAnnotation: 0}, want: false},
+		{name: "int one", annotations: map[string]any{startupSetHostnameAnnotation: 1}, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := newStartupTestNode(t, "linux1", osLinux, true, 1)
+			node.AnnotationsF = tt.annotations
+
+			if got := startupSetHostnameEnabled(node); got != tt.want {
+				t.Fatalf("startupSetHostnameEnabled = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStartupPreStartLinuxSkipsHostname(t *testing.T) {
+	node := newStartupTestNode(t, "linux1", osLinux, true, 1)
+	node.AnnotationsF = map[string]any{startupSetHostnameAnnotation: false}
+	node.InjectionsF = []*v1.Injection{
+		{SrcF: "user-file", DstF: "/etc/user-file"},
+		{SrcF: "old-hostname", DstF: linuxHostnameInjectDst},
+	}
+
+	exp, mmDir := newStartupTestExperiment(t, node, nil)
+	runStartupPreStart(t, exp, mmDir)
+
+	if hasInjection(node, linuxHostnameInjectDst) {
+		t.Fatalf("unexpected hostname injection %q when %s is false", linuxHostnameInjectDst, startupSetHostnameAnnotation)
+	}
+	if !hasInjection(node, "/etc/user-file") {
+		t.Fatalf("expected unrelated user injection to remain")
+	}
+	for _, dst := range []string{linuxTimezoneInjectDst, linuxIfaceInjectDst} {
+		if !hasInjection(node, dst) {
+			t.Fatalf("expected injection %q to remain", dst)
+		}
+	}
+
+	hostnameScript := filepath.Join(exp.Spec.BaseDir(), "startup", "linux1-hostname.sh")
+	if _, err := os.Stat(hostnameScript); !os.IsNotExist(err) {
+		t.Fatalf("unexpected hostname script %s", hostnameScript)
+	}
+}
+
+func TestStartupPreStartLinuxC2SkipsHostname(t *testing.T) {
+	node := newStartupTestNode(t, "linux1", osLinux, true, 0)
+	node.AnnotationsF = map[string]any{startupSetHostnameAnnotation: false}
+
+	exp, mmDir := newStartupTestExperiment(t, node, nil)
+	runStartupPreStart(t, exp, mmDir)
+
+	for _, cmd := range []string{
+		"send exp1/linux1-hostname.sh",
+		"exec bash /tmp/miniccc/files/exp1/linux1-hostname.sh",
+	} {
+		if hasCommand(node, cmd) {
+			t.Fatalf("unexpected hostname C2 command %q", cmd)
+		}
+	}
+	for _, cmd := range []string{
+		"send exp1/linux1-timezone.sh",
+		"exec bash /tmp/miniccc/files/exp1/linux1-timezone.sh",
+		"send exp1/linux1-interfaces.sh",
+		"exec bash /tmp/miniccc/files/exp1/linux1-interfaces.sh",
+	} {
+		if !hasCommand(node, cmd) {
+			t.Fatalf("expected C2 command %q", cmd)
+		}
+	}
+
+	staged := filepath.Join(mmDir, "exp1", "linux1-hostname.sh")
+	if _, err := os.Stat(staged); !os.IsNotExist(err) {
+		t.Fatalf("unexpected staged hostname script %s", staged)
+	}
+}
+
+func TestStartupPreStartWindowsSkipsHostname(t *testing.T) {
+	node := newStartupTestNode(t, "win1", osWindows, true, 1)
+	node.AnnotationsF = map[string]any{startupSetHostnameAnnotation: false}
+
+	exp, mmDir := newStartupTestExperiment(t, node, nil)
+	runStartupPreStart(t, exp, mmDir)
+
+	startupScript := filepath.Join(exp.Spec.BaseDir(), "startup", "win1-startup.ps1")
+	content, err := os.ReadFile(startupScript)
+	if err != nil {
+		t.Fatalf("reading generated windows startup script: %v", err)
+	}
+
+	if !strings.Contains(string(content), "if ($true) {") {
+		t.Fatalf("expected windows startup script to bypass hostname check, got:\n%s", content)
+	}
+	if strings.Contains(string(content), `$host_name -ceq "win1"`) {
+		t.Fatalf("unexpected hostname comparison in windows startup script")
 	}
 }
 

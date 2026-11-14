@@ -29,7 +29,8 @@ const (
 	tunnelConfigPartsPortHost     = 2
 	tunnelConfigPartsPortHostDest = 3
 
-	startupViaCCAnnotation = "phenix/startup-via-cc"
+	startupViaCCAnnotation       = "phenix/startup-via-cc"
+	startupSetHostnameAnnotation = "phenix/startup-set-hostname"
 
 	linuxHostnameInjectDst  = "/etc/phenix/startup/1_hostname-start.sh"
 	linuxTimezoneInjectDst  = "/etc/phenix/startup/2_timezone-start.sh"
@@ -78,6 +79,30 @@ func startupViaCCEnabled(node ifaces.NodeSpec) bool {
 	val, ok := node.GetAnnotation(startupViaCCAnnotation)
 	if !ok {
 		return false
+	}
+
+	switch v := val.(type) {
+	case bool:
+		return v
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "false", "0":
+			return false
+		default:
+			return true
+		}
+	case int, int64, float64:
+		return v != 0
+	default:
+		return true
+	}
+}
+
+// startupSetHostnameEnabled reports whether the startup app should change the node's hostname.
+func startupSetHostnameEnabled(node ifaces.NodeSpec) bool {
+	val, ok := node.GetAnnotation(startupSetHostnameAnnotation)
+	if !ok {
+		return true
 	}
 
 	switch v := val.(type) {
@@ -429,6 +454,8 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 			}
 		}
 
+		setHostname := startupSetHostnameEnabled(node)
+
 		switch strings.ToLower(node.Hardware().OSType()) {
 		case osLinux, "rhel", "centos":
 			var (
@@ -437,22 +464,31 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 				ifaceFile    = startupDir + "/" + node.General().Hostname() + "-interfaces.sh"
 			)
 
-			addStartupInject(node, hostnameFile, linuxHostnameInjectDst, suppressStartupInjects)
+			if setHostname {
+				addStartupInject(node, hostnameFile, linuxHostnameInjectDst, suppressStartupInjects)
+			} else {
+				removeInjectionDestinations(node, map[string]struct{}{
+					linuxHostnameInjectDst: {},
+				})
+			}
+
 			addStartupInject(node, timezoneFile, linuxTimezoneInjectDst, suppressStartupInjects)
 			addStartupInject(node, ifaceFile, linuxIfaceInjectDst, suppressStartupInjects)
 
 			timeZone := "Etc/UTC"
 
-			err := tmpl.CreateFileFromTemplate(
-				"linux_hostname.tmpl",
-				node.General().Hostname(),
-				hostnameFile,
-			)
-			if err != nil {
-				return fmt.Errorf("generating linux hostname script: %w", err)
+			if setHostname {
+				err := tmpl.CreateFileFromTemplate(
+					"linux_hostname.tmpl",
+					node.General().Hostname(),
+					hostnameFile,
+				)
+				if err != nil {
+					return fmt.Errorf("generating linux hostname script: %w", err)
+				}
 			}
 
-			err = tmpl.CreateFileFromTemplate("linux_timezone.tmpl", timeZone, timezoneFile)
+			err := tmpl.CreateFileFromTemplate("linux_timezone.tmpl", timeZone, timezoneFile)
 			if err != nil {
 				return fmt.Errorf("generating linux timezone script: %w", err)
 			}
@@ -463,8 +499,10 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 			}
 
 			if useC2 {
-				if err := addStartupC2Script(exp, node, hostnameFile, startupC2Linux); err != nil {
-					return err
+				if setHostname {
+					if err := addStartupC2Script(exp, node, hostnameFile, startupC2Linux); err != nil {
+						return err
+					}
 				}
 
 				if err := addStartupC2Script(exp, node, timezoneFile, startupC2Linux); err != nil {
@@ -518,11 +556,13 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 
 			// Temporary struct to send to the Windows Startup template.
 			data := struct {
-				Node     ifaces.NodeSpec
-				Metadata map[string]any
+				Node        ifaces.NodeSpec
+				Metadata    map[string]any
+				SetHostname bool
 			}{
-				Node:     node,
-				Metadata: make(map[string]any),
+				Node:        node,
+				Metadata:    make(map[string]any),
+				SetHostname: setHostname,
 			}
 
 			// If startup app exists, see if this node has a metadata entry
