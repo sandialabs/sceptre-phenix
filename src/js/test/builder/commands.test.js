@@ -13,6 +13,7 @@ import {
   canvasHints,
   commandKeys,
   commandTitle,
+  connectionsHiddenText,
   defaultKeys,
   getCommand,
   isCustomizable,
@@ -1231,10 +1232,41 @@ describe('keys and hints', () => {
     expect(clashes('Meta+D', 'other')).toEqual([]);
   });
 
+  // Only screen readers get these texts, so they name the keys in words on
+  // every platform: VoiceOver does not read '⌥⇧C' as Option+Shift+C.
+  test('the texts for screen readers name the keys in words', () => {
+    const spoken = (platform) => ({
+      label: shortcutLabel('edit.redo', { platform, spoken: true }),
+      tip: withShortcut('Settings', 'settings.open', {
+        platform,
+        spoken: true,
+      }),
+      hidden: connectionsHiddenText({ platform, spoken: true }),
+      ...canvasHints({ readOnly: false, platform }),
+    });
+    const mac = spoken('mac');
+
+    expect(mac.label).toBe('Shift+Command+Z');
+    expect(mac.tip).toBe('Settings (Option+Shift+S)');
+    expect(mac.hidden).toBe(
+      'Connections are hidden. Press Option+Shift+C to show them.',
+    );
+    expect(spoken('other').hidden).toBe(
+      'Connections are hidden. Press Alt+Shift+C to show them.',
+    );
+    for (const [name, text] of Object.entries(mac)) {
+      expect(text, name).not.toMatch(/[⌘⌥⇧⌃]/);
+    }
+    // The visible tooltip keeps the Mac's symbols.
+    expect(connectionsHiddenText({ platform: 'mac' })).toBe(
+      'Connections are hidden. Press ⌥⇧C to show them.',
+    );
+  });
+
   test('the hints name this platform’s keys', () => {
     expect(canvasHints({ readOnly: false, platform: 'mac' }).node).toBe(
       'Arrow keys move between nodes. Page Down moves through this node’s ' +
-        'connections. Return selects or deselects. ⇧Return adds to the ' +
+        'connections. Return selects or deselects. Shift+Return adds to the ' +
         'selection. Escape clears the selection. Shift and an arrow key ' +
         'move the selected nodes. Delete removes.',
     );
@@ -1270,7 +1302,7 @@ describe('keys and hints', () => {
   test('the canvas hint follows the key of the shortcut sheet', () => {
     setShortcut('shortcuts.open', ['Mod+/'], memoryStorage());
     expect(canvasHints({ readOnly: false, platform: 'mac' }).canvas).toMatch(
-      /command palette\. ⌘\/ lists every shortcut\.$/,
+      /command palette\. Command\+\/ lists every shortcut\.$/,
     );
 
     // Without a key, it names the button that opens the sheet.

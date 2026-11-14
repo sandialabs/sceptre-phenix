@@ -1308,7 +1308,8 @@ test(
       // F2 on a node moves focus to its first field in the Inspector.
       await builder.canvasItem('workstation').press('F2');
       await expect(hostname).toBeFocused();
-      await hostname.press('Home');
+      // On macOS, Home does not move the caret in a text field.
+      await hostname.evaluate((input) => input.setSelectionRange(0, 0));
       await hostname.press('Delete');
       await expect.soft(hostname).toHaveValue('orkstation');
       await expect.soft(builder.summary).toHaveText(summary);

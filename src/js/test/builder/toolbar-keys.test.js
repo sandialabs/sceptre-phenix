@@ -451,6 +451,26 @@ describe('the toolbar’s actions', () => {
     await autoGroup.trigger('focus');
     expect(tooltip().exists()).toBe(true);
   });
+
+  // On a Mac, the tooltip shows the key symbols. Its description, for screen
+  // readers, names the keys in words (see key-hints-render.test.js).
+  test('a Mac tooltip shows ⌥⇧G, and the description says Option+Shift+G', async () => {
+    setPlatform('mac');
+    const wrapper = open();
+    const autoGroup = byTestId(wrapper, 'toolbar-auto-group');
+
+    autoGroup.element.getBoundingClientRect = () => new DOMRect(0, 0, 80, 24);
+    await autoGroup.trigger('focus');
+
+    expect(wrapper.get('[data-testid="toolbar-tooltip"]').text()).toMatch(
+      /\. ⌥⇧G groups by network$/,
+    );
+    expect(
+      document
+        .getElementById(autoGroup.attributes('aria-describedby'))
+        .textContent.trim(),
+    ).toMatch(/\. Option\+Shift\+G groups by network$/);
+  });
 });
 
 describe('the toolbar’s Tab stop, for any keys', () => {

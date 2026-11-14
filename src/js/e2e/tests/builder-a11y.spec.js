@@ -2052,7 +2052,11 @@ function keyboardChecks() {
         await expect
           .soft(settings)
           .toHaveAttribute('aria-keyshortcuts', 'Alt+Shift+S');
-        await expect.soft(settings).toHaveAccessibleDescription(settingsKeys);
+        await expect
+          .soft(settings)
+          .toHaveAccessibleDescription(
+            process.platform === 'darwin' ? 'Option+Shift+S' : 'Alt+Shift+S',
+          );
         await help.focus();
         await expect
           .soft(page.getByTestId('header-tooltip'))

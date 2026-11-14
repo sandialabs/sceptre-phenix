@@ -2139,10 +2139,10 @@ test.describe('Builder canvas editing', () => {
         'the same room before and after the shown name',
       )
       .toBeLessThanOrEqual(1);
-    // The tooltip gives the keys of Auto layout.
+    // The description gives the keys of Auto layout, in words.
     await expect(layoutButton).toHaveAccessibleDescription(
       `Change layout (${
-        process.platform === 'darwin' ? '⌥⇧L' : 'Alt+Shift+L'
+        process.platform === 'darwin' ? 'Option+Shift+L' : 'Alt+Shift+L'
       })`,
     );
     await expect(layoutButton).toHaveAttribute('aria-haspopup', 'menu');

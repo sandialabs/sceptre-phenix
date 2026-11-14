@@ -7,7 +7,7 @@ import { mount } from '@vue/test-utils';
 import { createPinia } from 'pinia';
 
 import BuilderCounts from '@/components/builder/BuilderCounts.vue';
-import { connectionsHiddenText } from '@/builder/commands.js';
+import { setPlatform } from '@/builder/keymap.js';
 import { setLayers, setNodeLayer } from '@/builder/model.js';
 import { resetSettings, setSetting } from '@/builder/settings.js';
 import { useBuilderStore } from '@/builder/store.js';
@@ -38,6 +38,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetSettings(null);
+  setPlatform(null);
 });
 
 describe('the connections count', () => {
@@ -53,9 +54,12 @@ describe('the connections count', () => {
     expect(links().text()).toBe('1 connection');
   });
 
+  // Screen readers get the keys in words, also on a Mac.
   test('selects nothing while they are hidden, and says how to show them', async () => {
+    setPlatform('mac');
     const { wrapper, store, links } = mountCounts();
     const before = store.selection;
+    const spoken = 'Connections are hidden. Press Option+Shift+C to show them.';
 
     setSetting('showConnections', false, null);
     await wrapper.vm.$nextTick();
@@ -63,14 +67,14 @@ describe('the connections count', () => {
 
     expect(store.selection).toBe(before);
     expect(store.selection.edges).toEqual([]);
-    expect(store.announcement).toBe(connectionsHiddenText());
+    expect(store.announcement).toBe(spoken);
     expect(links().classes()).toContain('builder-counts__button--hidden');
     expect(links().text()).toBe('1 connection, hidden');
     expect(
       document
         .getElementById(links().attributes('aria-describedby'))
         .textContent.trim(),
-    ).toBe(connectionsHiddenText());
+    ).toBe(spoken);
   });
 });
 

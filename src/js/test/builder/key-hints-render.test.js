@@ -1,5 +1,5 @@
 // Where buttons show their keys: the Shortcuts button's key cap and the
-// tooltips of the layout and Auto-group menus, rendered on the server.
+// descriptions of the toolbar's buttons, rendered on the server.
 
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { createSSRApp, h } from 'vue';
@@ -134,18 +134,32 @@ describe('the toolbar’s menus', () => {
         )[1]
         .trim();
 
-    return { layout: tip('layout'), autoGroup: tip('autoGroup') };
+    return {
+      layout: tip('layout'),
+      autoGroup: tip('autoGroup'),
+      all: [...html.matchAll(/id="toolbar-tip-[^>]*>([^<]*)</g)].map((match) =>
+        match[1].trim(),
+      ),
+    };
   }
 
-  test('say what their keys run, as this platform writes them', async () => {
-    expect(await tips()).toEqual({
-      layout: 'Change layout (⌥⇧L)',
+  // Only screen readers get the descriptions (the tooltips are aria-hidden),
+  // so they name the keys in words, also on a Mac.
+  test('say what their keys run, in words', async () => {
+    const { all, ...mac } = await tips();
+
+    expect(mac).toEqual({
+      layout: 'Change layout (Option+Shift+L)',
       autoGroup:
-        'Group the ungrouped nodes automatically. ⌥⇧G groups by network',
+        'Group the ungrouped nodes automatically. Option+Shift+G groups by network',
     });
+    expect(all).toContain('Shift+Command+Z');
+    for (const text of all) {
+      expect(text).not.toMatch(/[⌘⌥⇧⌃]/);
+    }
 
     setPlatform('other');
-    expect(await tips()).toEqual({
+    expect(await tips()).toMatchObject({
       layout: 'Change layout (Alt+Shift+L)',
       autoGroup:
         'Group the ungrouped nodes automatically. Alt+Shift+G groups by network',
@@ -160,13 +174,13 @@ describe('the toolbar’s menus', () => {
     });
 
     expect(selected.autoGroup).toBe(
-      'Group the selected nodes automatically. ⌥⇧G groups by network',
+      'Group the selected nodes automatically. Option+Shift+G groups by network',
     );
 
     // Without keys, the tooltips say only what the menus do.
     setShortcut('structure.layout', [], memoryStorage());
     setShortcut('structure.autoGroup.network', [], memoryStorage());
-    expect(await tips()).toEqual({
+    expect(await tips()).toMatchObject({
       layout: 'Change layout',
       autoGroup: 'Group the ungrouped nodes automatically',
     });
@@ -177,11 +191,11 @@ describe('the toolbar’s menus', () => {
       memoryStorage(),
     );
     expect((await tips()).autoGroup).toBe(
-      'Group the ungrouped nodes automatically. ⇧⌘U groups by network',
+      'Group the ungrouped nodes automatically. Shift+Command+U groups by network',
     );
 
-    // The layout's tooltip gives the user's keys for Auto layout.
+    // The layout's description gives the user's keys for Auto layout.
     setShortcut('structure.layout', ['Mod+Shift+Y'], memoryStorage());
-    expect((await tips()).layout).toBe('Change layout (⇧⌘Y)');
+    expect((await tips()).layout).toBe('Change layout (Shift+Command+Y)');
   });
 });

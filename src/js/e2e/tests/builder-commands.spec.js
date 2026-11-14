@@ -524,6 +524,9 @@ test.describe('command palette library search', () => {
 // (Option and Shift on a Mac) with a letter.
 test.describe('default keys', () => {
   const keys = (letter) => (mac ? `⌥⇧${letter}` : `Alt+Shift+${letter}`);
+  // Screen readers get the keys in words.
+  const spoken = (letter) =>
+    mac ? `Option+Shift+${letter}` : `Alt+Shift+${letter}`;
 
   test(
     'Alt+Shift with S, L and G open Settings, run the layout and auto-group by network',
@@ -541,7 +544,7 @@ test.describe('default keys', () => {
         await expect
           .soft(button)
           .toHaveAttribute('aria-keyshortcuts', 'Alt+Shift+S');
-        await expect.soft(button).toHaveAccessibleDescription(keys('S'));
+        await expect.soft(button).toHaveAccessibleDescription(spoken('S'));
         await button.focus();
         await expect
           .soft(tooltip)
@@ -609,14 +612,14 @@ test.describe('default keys', () => {
         const layout = builder.toolbar('layout');
         await expect
           .soft(layout)
-          .toHaveAccessibleDescription(`Change layout (${keys('L')})`);
+          .toHaveAccessibleDescription(`Change layout (${spoken('L')})`);
         await builder.canvas.focus();
         await page.keyboard.press('Alt+Shift+KeyL');
         await expect(builder).toHaveAnnounced('Applied ELK layered layout');
         await expect.soft(builder.canvas).toBeFocused();
         await expect
           .soft(layout)
-          .toHaveAccessibleDescription(`Change layout (${keys('L')})`);
+          .toHaveAccessibleDescription(`Change layout (${spoken('L')})`);
       });
 
       await test.step('the Auto-group key groups by network, and its menu says so', async () => {
@@ -624,7 +627,7 @@ test.describe('default keys', () => {
         await expect
           .soft(autoGroup)
           .toHaveAccessibleDescription(
-            `Group the ungrouped nodes automatically. ${keys('G')} groups by network`,
+            `Group the ungrouped nodes automatically. ${spoken('G')} groups by network`,
           );
         // From a node on the canvas, as from anywhere in the editor but a
         // text field.
@@ -641,8 +644,6 @@ test.describe('default keys', () => {
 
       await test.step('the sheet lists the three keys, and the palette shows them', async () => {
         const sheet = page.getByTestId('shortcuts-dialog');
-        const spoken = (letter) =>
-          mac ? `Option+Shift+${letter}` : `Alt+Shift+${letter}`;
 
         await builder.canvas.focus();
         await page.keyboard.press('?');

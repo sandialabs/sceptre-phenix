@@ -30,6 +30,7 @@ import {
   matchesKey,
   sameKey,
   shortcutOverride,
+  spokenKey,
   typesCharacter,
 } from './keymap.js';
 import {
@@ -2620,12 +2621,16 @@ function alternatives(labels) {
   return `${labels.slice(0, -1).join(', ')} or ${labels.at(-1)}`;
 }
 
-/** A command's keys as the platform writes them ('⇧⌘Z'), or '' without keys. */
+/**
+ * A command's keys as the platform writes them ('⇧⌘Z'), or '' without keys.
+ * `text` gives keyText, for running text. `spoken` gives spokenKey
+ * ('Shift+Command+Z'), for text that only screen readers get.
+ */
 export function shortcutLabel(
   idOrCommand,
-  { platform = currentPlatform(), text = false } = {},
+  { platform = currentPlatform(), text = false, spoken = false } = {},
 ) {
-  const label = text ? keyText : keyLabel;
+  const label = spoken ? spokenKey : text ? keyText : keyLabel;
 
   return alternatives(
     commandKeys(idOrCommand, { platform }).map((key) => label(key, platform)),
@@ -2634,10 +2639,17 @@ export function shortcutLabel(
 
 /**
  * What the Builder says when a key goes to a hidden connection: how to show
- * them again.
+ * them again. `spoken` names the keys in words, for screen readers.
  */
-export function connectionsHiddenText() {
-  const keys = shortcutLabel('view.connections', { text: true });
+export function connectionsHiddenText({
+  platform = currentPlatform(),
+  spoken = false,
+} = {}) {
+  const keys = shortcutLabel('view.connections', {
+    platform,
+    text: true,
+    spoken,
+  });
 
   return keys
     ? `Connections are hidden. Press ${keys} to show them.`
@@ -2661,13 +2673,14 @@ export function ariaShortcuts(
 
 /**
  * A tooltip's text with the command's keys ('Undo (⌘Z)'), or the text alone.
+ * `spoken` names the keys in words, for text that only screen readers get.
  */
 export function withShortcut(
   text,
   idOrCommand,
-  { platform = currentPlatform() } = {},
+  { platform = currentPlatform(), spoken = false } = {},
 ) {
-  const keys = shortcutLabel(idOrCommand, { platform });
+  const keys = shortcutLabel(idOrCommand, { platform, spoken });
 
   return keys ? `${text} (${keys})` : text;
 }
@@ -2870,13 +2883,13 @@ export function dispatchKeydown(event, ctx, { root }) {
 
 /**
  * The accessible descriptions of the keys on a focused node, a connection and
- * the canvas.
+ * the canvas. Only screen readers get them, so the keys are words.
  */
 export function canvasHints({ readOnly, platform = currentPlatform() }) {
   const first = (id) => {
     const [key] = commandKeys(id, { platform });
 
-    return key ? keyText(key, platform) : '';
+    return key ? spokenKey(key, platform) : '';
   };
   const select =
     `${first('selection.press')} selects or deselects. ` +
@@ -2888,7 +2901,7 @@ export function canvasHints({ readOnly, platform = currentPlatform() }) {
   // The advice for screen readers is here, with the canvas's own keys. In
   // browse mode, the arrow keys move the virtual cursor, not the focus (see
   // BuilderCanvas.vue).
-  const sheet = shortcutLabel('shortcuts.open', { platform, text: true });
+  const sheet = shortcutLabel('shortcuts.open', { platform, spoken: true });
   const canvas =
     `Arrow keys move to the nodes. ${first('selection.press')} ` +
     'selects the focused one. With a screen reader, use its focus mode ' +
