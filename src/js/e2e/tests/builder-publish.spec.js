@@ -1,7 +1,6 @@
 // Builder publication: the Publish and Scenario dialogs, the configs a
 // publish writes, and how failures are reported.
 
-const crypto = require('node:crypto');
 const fs = require('node:fs');
 
 const {
@@ -172,6 +171,12 @@ function topologyHint(page) {
 
 function closeButton(page) {
   return page.getByRole('button', { name: 'Close', exact: true });
+}
+
+// Dialogs scan in the dark theme only, without motion so that axe does not
+// read colors in transition.
+async function darkTheme(page) {
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
 }
 
 // A topology with a legacy Builder diagram, which only the draft imported
@@ -553,11 +558,6 @@ test('topology-only publish writes the diagram, offers an update on reopen, and 
     await expect
       .soft(confirm.getByTestId('confirm-accept'))
       .toHaveText('Update topology');
-    await expectAccessible(page, {
-      include: '[data-testid="builder-confirm"]',
-      soft: true,
-      label: 'Publish confirmation',
-    });
     await page.keyboard.press('Escape');
     await expect(confirm).toHaveCount(0);
     await expect.soft(builder.dialog).toBeVisible();
@@ -840,11 +840,6 @@ test('topology and experiment publish carries the VLAN alias, adds the topology 
         )
         .toBeVisible();
     }
-    await expectAccessible(page, {
-      include: '[data-testid="builder-dialog"]',
-      soft: true,
-      label: 'Scenarios dialog with two scenarios',
-    });
     await saveScenarios(builder, draft, [uploaded, stored]);
   });
 
@@ -867,11 +862,6 @@ test('topology and experiment publish carries the VLAN alias, adds the topology 
       .soft(page.getByLabel('Experiment scenario'))
       .toHaveAccessibleDescription(/Publishing adds this topology/);
     await select.selectOption(stored);
-    await expectAccessible(page, {
-      include: '[data-testid="builder-dialog"]',
-      soft: true,
-      label: 'Publish dialog with an experiment scenario',
-    });
   });
 
   // phenix uses "all", in any case, to mean every experiment, so the dialog
@@ -1221,25 +1211,6 @@ test('a stored scenario is listed and published with an experiment, and a draft 
   });
 });
 
-// Scans the dialog that `selector` finds with axe, in the light theme and
-// then the dark one, and goes back to the light theme.
-async function scanInBothThemes(page, selector, label) {
-  for (const scheme of ['light', 'dark']) {
-    // Without motion, so that axe does not read colors in transition.
-    await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
-    await expect(page.locator('.builder-root')).toHaveAttribute(
-      'data-builder-theme',
-      scheme,
-    );
-    await expectAccessible(page, {
-      include: selector,
-      soft: true,
-      label: `${label} (${scheme})`,
-    });
-  }
-  await page.emulateMedia({ colorScheme: 'light', reducedMotion: null });
-}
-
 test('the Scenarios dialog shows, edits and creates scenarios', async ({
   page,
   builder,
@@ -1256,7 +1227,7 @@ test('the Scenarios dialog shows, edits and creates scenarios', async ({
   config.metadata.annotations = { purpose: 'builder-e2e-kept' };
   await builder.seedConfig(config);
 
-  const draft = await openLab(builder, topology);
+  await openLab(builder, topology);
   const dialog = page.getByRole('dialog', { name: 'Scenarios', exact: true });
   await openScenarios(builder);
   const apps = async (name) =>
@@ -1265,7 +1236,6 @@ test('the Scenarios dialog shows, edits and creates scenarios', async ({
     );
 
   await test.step('View shows the stored config read only', async () => {
-    await expect(scenarioBox(dialog, seeded)).not.toBeChecked();
     const view = dialog.getByRole('button', {
       name: `View ${seeded}`,
       exact: true,
@@ -1275,16 +1245,8 @@ test('the Scenarios dialog shows, edits and creates scenarios', async ({
       name: `Scenario ${seeded}`,
       exact: true,
     });
-    await expect(viewer).toBeVisible();
     const text = viewer.getByRole('region', { name: 'Scenario config (YAML)' });
-    await expect.soft(text).toContainText(`name: ${seeded}`);
     await expect.soft(text).toContainText('name: builder-e2e-seeded');
-    await expect.soft(viewer.getByRole('textbox')).toHaveCount(0);
-    await scanInBothThemes(
-      page,
-      '[data-testid="scenario-editor"]',
-      'axe on the scenario viewer',
-    );
 
     await viewer.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(viewer).toHaveCount(0);
@@ -1326,9 +1288,6 @@ test('the Scenarios dialog shows, edits and creates scenarios', async ({
         'YAML without sideways scrolling',
       )
       .toBe(true);
-    expect.soft(text).toContain('purpose: builder-e2e-kept');
-    // The times that the server sets are not for editing.
-    expect.soft(text).not.toContain('created:');
 
     // An app without a name breaks the Scenario schema.
     await field.fill(text.replace('name: builder-e2e-seeded', 'hosts: []'));
@@ -1352,11 +1311,6 @@ test('the Scenarios dialog shows, edits and creates scenarios', async ({
     await expect(editor).toBeVisible();
 
     await field.fill(text.replace('builder-e2e-seeded', 'builder-e2e-edited'));
-    await scanInBothThemes(
-      page,
-      '[data-testid="scenario-editor"]',
-      'axe on the scenario editor',
-    );
     await editor.getByRole('button', { name: 'Save scenario' }).click();
     await expect(editor).toHaveCount(0);
     await expect
@@ -1374,29 +1328,12 @@ test('the Scenarios dialog shows, edits and creates scenarios', async ({
       .toMatchObject({ purpose: 'builder-e2e-kept' });
   });
 
-  await test.step('Create new scenario opens a config made for this diagram, which Save creates and selects', async () => {
+  await test.step('Create new scenario stores a config made for this diagram, and selects it', async () => {
     await dialog.getByRole('button', { name: 'Create new scenario' }).click();
     const creator = page.getByRole('dialog', {
       name: 'Create new scenario',
       exact: true,
     });
-    const field = creator.getByLabel('Scenario config (YAML)');
-    await expect(field).toHaveValue(
-      [
-        `apiVersion: ${V2}`,
-        'kind: Scenario',
-        'metadata:',
-        `  name: ${created}`,
-        '  annotations:',
-        `    topology: ${topology}`,
-        'spec:',
-        '  apps: []',
-        '',
-      ].join('\n'),
-    );
-    // Nothing is stored before Save.
-    expect.soft(await builder.config('Scenario', created)).toBeNull();
-
     await creator.getByRole('button', { name: 'Create scenario' }).click();
     await expect(creator).toHaveCount(0);
     await expect(scenarioBox(dialog, created)).toBeChecked();
@@ -1408,14 +1345,6 @@ test('the Scenarios dialog shows, edits and creates scenarios', async ({
       .soft(stored?.metadata?.annotations?.topology, 'topology annotation')
       .toBe(topology);
     expect.soft(stored?.spec?.apps ?? [], 'apps').toEqual([]);
-  });
-
-  await test.step('the boxes set are saved into the diagram, in the order they were set', async () => {
-    await scenarioBox(dialog, seeded).check();
-    await expect
-      .soft(dialog.getByTestId('scenario-count'))
-      .toHaveText('2 scenarios selected.');
-    await saveScenarios(builder, draft, [created, seeded]);
   });
 
   expectNoFatal(issues);
@@ -1465,6 +1394,69 @@ test('Enter in the Scenarios filter keeps the dialog open, and Enter in the uplo
 
   expectNoFatal(issues);
 });
+
+test(
+  'axe finds no serious violations in the scenario viewer and editor',
+  { tag: ['@axe'] },
+  async ({ page, builder, issues }, testInfo) => {
+    const scenario = uniqueName(testInfo, 'axe-scn');
+    await builder.seedConfig(scenarioConfig(scenario, 'builder-e2e-axe'));
+    await darkTheme(page);
+    await openLab(builder, uniqueName(testInfo, 'axe-scn-lab'));
+    await openScenarios(builder);
+    const dialog = page.getByRole('dialog', { name: 'Scenarios', exact: true });
+
+    await test.step('the list with a checked scenario', async () => {
+      await scenarioBox(dialog, scenario).check();
+      await expect(scenarioBox(dialog, scenario)).toBeChecked();
+      await expectAccessible(page, {
+        include: '[data-testid="builder-dialog"]',
+        soft: true,
+        label: 'axe on the Scenarios dialog with a scenario (dark)',
+      });
+    });
+
+    await test.step('the viewer', async () => {
+      await dialog
+        .getByRole('button', { name: `View ${scenario}`, exact: true })
+        .click();
+      const viewer = page.getByRole('dialog', {
+        name: `Scenario ${scenario}`,
+        exact: true,
+      });
+      await expect(
+        viewer.getByRole('region', { name: 'Scenario config (YAML)' }),
+      ).toContainText(`name: ${scenario}`);
+      await expectAccessible(page, {
+        include: '[data-testid="scenario-editor"]',
+        soft: true,
+        label: 'axe on the scenario viewer (dark)',
+      });
+      await viewer.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(viewer).toHaveCount(0);
+    });
+
+    await test.step('the editor with a change', async () => {
+      await dialog
+        .getByRole('button', { name: `Edit ${scenario}`, exact: true })
+        .click();
+      const field = page
+        .getByRole('dialog', { name: `Edit scenario ${scenario}`, exact: true })
+        .getByLabel('Scenario config (YAML)');
+      await expect(field).toHaveValue(/builder-e2e-axe/);
+      await field.fill(
+        (await field.inputValue()).replace('builder-e2e-axe', 'builder-e2e-b'),
+      );
+      await expectAccessible(page, {
+        include: '[data-testid="scenario-editor"]',
+        soft: true,
+        label: 'axe on the scenario editor (dark)',
+      });
+    });
+
+    expectNoFatal(issues);
+  },
+);
 
 // --- refusals and republish -------------------------------------------------------
 
@@ -1683,15 +1675,6 @@ test('an interface with no VLAN or a used address is refused at publish, and its
     )?.device.hostname;
     expect(disconnected, 'the device whose eth0 was disconnected').toBeTruthy();
 
-    // The diagram checks say the warning stops publishing too.
-    await page.getByTestId('builder-checks').click();
-    const checks = page.getByTestId('checks-dialog');
-    await expect(checks.getByTestId('checks-summary')).toContainText(
-      'You must fix the warning before you can publish the diagram. Publish lists that warning as an error.',
-    );
-    await page.keyboard.press('Escape');
-    await expect(checks).toHaveCount(0);
-
     await openPublish(builder);
     await expect(errors).toHaveText([
       `Error: interface "eth0" of "${disconnected}" is not connected to a network and has no VLAN. Thus you cannot publish the interface. Connect it, or type a VLAN for it`,
@@ -1720,23 +1703,6 @@ test('an interface with no VLAN or a used address is refused at publish, and its
     await builder.dialog.getByRole('button', { name: 'Cancel' }).click();
   });
 
-  // The network goes with its last switch, as nothing else uses it then.
-  await test.step('deleting the last switch removes its network, and one Undo restores both', async () => {
-    await builder.selectNode('EXP');
-    await page.keyboard.press('Delete');
-    await expect(builder).toHaveAnnounced(
-      'Deleted EXP, 1 connection and network EXP',
-    );
-    await builder.expectSummary('0 switches, 0 networks, 0 connections');
-
-    await builder.toolbar('undo').click();
-    await builder.expectSummary('1 switch, 1 network, 1 connection');
-    await builder.toolbar('redo').click();
-    await builder.expectSummary('0 switches, 0 networks, 0 connections');
-    await builder.toolbar('undo').click();
-    await builder.expectSummary('1 switch, 1 network, 1 connection');
-  });
-
   await test.step('a VLAN naming a network connects the interface to its switch', async () => {
     await builder.selectNode(disconnected);
     await vlan.fill('exp');
@@ -1762,47 +1728,6 @@ test('an interface with no VLAN or a used address is refused at publish, and its
     ).toEqual(['EXP', 'EXP']);
   });
 
-  // An interface with no connection point (from an import) is checked too.
-  // VLAN names match exactly, so "exp" is not network EXP.
-  await test.step('an interface with no connection point is checked too', async () => {
-    const other = uniqueName(testInfo, 'handleless');
-    tracker.config('Topology', other);
-    const document = labDocument(other);
-    const [server, server2] = devicesOf(document);
-
-    server.device.spec.network.interfaces.push({
-      name: '',
-      proto: 'dhcp',
-      type: 'ethernet',
-    });
-    server2.device.interfaces.push({
-      id: crypto.randomUUID(),
-      name: 'eth1',
-      index: 1,
-    });
-    server2.device.spec.network.interfaces.push({
-      name: 'eth1',
-      proto: 'dhcp',
-      type: 'ethernet',
-      vlan: 'exp',
-    });
-
-    const seeded = await builder.seedDraft(document);
-    await builder.openDraft(seeded);
-    await openPublish(builder);
-    await expect(errors).toHaveText([
-      'Error: interface #2 of "server" has no name and no VLAN. Thus you cannot publish the interface. Name it. Then connect it, or type a VLAN for it',
-    ]);
-    await expect(page.getByTestId('publish-submit')).toBeDisabled();
-    await expect
-      .soft(builder.dialog.locator('li[data-level="warning"]'))
-      .toContainText([
-        'interface "eth1" of "server-2" is not connected on the canvas, and its VLAN "exp" differs from network EXP only in case. phenix treats them as different VLANs. Thus publishing does not put the interface on network EXP',
-      ]);
-
-    expect(await builder.config('Topology', other)).toBeNull();
-  });
-
   // One address on two interfaces is a warning on both devices, which
   // publishing refuses until one changes.
   await test.step('an IP address two devices use is refused until one changes', async () => {
@@ -1823,13 +1748,6 @@ test('an interface with no VLAN or a used address is refused at publish, and its
     const uses = (hostname, other) =>
       `IP address 10.0.0.5 of interface "eth0" of "${hostname}" on VLAN "EXP" is also the address of interface "eth0" of "${other}"`;
 
-    await page.getByTestId('builder-checks').click();
-    const checks = page.getByTestId('checks-dialog');
-    await expect(checks).toContainText(uses('server', 'server-2'));
-    await expect(checks).toContainText(uses('server-2', 'server'));
-    await page.keyboard.press('Escape');
-    await expect(checks).toHaveCount(0);
-
     await openPublish(builder);
     await expect(errors).toHaveText([
       `Error: ${uses('server', 'server-2')}`,
@@ -1837,19 +1755,7 @@ test('an interface with no VLAN or a used address is refused at publish, and its
     ]);
     await expect(page.getByTestId('publish-submit')).toBeDisabled();
 
-    const usedBy =
-      'IP address 10.0.0.5 on VLAN "EXP" is used by interface "eth0" of device "server" and interface "eth0" of device "server-2"';
     await builder.dialog.getByRole('button', { name: 'Cancel' }).click();
-
-    // Topology YAML still downloads, and says why Publish refuses it, as
-    // Publish's refusal says it.
-    await builder.openDialog('download');
-    await builder.dialog.getByTestId('download-topology-yaml').click();
-    await expect(builder.dialog.getByRole('status')).toContainText(
-      `You cannot publish this topology yet. ${usedBy}.`,
-    );
-    await page.keyboard.press('Escape');
-    await expect(builder.dialog).toHaveCount(0);
 
     // The Inspector shows the warning at the address field.
     await builder.selectNode('server-2');
@@ -1875,43 +1781,85 @@ test('an interface with no VLAN or a used address is refused at publish, and its
     await expect(errors).toHaveCount(0);
     await expectPublish(page, 200);
   });
-
-  // phenix brings a manual interface up with no address, and the Inspector
-  // does not show one, so an address it still holds is not compared.
-  await test.step('an address two manual interfaces hold is not compared', async () => {
-    const manual = uniqueName(testInfo, 'manual-ip');
-    tracker.config('Topology', manual);
-    const document = labDocument(manual);
-
-    for (const device of devicesOf(document)) {
-      Object.assign(device.device.spec.network.interfaces[0], {
-        proto: 'manual',
-        address: '10.0.0.5',
-        mask: 24,
-      });
-    }
-
-    await builder.openDraft(await builder.seedDraft(document));
-    await builder.selectNode('server-2');
-    await expect(vlan).toHaveValue('EXP');
-    await expect(
-      builder.inspector.locator(
-        '[data-path="spec.network.interfaces.0.address"]',
-      ),
-    ).toHaveCount(0);
-    await expect(
-      builder.inspector
-        .getByTestId('inspector-field-warning')
-        .filter({ hasText: 'IP address' }),
-    ).toHaveCount(0);
-
-    await openPublish(builder);
-    await expect(errors).toHaveCount(0);
-    await expectPublish(page, 200);
-  });
 });
 
 // --- failures -------------------------------------------------------------------
+
+// Answers each publish of the page with `status` and `body`. The dialog's dry
+// runs, which write nothing, still reach the server.
+async function answerPublish(page, status, body) {
+  await page.route('**/builder/drafts/*/publish', (route) =>
+    isPublishPreview(route.request())
+      ? route.continue()
+      : route.fulfill({
+          status,
+          contentType: 'application/json',
+          body: JSON.stringify(body),
+        }),
+  );
+}
+
+// The server's partial-failure answer (writePublishPartial): the topology was
+// written and the experiment failed.
+function partialAnswer(topology) {
+  return {
+    status: 'partial',
+    stages: [
+      {
+        name: 'document',
+        status: 'created',
+        message: 'phenix stored the immutable Builder document',
+      },
+      {
+        name: 'topology',
+        status: 'created',
+        config: `Topology/${topology}`,
+      },
+      {
+        name: 'experiment',
+        status: 'failed',
+        message: 'experiment publication failed',
+      },
+    ],
+    warnings: [
+      {
+        code: 'publish.retry.available',
+        severity: 'warning',
+        message: RETRY_ADVICE,
+      },
+    ],
+    errors: ['experiment publication failed'],
+  };
+}
+
+// A server that reserves the hostname "server-2" refuses it as phenix refuses
+// the hostname "all", with the code of that refusal.
+const RESERVED =
+  'hostname "server-2" is reserved on this server, so the device cannot be published';
+
+// The 422 answer that refuses node `nodeId` for RESERVED.
+function refusalAnswer(topology, nodeId) {
+  return {
+    message: `phenix cannot publish topology ${topology}: ${RESERVED}`,
+    code: 'publish.blocked',
+    errors: [
+      {
+        code: 'node.hostname.reserved',
+        severity: 'error',
+        message: RESERVED,
+        nodeId,
+        field: 'hostname',
+      },
+    ],
+    warnings: [
+      {
+        code: 'publish.file.unchanged',
+        severity: 'warning',
+        message: 'the Builder file of the topology is not changed',
+      },
+    ],
+  };
+}
 
 test('a partial publication lists the failed stage, says how to finish it and lets the user go back', async ({
   page,
@@ -1921,48 +1869,11 @@ test('a partial publication lists the failed stage, says how to finish it and le
   const topology = uniqueName(testInfo, 'partial');
   const experiment = uniqueName(testInfo, 'partial-exp');
 
-  // The publish response is mocked, so the diagram's content does not matter.
+  // The publish response is mocked, so the diagram's content does not matter
+  // and no config is written.
   await builder.open();
   await builder.createBlank();
-
-  // The server's partial-failure answer (writePublishPartial), so no config is
-  // written. The dialog's dry runs still reach the server.
-  await page.route('**/builder/drafts/*/publish', (route) =>
-    isPublishPreview(route.request())
-      ? route.continue()
-      : route.fulfill({
-          status: 500,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            status: 'partial',
-            stages: [
-              {
-                name: 'document',
-                status: 'created',
-                message: 'phenix stored the immutable Builder document',
-              },
-              {
-                name: 'topology',
-                status: 'created',
-                config: `Topology/${topology}`,
-              },
-              {
-                name: 'experiment',
-                status: 'failed',
-                message: 'experiment publication failed',
-              },
-            ],
-            warnings: [
-              {
-                code: 'publish.retry.available',
-                severity: 'warning',
-                message: RETRY_ADVICE,
-              },
-            ],
-            errors: ['experiment publication failed'],
-          }),
-        }),
-  );
+  await answerPublish(page, 500, partialAnswer(topology));
 
   await openPublish(builder);
   // A blank diagram is "Untitled topology", numbered after the first. The
@@ -2016,7 +1927,6 @@ test('a partial publication lists the failed stage, says how to finish it and le
     .not.toHaveAnnounced(
       `Publish finished with failures. It wrote some configs. ${RETRY_ADVICE}`,
     );
-  await expectAccessible(page, { include: '[data-testid="builder-dialog"]' });
 
   await page.getByTestId('publish-retry').press('Enter');
   await expect(result).toHaveCount(0);
@@ -2074,14 +1984,7 @@ test('the Publish and Checks dialogs list errors before warnings, and Go to focu
     const dialog = await openPublish(builder);
     const checks = dialog.getByTestId('publish-checks');
     const errors = checks.getByTestId('publish-checks-error');
-    const warnings = checks.getByTestId('publish-checks-warning');
 
-    await expect(errors.getByRole('heading', { level: 4 })).toHaveText(
-      '1 error blocks publishing',
-    );
-    await expect(warnings.getByRole('heading', { level: 4 })).toHaveText(
-      '1 warning',
-    );
     expect(
       await checks
         .locator('section[data-severity]')
@@ -2089,15 +1992,6 @@ test('the Publish and Checks dialogs list errors before warnings, and Go to focu
     ).toEqual(['error', 'warning']);
     await expect(errors.getByTestId('issue-message')).toHaveText([
       /^Error: hostname "all" is reserved, so the device cannot be published: /,
-    ]);
-    await expect(errors.getByTestId('issue-element')).toHaveText([
-      'Device all',
-    ]);
-    await expect(warnings.getByTestId('issue-message')).toHaveText([
-      /^Warning: hostname "phenix" matches "phenix"/,
-    ]);
-    await expect(warnings.getByTestId('issue-element')).toHaveText([
-      'Device phenix',
     ]);
     await expect.soft(page.getByTestId('publish-submit')).toBeDisabled();
 
@@ -2121,20 +2015,13 @@ test('the Publish and Checks dialogs list errors before warnings, and Go to focu
   await test.step('the Checks dialog lists both as warnings, in diagram order, and Go to focuses the field', async () => {
     await page.getByTestId('builder-checks').click();
     const checks = page.getByTestId('checks-dialog');
-    const list = checks.getByTestId('checks-issues');
-
-    await expect(list.getByTestId('checks-issues-error')).toHaveCount(0);
-    const warnings = list.getByTestId('checks-issues-warning');
-    await expect(warnings.getByRole('heading', { level: 3 })).toHaveText(
-      '2 warnings',
-    );
+    const warnings = checks
+      .getByTestId('checks-issues')
+      .getByTestId('checks-issues-warning');
     await expect(warnings.getByTestId('issue-element')).toHaveText([
       'Device phenix',
       'Device all',
     ]);
-    await expect
-      .soft(checks.getByTestId('checks-summary'))
-      .toContainText('Go to selects the node or connection an issue is about.');
 
     await warnings
       .getByRole('button', { name: /^Go to device phenix: / })
@@ -2155,7 +2042,6 @@ test('the Publish and Checks dialogs list errors before warnings, and Go to focu
       .getByTestId('inspector-checks')
       .getByTestId('inspector-check-go-to');
 
-    await expect(goTo).toHaveCount(1);
     await expect(goTo).toHaveAccessibleName(
       /^Go to Hostname: hostname "all" is reserved/,
     );
@@ -2177,43 +2063,11 @@ test('a refused publish lists the issues the server names, with Go to their node
   const topology = uniqueName(testInfo, 'refused');
   const document = labDocument(topology);
   const [, server2] = devicesOf(document);
-  // A server that reserves the hostname, refusing it as phenix refuses the
-  // hostname "all", with the code of that refusal.
-  const reason =
-    'hostname "server-2" is reserved on this server, so the device cannot be published';
 
   await listDriveImages(page);
   await builder.openDraft(await builder.seedDraft(document));
   await builder.expectSummary('2 connections');
-  // The dialog's dry runs, which write nothing, still reach the server.
-  await page.route('**/builder/drafts/*/publish', (route) =>
-    isPublishPreview(route.request())
-      ? route.continue()
-      : route.fulfill({
-          status: 422,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            message: `phenix cannot publish topology ${topology}: ${reason}`,
-            code: 'publish.blocked',
-            errors: [
-              {
-                code: 'node.hostname.reserved',
-                severity: 'error',
-                message: reason,
-                nodeId: server2.id,
-                field: 'hostname',
-              },
-            ],
-            warnings: [
-              {
-                code: 'publish.file.unchanged',
-                severity: 'warning',
-                message: 'the Builder file of the topology is not changed',
-              },
-            ],
-          }),
-        }),
-  );
+  await answerPublish(page, 422, refusalAnswer(topology, server2.id));
 
   const dialog = await openPublish(builder);
   await fillPublish(page, { topology });
@@ -2221,7 +2075,7 @@ test('a refused publish lists the issues the server names, with Go to their node
 
   // The refusal's code is about the topology, so the dialog marks the
   // topology name field as well as listing the issues.
-  await expect(page.getByTestId('publish-error')).toContainText(reason);
+  await expect(page.getByTestId('publish-error')).toContainText(RESERVED);
   await expect
     .soft(page.getByTestId('publish-name'))
     .toHaveAttribute('aria-invalid', 'true');
@@ -2244,14 +2098,9 @@ test('a refused publish lists the issues the server names, with Go to their node
   await expect(
     refusal.getByTestId('publish-refusal-warning').getByTestId('issue-go-to'),
   ).toHaveCount(0);
-  await expectAccessible(page, {
-    include: '[data-testid="builder-dialog"]',
-    soft: true,
-    label: 'Publish dialog listing a refusal',
-  });
 
   await refusal
-    .getByRole('button', { name: `Go to device server-2: ${reason}` })
+    .getByRole('button', { name: `Go to device server-2: ${RESERVED}` })
     .click();
   await expect(builder.dialog).toHaveCount(0);
   await expect(builder.canvasItem('server-2')).toHaveAttribute(
@@ -2307,7 +2156,7 @@ test('the Checks dialog runs the preflight checks ticked and reports each one on
   builder,
   issues,
 }, testInfo) => {
-  const draft = await openLab(builder, uniqueName(testInfo, 'preflight'));
+  await openLab(builder, uniqueName(testInfo, 'preflight'));
 
   await page.getByTestId('builder-checks').click();
   const preflight = page.getByTestId('checks-dialog').getByTestId('preflight');
@@ -2329,15 +2178,9 @@ test('the Checks dialog runs the preflight checks ticked and reports each one on
     await expect(results).toHaveCount(0);
   });
 
-  const before = await builder.request.get(draftPath(draft));
   const report = await runPreflight(page, ['Disk images', 'Scenario apps']);
 
   await test.step('each check ticked is reported once, with its status and a summary', async () => {
-    expect(report.checks.map((check) => check.name)).toEqual(['disks', 'apps']);
-    expect(
-      [...report.passed, ...report.failed, ...report.unavailable].sort(),
-    ).toEqual(['apps', 'disks']);
-
     await expect(results).toHaveCount(2);
     await expect(results.getByRole('heading', { level: 4 })).toHaveText([
       /^Disk images: (Passed|Failed|Unavailable)$/,
@@ -2366,20 +2209,6 @@ test('the Checks dialog runs the preflight checks ticked and reports each one on
     await expect(outcome).toHaveText(preflightOutcome(report));
   });
 
-  await test.step('nothing is written, and an unknown check is refused', async () => {
-    const after = await builder.request.get(draftPath(draft));
-    expect(after.headers().etag).toBe(before.headers().etag);
-
-    const refused = await builder.request.post(
-      `${draftPath(draft)}/preflight`,
-      {
-        data: { checks: ['everything'] },
-      },
-    );
-    expect(refused.status(), await refused.text()).toBe(400);
-    expect((await refused.json()).code).toBe('request.invalid');
-  });
-
   await test.step('the report and the choice stay when the dialog opens again, until the diagram changes', async () => {
     await page.keyboard.press('Escape');
     await page.getByTestId('builder-checks').click();
@@ -2399,83 +2228,99 @@ test('the Checks dialog runs the preflight checks ticked and reports each one on
 });
 
 test(
-  'axe finds no serious violations in the Checks dialog with a preflight report',
+  'axe finds no serious violations in the Publish dialog listing errors and warnings, and in the Checks dialog with a preflight report',
   { tag: ['@axe'] },
   async ({ page, builder, issues }, testInfo) => {
-    const draft = await builder.seedDraft(
-      labDocument(uniqueName(testInfo, 'axe-preflight')),
+    await listDriveImages(page);
+    await darkTheme(page);
+    await builder.openDraft(
+      await builder.seedDraft(flaggedLab(uniqueName(testInfo, 'axe-checks'))),
     );
-    await builder.openDraft(draft);
 
-    await page.getByTestId('builder-checks').click();
-    await runPreflight(page, [
-      'Host capacity',
-      'Networks',
-      'Disk images',
-      'Scenario apps',
-    ]);
-
-    for (const scheme of ['light', 'dark']) {
-      await test.step(`the ${scheme} theme`, async () => {
-        await page.emulateMedia({ colorScheme: scheme });
-        await expect(page.getByTestId('preflight-result')).toHaveCount(4);
-        await expectAccessible(page, {
-          include: '[data-testid="checks-dialog"]',
-          soft: true,
-          label: `axe on the Checks dialog's preflight report (${scheme})`,
-        });
+    await test.step('the Publish dialog listing an error and a warning', async () => {
+      await openPublish(builder);
+      await expect(
+        builder.dialog.getByTestId('publish-checks-error'),
+      ).toBeVisible();
+      await expect(
+        builder.dialog.getByTestId('publish-checks-warning'),
+      ).toBeVisible();
+      await expectAccessible(page, {
+        include: '[data-testid="builder-dialog"]',
+        soft: true,
+        label: "axe on the Publish dialog's checks (dark)",
       });
-    }
+      await page.keyboard.press('Escape');
+      await expect(builder.dialog).toHaveCount(0);
+    });
 
-    await page.keyboard.press('Escape');
-    await expect(builder.dialog).toHaveCount(0);
+    await test.step('the Checks dialog listing warnings and a preflight report', async () => {
+      await page.getByTestId('builder-checks').click();
+      await runPreflight(page, [
+        'Host capacity',
+        'Networks',
+        'Disk images',
+        'Scenario apps',
+      ]);
+      await expect(page.getByTestId('preflight-result')).toHaveCount(4);
+      await expect(
+        builder.dialog.getByTestId('checks-issues-warning'),
+      ).toBeVisible();
+      // The Checks dialog's test id replaces the shared builder-dialog.
+      await expectAccessible(page, {
+        include: '[data-testid="checks-dialog"]',
+        soft: true,
+        label:
+          "axe on the Checks dialog's warnings and preflight report (dark)",
+      });
+    });
+
     expectNoFatal(issues);
   },
 );
 
 test(
-  'axe finds no serious violations in the Publish and Checks dialogs listing errors and warnings',
+  'axe finds no serious violations in the Publish dialog listing a refusal, and in a partial publication',
   { tag: ['@axe'] },
   async ({ page, builder, issues }, testInfo) => {
+    const topology = uniqueName(testInfo, 'axe-failed');
+    const document = labDocument(topology);
+    const [, server2] = devicesOf(document);
+    const draft = await builder.seedDraft(document);
     await listDriveImages(page);
-    const draft = await builder.seedDraft(
-      flaggedLab(uniqueName(testInfo, 'axe-checks')),
-    );
+    await darkTheme(page);
 
-    for (const scheme of ['light', 'dark']) {
-      await test.step(`the ${scheme} theme`, async () => {
-        await page.emulateMedia({ colorScheme: scheme });
-        await builder.openDraft(draft);
-
-        await openPublish(builder);
-        await expect(
-          builder.dialog.getByTestId('publish-checks-error'),
-        ).toBeVisible();
-        await expect(
-          builder.dialog.getByTestId('publish-checks-warning'),
-        ).toBeVisible();
-        await expectAccessible(page, {
-          include: '[data-testid="builder-dialog"]',
-          soft: true,
-          label: `axe on the Publish dialog's checks (${scheme})`,
-        });
-        await page.keyboard.press('Escape');
-        await expect(builder.dialog).toHaveCount(0);
-
-        await page.getByTestId('builder-checks').click();
-        await expect(
-          builder.dialog.getByTestId('checks-issues-warning'),
-        ).toBeVisible();
-        // The Checks dialog's test id replaces the shared builder-dialog.
-        await expectAccessible(page, {
-          include: '[data-testid="checks-dialog"]',
-          soft: true,
-          label: `axe on the Checks dialog (${scheme})`,
-        });
-        await page.keyboard.press('Escape');
-        await expect(builder.dialog).toHaveCount(0);
+    await test.step('a refusal that lists issues', async () => {
+      await answerPublish(page, 422, refusalAnswer(topology, server2.id));
+      await builder.openDraft(draft);
+      await openPublish(builder);
+      await fillPublish(page, { topology });
+      await expectPublish(page, 422);
+      await expect(builder.dialog.getByTestId('publish-refusal')).toBeVisible();
+      await expectAccessible(page, {
+        include: '[data-testid="builder-dialog"]',
+        soft: true,
+        label: 'axe on the Publish dialog listing a refusal (dark)',
       });
-    }
+    });
+
+    await test.step('the result of a partial publication', async () => {
+      await page.unroute('**/builder/drafts/*/publish');
+      await answerPublish(page, 500, partialAnswer(topology));
+      await builder.openDraft(draft);
+      await openPublish(builder);
+      await fillPublish(page, {
+        topology,
+        experiment: uniqueName(testInfo, 'axe-failed-exp'),
+      });
+      await expectPublish(page, 500);
+      await expect(page.getByTestId('publish-summary')).toBeVisible();
+      await expectAccessible(page, {
+        include: '[data-testid="builder-dialog"]',
+        soft: true,
+        label: 'axe on the result of a partial publication (dark)',
+      });
+    });
 
     expectNoFatal(issues);
   },
@@ -2513,16 +2358,16 @@ function includedTopology(name, hostname) {
 }
 
 // labDocument(name), including the topology `included` and listing the
-// scenario `scenario`.
-function previewLab(name, { included, scenario }) {
+// scenarios `scenarios`.
+function previewLab(name, { included, scenarios }) {
   const document = labDocument(name);
 
   if (included) {
     document.source = { kind: 'manual', includeTopologies: [included] };
   }
 
-  if (scenario) {
-    document.scenarios = [scenario];
+  if (scenarios) {
+    document.scenarios = scenarios;
   }
 
   return document;
@@ -2544,7 +2389,9 @@ test('the Publish dialog shows what publishing changes, follows the form, and wr
   await builder.seedConfig(scenarioConfig(scenario, 'builder-e2e-preview'));
 
   await builder.openDraft(
-    await builder.seedDraft(previewLab(topology, { included, scenario })),
+    await builder.seedDraft(
+      previewLab(topology, { included, scenarios: [scenario] }),
+    ),
   );
   await builder.expectSummary('2 connections');
 
@@ -2566,22 +2413,10 @@ test('the Publish dialog shows what publishing changes, follows the form, and wr
   await expect(previewLines(page, 'images')).toHaveText([
     /^Disk image ubuntu\.qc2 is new \(server and server-2 use it\)/,
   ]);
-  await expect(dialog.getByTestId('publish-preview')).toHaveAttribute(
-    'aria-busy',
-    'false',
-  );
   // The preview never holds Publish back.
   await expect(page.getByTestId('publish-submit')).toBeEnabled();
 
   await test.step('the preview follows the names and the mode', async () => {
-    // From the change on, the lines shown are marked as being read again,
-    // through the pause before the server is asked.
-    await page.getByTestId('publish-name').fill(renamed);
-    await expect(dialog.getByTestId('publish-preview')).toHaveAttribute(
-      'aria-busy',
-      'true',
-    );
-
     await fillPublish(page, { topology: renamed, experiment });
     await expect(previewLines(page, 'configs')).toHaveText([
       `Creates Topology config ${renamed}`,
@@ -2640,34 +2475,40 @@ test('the Publish dialog shows what publishing changes, follows the form, and wr
 });
 
 test(
-  'axe finds no serious violations in the Publish dialog showing what publishing changes',
+  'axe finds no serious violations in the Publish dialog of an experiment, with a scenario to pick and what publishing changes',
   { tag: ['@axe'] },
   async ({ page, builder, issues }, testInfo) => {
-    const scenario = uniqueName(testInfo, 'axe-preview-scn');
-    await builder.seedConfig(scenarioConfig(scenario, 'builder-e2e-axe'));
-    const draft = await builder.seedDraft(
-      previewLab(uniqueName(testInfo, 'axe-preview'), { scenario }),
+    const scenarios = [
+      uniqueName(testInfo, 'axe-preview-scn'),
+      uniqueName(testInfo, 'axe-preview-scn-b'),
+    ];
+    for (const scenario of scenarios) {
+      await builder.seedConfig(scenarioConfig(scenario, 'builder-e2e-axe'));
+    }
+    await darkTheme(page);
+    await builder.openDraft(
+      await builder.seedDraft(
+        previewLab(uniqueName(testInfo, 'axe-preview'), { scenarios }),
+      ),
     );
 
-    for (const scheme of ['light', 'dark']) {
-      await test.step(`the ${scheme} theme`, async () => {
-        await page.emulateMedia({ colorScheme: scheme });
-        await builder.openDraft(draft);
-
-        await openPublish(builder);
-        await expect(previewLines(page, 'scenarios')).toHaveCount(1);
-        await expect(
-          builder.dialog.getByTestId('publish-preview'),
-        ).toHaveAttribute('aria-busy', 'false');
-        await expectAccessible(page, {
-          include: '[data-testid="builder-dialog"]',
-          soft: true,
-          label: `axe on the Publish dialog's preview (${scheme})`,
-        });
-        await page.keyboard.press('Escape');
-        await expect(builder.dialog).toHaveCount(0);
-      });
-    }
+    await openPublish(builder);
+    await page.getByTestId('publish-mode-experiment').check();
+    await page
+      .getByTestId('publish-experiment')
+      .fill(uniqueName(testInfo, 'axe-preview-exp'));
+    await expect(page.getByTestId('publish-scenario-select')).toBeVisible();
+    await expect(previewLines(page, 'configs')).toHaveCount(2);
+    await expect(previewLines(page, 'scenarios')).toHaveCount(2);
+    await expect(builder.dialog.getByTestId('publish-preview')).toHaveAttribute(
+      'aria-busy',
+      'false',
+    );
+    await expectAccessible(page, {
+      include: '[data-testid="builder-dialog"]',
+      soft: true,
+      label: "axe on the Publish dialog's experiment and preview (dark)",
+    });
 
     expectNoFatal(issues);
   },

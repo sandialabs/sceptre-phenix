@@ -23,7 +23,7 @@ const (
 	workflowDateLayout         = "20060102150405MST"
 
 	// optionBranchName is the -b flag of apply, and optionBranchNameAlias its
-	// hidden alias, kept so an invocation written with --name still works.
+	// alias --name, which is the same flag.
 	optionBranchName      = "branch-name"
 	optionBranchNameAlias = "name"
 )
@@ -52,7 +52,8 @@ const (
   DIR|NAME is required. An existing path is used as is. Otherwise a NAME
   with no path separator is looked up under --base-dir.topologies. The
   workflow name defaults to the base name of the directory; -b sets
-  another.
+  another. -b, --branch-name and --name are the same flag. Give only one of
+  them, or give them the same value.
 
   The names phenix.yml, phenix-configs and phenix-injects are
   reserved, in any letter case: they cannot be the workflow's name,
@@ -98,6 +99,9 @@ const (
 
   # Deploy under another name; injects go to <base-dir.injects>/helloworld-2
   phenix workflow apply helloworld -b helloworld-2
+
+  # The same; --branch-name and --name are the same as -b
+  phenix workflow apply helloworld --name helloworld-2
 
   # Follow symlinks in phenix-injects/ and copy targets as regular files and directories
   phenix workflow apply helloworld --follow-inject-symlinks
@@ -168,8 +172,7 @@ func newWorkflowApplyCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringP(optionBranchName, "b", "", "workflow branch name (default: base name of the topology directory)")
-	cmd.Flags().String(optionBranchNameAlias, "", "alias of --"+optionBranchName)
-	_ = cmd.Flags().MarkHidden(optionBranchNameAlias)
+	cmd.Flags().String(optionBranchNameAlias, "", "same as -b/--"+optionBranchName)
 	cmd.Flags().StringP(
 		"config", "c", workflowConfigName,
 		"workflow config, relative to the topology directory unless absolute",
@@ -195,26 +198,26 @@ func applyOptionsFromFlags(cmd *cobra.Command) (applyOptions, error) {
 
 	return applyOptions{
 		Name:                 name,
-		Config:               MustGetString(cmd.Flags(), "config"),
+		Config:               mustGet(cmd.Flags().GetString, "config"),
 		ConfigExplicit:       cmd.Flags().Changed("config"),
-		DryRun:               MustGetBool(cmd.Flags(), "dry-run"),
-		Force:                MustGetBool(cmd.Flags(), "force"),
+		DryRun:               mustGet(cmd.Flags().GetBool, "dry-run"),
+		Force:                mustGet(cmd.Flags().GetBool, "force"),
 		Socket:               common.UnixSocket,
 		InjectsBase:          common.InjectsBase,
 		TopologiesBase:       common.TopologiesBase,
 		InjectsBaseExplicit:  cmd.Flags().Changed(optionInjectsBase),
-		FollowInjectSymlinks: MustGetBool(cmd.Flags(), optionFollowInjectSymlinks),
+		FollowInjectSymlinks: mustGet(cmd.Flags().GetBool, optionFollowInjectSymlinks),
 		Now:                  time.Now,
 	}, nil
 }
 
 // branchNameFromFlags returns the workflow branch name: --branch-name (-b),
-// or its hidden alias --name when only that one was given. Both given with
+// or its alias --name when only that one was given. Both given with
 // the same value is accepted; with different values it is an error, since
 // there is no way to tell which was meant.
 func branchNameFromFlags(flags *pflag.FlagSet) (string, error) {
-	branch := MustGetString(flags, optionBranchName)
-	alias := MustGetString(flags, optionBranchNameAlias)
+	branch := mustGet(flags.GetString, optionBranchName)
+	alias := mustGet(flags.GetString, optionBranchNameAlias)
 
 	switch {
 	case !flags.Changed(optionBranchNameAlias):

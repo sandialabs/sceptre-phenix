@@ -29,10 +29,56 @@ message Experiment {
 	uint32 vm_count = 15 [json_name="vm_count"];
 
 	uint32 delayed_vms = 20 [json_name="delayed_vms"];
+
+	// launch progress from 0 to 1 while the experiment is starting; only
+	// experiment lists set it
+	double percent = 21;
+
+	// minimega did not answer for every VM in vms, so some are listed as
+	// configured; only set when the response includes VMs
+	bool vms_unknown = 22 [json_name="vms_unknown"];
+
+	// why phenix could not resume the delayed VM starts or post-start apps the
+	// experiment's start still waited on when phenix restarted; empty otherwise
+	string interrupted = 23;
+
+	// the experiment's scenario, then each other scenario its apps take their
+	// configuration from (fromScenario), in app order; empty with no scenario
+	repeated string scenarios = 24;
+
+	// the Builder draft and published document that last published the
+	// experiment (its builder-experiment annotation); unset otherwise
+	BuilderLink builder = 25;
+
+	// how far the experiment's start or stop is, while one is in progress;
+	// only experiment lists set it
+	ExperimentProgress progress = 26;
+}
+
+// The progress of a start or stop of an experiment.
+message ExperimentProgress {
+	// start or stop
+	string operation = 1;
+	// the part of the operation that is done, from 0 to 1
+	double percent = 2;
+	// the current phase, or done when the start is complete
+	string phase = 3;
+	// the steps of the phase that are done, and all its steps
+	uint32 done = 4;
+	uint32 total = 5;
+	// the current step, such as an app name, or empty
+	string step = 6;
+}
+
+message BuilderLink {
+	string draft = 1;
+	string document = 2;
 }
 
 message ExperimentList {
 	repeated Experiment experiments = 1;
+	// how many experiments the role may list, before paging
+	uint32 total = 2;
 }
 
 message Schedule {
@@ -43,6 +89,8 @@ message Schedule {
 
 message ExperimentSchedule {
 	repeated Schedule schedule = 1;
+	// the scheduler's warnings about a schedule it made; only POST sets them
+	repeated string warnings = 2;
 }
 
 message TopologyList {
@@ -73,6 +121,11 @@ message CreateExperimentRequest {
 	string deploy_mode = 8 [json_name="deploy_mode"];
 	string default_bridge = 9 [json_name="default_bridge"];
 	bool use_gre_mesh = 10 [json_name="use_gre_mesh"];
+	// Added to every VM in the experiment's copy of the topology; a VM's own
+	// annotation for the same key wins.
+	map<string, google.protobuf.Value> node_annotations = 11 [json_name="node_annotations"];
+	// Added to the experiment's metadata annotations.
+	map<string, string> annotations = 12;
 }
 
 message SnapshotRequest {
@@ -89,8 +142,10 @@ message BackingImageResponse {
 }
 
 message StartCaptureRequest {
-  uint32 interface = 1;
+  optional uint32 interface = 1;
   string filename = 2;
+  optional string interface_name = 3;
+  string format = 4;
 }
 
 message UpdateScheduleRequest {

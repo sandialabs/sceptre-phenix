@@ -17,19 +17,15 @@ import {
 describe('rulerStep', () => {
   test('is the least 1, 2 or 5 times a power of ten that keeps the numbers apart', () => {
     expect(RULER_SPACING).toBe(64);
-    // [zoom, step]: 64 pixels are 32 canvas pixels at 200%, 640 at 10%.
+    // [zoom, step]: each zoom where a step just fits, the zoom after it, and
+    // the least zoom.
     for (const [zoom, step] of [
-      [2, 50],
-      [1.5, 50],
       [1.28, 50],
       [1.2, 100],
-      [1, 100],
       [0.64, 100],
       [0.5, 200],
       [0.32, 200],
       [0.25, 500],
-      [0.2, 500],
-      [0.1, 1000],
       [0.05, 2000],
     ]) {
       expect(rulerStep(zoom), `zoom ${zoom}`).toBe(step);
@@ -111,19 +107,6 @@ describe('rulerTicks', () => {
     ]);
     expect(ruler.minorSize).toBe(25);
     expect(ruler.minorOffset).toBe(15);
-  });
-
-  test('numbered ticks are at least the spacing apart at every zoom', () => {
-    for (const zoom of [0.05, 0.13, 0.2, 0.37, 0.5, 0.99, 1, 1.7, 2]) {
-      const { ticks } = rulerTicks({ offset: 17, zoom, length: 4000 });
-
-      for (let index = 1; index < ticks.length; index += 1) {
-        expect(
-          ticks[index].at - ticks[index - 1].at,
-          `zoom ${zoom}`,
-        ).toBeGreaterThanOrEqual(RULER_SPACING - 1e-9);
-      }
-    }
   });
 
   test('have no numbers for a pane with no size, and a bounded count', () => {

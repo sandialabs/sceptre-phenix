@@ -2,6 +2,8 @@ syntax = "proto3";
 
 option go_package = "web/proto";
 
+import "google/protobuf/struct.proto";
+
 message VM {
   string name = 1;
   string host = 2;
@@ -27,29 +29,173 @@ message VM {
   bool snapshot = 22 [json_name="snapshot"];
   uint32 inject_partition = 23 [json_name="inject_partition"];
   string description = 24;
+  // the node's annotations; only a single VM's GET response, and its PATCH
+  // response to a caller who may get the VM, carry them, not VM lists or
+  // broadcasts
+  google.protobuf.Struct annotations = 25;
+  // the guest operating system its topology node gives (hardware.os_type)
+  string os_type = 26 [json_name="os_type"];
+  // the settings the VM had when its experiment was created; null for a VM
+  // the experiment saved none for
+  VMDefaults defaults = 27;
+}
+
+// VMDefaults is the settings of a VM that phenix saved when it created the
+// VM's experiment, which POST .../vms/resetSettings restores.
+message VMDefaults {
+  int32 cpus = 1;
+  int32 ram = 2;
+  string disk = 3;
+  int32 inject_partition = 4 [json_name="inject_partition"];
+  bool snapshot = 5 [json_name="snapshot"];
+  bool dnb = 6 [json_name="dnb"];
+  string host = 7;
 }
 
 message VMList {
   repeated VM vms = 1;
   uint32 total = 2;
+  // minimega did not answer for every VM of a running experiment: VMs it did
+  // not report are listed as configured, with no state
+  bool runtime_unknown = 3 [json_name="runtime_unknown"];
+  // when minimega was read for the VMs (RFC 3339), empty when it was not
+  string observed_at = 4 [json_name="observed_at"];
+  // the VMs a bulk update left unchanged, and why; only PATCH fills it
+  repeated VMItemError errors = 5;
+  // every distinct label on the VMs the role may list, unfiltered and unpaged,
+  // ordered by key then value; only VM list reads fill it
+  repeated VMLabel labels = 6;
+  // every distinct cluster host running the VMs the role may list, unfiltered
+  // and unpaged, sorted; only VM list reads fill it
+  repeated string hosts = 7;
+  // how many of the VMs the role may list are running, unfiltered and
+  // unpaged; only VM list reads fill it
+  uint32 running = 8;
+  // the names of the VMs the role may list that still wait for a delayed
+  // start, unfiltered and unpaged; only VM list reads fill it
+  repeated string delayed = 9;
+  // when each VM in delayed that waits for a timer starts (RFC 3339), by
+  // name; only VM list reads fill it
+  map<string, string> delayed_due = 10 [json_name="delayed_due"];
 }
 
+// VMLabel is one key=value label a VM carries.
+message VMLabel {
+  string key = 1;
+  string value = 2;
+}
+
+// VMItemError is one VM a bulk update left unchanged: "skipped" when the role
+// may not change it, "failed" when its change did not take.
+message VMItemError {
+  string name = 1;
+  string status = 2;
+  string error = 3;
+}
+
+// a VM interface capture; minimega 3.4.0 or later also gives its id, state,
+// format and counters
 message Capture {
   string vm = 1;
   uint32 interface = 2;
   string filepath = 3;
+  string id = 4;
+  string state = 5;
+  string format = 6;
+  uint64 packets = 7;
+  uint64 kdrops = 8;
+  int64 size = 9;
+  string error = 10;
 }
 
 message CaptureList {
   repeated Capture captures = 1;
+  repeated ExperimentCapture experiment_captures = 2;
+  CaptureSupport support = 3;
+  repeated MirrorBudget budget = 4;
+  string budget_error = 5;
+  string experiment_captures_error = 6;
+}
+
+// whether minimega supports experiment captures, and why not
+message CaptureSupport {
+  bool available = 1;
+  string reason = 2;
+  string version = 3;
+}
+
+// the Open vSwitch mirrors of one host and bridge that an experiment uses
+message MirrorBudget {
+  string host = 1;
+  string bridge = 2;
+  uint32 total = 3;
+  uint32 experiment = 4;
+  uint32 limit = 5;
+  string level = 6;
+}
+
+message CaptureCounters {
+  uint64 ports = 1;
+  uint64 packets = 2;
+  uint64 bytes = 3;
+  uint64 kdrops = 4;
+  uint64 pdrops = 5;
+  uint64 qdrops = 6;
+  uint64 lost = 7;
+  uint64 late = 8;
+  double lag_ms = 9;
+  double skew_ms = 10;
+}
+
+// the part of an experiment capture that one host records from one bridge
+message CaptureStream {
+  string host = 1;
+  string bridge = 2;
+  string state = 3;
+  CaptureCounters counters = 4;
+  bool skew_warning = 5;
+}
+
+// one capture of an experiment's traffic on all its hosts, merged into one
+// file on the head node
+message ExperimentCapture {
+  string id = 1;
+  string state = 2;
+  bool running = 3;
+  string path = 4;
+  string file = 5;
+  string format = 6;
+  repeated string vlans = 7;
+  string filter = 8;
+  string start = 9;
+  int64 size = 10;
+  string error = 11;
+  CaptureCounters counters = 12;
+  repeated CaptureStream streams = 13;
+}
+
+message StartExperimentCaptureRequest {
+  repeated string vlans = 1;
+  string filter = 2;
+  uint32 snaplen = 3;
+  string name = 4;
+  string format = 5;
+}
+
+message StartExperimentCaptureResponse {
+  ExperimentCapture capture = 1;
+  repeated string warnings = 2;
 }
 
 message SnapshotList {
   repeated string snapshots = 1;
 }
 
+// The VM name comes from the request path. The decoder discards unknown
+// fields, so a client that still sends name keeps working.
 message VMRedeployRequest {
-  string name = 1;
+  reserved 1;
+  reserved "name";
   uint32 cpus = 2;
   uint32 ram = 3;
   string disk = 4;
@@ -88,6 +234,8 @@ message UpdateVMRequest {
   uint32 inject_partition = 10 [json_name="inject_partition"];
   TagUpdateMode tag_update_mode = 11 [json_name="tag_update_mode"];
   map<string, string> tags = 12;
+  // replaces all of the node's annotations when set
+  google.protobuf.Struct annotations = 13;
 }
 
 message UpdateVMRequestList {
@@ -112,6 +260,18 @@ message MemorySnapshotResponse {
 message CaptureSubnetRequest {
   string subnet = 1;
   repeated string vms = 2;
+  // a phenix VM filter expression that selects the VMs, in place of vms
+  string filter = 3;
+}
+
+// captures on the interfaces on one VLAN, of the VMs named in vms (all when
+// empty)
+message CaptureVlanRequest {
+  string vlan = 1;
+  repeated string vms = 2;
+  // a phenix VM filter expression that selects the VMs, in place of vms
+  string filter = 3;
+  string format = 4;
 }
 
 message VMNameList {

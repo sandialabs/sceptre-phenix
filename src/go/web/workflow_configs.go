@@ -2,7 +2,6 @@ package web
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,10 +12,11 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"phenix/api/config"
+	"phenix/api/experiment"
 	"phenix/api/workflow"
 	"phenix/store"
 	"phenix/util/common"
-	"phenix/util/plog"
+	"phenix/web/audit"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
 	"phenix/web/weberror"
@@ -25,18 +25,7 @@ import (
 // parseDryRun reports whether the dryRun query parameter asks for a dry run.
 // A bare dryRun is refused rather than taken as a real request.
 func parseDryRun(q url.Values) (bool, error) {
-	if !q.Has("dryRun") {
-		return false, nil
-	}
-
-	value := q.Get("dryRun")
-
-	dryRun, err := strconv.ParseBool(value)
-	if err != nil {
-		return false, weberror.NewWebError(err, "invalid dryRun value %q", value)
-	}
-
-	return dryRun, nil
+	return parseBoolQuery(q, "dryRun")
 }
 
 // configName returns the "<kind>/<name>" of a JSON or YAML config body without
@@ -78,7 +67,7 @@ func configName(body []byte, typ, branch string) (string, error) {
 
 // authorizeConfigWrite reports whether the config name exists, once role may
 // update it if it does or create it if it does not.
-func authorizeConfigWrite(ctx context.Context, role rbac.Role, name string) (bool, error) {
+func authorizeConfigWrite(r *http.Request, role rbac.Role, name, branch string) (bool, error) {
 	// NewConfig rejects a kind the store does not hold, such as Workflow, and
 	// a name containing a slash; its nil result would make store.Get panic.
 	tester, err := store.NewConfig(name)
@@ -98,19 +87,15 @@ func authorizeConfigWrite(ctx context.Context, role rbac.Role, name string) (boo
 		exists = false
 	}
 
-	verb, action := "update", "updating"
+	verb, action, audited := actionUpdate, "updating", audit.ConfigUpdate
 	if !exists {
-		verb, action = "create", "creating"
+		verb, action, audited = "create", "creating", audit.ConfigCreate
 	}
 
 	if !role.Allowed("configs", verb, name) {
-		user, _ := ctx.Value(middleware.ContextKeyUser).(string)
-		plog.Warn(
-			plog.TypeSecurity,
-			action+" config not allowed",
-			"user",
-			user,
-		)
+		user := middleware.UserFromContext(r.Context())
+		audit.Denied(r, audited, action+" config not allowed",
+			audit.Fields{Config: name, Extra: []any{"phenix.workflow.branch", branch}})
 
 		err := weberror.NewWebError(
 			nil,
@@ -147,6 +132,8 @@ func updateOrValidate(name string, cfg *store.Config, dryRun bool) error {
 		return nil
 	}
 
+	cfg.FilesRoot = experiment.BaseDirRoot()
+
 	return config.Update(name, cfg)
 }
 
@@ -160,6 +147,8 @@ func createOrValidate(cfg *store.Config, dryRun bool) (*store.Config, error) {
 	if dryRun {
 		return cfg, nil
 	}
+
+	cfg.FilesRoot = experiment.BaseDirRoot()
 
 	return config.Create(config.CreateFromConfig(cfg), config.CreateWithValidation())
 }

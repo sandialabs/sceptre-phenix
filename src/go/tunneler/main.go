@@ -224,7 +224,7 @@ var serveCmd = &cobra.Command{ //nolint:gochecknoglobals // cobra command
 			}
 		}
 
-		if err := startUnixSocket(); err != nil {
+		if _, err := startUnixSocket(); err != nil {
 			return fmt.Errorf("starting unix socket: %w", err)
 		}
 

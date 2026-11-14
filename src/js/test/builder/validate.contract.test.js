@@ -208,18 +208,6 @@ describe('document validation', () => {
       ]);
       expect(errors(key, true)).toEqual([[field, `${field} must be a string`]]);
     }
-
-    // There is no rule between the four: an editor without a time, and a
-    // creation after the last edit, are valid.
-    expect(
-      errorsOf(
-        withMetadata({
-          updatedBy: 'bob',
-          createdAt: '2026-10-02T00:00:00Z',
-          updatedAt: '2024-02-29T23:59:59Z',
-        }),
-      ),
-    ).toEqual([]);
   });
 
   // What Go's time.Parse and Format accept and give back with the layout
@@ -2239,8 +2227,8 @@ describe('the warning corpus shared with the server', () => {
   });
 });
 
-// Each quoted dotted name in validate.js and decode.js is a code of the
-// registry (schema/codes.json) or a document path. Codes are never built.
+// Each quoted dotted name in validate.js and decode.js is a registry code
+// or a document path. An ESLint rule keeps codes out of template strings.
 describe('the codes the validator reports', () => {
   const sources = ['validate.js', 'decode.js'].map((name) =>
     readFileSync(new URL(`../../src/builder/${name}`, import.meta.url), 'utf8'),
@@ -2249,10 +2237,6 @@ describe('the codes the validator reports', () => {
     [...source.matchAll(/'([a-z]+(?:\.[a-z0-9-]+)+)'/g)].map(
       ([, text]) => text,
     ),
-  );
-  // The first word of each code: what the codes are about.
-  const subjects = new Set(
-    Object.keys(CODES).map((code) => code.split('.')[0]),
   );
 
   // The schemas a schema stands for: itself, the one it refers to, and
@@ -2308,22 +2292,6 @@ describe('the codes the validator reports', () => {
     // A code is not taken for a path.
     expect(documentPath('metadata.id.required')).toBe(false);
     expect(documentPath('metadata.id')).toBe(true);
-  });
-
-  test('are not put together in template strings', () => {
-    const built = sources
-      .flatMap((source) =>
-        [
-          ...source.matchAll(/`([a-z]+(?:\.(?:[a-z0-9-]|\$\{[^}]*\})+)+)`/g),
-        ].map(([, text]) => text),
-      )
-      .filter(
-        (text) =>
-          subjects.has(text.split('.')[0]) &&
-          !documentPath(text.replace(/\$\{[^}]*\}/g, '0')),
-      );
-
-    expect(built).toEqual([]);
   });
 
   test('match the registry form and severities', () => {

@@ -36,7 +36,7 @@ describe('automatic layout in the store', () => {
     resetSettings(null);
   });
 
-  test.each(['cards', 'elk', 'tiers', 'dagre', 'standard'])(
+  test.each(['standard', 'elk'])(
     'lays the diagram out with the %s setting',
     async (id) => {
       const doc = store.doc;

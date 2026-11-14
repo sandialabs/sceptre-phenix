@@ -1,0 +1,355 @@
+package disk
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync/atomic"
+
+	"phenix/util/diskchain"
+	"phenix/util/file"
+	"phenix/util/mm"
+	"phenix/util/plog"
+)
+
+// maxDepth is how many folder levels below the minimega files directory the
+// disk listing and watcher search.
+const maxDepth = 16
+
+var (
+	// ErrNotManaged is returned for a path the disk actions do not act on:
+	// outside the minimega files directory, in a folder the listing leaves out
+	// (see Resolve), or not a regular file.
+	ErrNotManaged = errors.New("not a disk image phenix manages")
+
+	// ErrUnsafeName is returned for a path minimega cannot take as one
+	// argument (see ValidateMinimegaPath).
+	ErrUnsafeName = errors.New("minimega cannot use this path")
+
+	// ErrExists is returned when an action would replace an existing file.
+	ErrExists = errors.New("disk image already exists")
+
+	// ErrWrongExtension is returned for a new image name whose known image
+	// extension does not agree with the format the new image keeps.
+	ErrWrongExtension = errors.New("wrong image extension")
+
+	depthWarned atomic.Bool //nolint:gochecknoglobals // warn once per process
+)
+
+// Resolve returns the cleaned absolute path of the disk image p names,
+// relative to the minimega files directory or absolute, when the disk actions
+// may act on it: it is inside the files directory, and not in a folder the
+// listing leaves out. The check reads nothing from disk, so it can run before
+// any permission check, and it compares the paths as minimega does, as text.
+func Resolve(p string) (string, error) {
+	if p == "" {
+		return "", fmt.Errorf("%w: no disk given", ErrNotManaged)
+	}
+
+	path := mm.GetMMFullPath(p)
+
+	if err := managed(mm.GetMMFullPath(""), path); err != nil {
+		return "", err
+	}
+
+	return path, nil
+}
+
+// ValidateMinimegaPath returns an error wrapping ErrUnsafeName, and naming the
+// first character at fault, when minimega cannot take path as one literal
+// argument (see minimegaSafe).
+func ValidateMinimegaPath(path string) error {
+	for _, r := range path {
+		if !minimegaSafe(string(r)) {
+			return fmt.Errorf("%w: %q contains %q", ErrUnsafeName, path, r)
+		}
+	}
+
+	return nil
+}
+
+// ValidateFileName returns an error wrapping ErrUnsafeName unless name is a
+// bare file name, with no folder, that minimega can take as one argument (see
+// mm.ValidateArg), with no scheme that minimega fetches. It checks the name a
+// user gives a new VM snapshot or backing image.
+func ValidateFileName(name string) error {
+	if name == "" || name == "." || name == ".." || strings.Contains(name, "/") {
+		return fmt.Errorf("%w: %q is not a bare file name", ErrUnsafeName, name)
+	}
+
+	if err := mm.ValidateArg(name); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsafeName, err)
+	}
+
+	return ValidateMinimegaPath(name)
+}
+
+// minimegaSafe reports whether minimega takes p as one literal argument:
+// file.CommandSafe rejects what its command line splits, unquotes or drops
+// as a comment, and glob syntax; minimega also expands "$" as an environment
+// variable in every argument, and "," ends the path in a VM's disk spec.
+func minimegaSafe(p string) bool {
+	return file.CommandSafe(p) && !strings.ContainsAny(p, "$,")
+}
+
+// skipped reports whether the listing leaves out rel (relative to the files directory, without "." or ".." segments) and
+// everything under it: hidden names and lost+found, an experiment's <top>/files, <top>/tmp and <top>/miniccc_responses,
+// and minimega's top-level saved and transfer_* folders.
+func skipped(rel string) bool {
+	for i, name := range strings.Split(filepath.ToSlash(rel), "/") {
+		switch {
+		case strings.HasPrefix(name, "."), name == "lost+found":
+			return true
+		case i == 0 && (name == "saved" || strings.HasPrefix(name, "transfer_")):
+			return true
+		case i == 1 && (name == "files" || name == "tmp" || name == "miniccc_responses"):
+			return true
+		}
+	}
+
+	return false
+}
+
+// tooDeep reports whether rel, a folder relative to the minimega files
+// directory, is more than maxDepth levels below it, logging the first such
+// folder the process meets.
+func tooDeep(dir, rel string) bool {
+	if rel == "." || strings.Count(rel, string(filepath.Separator)) < maxDepth {
+		return false
+	}
+
+	if depthWarned.CompareAndSwap(false, true) {
+		plog.Warn(
+			plog.TypeSystem,
+			"disk list leaves out folders nested too deeply",
+			"folder", filepath.Join(dir, rel),
+			"maxDepth", maxDepth,
+		)
+	}
+
+	return true
+}
+
+// managed returns an error wrapping ErrNotManaged unless the disk actions act
+// on path: it is inside the files directory dir, and not dir itself or in a
+// folder the listing leaves out.
+func managed(dir, path string) error {
+	rel, inside := within(dir, path)
+
+	switch {
+	case !inside:
+		return fmt.Errorf("%w: %s is outside the minimega files directory %s", ErrNotManaged, path, dir)
+	case rel == ".":
+		return fmt.Errorf("%w: %s is the minimega files directory", ErrNotManaged, path)
+	case skipped(rel):
+		return fmt.Errorf("%w: %s is in a folder the disk list leaves out", ErrNotManaged, path)
+	}
+
+	return nil
+}
+
+// confined returns an error wrapping ErrNotManaged unless qemu, opening the image at path, reads and writes in the first
+// depth images of its backing chain (all when depth < 0) only files Resolve accepts. Each such image must keep its data
+// in itself: one diskchain.Walk does not follow, such as a vmdk image or a qcow2 one with an external data file, can
+// name any host file. A whole chain also must not name a backing file by a protocol.
+func confined(path string, depth int) error {
+	res := diskchain.Walk(context.Background(), path)
+
+	files := res.Members
+	if res.Problem != diskchain.Whole && res.Problem != diskchain.NotAFile && !slices.Contains(files, res.At) {
+		files = append(slices.Clone(files), res.At)
+	}
+
+	if depth >= 0 && len(files) > depth {
+		files = files[:depth]
+	}
+
+	for _, f := range files {
+		if _, err := Resolve(mm.CleanBackingPath(f)); err != nil {
+			return fmt.Errorf("the backing chain of %s: %w", path, err)
+		}
+	}
+
+	switch res.Problem {
+	case diskchain.Unreadable, diskchain.Unsupported, diskchain.DataFile:
+		if slices.Contains(files, res.At) {
+			return fmt.Errorf("%w: %s", ErrNotManaged, res.Sentence())
+		}
+	case diskchain.NotAFile:
+		if depth < 0 {
+			return fmt.Errorf("%w: %s", ErrNotManaged, res.Sentence())
+		}
+	case diskchain.Whole, diskchain.Missing, diskchain.Loop, diskchain.TooDeep, diskchain.BadVersion,
+		diskchain.UnknownFeatures, diskchain.AESEncrypted, diskchain.LUKSEncrypted:
+	}
+
+	return nil
+}
+
+// within returns path relative to dir, and whether it is inside dir.
+func within(dir, path string) (string, bool) {
+	if !file.WithinDir(dir, path) {
+		return "", false
+	}
+
+	rel, err := filepath.Rel(dir, path)
+
+	return rel, err == nil
+}
+
+// locate sets where the image is relative to the minimega files directory
+// dir, and the target of its file when that file is a symlink.
+func locate(image *Details, dir string) {
+	image.RelativePath, _ = within(dir, image.FullPath)
+	image.OutsideFilesDir = !file.WithinDir(dir, image.FullPath)
+	image.ReadOnly = managed(dir, image.FullPath) != nil
+	image.LinkTarget = linkTarget(image.FullPath)
+}
+
+// linkTarget returns what the symlink at path points to, as the link stores it, or "" when path is not a symlink or
+// cannot be read. It reads one link only, so a symlink loop cannot stop it.
+func linkTarget(path string) string {
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&fs.ModeSymlink == 0 {
+		return ""
+	}
+
+	target, err := os.Readlink(path)
+	if err != nil {
+		return ""
+	}
+
+	return target
+}
+
+// openRegular opens path for reading when it is a regular file outside the system directories (see
+// diskchain.OpenRegular), returning an error wrapping ErrNotManaged for anything else there.
+func openRegular(path string) (*os.File, error) {
+	f, err := diskchain.OpenRegular(path)
+	if errors.Is(err, diskchain.ErrNotRegular) || errors.Is(err, diskchain.ErrSystemDir) {
+		return nil, fmt.Errorf("%w: %w", ErrNotManaged, err)
+	}
+
+	return f, err
+}
+
+// usableImage reports whether phenix can read path as a regular file outside
+// the system directories.
+func usableImage(path string) bool {
+	if diskchain.InSystemDir(path) {
+		plog.Debug(plog.TypeSystem, "not inspecting a disk image in a system directory", "image", path)
+
+		return false
+	}
+
+	f, err := openRegular(path)
+	if err != nil {
+		plog.Debug(plog.TypeSystem, "leaving out a disk image phenix cannot read", "image", path, "err", err)
+
+		return false
+	}
+
+	_ = f.Close()
+
+	return true
+}
+
+// minimegaMayInspect reports whether minimega may run qemu-img on path, an
+// image `file list` reported. qemu-img blocks for good on a FIFO or device,
+// and minimega runs one command at a time, so a path phenix sees as something
+// other than a regular file, or a symlink to one, is left out. A path phenix
+// cannot stat is kept: minimega may see files phenix does not.
+func minimegaMayInspect(path string) bool {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return true
+	}
+
+	if info.Mode()&fs.ModeSymlink != 0 {
+		info, err = os.Stat(path)
+	}
+
+	if err != nil || !info.Mode().IsRegular() {
+		plog.Debug(plog.TypeSystem, "not inspecting a disk image that is not a regular file", "image", path, "err", err)
+
+		return false
+	}
+
+	return true
+}
+
+// requireFile returns an error unless path is a regular file (following
+// symlinks): one wrapping [fs.ErrNotExist] when it is missing, and ErrNotManaged
+// when it is something else.
+func requireFile(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("disk image: %w", err)
+	}
+
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%w: %s is not a regular file", ErrNotManaged, path)
+	}
+
+	return nil
+}
+
+// imageFiles lists, as paths under dir (the files directory, which may be a symlink), the regular files and symlinks to
+// them with a known image extension, down to maxDepth, leaving out what skipped names and not following symlinked
+// folders. An unreadable folder under dir is logged and left out; an unreadable dir fails the listing.
+func imageFiles(dir string) ([]string, error) {
+	root, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, fmt.Errorf("listing %s: %w", dir, err)
+	}
+
+	var paths []string
+
+	err = filepath.WalkDir(root, func(p string, entry fs.DirEntry, err error) error {
+		if p == root {
+			return err
+		}
+
+		rel, relErr := filepath.Rel(root, p)
+
+		switch {
+		case relErr != nil:
+			return relErr
+		case err != nil:
+			plog.Warn(plog.TypeSystem, "disk list leaves out a folder it cannot read", "folder", filepath.Join(dir, rel), "err", err)
+
+			return nil
+		case skipped(rel), entry.IsDir() && tooDeep(dir, rel):
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
+
+			return nil
+		case entry.IsDir(), !knownImage(entry.Name()):
+			return nil
+		}
+
+		regular := entry.Type().IsRegular()
+
+		if entry.Type()&fs.ModeSymlink != 0 {
+			info, err := os.Stat(p)
+			regular = err == nil && info.Mode().IsRegular()
+		}
+
+		if regular {
+			paths = append(paths, filepath.Join(dir, rel))
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing %s: %w", dir, err)
+	}
+
+	return paths, nil
+}

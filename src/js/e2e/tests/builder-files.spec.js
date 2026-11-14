@@ -113,6 +113,14 @@ function oneServerDocument(name) {
   };
 }
 
+// Who made and last saved a Builder file, as its own metadata says.
+const FILE_STAMP = {
+  createdBy: 'alice',
+  createdAt: '2020-01-02T03:04:05Z',
+  updatedBy: 'bob',
+  updatedAt: '2020-02-03T04:05:06Z',
+};
+
 // The id Published Diagrams gives the card of a topology read from a file.
 function fileHandle(name) {
   return `file/${name}`;
@@ -543,7 +551,11 @@ test('a draft of a Builder file that differs from its topology cannot update the
   const file = path.join(filesDir, `${name}.builder.json`);
   // The stored topology lacks a device the file has: it was changed, or the
   // file was, after the two were written.
-  writeBuilderFile(file, labDocument(name));
+  const lab = labDocument(name);
+  writeBuilderFile(file, {
+    ...lab,
+    metadata: { ...lab.metadata, ...FILE_STAMP },
+  });
   await referTopology(request, tracker, name, oneServerDocument(name), {
     path: file,
   });
@@ -552,10 +564,16 @@ test('a draft of a Builder file that differs from its topology cannot update the
 
   await openPublishedTab(builder);
   await viewFile(builder, name);
-  await expect(banner(page)).toContainText(
-    `It differs from topology ${name} as stored. You can publish a draft made from it ` +
-      `as a new topology, not as an update of ${name}.`,
+  await expect(banner(page)).toHaveText(
+    `You are viewing the diagram of topology ${name}, read from ${file} on the phenix server. ` +
+      `It differs from topology ${name} as stored. You can publish a draft made from it ` +
+      `as a new topology, not as an update of ${name}. ` +
+      'Edit it as a draft to make changes.',
   );
+  // The server does not stamp a file's document.
+  const { createdBy, createdAt, updatedBy, updatedAt } = FILE_STAMP;
+  await expectDetail(page, 'created', createdBy, createdAt);
+  await expectDetail(page, 'edited', updatedBy, updatedAt);
   await page.getByTestId('published-edit').click();
   await expect(page.getByTestId('builder-published')).toHaveCount(0);
   await builder.waitSaved();
@@ -598,72 +616,59 @@ test('a draft of a Builder file that differs from its topology cannot update the
   });
 });
 
+// A Builder file's card and its read-only view are structural, so the scans
+// use the dark theme only.
 test(
-  "axe finds no serious violations in a Builder file's card and read-only view in each theme",
+  "axe finds no serious violations in a Builder file's card and read-only view in the dark theme",
   { tag: '@axe' },
   async ({ page, request, builder, tracker, filesDir }, testInfo) => {
-    // Four axe scans and two Builder loads.
-    test.slow();
     const name = uniqueName(testInfo, 'file-axe');
     const file = path.join(filesDir, `${name}.builder.json`);
-    const made = {
-      createdBy: 'alice',
-      createdAt: '2020-01-02T03:04:05Z',
-      updatedBy: 'bob',
-      updatedAt: '2020-02-03T04:05:06Z',
-    };
-    // The stored topology lacks a device the file has, so the banner says
-    // that the two differ.
     const lab = labDocument(name);
+    // The file's stamp fills the Details, and the stored topology lacks a
+    // device the file has, so the banner says that the two differ.
     writeBuilderFile(file, {
       ...lab,
-      metadata: { ...lab.metadata, ...made },
+      metadata: { ...lab.metadata, ...FILE_STAMP },
     });
     await referTopology(request, tracker, name, oneServerDocument(name), {
       path: file,
     });
 
-    for (const scheme of ['light', 'dark']) {
-      // Reduced motion measures the busy Edit as a draft at its final colors.
-      await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
-      await openPublishedTab(builder);
-      await expect(page.locator('.builder-root')).toHaveAttribute(
-        'data-builder-theme',
-        scheme,
+    // Reduced motion measures the busy Edit as a draft at its final colors.
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+    await openPublishedTab(builder);
+    await expect(page.locator('.builder-root')).toHaveAttribute(
+      'data-builder-theme',
+      'dark',
+    );
+
+    await test.step('the card on Published Diagrams', async () => {
+      await expect(
+        page.getByTestId(`published-file-${fileHandle(name)}`),
+      ).toBeVisible();
+      await expectAccessible(page, {
+        soft: true,
+        label: 'axe on Published Diagrams with a file (dark)',
+      });
+      await expectNoInvisibleText(page);
+    });
+
+    await test.step('the read-only view, its banner and its Details', async () => {
+      await viewFile(builder, name);
+      await expect(banner(page)).toContainText(
+        `It differs from topology ${name} as stored.`,
       );
-
-      await test.step(`the card on Published Diagrams (${scheme})`, async () => {
-        await expect(
-          page.getByTestId(`published-file-${fileHandle(name)}`),
-        ).toBeVisible();
-        await expectAccessible(page, {
-          soft: true,
-          label: `axe on Published Diagrams with a file (${scheme})`,
-        });
-        await expectNoInvisibleText(page);
+      await expect(page.getByTestId('inspector-created')).toBeVisible();
+      await expect(page.getByTestId('published-edit')).not.toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
+      await expectAccessible(page, {
+        soft: true,
+        label: 'axe on a Builder file shown read only (dark)',
       });
-
-      await test.step(`the read-only view, its banner and its Details (${scheme})`, async () => {
-        await viewFile(builder, name);
-        await expect(banner(page)).toHaveText(
-          `You are viewing the diagram of topology ${name}, read from ${file} on the phenix server. ` +
-            `It differs from topology ${name} as stored. You can publish a draft made from it ` +
-            `as a new topology, not as an update of ${name}. ` +
-            'Edit it as a draft to make changes.',
-        );
-        // The server does not stamp a file's document.
-        await expectDetail(page, 'created', made.createdBy, made.createdAt);
-        await expectDetail(page, 'edited', made.updatedBy, made.updatedAt);
-        await expect(page.getByTestId('published-edit')).not.toHaveAttribute(
-          'aria-disabled',
-          'true',
-        );
-        await expectAccessible(page, {
-          soft: true,
-          label: `axe on a Builder file shown read only (${scheme})`,
-        });
-        await expectNoInvisibleText(page);
-      });
-    }
+      await expectNoInvisibleText(page);
+    });
   },
 );

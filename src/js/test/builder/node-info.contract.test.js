@@ -14,6 +14,20 @@ function device(spec) {
   return { id: 'n1', kind: 'device', device: { hostname: 'web-01', spec } };
 }
 
+const network = {
+  id: 'net-1',
+  name: 'EXP',
+  alias: 100,
+  description: 'Experiment  network',
+};
+
+// The connected devices web-01 to web-<n> of a switch.
+const devices = (n) =>
+  Array.from({ length: n }, (_, index) => ({
+    label: `web-${String(index + 1).padStart(2, '0')}`,
+    addresses: [`10.0.0.${index + 1}/24`],
+  }));
+
 // The value of a row, by its label.
 function row(info, label) {
   return info.rows.find((entry) => entry.label === label)?.lines;
@@ -113,14 +127,6 @@ describe('deviceInfo', () => {
     );
   });
 
-  test('a description is cut to 80 characters', () => {
-    const info = deviceInfo(
-      device({ general: { description: 'd'.repeat(200) } }),
-    );
-
-    expect(row(info, 'Description')).toEqual([`${'d'.repeat(80)}…`]);
-  });
-
   test('a device with nothing to show says so in every row', () => {
     for (const spec of [
       // An external device has no hardware.
@@ -142,37 +148,6 @@ describe('deviceInfo', () => {
     expect(deviceInfo(undefined).rows).toHaveLength(3);
   });
 
-  test('eight interfaces are listed whole, and a ninth is counted', () => {
-    const interfaces = (n) =>
-      Array.from({ length: n }, (_, index) => ({
-        name: `eth${index}`,
-        address: `10.0.0.${index + 1}`,
-        mask: 24,
-      }));
-    const eight = deviceInfo(
-      device({ network: { interfaces: interfaces(8) } }),
-    );
-    const nine = deviceInfo(device({ network: { interfaces: interfaces(9) } }));
-    const twelve = deviceInfo(
-      device({ network: { interfaces: interfaces(12) } }),
-    );
-
-    expect(row(eight, 'Interfaces')).toHaveLength(8);
-    expect(row(eight, 'Interfaces')[7]).toBe('eth7 — 10.0.0.8/24');
-    expect(eight.text).not.toContain('more');
-
-    expect(row(nine, 'Interfaces')).toHaveLength(9);
-    expect(row(nine, 'Interfaces').slice(7)).toEqual([
-      'eth7 — 10.0.0.8/24',
-      '+1 more',
-    ]);
-    expect(nine.text).toContain('eth7 10.0.0.8/24, and 1 more. OS type');
-    expect(nine.text).not.toContain('eth8');
-
-    expect(row(twelve, 'Interfaces').at(-1)).toBe('+4 more');
-    expect(twelve.text).toContain(', and 4 more.');
-  });
-
   test('an interface without a name is still listed', () => {
     const info = deviceInfo(
       device({ network: { interfaces: [{ address: '10.0.0.5' }, null] } }),
@@ -186,18 +161,6 @@ describe('deviceInfo', () => {
 });
 
 describe('switchInfo', () => {
-  const network = {
-    id: 'net-1',
-    name: 'EXP',
-    alias: 100,
-    description: 'Experiment  network',
-  };
-  const devices = (n) =>
-    Array.from({ length: n }, (_, index) => ({
-      label: `web-${String(index + 1).padStart(2, '0')}`,
-      addresses: [`10.0.0.${index + 1}/24`],
-    }));
-
   test('a switch shows its network, alias, description and connected devices', () => {
     const info = switchInfo(network, [
       { label: 'web-02', addresses: ['DHCP'] },
@@ -240,59 +203,6 @@ describe('switchInfo', () => {
     expect(info.text).toBe('No connected devices.');
   });
 
-  test('a description is cut to 80 characters', () => {
-    const info = switchInfo({ name: 'EXP', description: 'd'.repeat(81) }, []);
-
-    expect(row(info, 'Description')).toEqual([`${'d'.repeat(80)}…`]);
-    expect(info.text).toBe(
-      `Description: ${'d'.repeat(80)}…. No connected devices.`,
-    );
-  });
-
-  test('one device is one device', () => {
-    const info = switchInfo(network, devices(1));
-
-    expect(row(info, 'Connected devices (1)')).toEqual([
-      'web-01 — 10.0.0.1/24',
-    ]);
-    expect(info.text).toContain('1 connected device: web-01 10.0.0.1/24.');
-  });
-
-  test('eight devices are listed whole, and a ninth is counted', () => {
-    const eight = switchInfo(network, devices(8));
-    const nine = switchInfo(network, devices(9));
-
-    expect(row(eight, 'Connected devices (8)')).toHaveLength(8);
-    expect(eight.text).not.toContain('more');
-
-    expect(row(nine, 'Connected devices (9)')).toEqual([
-      ...devices(8).map((entry) => `${entry.label} — ${entry.addresses[0]}`),
-      '+1 more',
-    ]);
-    expect(nine.text).toContain(
-      '9 connected devices: web-01 10.0.0.1/24, web-02 10.0.0.2/24,',
-    );
-    expect(nine.text).toContain('web-08 10.0.0.8/24, and 1 more.');
-    expect(nine.text).not.toContain('web-09');
-
-    const twenty = switchInfo(network, devices(20));
-
-    expect(row(twenty, 'Connected devices (20)').at(-1)).toBe('+12 more');
-  });
-
-  test('a device connected twice is one device with both addresses', () => {
-    const info = switchInfo(network, [
-      { label: 'router', addresses: ['10.0.0.1/24', '10.0.1.1/24'] },
-    ]);
-
-    expect(row(info, 'Connected devices (1)')).toEqual([
-      'router — 10.0.0.1/24, 10.0.1.1/24',
-    ]);
-    expect(info.text).toContain(
-      '1 connected device: router 10.0.0.1/24, 10.0.1.1/24.',
-    );
-  });
-
   test('devices are in the order of their names, numbers by value', () => {
     const connected = ['web-10', 'Web-2', 'db', 'web-1'].map((label) => ({
       label,
@@ -315,10 +225,80 @@ describe('switchInfo', () => {
     ]);
   });
 
-  test('a device with no address listed is named alone', () => {
-    const info = switchInfo(network, [{ label: 'web-01', addresses: [] }]);
+  test.each([
+    [['10.0.0.1/24'], 'web-01 — 10.0.0.1/24', 'web-01 10.0.0.1/24'],
+    // A device connected twice is one device with both addresses.
+    [
+      ['10.0.0.1/24', '10.0.1.1/24'],
+      'web-01 — 10.0.0.1/24, 10.0.1.1/24',
+      'web-01 10.0.0.1/24, 10.0.1.1/24',
+    ],
+    [[], 'web-01', 'web-01'],
+  ])('one device with the addresses %j is %s', (addresses, line, said) => {
+    const info = switchInfo(network, [{ label: 'web-01', addresses }]);
 
-    expect(row(info, 'Connected devices (1)')).toEqual(['web-01']);
-    expect(info.text).toContain('1 connected device: web-01.');
+    expect(row(info, 'Connected devices (1)')).toEqual([line]);
+    expect(info.text).toContain(`1 connected device: ${said}.`);
   });
+});
+
+describe('deviceInfo and switchInfo', () => {
+  test.each([
+    [
+      'device',
+      (text) => deviceInfo(device({ general: { description: text } })),
+    ],
+    ['switch', (text) => switchInfo({ name: 'EXP', description: text }, [])],
+  ])('a %s description is cut to 80 characters', (_, info) => {
+    expect(row(info('d'.repeat(200)), 'Description')).toEqual([
+      `${'d'.repeat(80)}…`,
+    ]);
+  });
+
+  test.each([
+    {
+      kind: 'device',
+      info: (n) =>
+        deviceInfo(
+          device({
+            network: {
+              interfaces: Array.from({ length: n }, (_, index) => ({
+                name: `eth${index}`,
+                address: `10.0.0.${index + 1}`,
+                mask: 24,
+              })),
+            },
+          }),
+        ),
+      label: () => 'Interfaces',
+      said: (index) => `eth${index} 10.0.0.${index + 1}/24`,
+    },
+    {
+      kind: 'switch',
+      info: (n) => switchInfo(network, devices(n)),
+      label: (n) => `Connected devices (${n})`,
+      said: (index) =>
+        `web-${String(index + 1).padStart(2, '0')} 10.0.0.${index + 1}/24`,
+    },
+  ])(
+    'a $kind lists eight entries whole, and counts the rest',
+    ({ info, label, said }) => {
+      const line = (index) => said(index).replace(' ', ' — ');
+      const eight = info(8);
+      const nine = info(9);
+      const twelve = info(12);
+
+      expect(row(eight, label(8))).toEqual(
+        Array.from({ length: 8 }, (_, index) => line(index)),
+      );
+      expect(eight.text).not.toContain('more');
+
+      expect(row(nine, label(9)).slice(7)).toEqual([line(7), '+1 more']);
+      expect(nine.text).toContain(`${said(7)}, and 1 more.`);
+      expect(nine.text).not.toContain(said(8));
+
+      expect(row(twelve, label(12)).at(-1)).toBe('+4 more');
+      expect(twelve.text).toContain(', and 4 more.');
+    },
+  );
 });

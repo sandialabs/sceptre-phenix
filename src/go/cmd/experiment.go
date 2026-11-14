@@ -2,24 +2,28 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
+	"io"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
 	"phenix/api/config"
 	"phenix/api/experiment"
+	"phenix/api/experiment/startopts"
 	"phenix/api/scorch/scorchexe"
 	"phenix/app"
 	"phenix/scheduler"
 	"phenix/store"
 	"phenix/types"
 	"phenix/util"
+	"phenix/util/common"
 	"phenix/util/notes"
 	"phenix/util/plog"
 	"phenix/util/printer"
@@ -29,33 +33,6 @@ import (
 const allExperiments = "all"
 const scheduleArgs = 2
 const triggerArgs = 2
-
-func expNameCompletion(includeAll bool) func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	return func(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		if len(args) > 0 {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		}
-
-		_ = store.Init(store.Endpoint(viper.GetString("store.endpoint")))
-
-		exps, err := experiment.List()
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveError
-		}
-
-		var names []string
-		if includeAll && strings.HasPrefix(allExperiments, toComplete) {
-			names = append(names, allExperiments)
-		}
-
-		for _, e := range exps {
-			if strings.HasPrefix(e.Metadata.Name, toComplete) {
-				names = append(names, e.Metadata.Name)
-			}
-		}
-		return names, cobra.ShellCompDirectiveNoFileComp
-	}
-}
 
 func newExperimentCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -70,10 +47,68 @@ func newExperimentCmd() *cobra.Command {
 	return cmd
 }
 
+// experimentListRow is one experiment of phenix experiment list -o json or
+// -o yaml. Its keys are those of GET /experiments.
+type experimentListRow struct {
+	Name        string   `json:"name"        yaml:"name"`
+	Topology    string   `json:"topology"    yaml:"topology"`
+	Scenario    string   `json:"scenario"    yaml:"scenario"`
+	StartTime   string   `json:"start_time"  yaml:"start_time"`
+	Running     bool     `json:"running"     yaml:"running"`
+	Interrupted string   `json:"interrupted" yaml:"interrupted"`
+	VMCount     int      `json:"vm_count"    yaml:"vm_count"`
+	VLANCount   int      `json:"vlan_count"  yaml:"vlan_count"`
+	Apps        []string `json:"apps"        yaml:"apps"`
+}
+
+// experimentListRows returns the rows of exps, with the values of the table
+// of phenix experiment list.
+func experimentListRows(exps []types.Experiment) []experimentListRow {
+	rows := make([]experimentListRow, 0, len(exps))
+
+	for _, exp := range exps {
+		apps := make([]string, 0, len(exp.Apps()))
+		for _, a := range exp.Apps() {
+			apps = append(apps, a.Name())
+		}
+
+		row := experimentListRow{
+			Name:        exp.Spec.ExperimentName(),
+			Topology:    exp.Metadata.Annotations["topology"],
+			Scenario:    exp.Metadata.Annotations["scenario"],
+			StartTime:   exp.Status.StartTime(),
+			Running:     exp.Running(),
+			Interrupted: "",
+			VMCount:     0,
+			VLANCount:   0,
+			Apps:        apps,
+		}
+
+		if exp.Running() {
+			row.Interrupted = exp.Status.Interrupted()
+		}
+
+		if topo := exp.Spec.Topology(); topo != nil {
+			row.VMCount = len(topo.Nodes())
+		}
+
+		if vlans := exp.Spec.VLANs(); vlans != nil {
+			row.VLANCount = len(vlans.Aliases())
+		}
+
+		rows = append(rows, row)
+	}
+
+	return rows
+}
+
 func newExperimentListCmd() *cobra.Command {
+	var out *outputFlag
+
 	cmd := &cobra.Command{
 		Use:   commandList,
 		Short: "Display a table of available experiments",
+		Args:  argsWithUsage(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			exps, err := experiment.List()
 			if err != nil {
@@ -82,61 +117,125 @@ func newExperimentListCmd() *cobra.Command {
 				return err.Humanized()
 			}
 
-			if len(exps) == 0 {
-				plog.Warn(plog.TypeSystem, "no experiments available")
-			} else {
-				printer.PrintTableOfExperiments(os.Stdout, exps...)
-			}
+			return out.print(cmd, experimentListRows(exps), outputViews{
+				formatTable: func(w io.Writer) error {
+					if len(exps) == 0 {
+						plog.Warn(plog.TypeSystem, "no experiments available")
 
-			return nil
+						return nil
+					}
+
+					printer.PrintTableOfExperiments(w, outputPalette(w), exps...)
+
+					return nil
+				},
+			})
 		},
 	}
+
+	out = addOutputFlag(cmd, formatTable, []string{formatTable, FormatJSON, FormatYAML})
 
 	return cmd
 }
 
 func newExperimentAppsCmd() *cobra.Command {
+	var out *outputFlag
+
 	cmd := &cobra.Command{
 		Use:   "apps",
-		Short: "List of available apps to assign an experiment",
+		Short: "List the apps that a scenario can add to an experiment",
+		Long: `List the apps that a scenario can add to an experiment
+
+  Lists the apps that phenix includes and the phenix-app-<name> executables
+  on this host. The default apps of each experiment are not in the list.`,
+		Args: argsWithUsage(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			apps := app.List()
 
-			if len(apps) == 0 {
-				plog.Warn(plog.TypeSystem, "no apps available")
+			return out.printAPI(cmd, apps, outputViews{
+				formatText: func(w io.Writer) error {
+					if len(apps) == 0 {
+						plog.Warn(plog.TypeSystem, "no apps available")
 
-				return nil
-			}
+						return nil
+					}
 
-			fmt.Fprintf(os.Stdout, "\nApps: %s\n", strings.Join(apps, ", "))
+					_, err := fmt.Fprintf(w, "Apps: %s\n", strings.Join(apps, ", "))
 
-			return nil
+					return err //nolint:wrapcheck // the writer's own error
+				},
+			})
 		},
 	}
+
+	out = addOutputFlag(cmd, formatText, []string{formatText, FormatJSON, FormatYAML})
 
 	return cmd
 }
 
 func newExperimentSchedulersCmd() *cobra.Command {
+	var out *outputFlag
+
 	cmd := &cobra.Command{
 		Use:   "schedulers",
-		Short: "List of available schedulers to assign an experiment",
+		Short: "List the schedulers that put the VMs of an experiment on cluster hosts",
+		Args:  argsWithUsage(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			schedulers := scheduler.List()
+			schedulers := scheduler.Available()
 
-			if len(schedulers) == 0 {
-				plog.Warn(plog.TypeSystem, "no schedulers available")
+			return out.printAPI(cmd, schedulers, outputViews{
+				formatText: func(w io.Writer) error {
+					if len(schedulers) == 0 {
+						plog.Warn(plog.TypeSystem, "no schedulers available")
 
-				return nil
-			}
+						return nil
+					}
 
-			fmt.Fprintf(os.Stdout, "\nSchedulers: %s\n", strings.Join(schedulers, ", "))
+					printSchedulers(w, schedulers)
 
-			return nil
+					return nil
+				},
+			})
 		},
 	}
 
+	out = addOutputFlag(cmd, formatText, []string{formatText, FormatJSON, FormatYAML})
+
 	return cmd
+}
+
+// schedulerDescriptionWidth is the most characters on one line of a
+// scheduler's description, after its indent.
+const schedulerDescriptionWidth = 72
+
+// printSchedulers prints each scheduler's name and kind, then what it does,
+// wrapped and indented below the name.
+func printSchedulers(out io.Writer, schedulers []scheduler.Info) {
+	for _, info := range schedulers {
+		kind, text := "built-in", info.Description
+		if !info.Builtin {
+			kind = "user"
+			text = "Runs phenix-scheduler-" + info.Name + " on this host."
+		}
+
+		fmt.Fprintf(out, "%s (%s)\n", info.Name, kind)
+
+		line := ""
+
+		for word := range strings.FieldsSeq(text) {
+			if line != "" && len(line)+1+len(word) > schedulerDescriptionWidth {
+				fmt.Fprintf(out, "    %s\n", line)
+
+				line = ""
+			}
+
+			line = strings.TrimSpace(line + " " + word)
+		}
+
+		if line != "" {
+			fmt.Fprintf(out, "    %s\n", line)
+		}
+	}
 }
 
 //nolint:funlen // command definition
@@ -152,7 +251,8 @@ func newExperimentCreateCmd() *cobra.Command {
   phenix experiment create <experiment name> -t <topology name or /path/to/filename>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename>
   phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> -d </path/to/dir/>
-  phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> --disabled-apps "app1,app2"`
+  phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> --disabled-apps "app1,app2"
+  phenix experiment create <experiment name> -t <topology name> --node-annotation phenix/default-apps=false --annotation phenix.workflow/tags=nightly`
 
 	cmd := &cobra.Command{
 		Use:     "create <experiment name>",
@@ -162,14 +262,17 @@ func newExperimentCreateCmd() *cobra.Command {
 		Args:    argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
-				topology = MustGetString(cmd.Flags(), "topology")
-				scenario = MustGetString(cmd.Flags(), "scenario")
+				topology = mustGet(cmd.Flags().GetString, "topology")
+				scenario = mustGet(cmd.Flags().GetString, "scenario")
+
+				ctx = notes.Context(sigterm.CancelContext(commandContext(cmd)), false)
 			)
 
 			if ext := filepath.Ext(topology); ext != "" {
 				opts := []config.CreateOption{
 					config.CreateFromPath(topology),
 					config.CreateWithValidation(),
+					config.CreateWithContext(ctx),
 				}
 
 				c, err := config.Create(opts...)
@@ -192,6 +295,7 @@ func newExperimentCreateCmd() *cobra.Command {
 				opts := []config.CreateOption{
 					config.CreateFromPath(scenario),
 					config.CreateWithValidation(),
+					config.CreateWithContext(ctx),
 				}
 
 				c, err := config.Create(opts...)
@@ -223,21 +327,33 @@ func newExperimentCreateCmd() *cobra.Command {
 				disabledApps[idx] = strings.TrimSpace(disabledApps[idx])
 			}
 
+			annotations, err := parseAnnotationFlags(mustGet(cmd.Flags().GetStringArray, "annotation"))
+			if err != nil {
+				return util.HumanizeError(err, "").Humanized()
+			}
+
+			nodeAnnotations, err := parseNodeAnnotationFlags(
+				mustGet(cmd.Flags().GetStringArray, "node-annotation"),
+			)
+			if err != nil {
+				return util.HumanizeError(err, "").Humanized()
+			}
+
 			opts := []experiment.CreateOption{
 				experiment.CreateWithName(args[0]),
 				experiment.CreateWithTopology(topology),
 				experiment.CreateWithScenario(scenario),
-				experiment.CreateWithBaseDirectory(MustGetString(cmd.Flags(), "base-dir")),
-				experiment.CreateWithVLANMin(MustGetInt(cmd.Flags(), "vlan-min")),
-				experiment.CreateWithVLANMax(MustGetInt(cmd.Flags(), "vlan-max")),
+				experiment.CreateWithBaseDirectory(mustGet(cmd.Flags().GetString, "base-dir")),
+				experiment.CreateWithVLANMin(mustGet(cmd.Flags().GetInt, "vlan-min")),
+				experiment.CreateWithVLANMax(mustGet(cmd.Flags().GetInt, "vlan-max")),
 				experiment.CreatedWithDisabledApplications(disabledApps),
-				experiment.CreateWithDefaultBridge(MustGetString(cmd.Flags(), "default-bridge")),
+				experiment.CreateWithDefaultBridge(mustGet(cmd.Flags().GetString, "default-bridge")),
+				experiment.CreateWithAnnotations(annotations),
+				experiment.CreateWithNodeAnnotations(nodeAnnotations),
 			}
 
-			ctx := notes.Context(context.Background(), false)
-
-			if err := experiment.Create(opts...); err != nil {
-				err := util.HumanizeError(err, "%s", "Unable to create the "+args[0]+" experiment")
+			if err := experiment.Create(ctx, opts...); err != nil {
+				err := util.HumanizeError(err, "%s", canceled("Unable to create the "+args[0]+" experiment", err))
 
 				return err.Humanized()
 			}
@@ -258,9 +374,75 @@ func newExperimentCreateCmd() *cobra.Command {
 		StringP("default-bridge", "b", appName, "Default bridge name to use for experiment (optional)")
 	cmd.Flags().Int("vlan-min", 0, "VLAN pool minimum")
 	cmd.Flags().Int("vlan-max", 0, "VLAN pool maximum")
-	cmd.Flags().StringSlice("disabled-apps", []string{}, "Comma separated ist of apps to disable")
+	cmd.Flags().StringSlice("disabled-apps", []string{}, "Comma separated list of apps to disable")
+	cmd.Flags().StringArray(
+		"annotation",
+		nil,
+		"Experiment annotation as key=value; may be repeated",
+	)
+	cmd.Flags().StringArray(
+		"node-annotation",
+		nil,
+		"Annotation for every VM as key=value; true, false and JSON lists or objects keep their type; may be repeated",
+	)
+
+	_ = cmd.RegisterFlagCompletionFunc("topology", completeConfigNamesOrFiles("Topology"))
+	_ = cmd.RegisterFlagCompletionFunc("scenario", completeConfigNamesOrFiles("Scenario"))
+	_ = cmd.RegisterFlagCompletionFunc("disabled-apps", completeAppNames)
+	_ = cmd.MarkFlagDirname("base-dir")
 
 	return cmd
+}
+
+// parseAnnotationFlags turns key=value flag values into annotations.
+func parseAnnotationFlags(values []string) (map[string]string, error) {
+	annotations := make(map[string]string, len(values))
+
+	for _, value := range values {
+		key, val, ok := strings.Cut(value, "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			return nil, fmt.Errorf("annotation %q is not of the form key=value", value)
+		}
+
+		annotations[key] = val
+	}
+
+	return annotations, nil
+}
+
+// parseNodeAnnotationFlags turns key=value flag values into node annotations,
+// keeping the type of values the default apps read as booleans or lists.
+func parseNodeAnnotationFlags(values []string) (map[string]any, error) {
+	flat, err := parseAnnotationFlags(values)
+	if err != nil {
+		return nil, err
+	}
+
+	annotations := make(map[string]any, len(flat))
+
+	for key, value := range flat {
+		annotations[key] = nodeAnnotationValue(value)
+	}
+
+	return annotations, nil
+}
+
+// nodeAnnotationValue reads true and false as booleans and a JSON list or
+// object as that value; anything else, numbers included, stays a string.
+func nodeAnnotationValue(value string) any {
+	switch trimmed := strings.TrimSpace(value); {
+	case trimmed == "true":
+		return true
+	case trimmed == "false":
+		return false
+	case strings.HasPrefix(trimmed, "["), strings.HasPrefix(trimmed, "{"):
+		var parsed any
+		if err := json.Unmarshal([]byte(trimmed), &parsed); err == nil {
+			return parsed
+		}
+	}
+
+	return value
 }
 
 func newExperimentEditCmd() *cobra.Command {
@@ -277,7 +459,7 @@ func newExperimentEditCmd() *cobra.Command {
 		Args:              argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
-				force = MustGetBool(cmd.Flags(), "force")
+				force = mustGet(cmd.Flags().GetBool, "force")
 				exp   = "experiment/" + args[0]
 			)
 
@@ -305,13 +487,22 @@ func newExperimentEditCmd() *cobra.Command {
 	return cmd
 }
 
+//nolint:funlen // command definition
 func newExperimentDeleteCmd() *cobra.Command {
 	desc := `Delete an experiment
 
   Used to delete an existing experiment; experiment must be stopped.
   Using 'all' instead of a specific experiment name will include all
   stopped experiments. Use the -f/--force flag to automatically stop
-  a running experiment before deleting it.`
+  a running experiment before deleting it.
+
+  When phenix cannot stop or delete an experiment, it continues with the
+  other experiments. Then it exits with an error that names each failure.
+
+  With --dry-run, phenix shows the experiments that it would stop and
+  delete, and changes nothing.`
+
+	var dry dryRun
 
 	cmd := &cobra.Command{
 		Use:               "delete <experiment name>",
@@ -323,8 +514,10 @@ func newExperimentDeleteCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
-				force       = MustGetBool(cmd.Flags(), "force")
+				force       = mustGet(cmd.Flags().GetBool, "force")
 				experiments []types.Experiment
+
+				ctx = sigterm.CancelContext(commandContext(cmd))
 			)
 
 			if name == allExperiments {
@@ -347,6 +540,8 @@ func newExperimentDeleteCmd() *cobra.Command {
 				experiments = []types.Experiment{*exp}
 			}
 
+			var failed []*util.HumanizedError
+
 			for _, exp := range experiments {
 				if exp.Running() {
 					if !force {
@@ -360,42 +555,81 @@ func newExperimentDeleteCmd() *cobra.Command {
 						continue
 					}
 
-					if err := experiment.Stop(exp.Metadata.Name); err != nil {
-						err := util.HumanizeError(
-							err,
-							"%s",
-							"Unable to stop the "+exp.Metadata.Name+" experiment before deleting it",
-						)
+					if err := stopBeforeDelete(ctx, dry, exp.Metadata.Name); err != nil {
 						plog.Error(plog.TypeSystem, err.Humanize())
+						failed = append(failed, err)
+
+						if ctx.Err() != nil {
+							break
+						}
 
 						continue
 					}
-
-					plog.Info(plog.TypeSystem, "experiment stopped", "exp", exp.Metadata.Name)
 				}
 
-				err := config.Delete("experiment/" + exp.Metadata.Name)
-				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Unable to delete the "+exp.Metadata.Name+" experiment",
-					)
-					plog.Error(plog.TypeSystem, err.Humanize())
-
+				if dry.skip("delete", "experiment "+exp.Metadata.Name) {
 					continue
 				}
 
-				plog.Info(plog.TypeSystem, "experiment deleted", "exp", exp.Metadata.Name)
+				err := experiment.Delete(exp.Metadata.Name)
+				if err != nil {
+					msg := "Unable to delete the " + exp.Metadata.Name + " experiment"
+					if errors.Is(err, experiment.ErrDeleteCleanup) {
+						msg = "The " + exp.Metadata.Name + " experiment was deleted, but its files were not all deleted"
+					}
+
+					err := util.HumanizeError(err, "%s", msg)
+					plog.Error(plog.TypeSystem, err.Humanize())
+					failed = append(failed, err)
+				}
 			}
 
-			return nil
+			return deleteFailures(failed, "experiments")
 		},
 	}
 
 	cmd.Flags().BoolP("force", "f", false, "Stop a running experiment before deleting it")
+	dry = addDryRunFlag(cmd)
 
 	return cmd
+}
+
+// stopBeforeDelete stops the running experiment name that experiment delete
+// --force deletes, or shows the stop in a dry run. It stops the experiment
+// even when minimega cannot kill its VMs, as docker rm -f does. The cleanup
+// stage of the apps stops when ctx is done.
+func stopBeforeDelete(ctx context.Context, dry dryRun, name string) *util.HumanizedError {
+	if dry.skip("stop", "experiment "+name) {
+		return nil
+	}
+
+	begun := time.Now()
+
+	if err := experiment.Stop(ctx, name, experiment.StopWithForce(true)); err != nil {
+		return util.HumanizeError(err, "%s", canceled("Unable to stop the "+name+" experiment before deleting it", err))
+	}
+
+	plog.Info(plog.TypeSystem, "experiment stopped", "exp", name, "duration", sinceText(begun))
+
+	return nil
+}
+
+// deleteFailures is the error of an experiment delete in which the experiments of failed could not be stopped or
+// deleted: nil for none, the one error for one, and an error that names each failure for more.
+func deleteFailures(failed []*util.HumanizedError, what string) error {
+	switch len(failed) {
+	case 0:
+		return nil
+	case 1:
+		return failed[0].Humanized()
+	}
+
+	msgs := make([]string, 0, len(failed))
+	for _, err := range failed {
+		msgs = append(msgs, err.Humanize())
+	}
+
+	return fmt.Errorf("unable to delete %d %s:\n  %s", len(failed), what, strings.Join(msgs, "\n  "))
 }
 
 func newExperimentScheduleCmd() *cobra.Command {
@@ -431,18 +665,24 @@ func newExperimentScheduleCmd() *cobra.Command {
 				experiment.ScheduleWithAlgorithm(args[1]),
 			}
 
-			err := experiment.Schedule(opts...)
+			ctx := sigterm.CancelContext(commandContext(cmd))
+
+			_, warnings, err := experiment.Schedule(ctx, opts...)
 			if err != nil {
 				err := util.HumanizeError(
 					err,
 					"%s",
-					"Unable to schedule the "+args[0]+" experiment with the "+args[1]+" algorithm",
+					canceled("Unable to schedule the "+args[0]+" experiment with the "+args[1]+" algorithm", err),
 				)
 
 				return err.Humanized()
 			}
 
 			plog.Info(plog.TypeSystem, "experiment scheduled", "exp", args[0], "algorithm", args[1])
+
+			for _, warning := range warnings {
+				plog.Warn(plog.TypeSystem, "schedule warning", "exp", args[0], "algorithm", args[1], "warning", warning)
+			}
 
 			return nil
 		},
@@ -457,13 +697,21 @@ func newExperimentStartCmd() *cobra.Command {
 
   Used to start a stopped experiment, using 'all' instead of a specific
   experiment name will include all stopped experiments; dry-run will do
-	everything but call out to minimega.
+  everything but call out to minimega.
 
-	NOTE: passing the --honor-run-periodically flag will prevent the CLI from
-	returning. If Ctrl+c is pressed, the experiment will continue to run but
-	the running stage will no longer continue to be triggered for any apps
-	configured (via the scenario) to have their running stage triggered
-	periodically.`
+  Before minimega launches a VM, phenix checks that each disk image and
+  CD-ROM image of the VMs exists, and that the backing chain of each disk
+  image is complete. A missing file refuses the start and lists each VM,
+  disk and missing file. With --dry-run or --treat-mm-errors-as-warnings,
+  phenix shows the problems as warnings. The experiment.disk-check setting
+  changes this for every start: warn shows the problems as warnings, and
+  off skips the check.
+
+  NOTE: passing the --honor-run-periodically flag will prevent the CLI from
+  returning. If Ctrl+c is pressed, the experiment will continue to run but
+  the running stage will no longer continue to be triggered for any apps
+  configured (via the scenario) to have their running stage triggered
+  periodically.`
 
 	cmd := &cobra.Command{
 		Use:               "start <experiment name>",
@@ -474,13 +722,18 @@ func newExperimentStartCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
-				dryrun      = MustGetBool(cmd.Flags(), "dry-run")
-				periodic    = MustGetBool(cmd.Flags(), "honor-run-periodically")
 				experiments []types.Experiment
 
 				ctx = notes.Context(sigterm.CancelContext(context.Background()), true)
 				wg  sync.WaitGroup
 			)
+
+			opts, err := startFlags(cmd)
+			if err != nil {
+				return err
+			}
+
+			dryrun, periodic := opts.DryRun, opts.Periodic(false)
 
 			if name == allExperiments {
 				var err error
@@ -514,25 +767,11 @@ func newExperimentStartCmd() *cobra.Command {
 					continue
 				}
 
-				opts := []experiment.StartOption{
-					experiment.StartWithName(exp.Metadata.Name),
-					experiment.StartWithDryRun(dryrun),
-					experiment.StartWithVLANMin(MustGetInt(cmd.Flags(), "vlan-min")),
-					experiment.StartWithVLANMax(MustGetInt(cmd.Flags(), "vlan-max")),
-					experiment.StartWithMMErrorsAsWarnings(
-						MustGetBool(cmd.Flags(), "treat-mm-errors-as-warnings"),
-					),
-				}
+				begun := time.Now()
 
-				err := experiment.Start(ctx, opts...)
+				err := experiment.Start(ctx, opts.StartOptions(exp.Metadata.Name)...)
 				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Unable to start the "+exp.Metadata.Name+" experiment",
-					)
-
-					return err.Humanized()
+					return startError(err, exp.Metadata.Name)
 				}
 
 				notes.PrettyPrint(ctx, false)
@@ -546,6 +785,8 @@ func newExperimentStartCmd() *cobra.Command {
 					dryrun,
 					"deploy-mode",
 					exp.Spec.DeployMode(),
+					"duration",
+					sinceText(begun),
 				)
 
 				if periodic {
@@ -565,22 +806,100 @@ func newExperimentStartCmd() *cobra.Command {
 		},
 	}
 
+	addStartFlags(cmd)
+
+	return cmd
+}
+
+// addStartFlags adds the flags of experiment start, which startOptions reads.
+func addStartFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("dry-run", false, "Do everything but actually call out to minimega")
 	cmd.Flags().
 		Bool("honor-run-periodically", false, "Periodically trigger running stage in apps if configured in scenario")
 	cmd.Flags().
 		Bool("treat-mm-errors-as-warnings", false, "Treat errors from minimega as warnings instead of failing")
-	cmd.Flags().Int("vlan-min", 0, "VLAN pool minimum")
-	cmd.Flags().Int("vlan-max", 0, "VLAN pool maximum")
+	cmd.Flags().Int("vlan-min", 0, "VLAN pool minimum for this start (1-4094; 0 keeps the minimum of the experiment)")
+	cmd.Flags().Int("vlan-max", 0, "VLAN pool maximum for this start (1-4094; 0 keeps the maximum of the experiment)")
+}
 
-	return cmd
+// startFlags are the start options of the flags that addStartFlags added to
+// cmd, checked as POST /experiments/{name}/start checks its body.
+func startFlags(cmd *cobra.Command) (startopts.Options, error) {
+	periodic := mustGet(cmd.Flags().GetBool, "honor-run-periodically")
+
+	opts := startopts.Options{
+		DryRun:                        mustGet(cmd.Flags().GetBool, "dry-run"),
+		TreatMinimegaErrorsAsWarnings: mustGet(cmd.Flags().GetBool, "treat-mm-errors-as-warnings"),
+		HonorRunPeriodically:          &periodic,
+		VLANMin:                       mustGet(cmd.Flags().GetInt, "vlan-min"),
+		VLANMax:                       mustGet(cmd.Flags().GetInt, "vlan-max"),
+	}
+
+	if err := opts.Check(); err != nil {
+		return startopts.Options{}, fmt.Errorf("--vlan-min, --vlan-max: %w", err)
+	}
+
+	return opts, nil
+}
+
+// addStopFlags adds the flags of experiment stop, which stopOptions reads.
+func addStopFlags(cmd *cobra.Command) {
+	cmd.Flags().
+		BoolP("keep-injection-snapshots", "K", false, "Keep VM injection snapshots after stopping")
+	cmd.Flags().
+		BoolP("force", "f", false, "Mark the experiment stopped even if minimega cannot kill its VMs")
+}
+
+// stopOptions are the options of a stop, from the flags that addStopFlags
+// added to cmd.
+func stopOptions(cmd *cobra.Command) []experiment.StopOption {
+	return []experiment.StopOption{
+		experiment.StopWithKeepInjectionSnapshots(mustGet(cmd.Flags().GetBool, "keep-injection-snapshots")),
+		experiment.StopWithForce(mustGet(cmd.Flags().GetBool, "force")),
+	}
+}
+
+// stopError is the error of a stop of experiment name that failed with err,
+// which begins with msg.
+func stopError(err error, msg string) error {
+	if errors.Is(err, experiment.ErrTeardownFailed) {
+		msg += " (it is still running: try again, or pass --force to mark it stopped anyway)"
+	}
+
+	herr := util.HumanizeError(err, "%s", canceled(msg, err))
+
+	return herr.Humanized()
+}
+
+// canceled adds to msg that a signal canceled the command, when err wraps
+// [context.Canceled].
+func canceled(msg string, err error) string {
+	if errors.Is(err, context.Canceled) {
+		return msg + ": the command was canceled"
+	}
+
+	return msg
+}
+
+// startError is the error a start of experiment name that failed with err returns: err itself for broken disk images,
+// so the list of VMs, disks and missing files is printed, and for a start that another process runs. Otherwise it is
+// a humanized error.
+func startError(err error, name string) error {
+	if errors.Is(err, experiment.ErrBrokenDisks) || errors.Is(err, experiment.ErrExperimentStarting) {
+		return fmt.Errorf("unable to start the %s experiment: %w", name, err)
+	}
+
+	herr := util.HumanizeError(err, "%s", "Unable to start the "+name+" experiment")
+
+	return herr.Humanized()
 }
 
 func newExperimentStopCmd() *cobra.Command {
 	desc := `Stop an experiment
 
   Used to stop a running experiment, using 'all' instead of a specific
-  experiment name will include all running experiments.`
+  experiment name will include all running experiments. An experiment whose
+  VMs minimega cannot kill stays running; --force marks it stopped anyway.`
 
 	cmd := &cobra.Command{
 		Use:               "stop <experiment name>",
@@ -590,9 +909,10 @@ func newExperimentStopCmd() *cobra.Command {
 		Args:              argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
-				name                   = args[0]
-				keepInjectionSnapshots = MustGetBool(cmd.Flags(), "keep-injection-snapshots")
-				experiments            []types.Experiment
+				name        = args[0]
+				experiments []types.Experiment
+
+				ctx = sigterm.CancelContext(commandContext(cmd))
 			)
 
 			if name == allExperiments {
@@ -627,29 +947,21 @@ func newExperimentStopCmd() *cobra.Command {
 					continue
 				}
 
-				err := experiment.Stop(
-					exp.Metadata.Name,
-					experiment.StopWithKeepInjectionSnapshots(keepInjectionSnapshots),
-				)
-				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Problem encountered while stopping the "+exp.Metadata.Name+" experiment",
-					)
+				begun := time.Now()
 
-					return err.Humanized()
+				err := experiment.Stop(ctx, exp.Metadata.Name, stopOptions(cmd)...)
+				if err != nil {
+					return stopError(err, "Problem encountered while stopping the "+exp.Metadata.Name+" experiment")
 				}
 
-				plog.Info(plog.TypeSystem, "experiment stopped", "exp", exp.Metadata.Name)
+				plog.Info(plog.TypeSystem, "experiment stopped", "exp", exp.Metadata.Name, "duration", sinceText(begun))
 			}
 
 			return nil
 		},
 	}
 
-	cmd.Flags().
-		BoolP("keep-injection-snapshots", "K", false, "Keep VM injection snapshots after stopping")
+	addStopFlags(cmd)
 
 	return cmd
 }
@@ -660,7 +972,24 @@ func newExperimentRestartCmd() *cobra.Command {
 
   Used to restart a running experiment, using 'all' instead of a specific
   experiment name will include all running experiments; dry-run will do
-  everything but call out to minimega.`
+  everything but call out to minimega.
+
+  Before phenix stops the experiment, it checks the disk images and CD-ROM
+  images of the VMs as 'phenix experiment start' does. A missing file
+  refuses the restart, and the experiment continues to run. When the
+  scenario has a user app, the app can change the disks, so this check
+  only shows warnings, and the check before the start can still refuse it.
+
+  The stop of the experiment takes the flags of 'phenix experiment stop'
+  (--force and --keep-injection-snapshots), and its start takes the flags
+  of 'phenix experiment start'. With --treat-mm-errors-as-warnings, the
+  check before the stop shows the problems as warnings.
+
+  NOTE: passing the --honor-run-periodically flag will prevent the CLI from
+  returning. If Ctrl+c is pressed, the experiment will continue to run but
+  the running stage will no longer continue to be triggered for any apps
+  configured (via the scenario) to have their running stage triggered
+  periodically.`
 
 	cmd := &cobra.Command{
 		Use:               "restart <experiment name>",
@@ -672,11 +1001,19 @@ func newExperimentRestartCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name        = args[0]
-				dryrun      = MustGetBool(cmd.Flags(), "dry-run")
 				experiments []types.Experiment
 
-				ctx = sigterm.CancelContext(context.Background())
+				ctx = notes.Context(sigterm.CancelContext(context.Background()), true)
+				wg  sync.WaitGroup
 			)
+
+			opts, err := startFlags(cmd)
+			if err != nil {
+				return err
+			}
+
+			dryrun, periodic := opts.DryRun, opts.Periodic(false)
+			warnOnly := dryrun || opts.TreatMinimegaErrorsAsWarnings
 
 			if name == allExperiments {
 				var err error
@@ -714,31 +1051,24 @@ func newExperimentRestartCmd() *cobra.Command {
 					continue
 				}
 
-				err := experiment.Stop(exp.Metadata.Name)
-				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Unable to stop the "+exp.Metadata.Name+" experiment",
-					)
+				warnings, err := experiment.CheckDisksBeforeStop(ctx, exp.Spec, experiment.CheckAsWarnings(warnOnly))
+				notes.AddWarnings(ctx, true, warnings...)
 
-					return err.Humanized()
+				if err != nil {
+					return fmt.Errorf("unable to restart the %s experiment, which is still running: %w", exp.Metadata.Name, err)
 				}
 
-				err = experiment.Start(
-					ctx,
-					experiment.StartWithName(exp.Metadata.Name),
-					experiment.StartWithDryRun(dryrun),
-				)
+				err = experiment.Stop(ctx, exp.Metadata.Name, stopOptions(cmd)...)
 				if err != nil {
-					err := util.HumanizeError(
-						err,
-						"%s",
-						"Unable to start the "+exp.Metadata.Name+" experiment",
-					)
-
-					return err.Humanized()
+					return stopError(err, "Unable to stop the "+exp.Metadata.Name+" experiment")
 				}
+
+				err = experiment.Start(ctx, opts.StartOptions(exp.Metadata.Name)...)
+				if err != nil {
+					return startError(err, exp.Metadata.Name)
+				}
+
+				notes.PrettyPrint(ctx, false)
 
 				plog.Info(
 					plog.TypeSystem,
@@ -750,13 +1080,23 @@ func newExperimentRestartCmd() *cobra.Command {
 					"deploy-mode",
 					exp.Spec.DeployMode(),
 				)
+
+				if periodic {
+					plog.Info(plog.TypeSystem, "honor-run-periodically flag was passed")
+
+					app.PeriodicallyRunApps(ctx, &wg, &exp)
+				}
 			}
+
+			// returns at once unless --honor-run-periodically started apps, as in experiment start
+			wg.Wait()
 
 			return nil
 		},
 	}
 
-	cmd.Flags().Bool("dry-run", false, "Do everything but actually call out to minimega")
+	addStopFlags(cmd)
+	addStartFlags(cmd)
 
 	return cmd
 }
@@ -769,14 +1109,13 @@ func newExperimentReconfigureCmd() *cobra.Command {
   of a specific experiment name will reconfigure all non-running
   experiments.
 
-  This differs from 'phenix experiment trigger configure' in that it re-runs
-  config validation and any registered config hooks, deletes the experiment's
-  minimega bridge so it gets recreated with current settings, and always
-  applies to all apps. Use this after editing an experiment's stored topology,
-  scenario, or deployment settings. Use 'trigger configure' to manually re-run
-  a specific app's (or apps') configure hook on demand for debugging; note it
-  does not validate the config, run config hooks, reset the minimega bridge,
-  or guard against running experiments the way 'reconfigure' does.`
+  This differs from 'phenix experiment trigger <experiment name> configure'
+  in that it re-runs config validation and any registered config hooks, and
+  always applies to all apps. Use this after editing an experiment's stored
+  topology, scenario, or deployment settings. Use 'trigger configure' to
+  manually re-run a specific app's (or apps') configure hook on demand for
+  debugging; note it does not validate the config, run config hooks, or
+  guard against running experiments the way 'reconfigure' does.`
 
 	cmd := &cobra.Command{
 		Use:               "reconfigure <experiment name>",
@@ -789,6 +1128,8 @@ func newExperimentReconfigureCmd() *cobra.Command {
 			var (
 				name        = args[0]
 				experiments []types.Experiment
+
+				ctx = sigterm.CancelContext(commandContext(cmd))
 			)
 
 			if name == allExperiments {
@@ -827,12 +1168,12 @@ func newExperimentReconfigureCmd() *cobra.Command {
 					continue
 				}
 
-				err := experiment.Reconfigure(exp.Metadata.Name)
+				err := experiment.Reconfigure(ctx, exp.Metadata.Name)
 				if err != nil {
 					err := util.HumanizeError(
 						err,
 						"%s",
-						"Unable to reconfigure the "+exp.Metadata.Name+" experiment",
+						canceled("Unable to reconfigure the "+exp.Metadata.Name+" experiment", err),
 					)
 
 					return err.Humanized()
@@ -848,45 +1189,50 @@ func newExperimentReconfigureCmd() *cobra.Command {
 	return cmd
 }
 
+// experimentTriggerCompletion completes the arguments of experiment trigger
+// when stageArg is set, <experiment name> <lifecycle> [<app name> ...], or
+// of experiment trigger-running otherwise, <experiment name> [<app name> ...].
+// With experiment trigger --cancel, it completes the experiment's apps after
+// the experiment name.
 func experimentTriggerCompletion(
 	stageArg bool,
 ) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		if stageArg && len(args) == 0 {
-			var matches []string
-			for _, stage := range app.Actions() {
-				for _, value := range []string{string(stage), stage.Shorthand()} {
-					if strings.HasPrefix(value, toComplete) {
-						matches = append(matches, value)
-					}
-				}
-			}
-
-			return matches, cobra.ShellCompDirectiveNoFileComp
-		}
-
-		expArg := 0
-
-		var stage app.Action
-
-		if stageArg {
-			expArg = 1
-
-			var ok bool
-
-			stage, ok = app.ParseAction(args[0])
-			if !ok {
-				return nil, cobra.ShellCompDirectiveNoFileComp
-			}
-		} else {
-			stage = app.ActionRunning
-		}
-
-		if len(args) == expArg {
+		if len(args) == 0 {
 			return expNameCompletion(true)(cmd, nil, toComplete)
 		}
 
-		name := args[expArg]
+		cancel := false
+		if cmd != nil && cmd.Flags().Lookup("cancel") != nil {
+			cancel = mustGet(cmd.Flags().GetBool, "cancel")
+		}
+
+		stage := app.ActionRunning
+
+		if stageArg && !cancel {
+			if len(args) == 1 {
+				var matches []string
+
+				for _, stage := range app.Actions() {
+					for _, value := range []string{string(stage), stage.Shorthand()} {
+						if strings.HasPrefix(value, toComplete) {
+							matches = append(matches, value)
+						}
+					}
+				}
+
+				return matches, cobra.ShellCompDirectiveNoFileComp
+			}
+
+			var err error
+
+			stage, err = app.ParseAction(args[1])
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+		}
+
+		name := args[0]
 
 		var candidates []string
 
@@ -906,7 +1252,7 @@ func experimentTriggerCompletion(
 		var matches []string
 
 		for _, a := range candidates {
-			if !app.StageApplicable(stage, a) {
+			if !cancel && !app.StageApplicable(stage, a) {
 				continue
 			}
 
@@ -1010,31 +1356,91 @@ func triggerExperimentApps(
 	return nil
 }
 
-func experimentLifecycleChoices() string {
-	actions := app.Actions()
-	choices := make([]string, 0, len(actions))
-
-	for _, action := range actions {
-		choices = append(
-			choices,
-			fmt.Sprintf("%s (%s)", action, action.Shorthand()),
-		)
-	}
-
-	return strings.Join(choices, ", ")
+// triggerRequest is what the arguments of experiment trigger ask for.
+type triggerRequest struct {
+	experiment string
+	stage      app.Action // empty for a cancel
+	apps       []string
+	// legacy is set when the lifecycle came before the experiment name
+	legacy bool
 }
 
-func parseExperimentLifecycle(value string) (app.Action, error) {
-	action, ok := app.ParseAction(value)
-	if !ok {
-		return "", fmt.Errorf(
-			"invalid lifecycle %q (valid lifecycles and shorthands: %s)",
-			value,
-			experimentLifecycleChoices(),
-		)
+// errTriggerCancelLifecycle is the error of a lifecycle argument with
+// experiment trigger --cancel.
+var errTriggerCancelLifecycle = errors.New(
+	"--cancel takes no lifecycle: use phenix experiment trigger <experiment name> --cancel [<app name> ...]",
+)
+
+// checkTriggerArgs checks the number of arguments of experiment trigger, and
+// that one of the first two is a lifecycle unless cancel is set. It does not
+// use the store, which is not open yet when cobra checks arguments.
+func checkTriggerArgs(args []string, cancel bool) error {
+	if cancel {
+		return cobra.MinimumNArgs(1)(nil, args) //nolint:wrapcheck // cobra's own argument error
 	}
 
-	return action, nil
+	if err := cobra.MinimumNArgs(triggerArgs)(nil, args); err != nil {
+		return err //nolint:wrapcheck // cobra's own argument error
+	}
+
+	if _, err := app.ParseAction(args[0]); err == nil {
+		return nil
+	}
+
+	_, err := app.ParseAction(args[1])
+
+	return err //nolint:wrapcheck // the error names the argument and the stages
+}
+
+// parseTriggerArgs returns what the arguments of experiment trigger ask for:
+// <experiment name> <lifecycle> [<app name> ...], or, with cancel, <experiment name> [<app name> ...].
+// The old order, <lifecycle> <experiment name> [<app name> ...], is accepted when only the first
+// argument is a lifecycle and isExperiment reports that no experiment has it as its name.
+func parseTriggerArgs(args []string, cancel bool, isExperiment func(string) bool) (triggerRequest, error) {
+	if err := checkTriggerArgs(args, cancel); err != nil {
+		return triggerRequest{}, err
+	}
+
+	if cancel {
+		if _, err := app.ParseAction(args[0]); err == nil && !isExperiment(args[0]) {
+			return triggerRequest{}, errTriggerCancelLifecycle
+		}
+
+		for _, a := range args[1:] {
+			if _, err := app.ParseAction(a); err == nil {
+				return triggerRequest{}, errTriggerCancelLifecycle
+			}
+		}
+
+		return triggerRequest{experiment: args[0], stage: "", apps: args[1:], legacy: false}, nil
+	}
+
+	first, firstErr := app.ParseAction(args[0])
+	_, secondErr := app.ParseAction(args[1])
+
+	if firstErr == nil && secondErr != nil && !isExperiment(args[0]) {
+		return triggerRequest{experiment: args[1], stage: first, apps: args[2:], legacy: true}, nil
+	}
+
+	stage, err := app.ParseAction(args[1])
+	if err != nil {
+		return triggerRequest{}, err //nolint:wrapcheck // the error names the argument and the stages
+	}
+
+	return triggerRequest{experiment: args[0], stage: stage, apps: args[2:], legacy: false}, nil
+}
+
+// storedExperiment reports whether the store holds an experiment named name.
+func storedExperiment(name string) bool {
+	_, err := experiment.Get(name)
+
+	return err == nil
+}
+
+// newOrderCommand is the experiment trigger command line of r in the
+// current argument order.
+func (r triggerRequest) newOrderCommand() string {
+	return strings.Join(append([]string{"phenix experiment trigger", r.experiment, string(r.stage)}, r.apps...), " ")
 }
 
 func newExperimentTriggerCmd() *cobra.Command {
@@ -1049,40 +1455,143 @@ func newExperimentTriggerCmd() *cobra.Command {
 
   Triggering the "configure" stage is not the same as
   'phenix experiment reconfigure': this command does not validate the
-  experiment config, run config hooks, reset the minimega bridge, or guard
-  against running experiments. Use 'phenix experiment reconfigure' after
+  experiment config, run config hooks, or guard against running
+  experiments. Use 'phenix experiment reconfigure' after
   editing an experiment's stored topology, scenario, or deployment settings.
 
-  Valid lifecycles and shorthands: %s.`, experimentLifecycleChoices())
+  This command runs the stage in its own process. Ctrl+C stops a trigger
+  that this command runs. --cancel stops the triggers that phenix ui runs,
+  which the web UI or the REST API started: give no lifecycle with it, and
+  give app names to stop only those apps. Without app names, --cancel also
+  ends the scheduled runs of the running stage that phenix ui runs after a
+  start (the experiments.periodic job). --cancel needs phenix ui. With
+  --cancel --dry-run, phenix shows the cancels that it would request, and
+  requests none.
+
+  The old argument order, <lifecycle> <experiment name> [<app name> ...],
+  is deprecated. It still works, with a warning, when no experiment has the
+  lifecycle as its name.
+
+  Valid lifecycles and shorthands: %s.`, app.ActionChoices())
 
 	validateArgs := func(cmd *cobra.Command, args []string) error {
-		if err := cobra.MinimumNArgs(triggerArgs)(cmd, args); err != nil {
-			return err
-		}
-
-		_, err := parseExperimentLifecycle(args[0])
-		return err
+		return checkTriggerArgs(args, mustGet(cmd.Flags().GetBool, "cancel"))
 	}
 
+	var (
+		oldOrder deprecatedArgs
+		dry      dryRun
+	)
+
 	cmd := &cobra.Command{
-		Use:               "trigger <lifecycle> <experiment name> [<app name> ...]",
-		Short:             "Trigger lifecycle stage for app(s) in experiment",
-		Long:              desc,
+		Use:   "trigger <experiment name> <lifecycle> [<app name> ...]",
+		Short: "Trigger lifecycle stage for app(s) in experiment",
+		Long:  desc,
+		Example: `
+  # Run the configure stage of every app of exp1
+  phenix experiment trigger exp1 configure
+
+  # Run the running stage of the soh app in every experiment
+  phenix experiment trigger all running soh
+
+  # Stop the soh trigger that phenix ui runs for exp1
+  phenix experiment trigger exp1 --cancel soh`,
 		ValidArgsFunction: experimentTriggerCompletion(true),
 		Args:              argsWithUsage(validateArgs),
-		RunE: func(_ *cobra.Command, args []string) error {
-			ctx := sigterm.CancelContext(context.Background())
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := sigterm.CancelContext(commandContext(cmd))
+			cancel := mustGet(cmd.Flags().GetBool, "cancel")
 
-			stage, err := parseExperimentLifecycle(args[0])
+			req, err := parseTriggerArgs(args, cancel, storedExperiment)
 			if err != nil {
 				return err
 			}
 
-			return triggerExperimentApps(ctx, stage, args[1], args[2:])
+			if cancel {
+				return cancelExperimentTriggers(ctx, cmd.OutOrStdout(), newExperimentClient(common.UnixSocket), req, dry)
+			}
+
+			if dry.enabled() {
+				return errors.New("--dry-run works only with --cancel")
+			}
+
+			if req.legacy {
+				oldOrder.warn(req.newOrderCommand())
+			}
+
+			return triggerExperimentApps(ctx, req.stage, req.experiment, req.apps)
 		},
 	}
 
+	cmd.Flags().Bool("cancel", false, "Stop the triggers that phenix ui runs for the experiment (needs phenix ui)")
+	dry = addDryRunFlag(cmd)
+
+	oldOrder = deprecateArgs(
+		cmd, "<lifecycle> <experiment name> [<app name> ...]", "<experiment name> <lifecycle> [<app name> ...]",
+	)
+
 	return cmd
+}
+
+// cancelExperimentTriggers asks the server to stop the triggers that it runs
+// for the experiment of req, or for each stored experiment for 'all'. In a dry
+// run, it checks that the server answers and that each experiment exists, and
+// shows each cancel instead.
+func cancelExperimentTriggers(
+	ctx context.Context, w io.Writer, client *experimentClient, req triggerRequest, dry dryRun,
+) error {
+	names := []string{req.experiment}
+
+	if req.experiment == allExperiments {
+		exps, err := experiment.List()
+		if err != nil {
+			err := util.HumanizeError(err, "Unable to cancel the triggered apps of all experiments")
+
+			return err.Humanized()
+		}
+
+		names = names[:0]
+		for _, exp := range exps {
+			names = append(names, exp.Metadata.Name)
+		}
+	}
+
+	apps := "every triggered app"
+	if len(req.apps) > 0 {
+		apps = "the triggered apps " + strings.Join(req.apps, ", ")
+	}
+
+	if dry.enabled() {
+		if _, err := client.options(ctx); err != nil {
+			return fmt.Errorf(
+				"canceling the triggered apps: %w",
+				client.notRunning(err, "the triggers that it runs exist only in the running server"),
+			)
+		}
+	}
+
+	for _, name := range names {
+		if dry.enabled() && req.experiment != allExperiments {
+			if err := requireExperiment(name); err != nil {
+				return err
+			}
+		}
+
+		if dry.skip("cancel", apps+" of experiment "+name) {
+			continue
+		}
+
+		if err := client.cancelTriggers(ctx, name, req.apps); err != nil {
+			return fmt.Errorf(
+				"canceling the triggered apps of experiment %s: %w",
+				name, client.notRunning(err, "the triggers that it runs exist only in the running server"),
+			)
+		}
+
+		fmt.Fprintf(w, "Cancel requested for %s of experiment %s\n", apps, name)
+	}
+
+	return nil
 }
 
 func newExperimentTriggerRunningCmd() *cobra.Command {
@@ -1099,7 +1608,6 @@ func newExperimentTriggerRunningCmd() *cobra.Command {
 		Aliases:           []string{"trig"},
 		Short:             "Trigger running stage for app(s) in experiment",
 		Long:              desc,
-		Deprecated:        "use 'phenix exp trigger running' instead",
 		ValidArgsFunction: experimentTriggerCompletion(false),
 		Args:              argsWithUsage(cobra.MinimumNArgs(1)),
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -1109,72 +1617,231 @@ func newExperimentTriggerRunningCmd() *cobra.Command {
 		},
 	}
 
+	deprecateCommand(cmd, "phenix experiment trigger <experiment name> running [<app name> ...]")
+
 	return cmd
 }
 
+//nolint:funlen // command definition
 func newExperimentScorchCmd() *cobra.Command {
 	desc := `Start a Scorch run for an experiment
 
-	Used to start a Scorch run with the given run ID for the given experiment. By
-	default, the run ID used will be 0 if not provided.`
+  Used to start the Scorch run that --run selects (0 when not given) for the
+  given experiment, and to wait until it ends. The command prints the
+  progress of the run, and exits with an error when the run fails.
+
+  When phenix ui is running, the server executes the run, so the web UI
+  shows it and can cancel it. Ctrl+C cancels the run on the server. When
+  phenix ui is not running, this command executes the run in its own
+  process. The web UI does not show that run.
+
+  The --status, --cancel, --cleanup and --clear flags need phenix ui. Each
+  acts on the run that --run selects, and only one can be given:
+
+    --status   shows the status of each stage and component of the run
+    --cancel   cancels the run on the server
+    --cleanup  runs only the cleanup stage of the run, and waits for it
+    --clear    clears the status of a run that is not executing
+
+  -o/--output sets the output format of --status. With --cancel or --clear,
+  --dry-run checks that the server has the run, shows what phenix would
+  request, and requests nothing.`
+
+	var (
+		out *outputFlag
+		dry dryRun
+	)
 
 	cmd := &cobra.Command{
-		Use:               "scorch <experiment name>",
-		Short:             "Start a Scorch run for experiment",
-		Long:              desc,
+		Use:   "scorch <experiment name>",
+		Short: "Start a Scorch run for experiment",
+		Long:  desc,
+		Example: `
+  # Run Scorch run 1 and wait until it ends
+  phenix experiment scorch exp1 --run 1
+
+  # Show the status of Scorch run 1
+  phenix experiment scorch exp1 --run 1 --status
+
+  # Cancel Scorch run 1 on the server
+  phenix experiment scorch exp1 --run 1 --cancel
+
+  # The status of Scorch run 1 as JSON
+  phenix experiment scorch exp1 --run 1 --status -o json`,
 		ValidArgsFunction: expNameCompletion(false),
-		Args:              argsWithUsage(cobra.MinimumNArgs(1)),
+		Args:              argsWithUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
 				name = args[0]
-				run  = MustGetInt(cmd.Flags(), "run")
-				ctx  = sigterm.CancelContext(context.Background())
+				run  = mustGet(cmd.Flags().GetInt, "run")
+				ctx  = sigterm.CancelContext(commandContext(cmd))
 			)
 
-			exp, err := experiment.Get(name)
-			if err != nil {
-				err := util.HumanizeError(
-					err,
-					"%s",
-					fmt.Sprintf(
-						"Unable to start Scorch run %d for %s experiment",
-						run,
-						exp.Metadata.Name,
-					),
-				)
+			client := newExperimentClient(common.UnixSocket)
 
-				return err.Humanized()
+			cancelRun, clearRun := mustGet(cmd.Flags().GetBool, "cancel"), mustGet(cmd.Flags().GetBool, "clear")
+			if dry.enabled() && !cancelRun && !clearRun {
+				return errors.New("--dry-run works only with --cancel or --clear")
 			}
 
-			ctx = app.SetContextTriggerCLI(ctx)
+			switch {
+			case mustGet(cmd.Flags().GetBool, "status"):
+				pipelines, err := client.scorchPipelines(ctx, name)
+				if err != nil {
+					return fmt.Errorf("getting Scorch run %d of experiment %s: %w", run, name, client.notRunning(err, scorchServerOnly))
+				}
 
-			if err := scorchexe.Execute(ctx, exp, run); err != nil {
-				if errors.Is(err, context.Canceled) {
+				status, err := newScorchRunStatus(name, run, pipelines)
+				if err != nil {
+					return err
+				}
+
+				return out.printAPI(cmd, status, outputViews{
+					formatText: func(w io.Writer) error { printScorchStatus(w, status); return nil },
+				})
+			case cancelRun:
+				if err := checkScorchDryRun(ctx, client, dry, "canceling", name, run); err != nil {
+					return err
+				}
+
+				if dry.skip("cancel", fmt.Sprintf("Scorch run %d of experiment %s", run, name)) {
 					return nil
 				}
 
-				err := util.HumanizeError(
-					err,
-					"%s",
-					fmt.Sprintf(
-						"Unable to start Scorch run %d for %s experiment",
-						run,
-						exp.Metadata.Name,
-					),
-				)
+				if err := client.cancelScorch(ctx, name, run); err != nil {
+					return fmt.Errorf("canceling Scorch run %d of experiment %s: %w", run, name, client.notRunning(err, scorchServerOnly))
+				}
 
-				return err.Humanized()
+				fmt.Fprintf(cmd.OutOrStdout(), "Cancel requested for Scorch run %d of experiment %s\n", run, name)
+
+				return nil
+			case clearRun:
+				if err := checkScorchDryRun(ctx, client, dry, "clearing", name, run); err != nil {
+					return err
+				}
+
+				if dry.skip("clear the status of", fmt.Sprintf("Scorch run %d of experiment %s", run, name)) {
+					return nil
+				}
+
+				if err := client.clearScorch(ctx, name, run); err != nil {
+					return fmt.Errorf("clearing Scorch run %d of experiment %s: %w", run, name, client.notRunning(err, scorchServerOnly))
+				}
+
+				fmt.Fprintf(cmd.OutOrStdout(), "Cleared the status of Scorch run %d of experiment %s\n", run, name)
+
+				return nil
 			}
 
-			plog.Info(plog.TypeSystem, "scorch run triggered", "exp", exp.Metadata.Name, "run", run)
+			cleanupOnly := mustGet(cmd.Flags().GetBool, "cleanup")
 
-			return nil
+			if _, err := client.options(ctx); err != nil {
+				if !serverAbsent(err) || cleanupOnly {
+					return fmt.Errorf("starting Scorch run %d of experiment %s: %w", run, name, client.notRunning(err, scorchServerOnly))
+				}
+
+				return runScorchInProcess(ctx, name, run)
+			}
+
+			wait := scorchWait{
+				client: client, exp: name, run: run, cleanupOnly: cleanupOnly, interval: scorchWaitInterval, out: cmd.OutOrStdout(),
+			}
+
+			err := wait.startAndWait(ctx)
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
+
+			if err != nil && !errors.Is(err, errScorchRunFailed) {
+				return fmt.Errorf("starting Scorch run %d of experiment %s: %w", run, name, err)
+			}
+
+			return err
 		},
 	}
 
-	cmd.Flags().IntP("run", "r", 0, "ID of Scorch run to start for experiment (defaults to 0)")
+	cmd.Flags().IntP("run", "r", 0, "ID of the Scorch run to act on (defaults to 0)")
+	cmd.Flags().Bool("status", false, "Show the status of the run (needs phenix ui)")
+	cmd.Flags().Bool("cancel", false, "Cancel the run on the server (needs phenix ui)")
+	cmd.Flags().Bool("cleanup", false, "Run only the cleanup stage of the run (needs phenix ui)")
+	cmd.Flags().Bool("clear", false, "Clear the status of the run (needs phenix ui)")
+	cmd.MarkFlagsMutuallyExclusive("status", "cancel", "cleanup", "clear")
+
+	out = addOutputFlag(cmd, formatText, []string{formatText, FormatJSON, FormatYAML})
+	dry = addDryRunFlag(cmd)
 
 	return cmd
+}
+
+// scorchServerOnly says why a SCORCH request needs the server.
+const scorchServerOnly = "the Scorch runs that it executes exist only in the running server"
+
+// checkScorchDryRun checks, in a dry run of verb on run of experiment name,
+// that the server answers and has the run, as the real request needs.
+func checkScorchDryRun(ctx context.Context, client *experimentClient, dry dryRun, verb, name string, run int) error {
+	if !dry.enabled() {
+		return nil
+	}
+
+	pipelines, err := client.scorchPipelines(ctx, name)
+	if err != nil {
+		return fmt.Errorf("%s Scorch run %d of experiment %s: %w", verb, run, name, client.notRunning(err, scorchServerOnly))
+	}
+
+	if _, err := pipelines.run(name, run); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// runScorchInProcess executes run of experiment name in this process, as
+// phenix experiment scorch does when phenix ui is not running.
+func runScorchInProcess(ctx context.Context, name string, run int) error {
+	exp, err := experiment.Get(name)
+	if err != nil {
+		err := util.HumanizeError(
+			err,
+			"%s",
+			fmt.Sprintf(
+				"Unable to start Scorch run %d for %s experiment",
+				run,
+				name,
+			),
+		)
+
+		return err.Humanized()
+	}
+
+	plog.Warn(
+		plog.TypeSystem,
+		"phenix ui is not running, so this process executes the Scorch run, and the web UI does not show it",
+		"exp", name, "run", run,
+	)
+
+	ctx = app.SetContextTriggerCLI(ctx)
+
+	if err := scorchexe.Execute(ctx, exp, run); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+
+		err := util.HumanizeError(
+			err,
+			"%s",
+			fmt.Sprintf(
+				"Unable to start Scorch run %d for %s experiment",
+				run,
+				exp.Metadata.Name,
+			),
+		)
+
+		return err.Humanized()
+	}
+
+	plog.Info(plog.TypeSystem, "scorch run triggered", "exp", exp.Metadata.Name, "run", run)
+
+	return nil
 }
 
 func init() { //nolint:gochecknoinits // cobra command
@@ -1194,6 +1861,12 @@ func init() { //nolint:gochecknoinits // cobra command
 	experimentCmd.AddCommand(newExperimentTriggerCmd())
 	experimentCmd.AddCommand(newExperimentTriggerRunningCmd())
 	experimentCmd.AddCommand(newExperimentScorchCmd())
+	experimentCmd.AddCommand(newExperimentCaptureCmd())
 
 	addCommandToRoot(experimentCmd, true)
+}
+
+// sinceText returns the time since begun to the millisecond, as text such as 1.25s.
+func sinceText(begun time.Time) string {
+	return time.Since(begun).Round(time.Millisecond).String()
 }

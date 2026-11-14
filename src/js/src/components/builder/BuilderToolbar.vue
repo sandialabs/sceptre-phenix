@@ -548,8 +548,9 @@
   };
 
   // Each button's tooltip text, the keys that screen readers get as its
-  // description, and aria-keyshortcuts.
+  // description (in words), and aria-keyshortcuts.
   const tips = computed(() => {
+    const spoken = { spoken: true };
     const entries = Object.entries(TIPS).map(([key, entry]) => {
       const keys = shortcutLabel(entry.command);
 
@@ -557,31 +558,36 @@
         key,
         {
           text: keys ? `${entry.name} (${keys})` : '',
-          description: keys,
+          description: shortcutLabel(entry.command, spoken),
           aria: entry.local ? undefined : ariaShortcuts(entry.command),
         },
       ];
     });
-    const layoutText = withShortcut('Change layout', 'structure.layout');
     // The Auto-group key runs the first rule of the menu, by network.
-    const autoGroupKeys = shortcutLabel('structure.autoGroup.network');
-    const autoGroupText = `${
-      store.selection.nodes.length
-        ? 'Group the selected nodes automatically'
-        : 'Group the ungrouped nodes automatically'
-    }${autoGroupKeys ? `. ${autoGroupKeys} groups by network` : ''}`;
+    const autoGroupText = (options) => {
+      const keys = shortcutLabel('structure.autoGroup.network', options);
+
+      return `${
+        store.selection.nodes.length
+          ? 'Group the selected nodes automatically'
+          : 'Group the ungrouped nodes automatically'
+      }${keys ? `. ${keys} groups by network` : ''}`;
+    };
 
     return {
       ...Object.fromEntries(entries),
-      layout: { text: layoutText, description: layoutText },
-      autoGroup: { text: autoGroupText, description: autoGroupText },
+      layout: {
+        text: withShortcut('Change layout', 'structure.layout'),
+        description: withShortcut('Change layout', 'structure.layout', spoken),
+      },
+      autoGroup: { text: autoGroupText(), description: autoGroupText(spoken) },
       // Exp's name says which experiment it opens, as its tooltip does.
       experiment: {
         text: withShortcut(
           `Open experiment ${store.experimentName}`,
           'draft.experiment',
         ),
-        description: shortcutLabel('draft.experiment'),
+        description: shortcutLabel('draft.experiment', spoken),
         aria: ariaShortcuts('draft.experiment'),
       },
     };

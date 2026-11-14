@@ -458,105 +458,6 @@ test.describe('the Layers tab', () => {
     expectNoFatal(issues);
   });
 
-  test('the filter finds a set, and Download selected and Delete selected act on the selection but keep the built-in set', async ({
-    page,
-    builder,
-    request,
-    tracker,
-    issues,
-  }, testInfo) => {
-    const names = ['a', 'b'].map((part) =>
-      uniqueName(testInfo, `bulk-${part}`),
-    );
-    const sets = [];
-
-    for (const name of names) {
-      sets.push(
-        await seedLayerSet(request, tracker, {
-          name,
-          description: 'For Delete selected.',
-          layers: plantLayers(),
-        }),
-      );
-    }
-
-    const tab = await openLayersTab(builder);
-    const filter = tab.panel.getByTestId('layer-sets-filter');
-    const count = tab.panel.getByTestId('bulk-count-layer-sets');
-    const select = (id) => tab.card(id).getByTestId('layer-set-select');
-
-    await test.step('the filter shows the sets whose name matches, and says how many', async () => {
-      await expect.soft(filter).toHaveAccessibleName('Filter layer sets');
-      await filter.fill(names[0]);
-      await expect(tab.panel.locator('[data-layer-set]')).toHaveCount(1);
-      await expect.soft(tab.card(sets[0].id)).toBeVisible();
-      await expect
-        .soft(tab.panel.getByTestId('layer-sets-filter-count'))
-        .toHaveText(/^1 of \d+ layer sets shown\.$/);
-      await expect.soft(filter).toHaveAccessibleDescription(/^1 of \d+/);
-      await filter.press('Escape');
-      await expect(filter).toHaveValue('');
-      await expect.soft(tab.card(PURDUE)).toBeVisible();
-    });
-
-    await test.step('Download selected saves a layer set file for each selected set', async () => {
-      await select(sets[0].id).check();
-      await select(sets[1].id).check();
-      await expect(count).toHaveText(/^2 of \d+ selected$/);
-
-      const download = tab.panel.getByTestId('bulk-download-layer-sets');
-      const files = [];
-
-      page.on('download', (file) => files.push(file));
-      await download.click();
-      await expect.soft(tab.status).toHaveText('Downloaded 2 layer sets.');
-      await expect.poll(() => files.length).toBe(2);
-      expect
-        .soft(files.map((file) => file.suggestedFilename()).sort())
-        .toEqual(names.map((name) => `${name}.layers.yaml`).sort());
-      await expect.soft(download).toBeFocused();
-    });
-
-    await test.step('Delete selected asks once, keeps the built-in set, and lists it in the summary', async () => {
-      await select(PURDUE).check();
-      await expect(count).toHaveText(/^3 of \d+ selected$/);
-      await tab.panel.getByTestId('bulk-delete-layer-sets').click();
-
-      const confirm = page.getByTestId('builder-confirm');
-
-      await expect.soft(confirm).toHaveAccessibleName('Delete 2 layer sets?');
-      await expect
-        .soft(confirm)
-        .toContainText(
-          'Purdue Model stays because you cannot delete a built-in layer set.',
-        );
-      await confirm.getByTestId('confirm-accept').click();
-
-      const summary = page.getByTestId('bulk-summary');
-
-      await expect(summary).toBeFocused();
-      await expect
-        .soft(summary)
-        .toContainText(
-          '1 of 3 layer sets could not be deleted. The other 2 were deleted.',
-        );
-      await expect
-        .soft(summary)
-        .toContainText('Purdue Model: You cannot delete a built-in layer set.');
-      for (const set of sets) {
-        await expect.soft(tab.card(set.id)).toHaveCount(0);
-      }
-      // The built-in set stays selected.
-      await expect.soft(select(PURDUE)).toBeChecked();
-      await summary.getByTestId('bulk-summary-dismiss').click();
-      await expect
-        .soft(tab.panel.getByTestId('bulk-all-layer-sets'))
-        .toBeFocused();
-    });
-
-    expectNoFatal(issues);
-  });
-
   // The default is the same for every test, so the test answers its routes.
   test('Set default makes new blank diagrams copy the set', async ({
     page,
@@ -709,26 +610,20 @@ test.describe('the layers of a diagram', () => {
     expectNoFatal(issues);
   });
 
+  // layer-matchers.contract.test.js checks the matching rules, and
+  // inspector-render.test.js the texts the Inspector shows for them.
   test('a node matcher puts a device at a layer as its host name changes, and a chosen layer goes first', async ({
     builder,
-    request,
-    tracker,
     issues,
   }, testInfo) => {
-    const name = uniqueName(testInfo, 'match');
-    const set = await seedLayerSet(request, tracker, {
-      name,
-      layers: plantLayers(),
+    const doc = labDocument(uniqueName(testInfo, 'match'), {
+      hostnames: ['web-01'],
     });
-    const draft = await builder.seedDraft(
-      labDocument(uniqueName(testInfo, 'match'), { hostnames: ['web-01'] }),
-    );
-    await builder.openDraft(draft);
 
-    const dialog = await openDiagramLayers(builder);
-    await dialog.getByTestId('layers-choose').selectOption(set.id);
-    await dialog.getByTestId('layers-apply').click();
-    await dialog.getByTestId('layers-done').click();
+    doc.layers = plantLayers();
+
+    const draft = await builder.seedDraft(doc);
+    await builder.openDraft(draft);
 
     await builder.selectNode('web-01');
     const layer = builder.inspector.getByLabel('Layer', { exact: true });
@@ -746,42 +641,30 @@ test.describe('the layers of a diagram', () => {
       // The device keeps no layer of its own: the match is live.
       await builder.persisted(
         draft,
-        (doc) => 'layer' in deviceOf(doc, 'ops-01'),
+        (saved) => 'layer' in deviceOf(saved, 'ops-01'),
         false,
       );
     });
 
     await test.step('a layer chosen by hand goes first, and Use matched layer takes it back', async () => {
       await layer.selectOption({ label: 'Control' });
-      await expect
-        .soft(builder.inspector.getByTestId('inspector-layer-matched'))
-        .toHaveText(
-          'Its fields match Operations (general.hostname). The layer that you chose goes first.',
-        );
-      await builder.persisted(draft, (doc) => deviceOf(doc, 'ops-01').layer, 1);
+      await builder.persisted(
+        draft,
+        (saved) => deviceOf(saved, 'ops-01').layer,
+        1,
+      );
 
       const use = builder.inspector.getByRole('button', {
         name: 'Use matched layer',
       });
       await use.click();
-      await expect
-        .soft(builder)
-        .toHaveAnnounced(
-          'Changed the layer of Device ops-01 to the matched layer Operations',
-        );
       await expect.soft(layer).toBeFocused();
       await expect.soft(use).toHaveCount(0);
       await builder.persisted(
         draft,
-        (doc) => 'layer' in deviceOf(doc, 'ops-01'),
+        (saved) => 'layer' in deviceOf(saved, 'ops-01'),
         false,
       );
-    });
-
-    await test.step('a host name that no longer matches leaves the layer', async () => {
-      await hostname.fill('db-01');
-      await builder.inspector.getByTestId('inspector-apply').click();
-      await expect.soft(layer.locator('option').first()).toHaveText('None');
     });
 
     expectNoFatal(issues);

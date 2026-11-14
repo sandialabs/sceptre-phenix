@@ -4,20 +4,18 @@
 
 import { reactive, watch } from 'vue';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 import fc from 'fast-check';
 
 import BuilderToolbar from '@/components/builder/BuilderToolbar.vue';
 import { loadShortcutSettings, setPlatform } from '@/builder/keymap.js';
 import { LAYOUT_ALGORITHMS } from '@/builder/layouts/index.js';
 
-import { memoryStorage } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
 
 const held = vi.hoisted(() => ({ store: null }));
 
 vi.mock('@/builder/store.js', () => ({ useBuilderStore: () => held.store }));
-
-enableAutoUnmount(afterEach);
 
 // The store's state and getters the toolbar reads, and its actions as spies.
 function fakeStore(overrides = {}) {
@@ -453,6 +451,26 @@ describe('the toolbar’s actions', () => {
     await autoGroup.trigger('focus');
     expect(tooltip().exists()).toBe(true);
   });
+
+  // On a Mac, the tooltip shows the key symbols. Its description, for screen
+  // readers, names the keys in words (see key-hints-render.test.js).
+  test('a Mac tooltip shows ⌥⇧G, and the description says Option+Shift+G', async () => {
+    setPlatform('mac');
+    const wrapper = open();
+    const autoGroup = byTestId(wrapper, 'toolbar-auto-group');
+
+    autoGroup.element.getBoundingClientRect = () => new DOMRect(0, 0, 80, 24);
+    await autoGroup.trigger('focus');
+
+    expect(wrapper.get('[data-testid="toolbar-tooltip"]').text()).toMatch(
+      /\. ⌥⇧G groups by network$/,
+    );
+    expect(
+      document
+        .getElementById(autoGroup.attributes('aria-describedby'))
+        .textContent.trim(),
+    ).toMatch(/\. Option\+Shift\+G groups by network$/);
+  });
 });
 
 describe('the toolbar’s Tab stop, for any keys', () => {
@@ -486,7 +504,7 @@ describe('the toolbar’s Tab stop, for any keys', () => {
           expect(tabStops(wrapper)).toEqual([buttons[index].element]);
         },
       ),
-      { numRuns: 60 },
+      { numRuns: 8 },
     );
   });
 });

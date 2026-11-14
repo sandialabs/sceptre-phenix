@@ -1,7 +1,15 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"math"
+	"os"
+	"os/signal"
+	"strconv"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -12,9 +20,46 @@ import (
 	"phenix/web"
 )
 
-const defaultJWTLifetime = 24 * time.Hour
+const (
+	defaultJWTLifetime = 24 * time.Hour
+	// a process ended by signal n exits with signalExitBase + n.
+	signalExitBase = 128
+	// the longest ui.shutdown-grace-period a [time.Duration] holds.
+	maxShutdownGraceSeconds = int64(math.MaxInt64 / time.Second)
+	// ui.netflow.max-size and ui.captures.max-size are in MiB, 1 << mibShift bytes, and their bytes fit an int64.
+	mibShift      = 20
+	maxSizeMaxMiB = int64(math.MaxInt64 >> mibShift)
+)
 
 var uiCmd *cobra.Command //nolint:gochecknoglobals // ui command
+
+// uiSettings are the phenix ui flags also read from the ui.<flag> setting and
+// the PHENIX_UI_<FLAG> environment variable.
+//
+//nolint:gochecknoglobals // constant list
+var uiSettings = []string{
+	"listen-endpoint", "base-path", "jwt-signing-key", "jwt-lifetime", "file-server-endpoint",
+	"proxy-auth-header", "users", "tls-key", "tls-cert", "logs.minimega-path", "logs.level",
+	"features", "minimega-console", "shutdown-grace-period", "netflow.max-size", "unix-socket-gid", "captures.max-size",
+}
+
+const (
+	keyUnixSocketGID = "ui.unix-socket-gid"
+	// legacyKeyUnixSocketGID is the deprecated key of ui.unix-socket-gid, also
+	// read from PHENIX_UNIX_SOCKET_GID.
+	legacyKeyUnixSocketGID = "unix-socket-gid"
+)
+
+// unixSocketGIDKey is the key that phenix ui reads the unix socket group
+// from: ui.unix-socket-gid, or the deprecated unix-socket-gid when only that
+// key is set. The bool is true for the deprecated key.
+func unixSocketGIDKey(v *viper.Viper) (string, bool) {
+	if !v.IsSet(keyUnixSocketGID) && v.IsSet(legacyKeyUnixSocketGID) {
+		return legacyKeyUnixSocketGID, true
+	}
+
+	return keyUnixSocketGID, false
+}
 
 //nolint:funlen // command definition
 func newUICmd() *cobra.Command {
@@ -26,7 +71,29 @@ func newUICmd() *cobra.Command {
 		Short: "Run the phenix UI",
 		Long:  desc,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := web.Init()
+			grace, err := shutdownGracePeriod(viper.GetViper())
+			if err != nil {
+				return err
+			}
+
+			netflowMax, err := netflowMaxSize(viper.GetViper())
+			if err != nil {
+				return err
+			}
+
+			captureMax, err := captureMaxSize(viper.GetViper())
+			if err != nil {
+				return err
+			}
+
+			watchRestartSettings()
+
+			gidKey, deprecated := unixSocketGIDKey(viper.GetViper())
+			if deprecated {
+				warnDeprecatedSetting(cmd.ErrOrStderr(), gidKey)
+			}
+
+			err = web.Init()
 			if err != nil {
 				return fmt.Errorf("initializing web package: %w", err)
 			}
@@ -36,13 +103,17 @@ func newUICmd() *cobra.Command {
 				web.ServeBasePath(viper.GetString("ui.base-path")),
 				web.ServeFileServerEndpoint(viper.GetString("ui.file-server-endpoint")),
 				web.ServeWithJWTKey(viper.GetString("ui.jwt-signing-key")),
-				web.ServeWithJWTLifetime(viper.GetDuration("ui.jwt-lifetime")),
-				web.ServeWithUsers(viper.GetStringSlice("ui.users")),
+				web.ServeWithJWTLifetime(viper.GetDuration(keyJWTLifetime)),
+				web.ServeWithUsers(viper.GetStringSlice(keyUIUsers)),
 				web.ServeWithTLS(viper.GetString("ui.tls-key"), viper.GetString("ui.tls-cert")),
 				web.ServeMinimegaLogs(viper.GetString("ui.logs.minimega-path")),
 				web.ServeWithFeatures(viper.GetStringSlice("ui.features")),
 				web.ServeWithProxyAuthHeader(viper.GetString("ui.proxy-auth-header")),
-				web.ServeWithUnixSocketGID(viper.GetInt("unix-socket-gid")),
+				web.ServeWithUnixSocketGID(viper.GetInt(gidKey)),
+				web.ServeWithShutdownGracePeriod(grace),
+				web.ServeWithNetflowMaxSize(netflowMax),
+				web.ServeWithRuntimeSettings(runtimeSettings(cmd.Root(), viper.GetViper())),
+				web.ServeWithCaptureMaxSize(captureMax),
 			}
 
 			if level := viper.GetString("ui.logs.level"); level != "" {
@@ -58,19 +129,22 @@ func newUICmd() *cobra.Command {
 				opts = append(opts, web.ServeMinimegaConsole(true))
 			}
 
-			if MustGetBool(cmd.Flags(), "log-requests") {
+			if mustGet(cmd.Flags().GetBool, "log-requests") {
 				opts = append(opts, web.ServeWithMiddlewareLogging("requests"))
 			}
 
-			if MustGetBool(cmd.Flags(), "log-full") {
+			if mustGet(cmd.Flags().GetBool, "log-full") {
 				opts = append(opts, web.ServeWithMiddlewareLogging("full"))
 			}
 
-			if MustGetBool(cmd.Flags(), "unbundled") {
+			if mustGet(cmd.Flags().GetBool, "unbundled") {
 				opts = append(opts, web.ServeUnbundled())
 			}
 
-			err = web.Start(opts...)
+			ctx, stop := notifyShutdown(cmd.Context(), os.Exit)
+			defer stop()
+
+			err = web.Start(ctx, opts...)
 			if err != nil {
 				return util.HumanizeError(err, "Unable to serve UI").Humanized()
 			}
@@ -88,42 +162,41 @@ func newUICmd() *cobra.Command {
 	uiCmd.Flags().String("file-server-endpoint", "0", "port or host:port to serve experiment file uploads on; port-only binds 127.0.0.1")
 	uiCmd.Flags().
 		String("proxy-auth-header", "", "header containing username when using proxy authentication")
-	uiCmd.Flags().StringSlice("users", nil, "pipe-delimited list of initial users to add")
+	uiCmd.Flags().StringSlice(
+		"users",
+		nil,
+		"initial users to add, each as <username>:<password>:<role>[:<resource name>...] (comma-separated or repeated)",
+	)
 	uiCmd.Flags().String("tls-key", "", "path to TLS key file")
 	uiCmd.Flags().String("tls-cert", "", "path to TLS cert file")
 	uiCmd.Flags().Bool("unbundled", false, "serve local public files instead of bundled")
+	uiCmd.Flags().Int("unix-socket-gid", -1, "ID of a group that may write to the unix socket (-1 does not change the group)")
 	uiCmd.Flags().String("logs.minimega-path", "", "path to minimega log file to publish to UI")
 	uiCmd.Flags().String("logs.level", "", "log level to publish to UI. Defaults to file level")
-	uiCmd.Flags().StringSlice("features", nil, "list of features to enable (options: vm-mount)")
+	uiCmd.Flags().StringSlice(
+		"features", nil, "list of features to enable (options: vm-mount, minimega-captures)",
+	)
 	uiCmd.Flags().Bool("minimega-console", false, "enable minimega console access in UI")
+	uiCmd.Flags().Int(
+		"shutdown-grace-period",
+		int(web.DefaultShutdownGracePeriod/time.Second),
+		"how many seconds stopping the server may take to close connections and finish work (0 does not wait)",
+	)
+	uiCmd.Flags().Int(
+		"netflow.max-size",
+		web.DefaultNetflowMaxSize>>mibShift,
+		"maximum size in megabytes of each recorded netflow capture (0 does not record)",
+	)
+	uiCmd.Flags().Int64(
+		"captures.max-size",
+		web.DefaultCaptureMaxSize,
+		"maximum size in megabytes of each packet capture file that minimega writes (0 sets no limit)",
+	)
 
-	_ = viper.BindPFlag("ui.listen-endpoint", uiCmd.Flags().Lookup("listen-endpoint"))
-	_ = viper.BindPFlag("ui.base-path", uiCmd.Flags().Lookup("base-path"))
-	_ = viper.BindPFlag("ui.jwt-signing-key", uiCmd.Flags().Lookup("jwt-signing-key"))
-	_ = viper.BindPFlag("ui.jwt-lifetime", uiCmd.Flags().Lookup("jwt-lifetime"))
-	_ = viper.BindPFlag("ui.file-server-endpoint", uiCmd.Flags().Lookup("file-server-endpoint"))
-	_ = viper.BindPFlag("ui.proxy-auth-header", uiCmd.Flags().Lookup("proxy-auth-header"))
-	_ = viper.BindPFlag("ui.users", uiCmd.Flags().Lookup("users"))
-	_ = viper.BindPFlag("ui.tls-key", uiCmd.Flags().Lookup("tls-key"))
-	_ = viper.BindPFlag("ui.tls-cert", uiCmd.Flags().Lookup("tls-cert"))
-	_ = viper.BindPFlag("ui.logs.minimega-path", uiCmd.Flags().Lookup("logs.minimega-path"))
-	_ = viper.BindPFlag("ui.logs.level", uiCmd.Flags().Lookup("logs.level"))
-	_ = viper.BindPFlag("ui.features", uiCmd.Flags().Lookup("features"))
-	_ = viper.BindPFlag("ui.minimega-console", uiCmd.Flags().Lookup("minimega-console"))
-
-	_ = viper.BindEnv("ui.listen-endpoint")
-	_ = viper.BindEnv("ui.base-path")
-	_ = viper.BindEnv("ui.jwt-signing-key")
-	_ = viper.BindEnv("ui.jwt-lifetime")
-	_ = viper.BindEnv("ui.file-server-endpoint")
-	_ = viper.BindEnv("ui.proxy-auth-header")
-	_ = viper.BindEnv("ui.users")
-	_ = viper.BindEnv("ui.tls-key")
-	_ = viper.BindEnv("ui.tls-cert")
-	_ = viper.BindEnv("ui.logs.minimega-path")
-	_ = viper.BindEnv("ui.logs.level")
-	_ = viper.BindEnv("ui.features")
-	_ = viper.BindEnv("ui.minimega-console")
+	for _, name := range uiSettings {
+		_ = viper.BindPFlag("ui."+name, uiCmd.Flags().Lookup(name))
+		_ = viper.BindEnv("ui." + name)
+	}
 
 	uiCmd.Flags().Bool("log-requests", false, "Log HTTP requests")
 	uiCmd.Flags().
@@ -131,12 +204,122 @@ func newUICmd() *cobra.Command {
 
 	_ = uiCmd.Flags().MarkHidden("log-full")
 
-	uiCmd.Flags().Int("unix-socket-gid", -1, "group id to allow writes to the unix socket")
-	_ = uiCmd.Flags().MarkHidden("unix-socket-gid")
-	_ = viper.BindPFlag("unix-socket-gid", uiCmd.Flags().Lookup("unix-socket-gid"))
-	_ = viper.BindEnv("unix-socket-gid")
+	_ = viper.BindEnv(legacyKeyUnixSocketGID)
 
 	return uiCmd
+}
+
+// shutdownGracePeriod returns ui.shutdown-grace-period from v, which must be a
+// whole number of seconds, such as 5, and not negative.
+func shutdownGracePeriod(v *viper.Viper) (time.Duration, error) {
+	value := v.GetString("ui.shutdown-grace-period")
+
+	seconds, err := strconv.ParseInt(value, 10, 64)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0, fmt.Errorf(
+			"invalid ui.shutdown-grace-period %q: it must be a whole number of seconds, such as 5", value,
+		)
+	}
+
+	if seconds < 0 {
+		return 0, fmt.Errorf("invalid ui.shutdown-grace-period %q: it must not be negative", value)
+	}
+
+	if seconds > maxShutdownGraceSeconds {
+		return 0, fmt.Errorf(
+			"invalid ui.shutdown-grace-period %q: it must be at most %d seconds", value, maxShutdownGraceSeconds,
+		)
+	}
+
+	return time.Duration(seconds) * time.Second, nil
+}
+
+// netflowMaxSize returns ui.netflow.max-size from v, a whole number of MiB
+// that is not negative, in bytes.
+func netflowMaxSize(v *viper.Viper) (int64, error) {
+	mib, err := mibSetting(v, "ui.netflow.max-size", "100")
+	if err != nil {
+		return 0, err
+	}
+
+	return mib << mibShift, nil
+}
+
+// captureMaxSize returns ui.captures.max-size from v, a whole number of MiB
+// that is not negative, in MiB.
+func captureMaxSize(v *viper.Viper) (int64, error) {
+	return mibSetting(v, keyCaptureMaxSize, "10240")
+}
+
+// mibSetting returns the setting key from v, a whole number of MiB, such as
+// example, that is not negative and whose bytes fit an int64.
+func mibSetting(v *viper.Viper, key, example string) (int64, error) {
+	value := v.GetString(key)
+
+	mib, err := strconv.ParseInt(value, 10, 64)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0, fmt.Errorf("invalid %s %q: it must be a whole number of megabytes, such as %s", key, value, example)
+	}
+
+	if mib < 0 {
+		return 0, fmt.Errorf("invalid %s %q: it must not be negative", key, value)
+	}
+
+	if mib > maxSizeMaxMiB {
+		return 0, fmt.Errorf("invalid %s %q: it must be at most %d megabytes", key, value, maxSizeMaxMiB)
+	}
+
+	return mib, nil
+}
+
+// notifyShutdown returns a copy of parent canceled, with a web.SignalError, by
+// the first SIGINT or SIGTERM; a second one calls exit with 128 + its number.
+func notifyShutdown(parent context.Context, exit func(code int)) (context.Context, func()) {
+	ctx, cancel := context.WithCancelCause(parent)
+
+	var (
+		signals = make(chan os.Signal, 1)
+		stopped = make(chan struct{})
+		once    sync.Once
+	)
+
+	// kept after the first signal: PID 1 in a container, or a process started
+	// with SIGINT ignored, has no fatal default to fall back on
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		select {
+		case sig := <-signals:
+			cancel(web.SignalError{Signal: sig})
+		case <-stopped:
+			return
+		}
+
+		select {
+		case sig := <-signals:
+			plog.Warn(plog.TypeSystem, "exiting immediately on a second signal", "signal", sig.String())
+			exit(signalExitCode(sig))
+		case <-stopped:
+		}
+	}()
+
+	return ctx, func() {
+		once.Do(func() {
+			signal.Stop(signals)
+			close(stopped)
+			cancel(nil)
+		})
+	}
+}
+
+// signalExitCode is the exit status of a process ended by sig, as a shell
+// reports it.
+func signalExitCode(sig os.Signal) int {
+	if s, ok := sig.(syscall.Signal); ok {
+		return signalExitBase + int(s)
+	}
+
+	return 1
 }
 
 func init() { //nolint:gochecknoinits // cobra command

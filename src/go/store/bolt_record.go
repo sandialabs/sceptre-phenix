@@ -191,7 +191,7 @@ func (b *BoltDB) RecordTxn(fn func(RecordTx) error) error {
 		return err
 	}
 
-	defer func() { _ = b.Close() }()
+	defer func() { _ = b.close() }()
 
 	var fnErr error
 
@@ -392,13 +392,7 @@ func (t boltRecordTx) deletePrefix(namespace, prefix string) (int, error) {
 
 // viewRecords runs fn in one Bolt read transaction.
 func (b *BoltDB) viewRecords(fn func(*bbolt.Tx) error) error {
-	if err := b.open(); err != nil {
-		return err
-	}
-
-	defer func() { _ = b.Close() }()
-
-	return b.db.View(fn) //nolint:wrapcheck // the callers wrap it with what they read
+	return b.view(fn)
 }
 
 func validateRecordNamespaceAndKey(namespace, key string) error {
@@ -497,9 +491,9 @@ func decodeBoltRecord(v []byte) (boltRecord, error) {
 func encodeBoltRecord(stored boltRecord) []byte {
 	v := make([]byte, boltRecordHeaderSize, boltRecordHeaderSize+len(stored.value))
 	v[0] = boltRecordFormat
-	binary.BigEndian.PutUint64(v[1:9], uint64(stored.revision))             //nolint:gosec // revisions are never negative
-	binary.BigEndian.PutUint64(v[9:17], uint64(stored.created.UnixNano()))  //nolint:gosec // read back as an int64
-	binary.BigEndian.PutUint64(v[17:25], uint64(stored.updated.UnixNano())) //nolint:gosec // read back as an int64
+	binary.BigEndian.PutUint64(v[1:9], uint64(stored.revision)) //nolint:gosec // revisions are never negative
+	binary.BigEndian.PutUint64(v[9:17], uint64(stored.created.UnixNano()))
+	binary.BigEndian.PutUint64(v[17:25], uint64(stored.updated.UnixNano()))
 
 	return append(v, stored.value...)
 }

@@ -258,13 +258,35 @@ async function contrast(locator, property = 'color') {
   }, property);
 }
 
-// Fails on serious or critical axe violations. `soft` records the failure and
-// goes on, and `label` names the surface. Chromium only.
+// Fails on serious or critical axe violations (`soft` goes on, `label` names
+// the surface). Chromium only, and only in @axe tests: else it throws.
 async function expectAccessible(
   page,
   { include = '.builder-root', soft = false, label = '' } = {},
 ) {
   if (!isChromium(page)) return;
+  if (!base.test.info().tags.includes('@axe')) {
+    throw new Error(
+      `axe scans run only in @axe tests: tag this test '@axe' or remove the scan${label ? ` (${label})` : ''}`,
+    );
+  }
+  // A theme switch fades button colors: scan once no short animation runs.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            document
+              .getAnimations()
+              .filter(
+                (a) =>
+                  a.playState === 'running' &&
+                  a.effect?.getComputedTiming().endTime < 5000,
+              ).length,
+        ),
+      { timeout: 5000 },
+    )
+    .toBe(0);
   const results = await new AxeBuilder({ page })
     .include(include)
     .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])

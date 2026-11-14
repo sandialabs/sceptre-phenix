@@ -11,7 +11,7 @@ import {
   toggledSections,
 } from '@/builder/paletteSections.js';
 
-import { memoryStorage } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
 
 describe('the collapsed sections of the palette', () => {
   test('a press collapses a section, and a second press expands it', () => {

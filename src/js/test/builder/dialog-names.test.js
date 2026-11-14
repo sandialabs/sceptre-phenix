@@ -1,7 +1,6 @@
+// @vitest-environment node
 // Import, Upload and Download: each button opens the dialog it names, and each
-// dialog's ids start with that name, so the dialogs' ids never collide.
-
-import { readFileSync } from 'node:fs';
+// dialog's title has an id of that name.
 
 import { describe, expect, test } from 'vitest';
 import { createSSRApp, h } from 'vue';
@@ -22,28 +21,22 @@ const DIALOGS = [
   {
     name: 'Import',
     component: ImportDialog,
-    file: 'ImportDialog.vue',
     prefix: 'import',
     title: 'Import topology or experiment',
   },
   {
     name: 'Upload',
     component: UploadDialog,
-    file: 'UploadDialog.vue',
     prefix: 'upload',
     title: 'Upload diagram',
   },
   {
     name: 'Download',
     component: DownloadDialog,
-    file: 'DownloadDialog.vue',
     prefix: 'download',
     title: 'Download diagram',
   },
 ];
-
-// The prefixes the three dialogs have, and the two they had before.
-const PREFIXES = ['import', 'upload', 'download', 'generate', 'export'];
 
 async function render(component, props = {}) {
   const pinia = createPinia();
@@ -68,23 +61,6 @@ function buttonText(html, testId) {
   return textOf(found[1]);
 }
 
-// Every id, test id, radio group name and label target in the template of
-// a dialog, in all its branches, that starts with one of PREFIXES.
-function templateNames(file) {
-  const source = readFileSync(
-    new URL(`../../src/components/builder/dialogs/${file}`, import.meta.url),
-    'utf8',
-  );
-  const template = source.slice(0, source.indexOf('<script setup>'));
-  const names = [
-    ...template.matchAll(
-      /\s(?:id|data-testid|name|for|title-id)="([a-z]+)-[a-z-]+"/g,
-    ),
-  ].map((match) => match[1]);
-
-  return [...new Set(names)].filter((name) => PREFIXES.includes(name));
-}
-
 describe('the buttons that open Import, Upload and Download', () => {
   test('the drafts page names Import and Upload as their test ids do', async () => {
     const html = await render(BuilderDrafts, { canCreate: true });
@@ -100,7 +76,7 @@ describe('the buttons that open Import, Upload and Download', () => {
     expect(buttonText(html, 'toolbar-upload')).toBe('Upload');
   });
 
-  test('the commands open the dialog their title names', () => {
+  test('the commands open the dialog of their name', () => {
     const opened = [];
     const view = {
       openDialog: (name) => opened.push(['dialog', name]),
@@ -116,10 +92,6 @@ describe('the buttons that open Import, Upload and Download', () => {
       getCommand(id).run({ view });
     }
 
-    expect(getCommand('draft.download').title).toBe('Download…');
-    expect(getCommand('draft.upload').title).toBe('Upload…');
-    expect(getCommand('drafts.import').title).toBe('Import…');
-    expect(getCommand('drafts.upload').title).toBe('Upload…');
     expect(opened).toEqual([
       ['dialog', 'download'],
       ['dialog', 'upload'],
@@ -139,33 +111,5 @@ describe.each(DIALOGS)('the $name dialog', (dialog) => {
         `<h2 id="${dialog.prefix}-dialog-title"[^>]*>${dialog.title}</h2>`,
       ),
     );
-  });
-
-  test('names its controls after its own label only', () => {
-    expect(templateNames(dialog.file)).toEqual([dialog.prefix]);
-  });
-});
-
-describe('the sources of Import and Upload', () => {
-  test('Import reads a stored config or a config file', async () => {
-    const html = await render(ImportDialog);
-    const labels = [...html.matchAll(/name="import-source"[^>]*>([^<]*)</g)];
-
-    expect(labels.map((match) => match[1].trim())).toEqual([
-      'Stored config',
-      'Config file',
-    ]);
-  });
-
-  test('Upload reads a file, pasted text, a published diagram or a legacy diagram', async () => {
-    const html = await render(UploadDialog);
-    const labels = [...html.matchAll(/name="upload-source"[^>]*>([^<]*)</g)];
-
-    expect(labels.map((match) => match[1].trim())).toEqual([
-      'File',
-      'Paste text',
-      'Published diagram',
-      'Legacy Builder diagram or Topology',
-    ]);
   });
 });

@@ -14,11 +14,11 @@ import (
 	v1 "phenix/types/version/v1"
 )
 
-func DecodeTopologyFromConfig(c store.Config) (ifaces.TopologySpec, error) { //nolint:ireturn // interface
+func DecodeTopologyFromConfig(c store.Config) (ifaces.TopologySpec, error) {
 	return decodeTopologyRecursive(c, map[string]bool{})
 }
 
-func decodeTopologyRecursive( //nolint:ireturn // interface
+func decodeTopologyRecursive(
 	c store.Config,
 	visited map[string]bool,
 ) (ifaces.TopologySpec, error) {

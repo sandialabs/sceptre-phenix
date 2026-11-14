@@ -154,7 +154,7 @@ func TestVLANAliasCompletion(t *testing.T) {
 		{
 			name:      "missing experiment",
 			args:      []string{"missing"},
-			directive: cobra.ShellCompDirectiveError,
+			directive: cobra.ShellCompDirectiveNoFileComp,
 		},
 		{
 			name:      "vlan id",

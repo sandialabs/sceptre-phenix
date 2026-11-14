@@ -276,7 +276,7 @@ func builderCodedError(err error) error {
 	issues := bdoc.ErrorIssues(err)
 
 	if web.Code == "" {
-		web.Code = string(builderErrorCode(err, web.Status, issues))
+		web.Code = weberror.Code(builderErrorCode(err, web.Status, issues))
 	}
 
 	if web.Issues == nil && len(issues) > 0 {
@@ -344,7 +344,7 @@ func builderWebError(err error, format string, args ...any) *weberror.WebError {
 		return webErr.SetStatus(http.StatusNotFound)
 	case errors.As(err, &conflict) && conflict.Kind == bapi.KindDraft:
 		// The draft changed between the handler's read and the write.
-		return webErr.SetStatus(http.StatusConflict).WithCode(string(bdoc.CodeDraftConflict))
+		return webErr.SetStatus(http.StatusConflict).WithCode(weberror.Code(bdoc.CodeDraftConflict))
 	case errors.Is(err, bapi.ErrConflict):
 		return webErr.SetStatus(http.StatusConflict)
 	case errors.Is(err, bapi.ErrTooLarge):
@@ -421,7 +421,7 @@ func builderCheckIfMatch(w http.ResponseWriter, ifMatch string, meta *bapi.Draft
 	w.Header().Set("ETag", meta.ETag())
 
 	return weberror.NewWebError(nil, "draft %s changed after you last read it", meta.ID).
-		SetStatus(http.StatusPreconditionFailed).WithCode(string(bdoc.CodeDraftStale))
+		SetStatus(http.StatusPreconditionFailed).WithCode(weberror.Code(bdoc.CodeDraftStale))
 }
 
 // builderDecode strictly decodes a JSON request body into target. It
@@ -550,11 +550,15 @@ func builderPath(path string) bool {
 }
 
 // builderMethodNotAllowed answers a request that matches a route path but none of its methods.
-// Under the Builder paths it answers 405 with Allow and a refusal code. Other paths get the status alone.
-func builderMethodNotAllowed(router *mux.Router) http.HandlerFunc {
+// Under the Builder paths it answers 405 with Allow and a refusal code. Other paths go to other, or get the status alone.
+func builderMethodNotAllowed(router *mux.Router, other http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !builderPath(r.URL.Path) {
-			w.WriteHeader(http.StatusMethodNotAllowed)
+			if other != nil {
+				other.ServeHTTP(w, r)
+			} else {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
 
 			return
 		}
@@ -564,7 +568,7 @@ func builderMethodNotAllowed(router *mux.Router) http.HandlerFunc {
 		}
 
 		refusal := weberror.NewWebError(nil, "this path does not allow the %s method", r.Method).
-			WithCode(string(bdoc.CodeRequestMethodNotAllowed))
+			WithCode(weberror.Code(bdoc.CodeRequestMethodNotAllowed))
 
 		_ = builderWriteJSON(w, http.StatusMethodNotAllowed, "", refusal)
 	}
@@ -636,12 +640,7 @@ func (b *builderAPI) routes(router *mux.Router) {
 		router.NotFoundHandler = builderResponseHeaders(router.NotFoundHandler)
 	}
 
-	notAllowed := router.MethodNotAllowedHandler
-	if notAllowed == nil {
-		notAllowed = builderMethodNotAllowed(router)
-	}
-
-	router.MethodNotAllowedHandler = builderResponseHeaders(notAllowed)
+	router.MethodNotAllowedHandler = builderResponseHeaders(builderMethodNotAllowed(router, router.MethodNotAllowedHandler))
 
 	// It comes first, so OPTIONS never reaches a route registered after it,
 	// such as /schemas/{kind}/{version} for /schemas/builder/v1.
@@ -695,7 +694,7 @@ func builderSchemaHandler(handler, name string, schema func() ([]byte, error)) f
 
 		w.Header().Set("Content-Type", mimeJSON)
 
-		_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+		_, _ = w.Write(body)
 
 		return nil
 	}

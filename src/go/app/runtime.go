@@ -1,0 +1,105 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sync"
+
+	"phenix/types"
+	"phenix/util/mm"
+)
+
+type stageRuntimeKey struct{}
+
+// stageRuntime is the cluster host and VM details handed to the external apps
+// of one ApplyApps run. It is read from minimega for the first of them and
+// reused for the rest, rather than costing a `host` and a `vm info` on every
+// cluster node per app.
+type stageRuntime struct {
+	mu    sync.Mutex
+	read  bool
+	hosts mm.Hosts
+	vms   mm.VMs
+}
+
+// PopulateRuntime adds current minimega host and VM details to an experiment.
+// Its host read gives up once ctx is done.
+func PopulateRuntime(ctx context.Context, exp *types.Experiment) error {
+	hosts, vms, err := readRuntime(ctx, exp)
+	if err != nil {
+		return err
+	}
+
+	exp.Hosts = hosts
+	exp.VMs = vms
+
+	return nil
+}
+
+// ErrRuntimeUnknown is wrapped by the error of PopulateObservedRuntime when
+// minimega does not report every VM of the experiment.
+var ErrRuntimeUnknown = errors.New("minimega did not report every VM")
+
+// PopulateObservedRuntime is PopulateRuntime for a request: its minimega
+// commands give up once ctx is done, and a VM list that minimega did not
+// report in full is an error that wraps ErrRuntimeUnknown, not a partial list.
+func PopulateObservedRuntime(ctx context.Context, exp *types.Experiment) error {
+	hosts, _, err := mm.GetClusterHostsObserved(ctx, true, false)
+	if err != nil {
+		return fmt.Errorf("getting cluster hosts: %w", err)
+	}
+
+	vms, observed := mm.GetVMInfoObserved(mm.NS(exp.Spec.ExperimentName()), mm.Context(ctx))
+	if !observed.Known {
+		return errors.Join(ErrRuntimeUnknown, observed.Err)
+	}
+
+	exp.Hosts = hosts
+	exp.VMs = vms
+
+	return nil
+}
+
+// withStageRuntime returns a context whose external apps share one reading of
+// the runtime details (see populateStageRuntime).
+func withStageRuntime(ctx context.Context) context.Context {
+	return context.WithValue(ctx, stageRuntimeKey{}, new(stageRuntime))
+}
+
+// populateStageRuntime is PopulateRuntime, reusing the details already read
+// for an earlier app of the same ApplyApps run, if any.
+func populateStageRuntime(ctx context.Context, exp *types.Experiment) error {
+	rt, ok := ctx.Value(stageRuntimeKey{}).(*stageRuntime)
+	if !ok {
+		return PopulateRuntime(ctx, exp)
+	}
+
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+
+	if !rt.read {
+		hosts, vms, err := readRuntime(ctx, exp)
+		if err != nil {
+			return err
+		}
+
+		rt.hosts, rt.vms, rt.read = hosts, vms, true
+	}
+
+	exp.Hosts = rt.hosts
+	exp.VMs = rt.vms
+
+	return nil
+}
+
+// readRuntime reads the schedulable hosts, without their disk usage, and the
+// experiment's VMs. The host read gives up once ctx is done.
+func readRuntime(ctx context.Context, exp *types.Experiment) (mm.Hosts, mm.VMs, error) {
+	cluster, _, err := mm.GetClusterHostsObserved(ctx, true, false)
+	if err != nil {
+		return nil, nil, fmt.Errorf("getting cluster hosts: %w", err)
+	}
+
+	return cluster, mm.GetVMInfo(mm.NS(exp.Spec.ExperimentName())), nil
+}

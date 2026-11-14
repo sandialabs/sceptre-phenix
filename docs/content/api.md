@@ -37,26 +37,36 @@ available in two places:
 
 The API docs are organized by tag (`Configs`, `Experiments`, `Virtual
 Machines`, `Hosts`, `Applications`, `Topologies`, `Disks`, `Users`,
-`Workflow`, etc.) and document every available endpoint, including request
-parameters and response schemas.
+`Workflow`, `Jobs`, `Events`, etc.) and document every route, including request
+parameters, response schemas and status codes.
 
 !!! info
     The underlying OpenAPI spec is maintained at
     [`src/go/web/public/docs/openapi.yml`](https://github.com/sandialabs/sceptre-phenix/blob/main/src/go/web/public/docs/openapi.yml)
     in the [sceptre-phenix](https://github.com/sandialabs/sceptre-phenix)
     repository, and is rendered to static HTML with
-    [Redoc](https://github.com/Redocly/redoc) as part of the phēnix build.
+    [Redoc](https://github.com/Redocly/redoc) as part of the phēnix build:
+    container images, Debian packages, this site, and binaries built with
+    `make build` all use the Redocly CLI version pinned in
+    `scripts/api-docs.sh`. Run `make api-docs` to render it locally.
 
 ## Authentication
 
 If UI/API authentication is enabled (see
 [User Authn/Authz](user-administration.md)), API requests must include an
-auth token generated from the `Users` tab in the web UI, passed as the
-`X-phenix-auth-token` header:
+auth token generated from the `Users` page (in the `Admin` menu) of the web
+UI, passed as the `X-Phenix-Auth-Token` header, which must carry the token as `Bearer <token>`:
 
 ```http
-X-phenix-auth-token: ******
+X-Phenix-Auth-Token: Bearer ******
 ```
+
+A token in an `Authorization` header is ignored.
+
+A browser link can pass the token in a `token` query parameter instead, without
+`Bearer`. An API request without a token gets 403, and a request with a
+malformed, expired or signed-out token gets 401. The API reference introduction
+gives the full rules.
 
 See [Generating User Authentication Tokens](user-administration.md#generating-user-authentication-tokens)
 for details.

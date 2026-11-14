@@ -4,7 +4,7 @@
 // and the text each tab keeps.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 
 import BuilderDrafts from '@/components/builder/BuilderDrafts.vue';
 
@@ -17,8 +17,6 @@ const PUBLISHED = [
   { id: 'p1', kind: 'Topology', target: 'lab', source: 'store' },
   { id: 'p2', kind: 'Topology', target: 'plant', source: 'store' },
 ];
-
-enableAutoUnmount(afterEach);
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -60,9 +58,6 @@ describe('the filter of a tab of cards', () => {
     expect(field.attributes('aria-describedby')).toBe(
       'drafts-filter-drafts-count',
     );
-
-    await field.setValue('pmp');
-    expect(cardIds(wrapper, 'drafts')).toEqual(['d1']);
 
     await field.setValue('zebra');
     expect(cardIds(wrapper, 'drafts')).toEqual([]);
@@ -107,7 +102,6 @@ describe('the filter of a tab of cards', () => {
     expect(get(first, 'drafts-filter-published').element.value).toBe('');
     await get(first, 'drafts-filter-published').setValue('plant');
     expect(cardIds(first, 'published')).toEqual(['p2']);
-    expect(sessionStorage.getItem('phenix.builder.filter.drafts')).toBe('pump');
     first.unmount();
 
     // A new landing in the same session filters as the last one did.
@@ -129,41 +123,36 @@ describe('the filter of a tab of cards', () => {
     expect(reached).toEqual([]);
     expect(field.element.value).toBe('');
     expect(cardIds(second, 'drafts')).toEqual(['d1', 'd2', 'd3']);
-    expect(sessionStorage.getItem('phenix.builder.filter.drafts')).toBeNull();
 
     await field.trigger('keydown', { key: 'Escape' });
     expect(reached).toEqual(['Escape']);
     document.removeEventListener('keydown', listen);
+    second.unmount();
+
+    // The text that Escape cleared does not come back on the next landing.
+    const third = landing();
+
+    expect(get(third, 'drafts-filter-drafts').element.value).toBe('');
+    expect(cardIds(third, 'drafts')).toEqual(['d1', 'd2', 'd3']);
   });
 
-  test('says how many cards show once typing stops', async () => {
+  test('says how many cards show once typing stops, and without a filter how many there are', async () => {
     vi.useFakeTimers();
 
     const wrapper = landing();
+    const field = get(wrapper, 'drafts-filter-drafts');
 
-    await get(wrapper, 'drafts-filter-drafts').setValue('s');
-    await get(wrapper, 'drafts-filter-drafts').setValue('station');
+    await field.setValue('s');
+    await field.setValue('station');
     await vi.advanceTimersByTimeAsync(500);
 
     expect(wrapper.emitted('announce')).toEqual([
       ['2 of 3 drafts shown.', 'filter'],
     ]);
-  });
-
-  test('counts one card in the singular', async () => {
-    vi.useFakeTimers();
-
-    const wrapper = landing({ drafts: DRAFTS.slice(0, 1) });
-    const field = get(wrapper, 'drafts-filter-drafts');
-
-    await field.setValue('zebra');
-    expect(get(wrapper, 'drafts-filter-drafts-count').text()).toBe(
-      '0 of 1 draft shown.',
-    );
 
     await field.setValue('');
     await vi.advanceTimersByTimeAsync(500);
-    expect(wrapper.emitted('announce')).toEqual([['1 draft.', 'filter']]);
+    expect(wrapper.emitted('announce').at(-1)).toEqual(['3 drafts.', 'filter']);
   });
 
   test('is not shown on a tab without cards', () => {

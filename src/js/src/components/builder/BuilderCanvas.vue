@@ -1516,7 +1516,7 @@
     }
 
     if (!connectionsShown.value) {
-      store.announce(connectionsHiddenText());
+      store.announce(connectionsHiddenText({ spoken: true }));
       return;
     }
 

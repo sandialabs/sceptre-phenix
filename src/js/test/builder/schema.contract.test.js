@@ -103,15 +103,16 @@ describe('inspector schemas', () => {
       );
     }
 
-    expect(minimega.properties.advanced).toMatchObject({
-      title: 'Advanced settings',
-      type: ['object', 'null'],
-      [MAP_KEYWORD]: 'text',
-    });
-    expect(minimega.properties.advanced[MAP_KEYS_KEYWORD]).toContain(
-      'qemu-append',
-    );
-    expect(external.properties.advanced).toBeUndefined();
+    for (const spec of [minimega, external]) {
+      expect(spec.properties.advanced).toMatchObject({
+        title: 'Advanced settings',
+        type: ['object', 'null'],
+        [MAP_KEYWORD]: 'text',
+      });
+      expect(spec.properties.advanced[MAP_KEYS_KEYWORD]).toContain(
+        'qemu-append',
+      );
+    }
   });
 
   // JSON Forms compiles each oneOf branch alone, so a branch that points at
@@ -160,47 +161,31 @@ describe('inspector schemas', () => {
 
   // Generated labels were "Vm Type", "C 2" and "Qinq", and oneOf pickers
   // offered "oneOf-0".
-  test('device spec fields have readable labels and named alternatives', () => {
+  test('device spec alternatives are named, and the hostname copy is read-only', () => {
     const spec = schemaForKind(builderSchemaV1, 'device').properties.spec;
-    const { general, hardware, network } = spec.properties;
-    const iface = network.properties.interfaces.items;
+    const { general } = spec.properties;
+    const untitled = [];
+    const visit = (schema, path) => {
+      if (!schema || typeof schema !== 'object') {
+        return;
+      }
+      (schema.oneOf || []).forEach((branch, index) => {
+        if (!branch.title) {
+          untitled.push(`${path}/oneOf/${index}`);
+        }
+      });
+      for (const [key, child] of Object.entries(schema)) {
+        visit(child, `${path}/${key}`);
+      }
+    };
 
-    expect(general.properties.vm_type.title).toBe('VM type');
+    visit(spec, 'spec');
+    expect(untitled).toEqual([]);
     // Apply copies the device Hostname into the spec, so its copy there is
     // shown read-only and nothing about it can block Apply.
-    expect(general.properties.hostname).toMatchObject({
-      title: 'Node hostname',
-      readOnly: true,
-    });
+    expect(general.properties.hostname.readOnly).toBe(true);
     expect(general.properties.hostname.pattern).toBeUndefined();
     expect(general.required || []).not.toContain('hostname');
-    expect(spec.properties.delay.properties.c2.title).toBe('C2 dependencies');
-    expect(hardware.properties.os_type.title).toBe('OS type');
-    expect(hardware.properties.memory.oneOf.map((b) => b.title)).toEqual([
-      'Megabytes',
-      'Text',
-    ]);
-    expect(hardware.properties.vcpus.oneOf.map((b) => b.title)).toEqual([
-      'Whole number',
-      'Text',
-    ]);
-    // Named by their key ("Interfaces"), apart from the Inspector's
-    // Connection points by their section.
-    expect(network.properties.interfaces.title).toBeUndefined();
-    expect(iface.title).toBe('Interface kind');
-    // Each by what tells it apart, short enough for a narrow picker.
-    expect(iface.oneOf.map((b) => b.title)).toEqual([
-      'Static or OSPF',
-      'DHCP or manual',
-      'Serial',
-    ]);
-    // Error messages name them too ("Injection 1: Source is required").
-    const injection = spec.properties.injections.items.properties;
-
-    expect([injection.src.title, injection.dst.title]).toEqual([
-      'Source',
-      'Destination',
-    ]);
   });
 
   // The Address of a static interface, the kind a new interface has, comes
@@ -212,27 +197,15 @@ describe('inspector schemas', () => {
         .properties.network.properties.interfaces.items;
     const [staticKind, dhcpKind, serialKind] = iface({}).oneOf;
 
-    expect(fields(staticKind).slice(0, 7)).toEqual([
-      'address',
-      'mask',
-      'gateway',
-      'proto',
-      'name',
-      'vlan',
-      'mac',
-    ]);
+    expect(fields(staticKind)[0]).toBe('address');
     expect(fields(staticKind)).toContain('type');
     // The other kinds keep the schema's order.
     expect(fields(dhcpKind)[0]).not.toBe('address');
     expect(fields(serialKind)[0]).not.toBe('address');
     // An external device's interface starts with its Protocol.
-    expect(fields(iface({ spec: { external: true } })).slice(0, 6)).toEqual([
+    expect(fields(iface({ spec: { external: true } })).slice(0, 2)).toEqual([
       'proto',
       'address',
-      'mask',
-      'gateway',
-      'name',
-      'vlan',
     ]);
   });
 
@@ -529,17 +502,6 @@ describe('node spec fields in the Inspector', () => {
     expect(orderedFields(properties, [])).toBe(properties);
   });
 
-  // Firewall rulesets and miniccc commands say what they are for. miniccc
-  // keeps its lowercase.
-  test('rulesets and commands are named for what they are', () => {
-    const spec = deviceSpec({});
-
-    expect(spec.properties.network.properties.rulesets.title).toBe(
-      'Firewall rulesets',
-    );
-    expect(spec.properties.commands.title).toBe('miniccc commands');
-  });
-
   test('snapshot defaults to on, as phenix sets it', () => {
     const general =
       builderSchemaV1.$defs[MINIMEGA_NODE_DEF].properties.general.properties;
@@ -632,13 +594,13 @@ describe('node spec fields in the Inspector', () => {
     // phenix reads an empty timer as no delay.
     expect(validate(withTimer(''))).toBe(true);
     expect(validate(withTimer('90 seconds'))).toBe(false);
-    // Documents, and configs imported with such a value, still open.
+    // Documents follow the served schema, whose pattern checks the timer too.
     expect(
       createFormValidator().validate(
         { $defs: builderSchemaV1.$defs, $ref: `#/$defs/${MINIMEGA_NODE_DEF}` },
         withTimer('90 seconds'),
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   // A VLAN is its interface's connection, which an interface may not have

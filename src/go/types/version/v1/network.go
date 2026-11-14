@@ -46,7 +46,7 @@ func (n *Network) Routes() []ifaces.NodeNetworkRoute {
 	return routes
 }
 
-func (n *Network) OSPF() ifaces.NodeNetworkOSPF { //nolint:ireturn // interface
+func (n *Network) OSPF() ifaces.NodeNetworkOSPF {
 	if n == nil {
 		return nil
 	}
@@ -414,7 +414,7 @@ func (rs Ruleset) Rules() []ifaces.NodeNetworkRulesetRule {
 	return rules
 }
 
-func (rs *Ruleset) UnshiftRule() ifaces.NodeNetworkRulesetRule { //nolint:ireturn // interface
+func (rs *Ruleset) UnshiftRule() ifaces.NodeNetworkRulesetRule {
 	var minVal int
 
 	for _, rule := range rs.RulesF {
@@ -480,7 +480,7 @@ func (r Rule) Protocol() string {
 	return r.ProtocolF
 }
 
-func (r Rule) Source() ifaces.NodeNetworkRulesetRuleAddrPort { //nolint:ireturn // interface
+func (r Rule) Source() ifaces.NodeNetworkRulesetRuleAddrPort {
 	// fun times... https://glucn.medium.com/golang-an-interface-holding-a-nil-value-is-not-nil-bb151f472cc7
 	if r.SourceF == nil {
 		return nil
@@ -489,7 +489,7 @@ func (r Rule) Source() ifaces.NodeNetworkRulesetRuleAddrPort { //nolint:ireturn 
 	return r.SourceF
 }
 
-func (r Rule) Destination() ifaces.NodeNetworkRulesetRuleAddrPort { //nolint:ireturn // interface
+func (r Rule) Destination() ifaces.NodeNetworkRulesetRuleAddrPort {
 	// fun times... https://glucn.medium.com/golang-an-interface-holding-a-nil-value-is-not-nil-bb151f472cc7
 	if r.DestinationF == nil {
 		return nil

@@ -10,10 +10,10 @@ available for streaming over WebSockets for experiments. The only requirement
 for enabling netflow for an experiment is that the experiment be configured to
 use a bridge name that is not the default `phenix` bridge. This can be done
 automatically for all experiments by enabling [auto bridge mode](bridge-mode.md),
-or per-experiment via the UI by expanding the `Options` section when creating a
-new experiment and providing the `Default Bridge Name` setting.
+or per-experiment via the UI by expanding the `Advanced Options` section when
+creating a new experiment and providing the `Default Bridge Name` setting.
 
-![screenshot](images/create_exp_options.png){: width=250 .center}
+![Expanded Advanced Options with Deployment Mode, Default Bridge Name, VLAN Range, Git Workflow Branch Name, and annotations for every VM and for the experiment.](images/create_exp_options.png){: width=400 .center}
 
 !!! note
     The `Default Bridge Name` field is only shown when the server is running in
@@ -30,17 +30,17 @@ when using the `phenix exp create` subcommand.
 
 ## Usage
 
-Running experiments will have a green network icon to the left of the VM search
+Running experiments will have a green network icon to the right of the VM search
 box that, when clicked, will start netflow capture for the non-default bridge
 the experiment is configured to use for all VM network interfaces.
 
-![screenshot](images/exp_netflow_button.png){: width=800 .center}
+![Running experiment toolbar with the VMs, Files, VNC and Netflow tabs, the Hosts, Labels and Paginate controls, a Find a VM box, and the stop, netflow and column picker buttons.](images/exp_netflow_button.png){: width=800 .center}
 
-Once enabled, the icon will turn red (to signify it can be stopped), and a new
-`Netflow` tab will appear next to the `VMs` and `Files` tabs for the running
-experiment. This tab will be updated with ASCII netflow data from minimega as it
-streams in.
+Once enabled, the icon will turn red (to signify it can be stopped), and the
+`Netflow` tab, the last tab of the running experiment, will be updated with a
+table of netflow data from minimega as it streams in. Until the first line
+arrives, the tab shows `Waiting for netflow lines from the running capture.`
 
-![screenshot](images/exp_netflow_tab.png){: width=800 .center}
+![Netflow tab reading 22 lines, newest first, with a Download captures button and a table of flows with time, source, destination, protocol, packet and byte counts.](images/netflow_table.png){: width=800 .center}
 
 To stop netflow capture for the experiment, click the red network icon.

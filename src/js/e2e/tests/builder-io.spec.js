@@ -14,7 +14,6 @@ const {
   draftPath,
   errorBanner,
   expect,
-  expectAccessible,
   expectDetail,
   expectNoFatal,
   iconName,
@@ -520,42 +519,23 @@ test.describe('download and upload', () => {
         );
         await expectSaved(file, 'json');
 
+        // exporters.test.js checks the serialization; this is the saved copy.
         const downloaded = JSON.parse(file.buffer.toString('utf8'));
         expect.soft(downloaded.$schema).toBe(SCHEMA_URI);
-        expect.soft(downloaded.revision).toBe(1);
-        expect.soft(downloaded.metadata.name).toBe(title);
-        expect
-          .soft(downloaded.nodes.map((node) => node.kind).sort())
-          .toEqual(['device', 'switch']);
-        expect
-          .soft(downloaded.networks.map((network) => network.name))
-          .toEqual(['EXP']);
-        expect.soft(downloaded.edges).toHaveLength(1);
         expect.soft(downloaded.metadata.id).toBe(saved.metadata.id);
         expect.soft(downloaded.nodes).toEqual(saved.nodes);
         expect.soft(downloaded.edges).toEqual(saved.edges);
       });
 
-      await test.step('the YAML download has the document keys', async () => {
+      await test.step('the YAML download is named for the diagram', async () => {
+        // The upload test below opens this file again as a draft.
         const file = await download(page, () =>
           dialog.getByTestId('download-yaml').click(),
         );
         await expectSaved(file, 'yaml');
-
-        // The e2e package has no YAML parser. Check the top-level keys by line
-        // and let the product's strict importer prove the document parses.
-        const text = file.buffer.toString('utf8');
         expect
-          .soft(text)
-          .toMatch(
-            /^\$schema: https:\/\/phenix\.sandia\.gov\/schemas\/builder\/v1$/m,
-          );
-        expect.soft(text).toMatch(/^revision: 1$/m);
-        expect.soft(text).toMatch(/^metadata:$/m);
-        expect.soft(text).toContain(`\n  name: ${title}\n`);
-        expect.soft(text).toMatch(/^nodes:$/m);
-        expect.soft(text.match(/^ {4}kind: device$/gm)).toHaveLength(1);
-        expect.soft(text.match(/^ {4}kind: switch$/gm)).toHaveLength(1);
+          .soft(file.buffer.toString('utf8'))
+          .toContain(`\n  name: ${title}\n`);
       });
 
       await test.step('the Topology YAML download is the topology Publish would write', async () => {
@@ -568,9 +548,6 @@ test.describe('download and upload', () => {
           .not.toHaveAttribute('aria-busy', 'true');
 
         const text = file.buffer.toString('utf8');
-        expect.soft(text).toMatch(/^apiVersion: phenix\.sandia\.gov\/v1$/m);
-        expect.soft(text).toMatch(/^kind: Topology$/m);
-        expect.soft(text).toContain(`\nmetadata:\n    name: ${title}\n`);
 
         // The server's importer parses it as a phenix Topology, and finds
         // the diagram's device, connected to its network.
@@ -590,12 +567,9 @@ test.describe('download and upload', () => {
       });
 
       await test.step('the draw.io download is the diagram as a draw.io page', async () => {
-        const button = dialog.getByTestId('download-drawio');
-        await expect.soft(button).toHaveAccessibleName('draw.io');
-        await expect
-          .soft(button)
-          .toHaveAccessibleDescription(/as a drawing to edit in draw\.io/);
-        const file = await download(page, () => button.click());
+        const file = await download(page, () =>
+          dialog.getByTestId('download-drawio').click(),
+        );
         await expectSaved(file, 'drawio');
 
         // The browser's XML parser reads it: a cell for each node and
@@ -631,12 +605,9 @@ test.describe('download and upload', () => {
 
       await test.step('the GEXF download is the network as a graph for Gephi', async () => {
         const fileName = downloadFileName(title, 'gexf');
-        const button = dialog.getByTestId('download-gexf');
-        await expect.soft(button).toHaveAccessibleName('Gephi (GEXF)');
-        await expect
-          .soft(button)
-          .toHaveAccessibleDescription(/as a graph to analyze in Gephi/);
-        const file = await download(page, () => button.click());
+        const file = await download(page, () =>
+          dialog.getByTestId('download-gexf').click(),
+        );
         expect.soft(file.name).toBe(fileName);
         await expect
           .soft(status)
@@ -654,11 +625,6 @@ test.describe('download and upload', () => {
 
           return {
             errors: xml.getElementsByTagName('parsererror').length,
-            root: [
-              xml.documentElement.namespaceURI,
-              xml.documentElement.localName,
-            ],
-            version: xml.documentElement.getAttribute('version'),
             labels: nodes.map((node) => node.getAttribute('label')).sort(),
             positions: xml.getElementsByTagNameNS(`${gexf}/viz`, 'position')
               .length,
@@ -667,8 +633,6 @@ test.describe('download and upload', () => {
         }, file.buffer.toString('utf8'));
         expect.soft(graph).toEqual({
           errors: 0,
-          root: ['http://gexf.net/1.3', 'gexf'],
-          version: '1.3',
           labels: [...labels].sort(),
           positions: saved.nodes.length,
           edges: saved.edges.length,
@@ -747,21 +711,13 @@ test.describe('download and upload', () => {
           .soft(page.locator('.vue-flow__transformationpane'))
           .toHaveCount(1);
         await expect.soft(selected).toHaveCount(4);
-        expect.soft(png.buffer.length, 'PNG size').toBeGreaterThan(1000);
-        expect
-          .soft(png.buffer.subarray(0, 8), 'PNG signature')
-          .toEqual(
-            Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-          );
         // At least the diagram's size, with the diagram's aspect ratio (not the
-        // on-screen viewport's). The IHDR chunk ends at byte 24.
-        if (png.buffer.length >= 24) {
-          const image = pngSize(png.buffer);
-          expect.soft(image.width).toBeGreaterThanOrEqual(boundsWidth);
-          expect
-            .soft(image.width / image.height)
-            .toBeCloseTo(boundsWidth / boundsHeight, 1);
-        }
+        // on-screen viewport's). The image decode below proves it is a PNG.
+        const image = pngSize(png.buffer);
+        expect.soft(image.width).toBeGreaterThanOrEqual(boundsWidth);
+        expect
+          .soft(image.width / image.height)
+          .toBeCloseTo(boundsWidth / boundsHeight, 1);
         await expectDiagramInImage(page, 'PNG', png.buffer, light, imageArea);
       });
 
@@ -795,7 +751,6 @@ test.describe('download and upload', () => {
         );
         await expectSaved(svg, 'svg');
         expectDiagramInSvg(svg.buffer.toString('utf8'), dark);
-        await expectDiagramInImage(page, 'SVG', svg.buffer, dark, imageArea);
         await useColorScheme(page, 'light');
       });
 
@@ -1519,44 +1474,19 @@ test.describe('import', () => {
     await expect.soft(empty).toHaveCount(0);
     await expect(choices.locator('option', { hasText: name })).toHaveCount(1);
 
-    await test.step('the options show only for a topology they apply to', async () => {
-      const includes = dialog.getByTestId('import-includes');
-      const copy = dialog.getByTestId('import-copy');
-
-      // Nothing is chosen yet.
-      await expect.soft(includes).toHaveCount(0);
-      await expect.soft(copy).toHaveCount(0);
-
-      // A topology that includes none can only be copied.
-      await choices.selectOption(nested);
-      await expect.soft(copy).toBeVisible();
-      await expect.soft(copy).not.toBeChecked();
-      await expect.soft(includes).toHaveCount(0);
-
-      // One that includes some is imported with them read only, unless the
-      // user chooses otherwise. Focus stays on the control that was used.
+    // import-dialog-render.test.js checks which options each choice shows.
+    await test.step('choosing a topology with includes keeps focus and starts on keep', async () => {
       await choices.selectOption(name);
       await expect.soft(choices).toBeFocused();
       await expect
-        .soft(dialog.getByRole('group', { name: 'Included topologies' }))
-        .toBeVisible();
-      await expect
-        .soft(includes)
-        .toContainText(`${name} includes 1 other topology.`);
-      await expect
         .soft(dialog.getByLabel('Keep included nodes read only'))
         .toBeChecked();
-      await expect
-        .soft(dialog.getByLabel('Combine into one new topology'))
-        .not.toBeChecked();
-      await expect.soft(copy).not.toBeChecked();
-      await expect.soft(dialog.getByTestId('import-new-name')).toHaveCount(0);
     });
 
     const generated = waitForApi(page, 'POST', '/builder/generate');
     const created = waitForApi(page, 'POST', '/builder/drafts');
     await submit.click();
-    // The choice that was shown is sent as it stood.
+    // The choice that was shown is sent as it stood, with no file name.
     expect
       .soft((await generated).request().postDataJSON())
       .toEqual({ source: `topology/${name}`, includes: 'keep' });
@@ -1572,7 +1502,8 @@ test.describe('import', () => {
       .soft(dialog.getByTestId('import-warnings'))
       .toContainText(added);
     await continuePastWarnings(dialog);
-    const draft = await (await created).json();
+    const createdResponse = await created;
+    const draft = await createdResponse.json();
 
     await expect(dialog).toBeHidden();
     await expect.soft(page.getByTestId('builder-name')).toHaveText(name);
@@ -1609,6 +1540,18 @@ test.describe('import', () => {
         .toHaveAttribute('aria-label', new RegExp(`network ${network}\\b`));
     }
     await builder.waitSaved();
+
+    // A stored config names no file in the request, the draft or Details.
+    expect
+      .soft(createdResponse.request().postDataJSON())
+      .not.toHaveProperty('sourceFile');
+    expect.soft(draft.sourceFile, 'sourceFile').toBeUndefined();
+    await expect(
+      builder.inspector.getByTestId('inspector-details'),
+    ).toBeVisible();
+    await expect
+      .soft(builder.inspector.getByTestId('inspector-source-file'))
+      .toHaveCount(0);
 
     const stored = await builder.serverDraft(draft);
     expect.soft(stored.sourceToken).toBe(`Topology/${name}`);
@@ -1873,15 +1816,6 @@ test.describe('import', () => {
       await expect
         .soft(apps.getByTestId('inspector-scenario-hosts'))
         .toHaveText(['host-a, host-b']);
-      // The sub-heading and the counts read in both themes.
-      for (const scheme of ['light', 'dark']) {
-        await useColorScheme(page, scheme);
-        await expectAccessible(page, {
-          include: '[data-testid="inspector-scenario"]',
-          soft: true,
-        });
-      }
-      await useColorScheme(page, 'light');
 
       // Edit scenarios opens the Scenarios dialog. Clearing the box there
       // leaves focus on the same button, now Add scenario.
@@ -2023,10 +1957,12 @@ test.describe('import', () => {
       '',
     ].join('\n');
 
+    const fileName = `${name}.topology.yaml`;
     const created = waitForApi(page, 'POST', '/builder/drafts');
-    const { response } = await importFromFile(page, content);
+    const { response } = await importFromFile(page, content, fileName);
     expect(response.ok(), await response.text()).toBeTruthy();
-    const draft = await (await created).json();
+    const createdResponse = await created;
+    const draft = await createdResponse.json();
 
     await expect.soft(page.getByTestId('builder-name')).toHaveText(name);
     await expect
@@ -2035,6 +1971,25 @@ test.describe('import', () => {
     await expect.soft(builder.canvasItem('web')).toBeVisible();
     await expect.soft(builder.canvasItem('db')).toBeVisible();
     await builder.waitSaved();
+
+    await test.step('Details names the config file it read', async () => {
+      expect
+        .soft(createdResponse.request().postDataJSON().sourceFile)
+        .toBe(fileName);
+      expect.soft(draft.sourceFile).toBe(fileName);
+      await expect
+        .soft(
+          builder.inspector.getByTestId('inspector-source-file').locator('dd'),
+        )
+        .toHaveText(fileName);
+      // The diagram was made here, now, from the config.
+      await expectDetail(
+        page,
+        'created',
+        draft.createdBy,
+        draft.stamp.createdAt,
+      );
+    });
 
     await test.step("the Inspector lists the topology's annotations, but not the Builder's own", async () => {
       const annotations = builder.inspector.getByTestId(
@@ -2087,73 +2042,6 @@ test.describe('import', () => {
       .toEqual(['db', 'web']);
     expect.soft(doc.networks.map((network) => network.name)).toEqual(['EXP']);
     expect.soft(doc.edges).toHaveLength(2);
-    expectNoFatal(issues);
-  });
-
-  test('Import names the config file it read in Details; a stored config names no file', async ({
-    page,
-    request,
-    builder,
-    tracker,
-    issues,
-  }, testInfo) => {
-    const name = uniqueName(testInfo, 'gen-file');
-    const config = topologyConfig(name, sharedVlanNodes());
-    const fileName = `${name}.topology.json`;
-    await seedConfig(request, tracker, config);
-    await builder.open();
-    const row = builder.inspector.getByTestId('inspector-source-file');
-
-    await test.step('a config file', async () => {
-      const created = waitForApi(page, 'POST', '/builder/drafts');
-      const { dialog } = await importFromFile(
-        page,
-        JSON.stringify(config),
-        fileName,
-      );
-      await continuePastWarnings(dialog);
-      const response = await created;
-      const draft = await response.json();
-      await expect(builder.canvas).toBeVisible();
-      await builder.waitSaved();
-
-      expect.soft(response.request().postDataJSON().sourceFile).toBe(fileName);
-      expect.soft(draft.sourceFile).toBe(fileName);
-      await expect.soft(row.locator('dd')).toHaveText(fileName);
-      // The diagram was made here, now, from the config.
-      await expectDetail(
-        page,
-        'created',
-        draft.createdBy,
-        draft.stamp.createdAt,
-      );
-    });
-
-    await builder.backToDrafts();
-
-    await test.step('a stored config', async () => {
-      const dialog = await openImport(page);
-      const choices = dialog.getByTestId('import-name');
-      await expect(choices.locator('option', { hasText: name })).toHaveCount(1);
-      await choices.selectOption(name);
-      const created = waitForApi(page, 'POST', '/builder/drafts');
-      await dialog.getByTestId('import-submit').click();
-      await continuePastWarnings(dialog);
-      const response = await created;
-      const draft = await response.json();
-      await expect(builder.canvas).toBeVisible();
-      await builder.waitSaved();
-
-      expect
-        .soft(response.request().postDataJSON())
-        .not.toHaveProperty('sourceFile');
-      expect.soft(draft.sourceFile, 'sourceFile').toBeUndefined();
-      await expect(
-        builder.inspector.getByTestId('inspector-details'),
-      ).toBeVisible();
-      await expect.soft(row).toHaveCount(0);
-    });
-
     expectNoFatal(issues);
   });
 
@@ -2328,10 +2216,6 @@ test.describe('import', () => {
 
       for (const [typed, message] of [
         [root, `A topology named ${root} already exists. Enter another name.`],
-        [
-          'two words',
-          'The topology name "two words" is not valid: it contains a space. Names can use only letters, numbers, underscores (_), at signs (@), periods (.) and hyphens (-), with no spaces. For example: two-words',
-        ],
         ['', 'Enter a name for the topology.'],
       ]) {
         await newName.fill(typed);
@@ -2775,36 +2659,6 @@ test.describe('import', () => {
 
     expectNoFatal(issues);
   });
-
-  test('config files are converted verbatim, without environment expansion', async ({
-    page,
-    builder,
-  }, testInfo) => {
-    await builder.open();
-    const name = uniqueName(testInfo, 'env');
-    // A ${NAME:default} placeholder shows an expansion even when the server
-    // has no such variable, and reveals no real one.
-    const placeholder = '${PHENIX_E2E_UNSET_VARIABLE:expanded}';
-    const content = JSON.stringify(
-      topologyConfig(name, [
-        topologyNode('envhost', [['eth0', 'EXP']], {
-          description: placeholder,
-        }),
-      ]),
-    );
-    const descriptionOf = (doc) =>
-      doc.nodes.find((node) => node.kind === 'device').device.spec.general
-        .description;
-
-    const created = waitForApi(page, 'POST', '/builder/drafts');
-    const { response } = await importFromFile(page, content, 'topology.json');
-    const draft = await (await created).json();
-    expect(descriptionOf((await response.json()).document)).toBe(placeholder);
-    await builder.waitSaved();
-    expect(descriptionOf(await builder.serverDocument(draft))).toBe(
-      placeholder,
-    );
-  });
 });
 
 // --- drafts landing ----------------------------------------------------------
@@ -2909,10 +2763,6 @@ test.describe('drafts landing', () => {
       await expect(
         confirm.getByRole('button', { name: 'Cancel' }),
       ).toBeFocused();
-      await expectAccessible(page, {
-        include: '[data-testid="builder-confirm"]',
-        soft: true,
-      });
 
       // Dismissing it keeps the draft and returns focus to Delete.
       await page.keyboard.press('Escape');

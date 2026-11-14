@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -21,18 +22,14 @@ func init() { //nolint:gochecknoinits // registering experiment lifecycle hooks
 	// this, a forgotten mount can leave a stale FUSE mount on the headnode
 	// that requires a reboot to clear once the backing VM is gone.
 	experiment.RegisterHook("stop", func(_, expName string) { unmountExperiment(expName) })
-	experiment.RegisterHook("delete", func(_, expName string) { unmountExperiment(expName) })
 }
 
-// Mount mounts the filesystem of the given running VM to hostPath. If
-// hostPath is empty, the default phenix mount path
-// (<mount-dir>/<experiment>/<vm-name>) is used instead. It returns the
-// resolved host path the VM was mounted to, along with any errors encountered.
-//
-// This is the same implementation used by the `POST
-// /experiments/{exp}/vms/{name}/mount` API endpoint, so behavior is
-// consistent between the CLI and web UI.
-func Mount(expName, vmName, hostPath string) (string, error) {
+// Mount mounts the filesystem of the given running VM at the phenix mount path
+// of the VM (<mount-dir>/<experiment>/<vm-name>, see [mm.GetLocalMountPath]).
+// It returns the absolute mount path, along with any errors encountered. The
+// `POST /experiments/{exp}/vms/{name}/mount` API endpoint uses the same
+// [MountFilesystem] and mount path.
+func Mount(expName, vmName string) (string, error) {
 	if expName == "" {
 		return "", errors.New("no experiment name provided")
 	}
@@ -41,7 +38,7 @@ func Mount(expName, vmName, hostPath string) (string, error) {
 		return "", errors.New("no VM name provided")
 	}
 
-	details, err := Get(expName, vmName)
+	details, err := Get(context.Background(), expName, vmName)
 	if err != nil {
 		return "", fmt.Errorf("getting VM details: %w", err)
 	}
@@ -59,11 +56,7 @@ func Mount(expName, vmName, hostPath string) (string, error) {
 		return "", fmt.Errorf("vm's C2 agent (miniccc) is not reachable: %w", err)
 	}
 
-	if hostPath == "" {
-		hostPath = mm.GetLocalMountPath(expName, vmName)
-	}
-
-	hostPath, err = filepath.Abs(hostPath)
+	hostPath, err := filepath.Abs(mm.GetLocalMountPath(expName, vmName))
 	if err != nil {
 		return "", fmt.Errorf("resolving mount path: %w", err)
 	}
@@ -82,11 +75,9 @@ func Mount(expName, vmName, hostPath string) (string, error) {
 }
 
 // Unmount unmounts the filesystem of the given VM. It returns any errors
-// encountered while unmounting.
-//
-// This is the same implementation used by the `POST
-// /experiments/{exp}/vms/{name}/unmount` API endpoint, so behavior is
-// consistent between the CLI and web UI.
+// encountered while unmounting. The `DELETE
+// /experiments/{exp}/vms/{name}/unmount` API endpoint uses the same
+// [UnmountFilesystem].
 func Unmount(expName, vmName string) error {
 	if expName == "" {
 		return errors.New("no experiment name provided")
@@ -125,7 +116,7 @@ func MountFilesystem(expName, vmName string) error {
 }
 
 // UnmountFilesystem issues the C2 command to unmount a VM's filesystem. It is
-// used by both the CLI (via Unmount) and the `POST
+// used by both the CLI (via Unmount) and the `DELETE
 // /experiments/{exp}/vms/{name}/unmount` API endpoint.
 func UnmountFilesystem(expName, vmName string) error {
 	_, err := mm.ExecC2Command(
@@ -146,7 +137,7 @@ func UnmountFilesystem(expName, vmName string) error {
 // experiment and removes the experiment's mount directory. Errors are logged
 // but not returned since this is invoked from experiment lifecycle hooks.
 func unmountExperiment(expName string) {
-	vms, err := List(expName)
+	vms, err := List(context.Background(), expName)
 	if err != nil {
 		plog.Warn(plog.TypeSystem, "listing VMs to unmount", "exp", expName, "err", err)
 	}

@@ -1,6 +1,10 @@
 package config
 
-import "phenix/store"
+import (
+	"context"
+
+	"phenix/store"
+)
 
 type CreateOption func(*createOptions)
 
@@ -9,16 +13,27 @@ type createOptions struct {
 	path     string
 	data     []byte
 	validate bool
+	check    func(*store.Config) error
+	ctx      context.Context
 }
 
 func newCreateOptions(opts ...CreateOption) createOptions {
-	var o createOptions
+	o := createOptions{ctx: context.Background()} //nolint:exhaustruct // functional options pattern
 
 	for _, opt := range opts {
 		opt(&o)
 	}
 
 	return o
+}
+
+// CreateWithContext gives ctx to the "create" stage of the config hooks. For
+// an experiment, the hook runs the configure stage of its apps, which stops
+// when ctx is done.
+func CreateWithContext(ctx context.Context) CreateOption {
+	return func(o *createOptions) {
+		o.ctx = ctx
+	}
 }
 
 func CreateFromConfig(c *store.Config) CreateOption {
@@ -39,8 +54,52 @@ func CreateFromYAML(d []byte) CreateOption {
 	}
 }
 
+// CreateWithCheck runs check on the parsed config before it is validated or
+// stored, and stops the create with check's error, such as to authorize the
+// config's kind and name.
+func CreateWithCheck(check func(*store.Config) error) CreateOption {
+	return func(o *createOptions) {
+		o.check = check
+	}
+}
+
 func CreateWithValidation() CreateOption {
 	return func(o *createOptions) {
 		o.validate = true
+	}
+}
+
+// DeleteOption changes how DeleteAtRevision deletes a config.
+type DeleteOption func(*deleteOptions)
+
+type deleteOptions struct {
+	filesRoot string
+	ctx       context.Context
+}
+
+func newDeleteOptions(opts ...DeleteOption) deleteOptions {
+	o := deleteOptions{ctx: context.Background()} //nolint:exhaustruct // functional options pattern
+
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	return o
+}
+
+// DeleteWithFilesRoot sets the FilesRoot of each config that DeleteAtRevision
+// deletes, so that its delete hooks leave the folders outside root. The web
+// API passes it.
+func DeleteWithFilesRoot(root string) DeleteOption {
+	return func(o *deleteOptions) {
+		o.filesRoot = root
+	}
+}
+
+// DeleteWithContext gives ctx to the "delete" stage of the config hooks of
+// each config that DeleteAtRevision deletes.
+func DeleteWithContext(ctx context.Context) DeleteOption {
+	return func(o *deleteOptions) {
+		o.ctx = ctx
 	}
 }

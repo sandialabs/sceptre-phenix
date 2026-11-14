@@ -1,7 +1,6 @@
+// @vitest-environment node
 // A switch on the canvas: its icon, its network's name, its outline color,
 // and an accessible name with its network and VLAN alias.
-
-import { readFileSync } from 'node:fs';
 
 import { describe, expect, test, vi } from 'vitest';
 import { createSSRApp, h } from 'vue';
@@ -11,7 +10,7 @@ import SwitchNode from '@/components/builder/nodes/SwitchNode.vue';
 import { useNodeColors } from '@/components/builder/nodes/nodeColors.js';
 
 import { toFlowNodes } from '@/builder/adapters/vueflow.js';
-import { contrastRatio, iconInk, needsCasing } from '@/builder/colors.js';
+import { iconInk, needsCasing } from '@/builder/colors.js';
 import { nodeAccessibleName } from '@/builder/diagramText.js';
 import { updateNetwork, updateNode } from '@/builder/model.js';
 
@@ -158,41 +157,9 @@ describe('a node’s default outline', () => {
   });
 });
 
-// The icon is in the outline color, apart from the text, and keeps 3:1
-// against what it is drawn over in each theme, or takes the text color.
+// The icon takes the text color where the outline fades. styles.test.js
+// checks the theme tokens and the rules that draw it.
 describe('a node’s icon color', () => {
-  const css = readFileSync(
-    new URL('../../src/builder/builder.css', import.meta.url),
-    'utf8',
-  );
-  // Each theme's value of a token: the light theme's first.
-  const token = (name) =>
-    [...css.matchAll(new RegExp(`${name}: (#[0-9a-f]{6});`, 'gi'))].map(
-      (match) => match[1],
-    );
-  const [surface, selected, canvas, grid, text] = [
-    '--bx-surface',
-    '--bx-selected-bg',
-    '--bx-bg-alt',
-    '--bx-grid',
-    '--bx-text',
-  ].map(token);
-
-  test('is the theme’s accent color without an outline, 3:1 on every node ground', () => {
-    const icon = token('--bx-accent');
-
-    expect(icon).toHaveLength(2);
-    [0, 1].forEach((theme) => {
-      for (const ground of [surface, selected, canvas, grid]) {
-        expect(contrastRatio(icon[theme], ground[theme])).toBeGreaterThan(3);
-      }
-      // Apart from the text: not the text's color.
-      expect(icon[theme]).not.toBe(text[theme]);
-    });
-    expect(iconInk('')).toEqual({ light: false, dark: false });
-    expect(iconInk('var(--bx-net-3)')).toEqual({ light: false, dark: false });
-  });
-
   test('is the text color where the outline fades, or on a fill it does not keep 3:1 on', () => {
     // A pale outline fades on the light theme's nodes, a dark one on the
     // dark theme's.
@@ -215,17 +182,6 @@ describe('a node’s icon color', () => {
       light: true,
       dark: true,
     });
-  });
-
-  test('the style sheet draws it in the outline, else the accent color, else the ink', () => {
-    const flat = css.replace(/\s+/g, ' ');
-
-    expect(flat).toContain(
-      ':is(.builder-node--device, .builder-node--switch, .builder-node--group) > .builder-node__header > .builder-icon { color: var(--bx-node-outline, var(--bx-accent)); }',
-    );
-    expect(flat).toMatch(
-      /\.builder-root:not\(\[data-builder-theme='dark'\]\) \.builder-node\.is-icon-ink-light > \.builder-node__header > \.builder-icon, \.builder-root\[data-builder-theme='dark'\] \.builder-node\.is-icon-ink-dark > \.builder-node__header > \.builder-icon \{ color: inherit; \}/,
-    );
   });
 
   test('a switch whose network color fades takes the text color for its icon', async () => {

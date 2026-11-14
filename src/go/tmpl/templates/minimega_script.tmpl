@@ -54,20 +54,23 @@ vm config disk {{ .Hardware.DiskConfig ($.SnapshotName .General.Hostname) }}
         {{- else }}
 vm config disk {{ .Hardware.DiskConfig "" }}
         {{- end }}
-        {{- if eq .Hardware.OSType "linux" }}
-vm config qemu-append -vga qxl
+        {{- if and (eq .Hardware.OSType "linux") (not (index .Advanced "vga")) }}
+vm config vga qxl
         {{- end }}
         {{- if .Network }}
 vm config net {{ .Network.InterfaceConfig }}
+        {{- end }}
+        {{- if eq .General.VMType "kvm" }}
+.preprocess false vm config qemu-override "-vnc unix:" "-vnc lossy=on,vnc=unix:"
         {{- end }}
         {{- range $config, $value := .Advanced }}
 vm config {{ $config }} {{ $value }}
         {{- end }}
         {{- range $match, $replacement := .Overrides }}
-vm config qemu-override "{{ $match }}" "{{ $replacement }}"
+.preprocess false vm config qemu-override "{{ escapeQuoted $match }}" "{{ escapeQuoted $replacement }}"
         {{- end }}
         {{- range $label, $value := .Labels }}
-vm config tags "{{ escapeQuoted $label }}" "{{ escapeQuoted $value }}"
+.preprocess false vm config tags "{{ escapeQuoted $label }}" "{{ escapeQuoted $value }}"
         {{- end }}
 vm launch {{ .General.VMType }} {{ .General.Hostname }}
     {{- end }}

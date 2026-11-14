@@ -16,7 +16,8 @@ import {
 import { loadShortcutSettings, setPlatform } from '@/builder/keymap.js';
 import { assignShortcut, shortcutGroups } from '@/builder/shortcuts.js';
 
-import { memoryStorage, sampleDocument, withTemplates } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
+import { sampleDocument, withTemplates } from './fixtures.js';
 
 // The command context of the open editor, with the view's methods stubbed.
 function context(view = {}) {
@@ -85,188 +86,110 @@ afterEach(() => {
   loadShortcutSettings(null);
 });
 
-describe('Show or hide node icons', () => {
-  const ID = 'view.nodeIcons';
-
-  test('is in the palette as Hide node icons or Show node icons', () => {
-    const shown = paletteItem(context(), 'node icons', ID);
-    const hidden = paletteItem(
-      context({ showNodeIcons: false }),
-      'node icons',
-      ID,
-    );
-
-    expect(shown).toMatchObject({ title: 'Hide node icons', disabled: '' });
-    expect(hidden).toMatchObject({ title: 'Show node icons', disabled: '' });
+describe.each([
+  {
+    id: 'view.nodeIcons',
+    flag: 'showNodeIcons',
+    noun: 'node icons',
     // Found by the word it starts with in each state.
-    expect(paletteItem(context(), 'hide icons', ID)).toBeTruthy();
-    expect(
-      paletteItem(context({ showNodeIcons: false }), 'show icons', ID),
-    ).toBeTruthy();
-
-    // With nothing typed, it is listed with the View commands.
-    const view = paletteResults(context()).groups.find((group) =>
-      group.items.some((item) => item.command?.id === ID),
-    );
-
-    expect(view?.label).toBe('View');
-  });
-
-  test('runs from the palette: the view shows or hides the icons', () => {
-    const ctx = context();
-    const item = paletteItem(ctx, 'node icons', ID);
-
-    expect(runCommand(item.command, ctx)).toBe(true);
-    expect(ctx.view.toggleNodeIcons).toHaveBeenCalledOnce();
-  });
-
-  test('has no default key, and takes one in the shortcut sheet', () => {
-    const storage = memoryStorage();
-
-    expect(defaultKeys(ID, 'mac')).toEqual([]);
-    expect(defaultKeys(ID, 'other')).toEqual([]);
-    expect(commandKeys(ID)).toEqual([]);
-    expect(isCustomizable(ID)).toBe(true);
-
-    // The sheet lists it only to customize, as it has no key.
-    expect(sheetRows().map((row) => row.id)).not.toContain(ID);
-    expect(
-      sheetRows({ customize: true, query: 'node icons' }).find(
-        (row) => row.id === ID,
-      ),
-    ).toMatchObject({
-      title: 'Show or hide node icons',
-      group: 'View',
-      customizable: true,
-      keys: [],
-      defaults: [],
-    });
-
-    expect(assignShortcut(ID, 'Alt+Shift+I', { storage }).ok).toBe(true);
-    expect(commandKeys(ID)).toEqual(['Alt+Shift+I']);
-    expect(sheetRows().map((row) => row.id)).toContain(ID);
-  });
-});
-
-describe('Show or hide node descriptions', () => {
-  const ID = 'view.nodeDescriptions';
-
-  test('is in the palette as Hide node descriptions or Show node descriptions', () => {
-    const shown = paletteItem(context(), 'node descriptions', ID);
-    const hidden = paletteItem(
-      context({ showNodeDescriptions: false }),
-      'node descriptions',
-      ID,
-    );
-
-    expect(shown).toMatchObject({
-      title: 'Hide node descriptions',
-      disabled: '',
-    });
-    expect(hidden).toMatchObject({
-      title: 'Show node descriptions',
-      disabled: '',
-    });
-    expect(paletteItem(context(), 'hide descriptions', ID)).toBeTruthy();
-    expect(paletteItem(context(), 'comments', ID)).toBeTruthy();
-
-    const view = paletteResults(context()).groups.find((group) =>
-      group.items.some((item) => item.command?.id === ID),
-    );
-
-    expect(view?.label).toBe('View');
-  });
-
-  test('runs from the palette, also in a read-only draft', () => {
-    const ctx = context();
-    const item = paletteItem(ctx, 'node descriptions', ID);
-
-    expect(runCommand(item.command, ctx)).toBe(true);
-    expect(ctx.view.toggleNodeDescriptions).toHaveBeenCalledOnce();
-
-    const readOnly = context();
-
-    readOnly.store.readOnly = true;
-    expect(runCommand(ID, readOnly)).toBe(true);
-    expect(readOnly.view.toggleNodeDescriptions).toHaveBeenCalledOnce();
-  });
-
-  test('has no default key, and takes one in the shortcut sheet', () => {
-    const storage = memoryStorage();
-
-    expect(defaultKeys(ID, 'mac')).toEqual([]);
-    expect(defaultKeys(ID, 'other')).toEqual([]);
-    expect(isCustomizable(ID)).toBe(true);
-    expect(
-      sheetRows({ customize: true, query: 'node descriptions' }).find(
-        (row) => row.id === ID,
-      ),
-    ).toMatchObject({
-      title: 'Show or hide node descriptions',
-      group: 'View',
-      customizable: true,
-      keys: [],
-    });
-
-    expect(assignShortcut(ID, 'Alt+Shift+D', { storage }).ok).toBe(true);
-    expect(commandKeys(ID)).toEqual(['Alt+Shift+D']);
-    expect(getCommand(ID).title).toBe('Show or hide node descriptions');
-  });
-});
-
-describe('Show or hide connections', () => {
-  const ID = 'view.connections';
-
-  test('is in the palette as Hide connections or Show connections', () => {
-    const shown = paletteItem(context(), 'connections', ID);
-    const hidden = paletteItem(
-      context({ showConnections: false }),
-      'connections',
-      ID,
-    );
-
-    expect(shown).toMatchObject({ title: 'Hide connections', disabled: '' });
-    expect(hidden).toMatchObject({ title: 'Show connections', disabled: '' });
+    words: ['hide icons'],
+    hiddenWords: ['show icons'],
+    toggle: 'toggleNodeIcons',
+    keys: [],
+    key: 'Alt+Shift+I',
+  },
+  {
+    id: 'view.nodeDescriptions',
+    flag: 'showNodeDescriptions',
+    noun: 'node descriptions',
+    words: ['hide descriptions', 'comments'],
+    hiddenWords: [],
+    toggle: 'toggleNodeDescriptions',
+    keys: [],
+    key: 'Alt+Shift+D',
+  },
+  {
+    id: 'view.connections',
+    flag: 'showConnections',
+    noun: 'connections',
     // Found by the other words for a connection.
-    expect(paletteItem(context(), 'hide links', ID)).toBeTruthy();
-    expect(paletteItem(context(), 'edges', ID)).toBeTruthy();
+    words: ['hide links', 'edges'],
+    hiddenWords: [],
+    toggle: 'toggleConnections',
+    keys: ['Alt+Shift+C'],
+    key: 'Alt+Shift+K',
+  },
+])(
+  'Show or hide $noun',
+  ({ id, flag, noun, words, hiddenWords, toggle, keys, key }) => {
+    test(`is in the palette as Hide ${noun} or Show ${noun}`, () => {
+      const hiddenContext = context({ [flag]: false });
 
-    const view = paletteResults(context()).groups.find((group) =>
-      group.items.some((item) => item.command?.id === ID),
-    );
+      expect(paletteItem(context(), noun, id)).toMatchObject({
+        title: `Hide ${noun}`,
+        disabled: '',
+      });
+      expect(paletteItem(hiddenContext, noun, id)).toMatchObject({
+        title: `Show ${noun}`,
+        disabled: '',
+      });
+      for (const word of words) {
+        expect(paletteItem(context(), word, id), word).toBeTruthy();
+      }
+      for (const word of hiddenWords) {
+        expect(paletteItem(hiddenContext, word, id), word).toBeTruthy();
+      }
 
-    expect(view?.label).toBe('View');
-  });
+      // With nothing typed, it is listed with the View commands.
+      const view = paletteResults(context()).groups.find((group) =>
+        group.items.some((item) => item.command?.id === id),
+      );
 
-  test('runs from the palette, also in a read-only draft', () => {
-    const ctx = context();
-    const item = paletteItem(ctx, 'connections', ID);
-
-    expect(runCommand(item.command, ctx)).toBe(true);
-    expect(ctx.view.toggleConnections).toHaveBeenCalledOnce();
-
-    const readOnly = context();
-
-    readOnly.store.readOnly = true;
-    expect(runCommand(ID, readOnly)).toBe(true);
-    expect(readOnly.view.toggleConnections).toHaveBeenCalledOnce();
-  });
-
-  test('has Alt+Shift+C by default, which the shortcut sheet lists and changes', () => {
-    const storage = memoryStorage();
-
-    expect(defaultKeys(ID, 'mac')).toEqual(['Alt+Shift+C']);
-    expect(defaultKeys(ID, 'other')).toEqual(['Alt+Shift+C']);
-    expect(sheetRows().find((row) => row.id === ID)).toMatchObject({
-      title: 'Show or hide connections',
-      group: 'View',
-      customizable: true,
+      expect(view?.label).toBe('View');
     });
 
-    expect(assignShortcut(ID, 'Alt+Shift+K', { storage }).ok).toBe(true);
-    expect(commandKeys(ID)).toEqual(['Alt+Shift+K']);
-  });
-});
+    test('runs from the palette, also in a read-only draft', () => {
+      const ctx = context();
+      const item = paletteItem(ctx, noun, id);
+
+      expect(runCommand(item.command, ctx)).toBe(true);
+      expect(ctx.view[toggle]).toHaveBeenCalledOnce();
+
+      const readOnly = context();
+
+      readOnly.store.readOnly = true;
+      expect(runCommand(id, readOnly)).toBe(true);
+      expect(readOnly.view[toggle]).toHaveBeenCalledOnce();
+    });
+
+    test(`has ${keys.length ? keys[0] : 'no key'} by default, and the shortcut sheet changes it`, () => {
+      const storage = memoryStorage();
+
+      expect(defaultKeys(id, 'mac')).toEqual(keys);
+      expect(defaultKeys(id, 'other')).toEqual(keys);
+      expect(commandKeys(id)).toEqual(keys);
+      expect(isCustomizable(id)).toBe(true);
+
+      // The sheet lists a command with no key only to customize.
+      expect(sheetRows().some((row) => row.id === id)).toBe(keys.length > 0);
+      expect(
+        sheetRows({ customize: true, query: noun }).find(
+          (row) => row.id === id,
+        ),
+      ).toMatchObject({
+        title: `Show or hide ${noun}`,
+        group: 'View',
+        customizable: true,
+        keys: keys.map((spec) => expect.objectContaining({ spec })),
+        defaults: keys.map((spec) => expect.objectContaining({ spec })),
+      });
+
+      expect(assignShortcut(id, key, { storage }).ok).toBe(true);
+      expect(commandKeys(id)).toEqual([key]);
+      expect(sheetRows().map((row) => row.id)).toContain(id);
+    });
+  },
+);
 
 describe('Node icon size', () => {
   const CHOICES = {

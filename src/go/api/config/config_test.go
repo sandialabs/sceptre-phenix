@@ -1,7 +1,9 @@
 package config_test
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,6 +19,7 @@ import (
 	"phenix/types"
 )
 
+// List refuses a kind that is not a config kind.
 func TestListError(t *testing.T) {
 	configs := store.Configs(
 		[]store.Config{
@@ -30,22 +33,18 @@ func TestListError(t *testing.T) {
 		},
 	)
 
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	m := store.NewMockStore(ctrl)
+	m := useMockStore(t)
 	m.EXPECT().
 		List(gomock.Eq("Topology"), gomock.Eq("Scenario"), gomock.Eq("Experiment"), gomock.Eq("Image")).
 		Return(configs, nil).
 		AnyTimes()
-
-	store.DefaultStore = m //nolint:reassign // mocking
 
 	if _, err := config.List("blech"); err == nil {
 		t.Error(`config.List("blech") error = nil, want an error`)
 	}
 }
 
+// Create expands ${BRANCH_NAME} in the YAML it is given.
 func TestCreateEnv(t *testing.T) {
 	expected := store.Config{
 		Version: "phenix.sandia.gov/v1",
@@ -62,13 +61,8 @@ metadata:
   name: ${BRANCH_NAME}-test-experiment
 `
 
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	m := store.NewMockStore(ctrl)
+	m := useMockStore(t)
 	m.EXPECT().Create(gomock.Eq(&expected)).Return(nil).AnyTimes()
-
-	store.DefaultStore = m //nolint:reassign // mocking
 
 	t.Setenv("BRANCH_NAME", "foobar")
 	options := []config.CreateOption{config.CreateFromYAML([]byte(cfg))}
@@ -96,7 +90,6 @@ func TestEditKeepsStrings(t *testing.T) {
 	}
 
 	editor := filepath.Join(t.TempDir(), "editor")
-	//nolint:gosec // the editor the test runs
 	if err := os.WriteFile(editor, []byte("#!/bin/sh\necho '# edited' >> \"$1\"\n"), 0o700); err != nil {
 		t.Fatalf("writing the editor: %v", err)
 	}
@@ -130,6 +123,7 @@ func TestEditKeepsStrings(t *testing.T) {
 
 // TestUpdateRenameRunsRenameHooks checks that a rename runs the "rename" hooks with the
 // old config and returns their error. A kept name or a failed delete runs none.
+// The "update" hooks see the stored config as c.Stored, which Update clears after.
 func TestUpdateRenameRunsRenameHooks(t *testing.T) {
 	stored := func(name string) store.Config {
 		return store.Config{
@@ -148,8 +142,12 @@ func TestUpdateRenameRunsRenameHooks(t *testing.T) {
 		hookErr error
 	)
 
-	config.RegisterConfigHook("Scenario", func(stage string, c *store.Config) error {
+	config.RegisterConfigHook("Scenario", func(_ context.Context, stage string, c *store.Config) error {
 		stages = append(stages, stage+" "+c.Metadata.Name+" "+c.Metadata.Annotations["note"])
+
+		if stage == "update" && (c.Stored == nil || c.Stored.Metadata.Name != "old") {
+			stages = append(stages, fmt.Sprintf("update stored %+v, want the config named old", c.Stored))
+		}
 
 		if stage == "rename" {
 			return hookErr
@@ -220,6 +218,10 @@ func TestUpdateRenameRunsRenameHooks(t *testing.T) {
 			if !slices.Equal(stages, test.stages) {
 				t.Errorf("config.Update(scenario/old) hook stages = %q, want %q", stages, test.stages)
 			}
+
+			if c.Stored != nil {
+				t.Errorf("config.Update(scenario/old) left c.Stored = %+v, want nil", c.Stored)
+			}
 		})
 	}
 }
@@ -280,5 +282,108 @@ func TestWorkflowIsNotAConfigKind(t *testing.T) {
 	_, err := config.Create(config.CreateFromYAML([]byte(doc)), config.CreateWithValidation())
 	if !errors.Is(err, types.ErrValidationFailed) {
 		t.Errorf("config.Create(Workflow config) error = %v, want ErrValidationFailed", err)
+	}
+}
+
+// useMockStore makes a gomock store the package store until the test ends.
+// The mock fails the test on any call it does not expect.
+func useMockStore(t *testing.T) *store.MockStore {
+	t.Helper()
+
+	m := store.NewMockStore(gomock.NewController(t))
+
+	original := store.DefaultStore
+	store.DefaultStore = m                              //nolint:reassign // mocking
+	t.Cleanup(func() { store.DefaultStore = original }) //nolint:reassign // restore test double
+
+	return m
+}
+
+// storedAt makes a mocked Get read the named config at a revision.
+func storedAt(revision uint64) func(*store.Config) error {
+	return func(c *store.Config) error {
+		c.Metadata.Created = "then"
+		c.Metadata.Revision = revision
+
+		return nil
+	}
+}
+
+// An update that names a revision the config has moved past is refused before
+// hooks run or anything is written, including on the rename path.
+func TestUpdateIfRevisionConflicts(t *testing.T) {
+	for _, newName := range []string{"a", "renamed"} {
+		t.Run("to "+newName, func(t *testing.T) {
+			m := useMockStore(t)
+			m.EXPECT().Get(gomock.Any()).DoAndReturn(storedAt(3))
+
+			c, err := store.NewConfig("topology/" + newName)
+			if err != nil {
+				t.Fatalf("store.NewConfig(%q) error = %v", "topology/"+newName, err)
+			}
+
+			c.IfRevision = 2
+
+			if err := config.Update("topology/a", c); !errors.Is(err, store.ErrConflict) {
+				t.Errorf("Update(topology/a, topology/%s at stale revision 2) error = %v, want %v", newName, err, store.ErrConflict)
+			}
+		})
+	}
+}
+
+// config edit refuses to save over a config that changed while it was being
+// edited, whatever revision the edited YAML gives.
+func TestEditIfRevisionConflicts(t *testing.T) {
+	// the "editor" sets the revision in the YAML to the config's new one, and fails if the YAML has no revision 1
+	editor := filepath.Join(t.TempDir(), "editor")
+
+	script := "#!/bin/sh\ngrep -q 'revision: 1$' \"$1\" || exit 1\n" +
+		"sed 's/revision: 1$/revision: 2/' \"$1\" > \"$1.new\" && mv \"$1.new\" \"$1\"\n"
+	if err := os.WriteFile(editor, []byte(script), 0o700); err != nil {
+		t.Fatalf("writing the test editor: %v", err)
+	}
+
+	t.Setenv("EDITOR", editor)
+
+	m := useMockStore(t)
+	gomock.InOrder(
+		m.EXPECT().Get(gomock.Any()).DoAndReturn(storedAt(1)), // read for the editor
+		m.EXPECT().Get(gomock.Any()).DoAndReturn(storedAt(2)), // changed meanwhile
+	)
+
+	if _, err := config.Edit("topology/a", false); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("Edit(topology/a) of a config changed meanwhile error = %v, want %v", err, store.ErrConflict)
+	}
+}
+
+// A rename whose delete of the old config fails removes the renamed copy, leaving only the old config.
+func TestFailedRenameLeavesOnlyTheOldConfig(t *testing.T) {
+	m := useMockStore(t)
+	m.EXPECT().Get(gomock.Any()).DoAndReturn(storedAt(5))
+	m.EXPECT().Update(gomock.Any()).Return(store.ErrNotExist)
+	m.EXPECT().Create(gomock.Any()).Return(nil)
+
+	var deleted []string
+
+	m.EXPECT().Delete(gomock.Any()).Times(2).DoAndReturn(func(c *store.Config) error {
+		if c.Metadata.Name == "a" {
+			return store.ErrConflict // changed by a concurrent writer
+		}
+
+		deleted = append(deleted, c.Metadata.Name)
+
+		return nil
+	})
+
+	c := validateTestTopology(t, "phenix.sandia.gov/v1", "b", "{nodes: []}")
+	c.IfRevision = 5
+
+	if err := config.Update("topology/a", c); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("Update(topology/a, topology/b) with a failing delete error = %v, want %v", err, store.ErrConflict)
+	}
+
+	// only the renamed copy is removed
+	if diff := cmp.Diff([]string{"b"}, deleted); diff != "" {
+		t.Errorf("Update(topology/a, topology/b) deleted configs mismatch (-want +got):\n%s", diff)
 	}
 }

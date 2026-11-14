@@ -16,7 +16,7 @@ phenix workflow apply helloworld                 # look helloworld up under base
 phenix workflow apply helloworld -n              # --dry-run: validate everything, log the server's plan, change nothing
 phenix workflow apply helloworld -f              # --force: allow restarting the running experiment
 phenix workflow apply helloworld --follow-inject-symlinks # follow symlinks in phenix-injects/ and copy as regular files
-phenix workflow apply ./site -b lab-a -c alt.yml # --branch-name: branch name (default: the directory's name); --config: workflow config, relative to DIR unless absolute
+phenix workflow apply ./site -b lab-a -c alt.yml # -b, --branch-name or --name: branch name (default: the directory's name; give one, or the same value); --config: workflow config, relative to DIR unless absolute
 ```
 
 `phenix workflow apply --help` lists more examples. The argument is required;
@@ -102,7 +102,7 @@ spec:                              # required; {} applies every default
   vlanRange:
     min: 100                       # 0 leaves that end of the range unset
     max: 200
-  defaultBridge: phenix            # at most 15 characters (the Linux interface-name limit)
+  defaultBridge: phenix            # at most 15 of a-z A-Z 0-9 _ @ . - (the Linux interface-name limit)
 ```
 
 Experiments are mapped to a branch by their `phenix.workflow/branch`
@@ -120,6 +120,10 @@ annotation. What apply does:
 | 1 | stopped, `auto.restart` true / false | `updateAndStart` / `update` |
 | more than 1 | any | 409 |
 
+A start or restart of the apply also starts the experiment's
+`experiments.periodic` [job](jobs.md) when its scenario has a
+`runPeriodically` app.
+
 Before anything changes, the server checks the workflow config, the plan, and
 the topology and scenario it would use, including the topology's nodes. A
 failure is a 400 (409 for a plan conflict) and a running experiment keeps
@@ -131,12 +135,12 @@ these lines in `metadata.validation` and the validator's text in
 ## REST endpoints
 
 Paths are relative to the `/api/v1` base path; [`web-api.md`](web-api.md) has
-the full route table and the auth modes.
+the auth modes and points to the full route reference.
 
 | Route | Notes |
 |---|---|
 | `POST /workflow/configs/{branch}[?dryRun=true]` | Create or update a config; `${BRANCH_NAME}` expands to `{branch}`. The dry run stores nothing and returns JSON `{action, kind, name, dryRun, pending}`. |
-| `POST /workflow/apply/{branch}[?dryRun=true][&pending=<ref>][&expect=<action>][&tag=key=value]` | Returns JSON `{action, experiment, reason, dryRun}`. `pending`, only on a dry run, is a config dry run's `pending` value, url-encoded, and names a config the caller stores before the real apply. A plan other than `expect` is a 409 that changes nothing. |
+| `POST /workflow/apply/{branch}[?dryRun=true][&pending=<ref>][&expect=<action>][&tag=key=value]` | Returns JSON `{action, experiment, reason, dryRun, warnings?}`; a dry run of a plan that starts the experiment lists the disk check problems of that start in `warnings` (`the start would fail: ...` for those that would refuse it), and the CLI logs each as a warning. `pending`, only on a dry run, is a config dry run's `pending` value, url-encoded, and names a config the caller stores before the real apply. A plan other than `expect` is a 409 that changes nothing. |
 | `GET /options` | Server-side CLI defaults, plus `base-dir.injects` and `workflow-dry-run`. |
 
 ## Gotchas
@@ -175,6 +179,7 @@ the full route table and the auth modes.
 | Symptom | Likely cause / fix |
 |---|---|
 | `phenix workflow apply` refuses the server | The server doesn't report `workflow-dry-run` in `GET /options`, or answered with an action the command doesn't know; use the same release for `phenix ui` and the CLI. |
+| `unable to restart experiment <exp>, which is still running` (code `broken_disks`) | The restart's start would fail on a missing disk image or backing file, or an image qemu cannot open, so the server refused before it stopped anything. Fix the file the error names, or set `experiment.disk-check: warn`. |
 | `re-run with -f` | The plan would restart a running experiment. Nothing has changed; re-run with `-f` to allow it. |
 | `phenix server unreachable` | Nothing answered on `--unix-socket`: `phenix ui` isn't running, listens on another socket, or didn't answer in time. In `configs` or `apply`, check the experiment. |
 | `connect: permission denied; run phenix as the user that runs phenix ui` | Your user may not write to the socket. Run the command as the user that runs `phenix ui`, usually root (or through `docker exec` with Compose), or start `phenix ui` with `--unix-socket-gid` set to the ID of a group you are in. Nothing was sent. |

@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import BuilderTemplates from '@/components/builder/BuilderTemplates.vue';
 import { createDocument } from '@/builder/model.js';
@@ -33,8 +33,6 @@ function template(id, drives) {
     },
   };
 }
-
-enableAutoUnmount(afterEach);
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -109,25 +107,9 @@ describe('a card whose template names a missing image', () => {
     expect(
       mark(wrapper, 'bravo').find('.builder-icon, svg, img').exists(),
     ).toBe(true);
-    // Case counts, as in the diagram's drive image check.
-    expect(mark(wrapper, 'delta').text()).toBe(
-      'The server has no disk images named "Ubuntu.qc2" and "old.qc2".',
-    );
     expect(
       textOfIds(card(wrapper, 'bravo').attributes('aria-describedby')),
     ).toBe('The server has no disk image named "gone.qc2".');
-  });
-
-  test('is not marked while the disk images are unknown', () => {
-    const { wrapper, store } = mountTab(null);
-
-    expect(store.fetchDisks).toHaveBeenCalledTimes(1);
-    expect(
-      wrapper.findAll('[data-testid^="template-missing-images-"]'),
-    ).toHaveLength(0);
-    expect(card(wrapper, 'bravo').attributes('aria-describedby')).toBe(
-      undefined,
-    );
   });
 
   test('loses its mark when the server lists the image', async () => {

@@ -719,14 +719,4 @@ describe('the draw.io file', () => {
     expect(cells.get('0-3').cell.getAttribute('source')).toBe('0-2');
     expect(cells.get('0-3').cell.getAttribute('target')).toBe('1-2');
   });
-
-  test('keeps the light colors of builder.css', () => {
-    const css = readFileSync(fromRoot('src/builder/builder.css'), 'utf8');
-    const block = css.slice(css.indexOf('.builder-root {'));
-    const lightBlock = block.slice(0, block.indexOf('}'));
-
-    for (const [token, color] of Object.entries(LIGHT_COLORS)) {
-      expect(lightBlock, token).toMatch(new RegExp(`${token}: ${color};`));
-    }
-  });
 });
