@@ -126,7 +126,7 @@ phenix vm info <exp> [vm]                            # table of VM(s)
 phenix vm pause|resume|restart|shutdown|kill <exp> [vm]
 phenix vm reset-disk <exp> [vm]
 phenix vm redeploy <exp> [vm] [-c <cpus>] [-m <MB>] [-d <disk image>] [-p <partition>] \
-  [-r|--replicate-injects]                           # -r recreates the disk snapshot and injections
+  [-r|--replicate-injects]                           # -r recreates the disk snapshot, injections, and deletions
 phenix vm set <exp> [vm] [-c|--cpu <n>] [-m|--mem <MB>] [-d|--disk <image>] [-p|--partition <n>] \
   [--do-not-boot] [--snapshot] [-L key=value ...] [--append-labels]
 phenix vm net connect <exp> <vm> <iface index> <vlan id>
