@@ -18,9 +18,8 @@ vi.mock('@/builder/adapters/forms.js', async (importOriginal) => {
   const { defineComponent, h: render, markRaw } = await import('vue');
   const { rendererProps, useJsonFormsControl } = await import('@jsonforms/vue');
   const { or, rankWith, scopeEndsWith } = await import('@jsonforms/core');
-  const { useInspectorFieldWarnings } = await import(
-    '@/components/builder/inspector/control.js'
-  );
+  const { useInspectorFieldWarnings } =
+    await import('@/components/builder/inspector/control.js');
   const Probe = defineComponent({
     props: rendererProps(),
     setup(props) {

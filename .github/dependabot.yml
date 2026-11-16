@@ -75,6 +75,15 @@ updates:
     ignore:
       # Moves with the Playwright image pinned in .github/workflows/e2e.yml.
       - dependency-name: '@playwright/test'
+      # These majors need code changes, bump by hand
+      - dependency-name: js-yaml
+        update-types: [version-update:semver-major]
+      - dependency-name: buefy
+        update-types: [version-update:semver-major]
+      - dependency-name: bulma
+        update-types: [version-update:semver-major]
+      - dependency-name: '@xterm/*'
+        update-types: [version-update:semver-major, version-update:semver-minor]
 
   - package-ecosystem: pip
     directory: /docs

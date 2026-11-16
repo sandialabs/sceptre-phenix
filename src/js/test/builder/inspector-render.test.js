@@ -38,7 +38,7 @@ import { indexIcons } from '@/builder/icons.js';
 import { addNode, updateNetwork, updateNode } from '@/builder/model.js';
 import { builderSchemaV1, schemaForKind } from '@/builder/schema.js';
 
-import { sampleDocument, tags, textOf } from './fixtures.js';
+import { attribute, sampleDocument, tag, tags, textOf } from './fixtures.js';
 import { renderWithStore } from './render.js';
 import { ICON_DATA } from './png.js';
 
@@ -374,9 +374,12 @@ describe('inspector field accessibility', () => {
     expect(html).toMatch(
       /<fieldset class="group group--collapsed" data-outline="spec\.hardware" data-outline-label="Hardware" data-collapse-path="spec\.hardware">/,
     );
-    expect(hardware).toMatch(
-      /^[^>]*>\s*<legend[\s\S]*?<\/legend>(<!--\[-->)?<div style="display:none;" class="group-item">/,
-    );
+    const firstItem = hardware.match(
+      /^[^>]*>\s*<legend[\s\S]*?<\/legend>(?:<!--\[-->)?(<div\b[^>]*>)/,
+    )?.[1];
+
+    expect(attribute(firstItem, 'class')).toBe('group-item');
+    expect(attribute(firstItem, 'style')).toBe('display:none;');
     // Interface 1 keeps its buttons, and hides its fields.
     const first = html.slice(
       html.indexOf('data-outline="spec.network.interfaces.0"'),
@@ -385,9 +388,9 @@ describe('inspector field accessibility', () => {
 
     expect(first).toContain('data-outline-errors="true"');
     expect(first).toContain('aria-label="Remove interface 1"');
-    expect(first).toContain(
-      '<div style="display:none;" class="array-list-item-content">',
-    );
+    expect(
+      attribute(tag(first, 'class="array-list-item-content"'), 'style'),
+    ).toBe('display:none;');
     expect(first).toContain('data-testid="inspector-disclosure-error"');
   });
 

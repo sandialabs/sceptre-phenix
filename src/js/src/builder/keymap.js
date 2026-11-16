@@ -326,11 +326,11 @@ export function isCharacterKey(spec) {
 
   return Boolean(
     parts &&
-      parts.kind !== 'named' &&
-      !parts.mod &&
-      !parts.ctrl &&
-      !parts.meta &&
-      !parts.alt,
+    parts.kind !== 'named' &&
+    !parts.mod &&
+    !parts.ctrl &&
+    !parts.meta &&
+    !parts.alt,
   );
 }
 

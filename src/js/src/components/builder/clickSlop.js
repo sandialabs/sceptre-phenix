@@ -37,9 +37,9 @@ export function endedNear(start, event) {
 
   return Boolean(
     start &&
-      end &&
-      Math.hypot(end.x - start.x, end.y - start.y) <=
-        (start.slop ?? CLICK_SLOP_PX),
+    end &&
+    Math.hypot(end.x - start.x, end.y - start.y) <=
+      (start.slop ?? CLICK_SLOP_PX),
   );
 }
 

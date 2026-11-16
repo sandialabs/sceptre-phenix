@@ -339,7 +339,7 @@
       active !== hideEls[side] &&
       Boolean(
         columnOf(side)?.contains(active) ||
-          hideEls[side]?.parentElement?.contains(active),
+        hideEls[side]?.parentElement?.contains(active),
       );
 
     widthBeforeHiding[side] = measured[side];
@@ -635,7 +635,7 @@
 
     measured.stacked = Boolean(
       startGutterEl.value &&
-        getComputedStyle(startGutterEl.value).display === 'none',
+      getComputedStyle(startGutterEl.value).display === 'none',
     );
 
     if (wasStacked && !measured.stacked) {

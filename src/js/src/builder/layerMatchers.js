@@ -158,7 +158,7 @@ function portable(pattern) {
     mixedGroup = false;
   }
 
-  for (let at = 0; at < pattern.length; ) {
+  for (let at = 0; at < pattern.length;) {
     const ch = pattern[at];
 
     if (ch === '\\') {

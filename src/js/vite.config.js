@@ -64,9 +64,13 @@ export default defineConfig(({ mode }) => {
     css: {
       preprocessorOptions: {
         scss: {
-          api: 'modern',
           // These are all caused by using Bulma 0.9.4. Buefy-next doesn't seem to support Bulma v1 yet
-          silenceDeprecations: ['import', 'color-functions', 'global-builtin'],
+          silenceDeprecations: [
+            'import',
+            'color-functions',
+            'global-builtin',
+            'if-function',
+          ],
         },
       },
     },

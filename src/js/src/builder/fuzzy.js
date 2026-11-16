@@ -44,7 +44,7 @@ function lowerCase(text) {
   const ends = [];
   let joined = '';
 
-  for (let at = 0; at < value.length; ) {
+  for (let at = 0; at < value.length;) {
     const letter = String.fromCodePoint(value.codePointAt(at));
     const low = letter.toLowerCase();
 

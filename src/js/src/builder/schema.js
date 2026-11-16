@@ -28,9 +28,9 @@ export function isSchemaBundle(payload) {
 
   return Boolean(
     candidate &&
-      typeof candidate === 'object' &&
-      candidate.$defs &&
-      typeof candidate.$defs === 'object',
+    typeof candidate === 'object' &&
+    candidate.$defs &&
+    typeof candidate.$defs === 'object',
   );
 }
 
