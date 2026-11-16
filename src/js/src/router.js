@@ -177,7 +177,8 @@ const router = createRouter({
   ],
 });
 
-router.beforeEach(async (to, _, next) => {
+// Guards return their result: Vue Router 5 deprecates the next() callback.
+router.beforeEach(async (to) => {
   const store = usePhenixStore();
 
   if (import.meta.env.VITE_AUTH === 'disabled' || !import.meta.env.VITE_AUTH) {
@@ -202,23 +203,19 @@ router.beforeEach(async (to, _, next) => {
       };
       store.login(loginResponse, false, false);
     }
-    next();
-    return;
+    return true;
   }
 
   if (to.name === 'disabled') {
-    next();
-    return;
+    return true;
   }
 
   if (to.name === 'signin' && import.meta.env.VITE_AUTH === 'enabled') {
-    next();
-    return;
+    return true;
   }
 
   if (to.name === 'proxysignup' && import.meta.env.VITE_AUTH === 'proxy') {
-    next();
-    return;
+    return true;
   }
 
   if (store.auth) {
@@ -237,29 +234,24 @@ router.beforeEach(async (to, _, next) => {
       store.logout();
     }
 
-    next();
-  } else {
-    store.next = to;
+    return true;
+  }
 
-    if (import.meta.env.VITE_AUTH === 'proxy') {
-      // next(); //TODO
-      // return;
+  store.next = to;
 
-      axiosInstance
-        .get('login')
-        .then((response) => {
-          store.login(response.data, false);
-          next();
-        })
-        .catch((err) => {
-          next({
-            name: 'proxysignup',
-            params: { username: (err.response?.data ?? '').trim() },
-          });
-        });
-    } else {
-      next({ name: 'signin' });
-    }
+  if (import.meta.env.VITE_AUTH !== 'proxy') {
+    return { name: 'signin' };
+  }
+
+  try {
+    const response = await axiosInstance.get('login');
+    store.login(response.data, false);
+    return true;
+  } catch (err) {
+    return {
+      name: 'proxysignup',
+      params: { username: (err.response?.data ?? '').trim() },
+    };
   }
 });
 // Give every route its own document title (WCAG 2.4.2 Page Titled), with the

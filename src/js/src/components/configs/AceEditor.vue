@@ -36,17 +36,15 @@
       this.ace = aceModule.default;
       this.ace.config.set('basePath', 'ace-builds/src-noconflict/');
 
-      const themeDraculaUrl = await import(
-        'ace-builds/src-noconflict/theme-dracula?url'
-      );
+      const themeDraculaUrl =
+        await import('ace-builds/src-noconflict/theme-dracula?url');
       this.ace.config.setModuleUrl(
         'ace/theme/dracula',
         themeDraculaUrl.default,
       );
 
-      const keybindingVimUrl = await import(
-        'ace-builds/src-noconflict/keybinding-vim?url'
-      );
+      const keybindingVimUrl =
+        await import('ace-builds/src-noconflict/keybinding-vim?url');
       this.ace.config.setModuleUrl(
         'ace/keybinding/vim',
         keybindingVimUrl.default,
@@ -56,14 +54,12 @@
       await import('ace-builds/src-noconflict/ext-language_tools');
       this.ace.require('ace/ext/language_tools');
 
-      const modeJsonUrl = await import(
-        'ace-builds/src-noconflict/mode-json?url'
-      );
+      const modeJsonUrl =
+        await import('ace-builds/src-noconflict/mode-json?url');
       this.ace.config.setModuleUrl('ace/mode/json', modeJsonUrl.default);
 
-      const modeYamlUrl = await import(
-        'ace-builds/src-noconflict/mode-yaml?url'
-      );
+      const modeYamlUrl =
+        await import('ace-builds/src-noconflict/mode-yaml?url');
       this.ace.config.setModuleUrl('ace/mode/yaml', modeYamlUrl.default);
 
       if (this.disposed || !this.$refs.editor) {

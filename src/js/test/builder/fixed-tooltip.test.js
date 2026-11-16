@@ -120,9 +120,8 @@ describe('whenPointed', () => {
   });
 
   async function load() {
-    const { whenPointed } = await import(
-      '@/components/builder/fixedTooltip.js'
-    );
+    const { whenPointed } =
+      await import('@/components/builder/fixedTooltip.js');
     vi.stubGlobal('window', {
       addEventListener: (type, listener) => {
         listeners[type] = listener;
@@ -256,9 +255,8 @@ describe('useFixedTooltip', () => {
   async function mount(options) {
     const { createSSRApp, nextTick } = await import('vue');
     const { renderToString } = await import('vue/server-renderer');
-    const { useFixedTooltip } = await import(
-      '@/components/builder/fixedTooltip.js'
-    );
+    const { useFixedTooltip } =
+      await import('@/components/builder/fixedTooltip.js');
     let tooltip;
 
     vi.stubGlobal('window', {

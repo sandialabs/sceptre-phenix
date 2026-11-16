@@ -512,7 +512,7 @@
                 <button
                   type="button"
                   class="plain-button"
-                  :aria-label="`View or edit labels for ${props.row.name} (${tagCount(props.row.tags)})`"
+                  :aria-label="`View or edit labels for ${props.row.name}: ${tagCount(props.row.tags)}`"
                   @click="showTagsModal(props.row)">
                   <font-awesome-layers full-width aria-hidden="true">
                     <font-awesome-icon icon="tag" />

@@ -43,8 +43,8 @@ export function createLeaveGuard({
   function unsavedWork() {
     return Boolean(
       editing() &&
-        !store.readOnly &&
-        (store.saveState.pending > 0 || store.saveState.status === 'saving'),
+      !store.readOnly &&
+      (store.saveState.pending > 0 || store.saveState.status === 'saving'),
     );
   }
 

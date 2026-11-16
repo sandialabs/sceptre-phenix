@@ -1387,7 +1387,7 @@ function parentCycle(byId) {
   for (const start of byId.keys()) {
     const path = [];
 
-    for (let id = start; id && byId.has(id) && !done.has(id); ) {
+    for (let id = start; id && byId.has(id) && !done.has(id);) {
       const at = path.indexOf(id);
 
       if (at >= 0) {

@@ -2756,7 +2756,7 @@ test.describe('Builder inspector', () => {
             (notes, other) =>
               Boolean(
                 notes.compareDocumentPosition(other) &
-                  Node.DOCUMENT_POSITION_FOLLOWING,
+                Node.DOCUMENT_POSITION_FOLLOWING,
               ),
             await scenarios.elementHandle(),
           ),
