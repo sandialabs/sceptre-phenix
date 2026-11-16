@@ -10,7 +10,6 @@ type CreateOption func(*createOptions)
 
 type createOptions struct {
 	config   *store.Config
-	path     string
 	data     []byte
 	validate bool
 	check    func(*store.Config) error
@@ -39,12 +38,6 @@ func CreateWithContext(ctx context.Context) CreateOption {
 func CreateFromConfig(c *store.Config) CreateOption {
 	return func(o *createOptions) {
 		o.config = c
-	}
-}
-
-func CreateFromPath(p string) CreateOption {
-	return func(o *createOptions) {
-		o.path = p
 	}
 }
 

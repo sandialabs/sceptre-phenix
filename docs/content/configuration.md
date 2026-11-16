@@ -45,9 +45,16 @@ begin with a capital letter.
     When we say this, we mean passing a YAML or JSON configuration file of any
     type to the `phenix config create` command.
 
-    `phenix config create` also takes a directory, and creates every
-    configuration file below it. It skips a [Builder](builder/index.md)
-    document in a directory, and refuses one named on the command line (see
+    `phenix config create`, `phenix config apply` and `phenix config diff`
+    take files only: each argument is a `.json`, `.yaml` or `.yml` file, and
+    a directory is an error. To read every file of a directory, give `dir/*`
+    in a shell, such as `phenix config create configs/*`. The shell replaces
+    `dir/*` with the files of the directory before phēnix starts. A
+    subdirectory in the match is an error, so use `dir/*.yml` when the
+    directory has one. Use `dir/*.yml` when the directory also holds files
+    that are not configurations. The commands refuse a
+    [Builder](builder/index.md)
+    document (see
     [Builder documents and phenix config create](builder/details/import-upload-download.md#builder-documents-and-phenix-config-create)).
 
 The `metadata` section can also hold `annotations`: text values by key, such
@@ -834,15 +841,22 @@ replaces each environment variable placeholder with the value of that
 variable. Placeholders can be in the format `${VAR}` or
 `${VAR:default}`, where `VAR` is the environment variable name, and `default`
 is an optional default value to use if the variable is not set. If the
-environment variable is not found and no default is provided, the placeholder
-is replaced with an empty string. A `$VAR` without braces is not a placeholder.
+variable is not set and no default is provided, the command stops with an
+error and changes nothing. Write `${VAR:}` for a variable that can be empty.
+A `$VAR` without braces is not a placeholder. Write `$${VAR}` to keep the
+text `${VAR}` in the config.
 
 !!! note
     For a config sent to the REST API or the web UI (`POST /configs`,
     `PUT /configs/{kind}/{name}` and the workflow endpoints), the server fills
     in only `${BRANCH_NAME}`. It stores every other placeholder as written, so
-    a client cannot read the server environment through a config. The Builder
-    fills in no placeholders.
+    a client cannot read the server environment through a config. The REST API
+    does not take variables: a client fills in the other placeholders before
+    it sends a config. The Builder fills in no placeholders. A
+    `${BRANCH_NAME}` in these requests is filled in also when the stored config
+    holds it as text. For `POST /configs` and `PUT /configs/{kind}/{name}`,
+    the value is the `BRANCH_NAME` variable of the server, or empty text when
+    it is not set. Write `$${BRANCH_NAME}` to keep the text.
 
 Example config before parsing environment variables:
 
@@ -871,6 +885,76 @@ Or if `HOST` env variable isn't found, the default is used:
         ip: localhost
 ```
 
+### Variable Sources
+
+These commands read config files and fill in their placeholders:
+`phenix config create`, `phenix config apply`, `phenix config diff`,
+`phenix experiment create` with a file for `-t` or `-s`, and
+`phenix workflow apply`. `phenix experiment create` also fills in a topology
+file that `includeTopologies` names by a path. A command gets the value of a
+variable from the first of these sources that has it:
+
+| Source | Description |
+| :--- | :--- |
+| `-e`, `--env` | `-e NAME=value` sets a variable. `-e NAME` copies the value of `NAME` from the shell. Repeat the flag for more variables. If a name is given more than once, the last value is used. |
+| `--env-file` | An [env file](#env-files) of `NAME=value` lines. Repeat the flag for more files. A later file overrides an earlier file. A relative path starts at the working directory. `phenix workflow apply` reads `.env` in the topology directory when no `--env-file` is given. |
+| The shell | The environment of the command, without the variables whose names start with `PHENIX_`. Those variables hold the settings of phēnix. Name one with `-e NAME` to use it. |
+
+```bash
+phenix config create topology.yml -e HOST=172.1.3.37
+phenix config apply configs/* --env-file site.env -e NODES=3
+```
+
+A command reads every file and checks every variable before it changes
+anything. It stops, and changes nothing, in these cases:
+
+- A placeholder has no value and no default.
+- No file uses a variable that `-e` sets. This is usually a typing mistake.
+- A value or a default contains a line break.
+
+The command replaces the text of a placeholder before it reads the YAML or
+JSON. Thus a placeholder in a comment is also filled in, and a value can
+change how YAML reads a line. Put a placeholder in quotes when its value can
+contain `:` or `#`.
+
+phēnix does not have the Docker Compose forms `${VAR:-default}` and
+`${VAR:?error}`. For phēnix, the default of `${VAR:-3}` is the text `-3`.
+The command logs a warning for a default that starts with `-` or `?`.
+
+The log shows the name and the source of each variable that a file uses. It
+shows the values only with `--log.level debug`. Debug records can thus hold
+secrets, also in the log file.
+
+!!! warning
+    In earlier releases, a variable that was not set became an empty string,
+    and the CLI used every shell variable. A config that relied on this now
+    stops the command. Give the placeholder a default, such as `${VAR:}`, or
+    name a `PHENIX_` variable with `-e`.
+
+### Env Files
+
+An env file holds one variable on each line:
+
+```text
+# Blank lines and lines that start with "#" are skipped.
+SITE=lab
+NODES=3
+export IMAGE=ubuntu.qc2
+MOTD="  the quotes keep the spaces  "
+```
+
+- A line is `NAME=value`, with no space before the `=`. A name starts with a
+  letter or `_`, and continues with letters, digits and `_`.
+- `export` before the name is permitted.
+- A value in single or double quotes is the text between the quotes. The
+  closing quote must be the last character of the line.
+- Any other value is the text as written, a `#` included, without the spaces
+  and tabs at the end of the line.
+- Nothing in the file is expanded: `${OTHER}` and `\n` stay as written. For a
+  workflow, the server fills in a `${BRANCH_NAME}` that a value carries.
+- When a name is on more than one line, the last line is used.
+- Any other line is an error that names the file and the line.
+
 ### Environment variables using Docker
 
 If phēnix is running in a docker container (or docker compose), environment
@@ -892,7 +976,9 @@ docker exec -it -e BRANCH_NAME=foobar phenix phenix exp create foobar -t topo -s
     Configs sent by `phenix workflow apply`, or to the
     `/workflow/configs/{branch}` and `/workflow/apply/{branch}` API endpoints,
     don't need `-e BRANCH_NAME`: phēnix sets `BRANCH_NAME` to the workflow
-    branch name itself. It keeps their other placeholders as written. The
+    branch name itself. The API endpoints keep their other placeholders as
+    written, and `phenix workflow apply` fills them in before it sends a
+    config (see [Variables](workflow.md#variables)). The
     command also copies the topology directory's
     `phenix-injects/` to `<base-dir.injects>/<name>` (by default
     `/phenix/injects/<name>`), so configs can reference injected files as

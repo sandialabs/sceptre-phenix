@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -217,11 +219,8 @@ func applyWorkflowRequest(role rbac.Role, rawQuery, contentType string, body io.
 
 // serveApplyWorkflow serves req with ApplyWorkflow behind weberror's error
 // handler, as the router does, and returns the recorded response.
-// ApplyWorkflow sets BRANCH_NAME in the process environment, so the variable
-// is restored when the test ends.
 func serveApplyWorkflow(t *testing.T, req *http.Request) *httptest.ResponseRecorder {
 	t.Helper()
-	t.Setenv("BRANCH_NAME", "")
 
 	rec := httptest.NewRecorder()
 	weberror.ErrorHandler(ApplyWorkflow).ServeHTTP(rec, req)
@@ -1724,8 +1723,6 @@ func TestApplyWorkflowDryRunChecksPendingReferences(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("BRANCH_NAME", "") // the config dry runs set it
-
 			// Each config dry run checks whether its config is stored: none
 			// is. The apply dry run then lists the experiments: there are none.
 			m := installValidationTestStore(t)
@@ -1808,8 +1805,6 @@ func TestApplyWorkflowDryRunChecksPendingIncludes(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("BRANCH_NAME", "") // the config dry runs set it
-
 			m := installValidationTestStore(t)
 			expectWorkflowReadFails(m, "topology/main")
 			expectWorkflowReadFails(m, "topology/main-net")
@@ -1826,5 +1821,61 @@ func TestApplyWorkflowDryRunChecksPendingIncludes(t *testing.T) {
 
 			assertPendingApplyDryRun(t, body, refs, tc.wantCause)
 		})
+	}
+}
+
+// TestApplyWorkflowIncludedFileGetsBranch checks that an apply gives the branch of the request, not the server
+// environment, to ${BRANCH_NAME} in a topology file that the topology includes, in Prepare and in Create.
+func TestApplyWorkflowIncludedFileGetsBranch(t *testing.T) {
+	// Prepare refuses the hostname "all", so a lookup of the environment fails the request.
+	t.Setenv("BRANCH_NAME", "all")
+
+	file := filepath.Join(t.TempDir(), "include.yml")
+	text := "apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: inc\nspec:\n  nodes:\n" +
+		"  - type: VirtualMachine\n    general:\n      hostname: \"${BRANCH_NAME}\"\n    hardware:\n" +
+		"      os_type: linux\n      drives:\n      - image: x.qc2\n"
+
+	if err := os.WriteFile(file, []byte(text), 0o600); err != nil {
+		t.Fatalf("writing %s: %v", file, err)
+	}
+
+	topo := workflowTestTopology()
+	topo.Spec["nodes"] = []any{map[string]any{
+		"type": "VirtualMachine", "general": map[string]any{"hostname": "vm1"},
+		"hardware": map[string]any{"os_type": "linux", "drives": []any{map[string]any{"image": "x.qc2"}}},
+	}}
+	topo.Spec["includeTopologies"] = []any{file}
+
+	var created *store.Config
+
+	runApplyWorkflowErrors(t, []applyWorkflowErrorCase{{
+		name:        "create",
+		query:       "expect=create",
+		contentType: mimeYAML,
+		body:        strings.NewReader(workflowTestYAML("  auto:\n    create: foo\n    restart: false\n  topology: topo\n")),
+		setup: func(m *store.MockStore) {
+			m.EXPECT().List("Experiment").Return(store.Configs(nil), nil).AnyTimes()
+			m.EXPECT().Get(gomock.Any()).DoAndReturn(func(c *store.Config) error {
+				if c.Kind == "Topology" && c.Metadata.Name == "topo" {
+					*c = topo
+
+					return nil
+				}
+
+				return store.ErrNotExist
+			}).AnyTimes()
+			m.EXPECT().Create(gomock.Any()).DoAndReturn(func(c *store.Config) error {
+				created = c
+
+				return errors.New("stop here")
+			})
+		},
+		wantStatus:  http.StatusInternalServerError,
+		wantMessage: "unable to create new experiment",
+		wantCause:   []string{"stop here"},
+	}})
+
+	if created == nil || !strings.Contains(fmt.Sprint(created.Spec["topology"]), "hostname:main ") {
+		t.Errorf("stored experiment topology = %v, want the included node named main", created)
 	}
 }

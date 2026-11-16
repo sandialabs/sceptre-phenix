@@ -1,8 +1,11 @@
 package experiment
 
 import (
+	"os"
+
 	ifaces "phenix/types/interfaces"
 	"phenix/util/common"
+	"phenix/util/envsubst"
 )
 
 const defaultBridgeName = "phenix"
@@ -25,12 +28,14 @@ type createOptions struct {
 	useGREMesh      bool
 	defaultBridge   string
 	baseDirRoot     string
+	lookup          envsubst.Lookup
 }
 
 func newCreateOptions(opts ...CreateOption) createOptions {
 	o := createOptions{ //nolint:exhaustruct // functional options pattern
 		deployMode: common.DeployMode,
 		useGREMesh: common.UseGREMesh,
+		lookup:     os.LookupEnv,
 	}
 
 	for _, opt := range opts {
@@ -141,6 +146,14 @@ func CreateWithDefaultBridge(b string) CreateOption {
 func CreateWithBaseDirInside(root string) CreateOption {
 	return func(o *createOptions) {
 		o.baseDirRoot = root
+	}
+}
+
+// CreateWithLookup sets the lookup for the variables of a topology file that
+// the topology includes. The default is the environment.
+func CreateWithLookup(lookup envsubst.Lookup) CreateOption {
+	return func(o *createOptions) {
+		o.lookup = lookup
 	}
 }
 

@@ -125,27 +125,41 @@ func TestRunWorkflowApplySucceeds(t *testing.T) {
 	})
 }
 
-// TestRunWorkflowApplySendsFilesAsRead checks that every file reaches the
-// server as read, placeholders included, since the server fills them in.
-func TestRunWorkflowApplySendsFilesAsRead(t *testing.T) {
-	topology := wfTopologyYAML + "  vlans: {mgmt: ${VLAN}}\n  image: ${IMG: ubuntu.qc2}\n"
-	image := `{"apiVersion": "phenix.sandia.gov/v1", "kind": "Image", "metadata": {"name": "img"}, "spec": {"size": ${SIZE}}}`
-	wfConfig := wfWorkflowYAML + "  vlans: {mgmt: ${VLAN}}\n"
+// TestRunWorkflowApplySendsFilesWithVariables checks that every file reaches
+// the server with its variables filled in, from -e, the .env file of the
+// directory and the shell, and with ${BRANCH_NAME} left for the server.
+func TestRunWorkflowApplySendsFilesWithVariables(t *testing.T) {
+	const (
+		imageJSON = `{"apiVersion": "phenix.sandia.gov/v1", "kind": "Image", "metadata": {"name": "img"}, "spec": {"size": %s}}`
+		vlans     = "  vlans: {mgmt: %s}\n"
+	)
+
+	rawTopology := wfTopologyYAML + fmt.Sprintf(vlans, "${VLAN}") + "  image: ${IMG: ubuntu.qc2}\n  dir: ${BRANCH_NAME}\n"
 
 	dir := newTopologyDir(t, "foo", map[string]string{
-		"phenix-configs/topology.yml": topology,
-		"phenix-configs/image.json":   image,
-		"phenix-configs/scenario.yml": wfScenarioYAML,
-		workflowConfigName:            wfConfig,
+		".env":                        "VLAN=from-the-file\nSIZE=4\n",
+		"phenix-configs/topology.yml": rawTopology,
+		"phenix-configs/image.json":   fmt.Sprintf(imageJSON, "${SIZE}"),
+		"phenix-configs/scenario.yml": wfScenarioYAML + "  # ${PHENIX_WORKFLOW_TEST}\n",
+		workflowConfigName:            wfWorkflowYAML + fmt.Sprintf(vlans, "${VLAN}"),
 	})
 	fake := newFakePhenix(t, fakePhenix{
 		options: serverOptions(t.TempDir()),
 		plan:    workflow.Plan{Action: workflow.ActionCreate, Experiment: "foo", Reason: ""},
 	})
 
-	if err := runWorkflowApply(t.Context(), testApplyOptions(fake.socket, t.TempDir()), dir); err != nil {
+	opts := testApplyOptions(fake.socket, t.TempDir())
+	opts.Env = []string{"VLAN=101", "PHENIX_WORKFLOW_TEST"}
+	opts.Environ = []string{"VLAN=shell", "SIZE=shell", "IMG=shell.qc2", "PHENIX_WORKFLOW_TEST=named", "BRANCH_NAME=shell"}
+
+	if err := runWorkflowApply(t.Context(), opts, dir); err != nil {
 		t.Fatalf("runWorkflowApply() error = %v", err)
 	}
+
+	topology := wfTopologyYAML + fmt.Sprintf(vlans, "101") + "  image: shell.qc2\n  dir: ${BRANCH_NAME}\n"
+	image := fmt.Sprintf(imageJSON, "4")
+	scenario := wfScenarioYAML + "  # named\n"
+	wfConfig := wfWorkflowYAML + fmt.Sprintf(vlans, "101")
 
 	checkRequests(t, fake,
 		reqOptions, reqConfigDryRun("foo"), reqConfigDryRun("foo"), reqConfigDryRun("foo"),
@@ -153,9 +167,9 @@ func TestRunWorkflowApplySendsFilesAsRead(t *testing.T) {
 		reqConfig("foo"), reqConfig("foo"), reqConfig("foo"), reqApply("foo", workflow.ActionCreate))
 
 	reqs := fake.recorded()
-	for i, want := range []string{"", topology, image, wfScenarioYAML, wfConfig, topology, image, wfScenarioYAML, wfConfig} {
+	for i, want := range []string{"", topology, image, scenario, wfConfig, topology, image, scenario, wfConfig} {
 		if reqs[i].body != want {
-			t.Errorf("request %d body = %q, want the file as read, %q", i, reqs[i].body, want)
+			t.Errorf("request %d body = %q, want the file with its variables filled in, %q", i, reqs[i].body, want)
 		}
 	}
 

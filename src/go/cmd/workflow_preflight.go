@@ -10,18 +10,41 @@ import (
 	"strings"
 
 	"phenix/api/workflow"
+	"phenix/store"
+	"phenix/util/envsubst"
 	"phenix/util/plog"
 )
 
-// newApplyRun resolves the topology directory, the workflow name and the
-// workflow config, and finds which inputs the directory holds. It contacts
-// nothing.
-func newApplyRun(opts applyOptions, arg string) (*applyRun, error) {
-	started := opts.Now()
+// sourceOptions say which topology directory a workflow command reads, and
+// with which variables. The fields are those of the same name in applyOptions.
+type sourceOptions struct {
+	Name           string
+	Config         string
+	ConfigExplicit bool
+	TopologiesBase string
+	Env            []string
+	EnvFiles       []string
+	Environ        []string
+}
 
+// workflowSource is a resolved topology directory: its branch name, its
+// inputs, each "" when the directory lacks it, and its variables.
+type workflowSource struct {
+	dir      string
+	name     string
+	injects  string
+	configs  string
+	wfConfig string
+	vars     *envsubst.Set
+}
+
+// resolveWorkflowSource resolves the topology directory, the branch name and
+// the workflow config, finds which inputs the directory holds, and reads the
+// variable sources. It contacts nothing.
+func resolveWorkflowSource(opts sourceOptions, arg string) (workflowSource, error) {
 	dir, err := resolveTopologyDir(arg, opts.TopologiesBase)
 	if err != nil {
-		return nil, err
+		return workflowSource{}, err
 	}
 
 	name := opts.Name
@@ -30,18 +53,18 @@ func newApplyRun(opts applyOptions, arg string) (*applyRun, error) {
 	}
 
 	if err := workflow.ValidateName(name); err != nil {
-		return nil, fmt.Errorf("choose a valid workflow name with -b: %w", err)
+		return workflowSource{}, fmt.Errorf("choose a valid branch name with -b: %w", err)
 	}
 
 	// Staged under such a name, the injects would make their base look like
 	// a topology directory.
 	if isMarkerName(name) {
-		return nil, fmt.Errorf("the name %q is reserved; pass another with -b", name)
+		return workflowSource{}, fmt.Errorf("the name %q is reserved; pass another with -b", name)
 	}
 
 	wfConfig, err := resolveWorkflowConfig(dir, opts.Config, opts.ConfigExplicit)
 	if err != nil {
-		return nil, err
+		return workflowSource{}, err
 	}
 
 	if wfConfig == "" {
@@ -52,8 +75,50 @@ func newApplyRun(opts applyOptions, arg string) (*applyRun, error) {
 	// be deployed.
 	configs := filepath.Join(dir, configsDirName)
 	if info, err := os.Lstat(configs); err == nil && info.Mode()&fs.ModeSymlink != 0 {
-		return nil, fmt.Errorf("%s is a symbolic link; a symlinked configs directory is not supported", configs)
+		return workflowSource{}, fmt.Errorf("%s is a symbolic link; a symlinked configs directory is not supported", configs)
 	}
+
+	// Only -b sets the branch name, and the server fills it in.
+	vars, err := newVarSet(envsubst.Options{
+		Flags:          opts.Env,
+		EnvFiles:       opts.EnvFiles,
+		DefaultEnvFile: filepath.Join(dir, defaultEnvFileName),
+		Environ:        opts.Environ,
+		Reserved:       store.BranchNameVar,
+	}, "step", stepPreflight)
+	if err != nil {
+		return workflowSource{}, err
+	}
+
+	return workflowSource{
+		dir:      dir,
+		name:     name,
+		injects:  existingDir(filepath.Join(dir, injectsDirName)),
+		configs:  existingDir(configs),
+		wfConfig: wfConfig,
+		vars:     vars,
+	}, nil
+}
+
+// newApplyRun resolves the topology directory of arg, as
+// [resolveWorkflowSource] does. It contacts nothing.
+func newApplyRun(opts applyOptions, arg string) (*applyRun, error) {
+	started := opts.Now()
+
+	src, err := resolveWorkflowSource(sourceOptions{
+		Name:           opts.Name,
+		Config:         opts.Config,
+		ConfigExplicit: opts.ConfigExplicit,
+		TopologiesBase: opts.TopologiesBase,
+		Env:            opts.Env,
+		EnvFiles:       opts.EnvFiles,
+		Environ:        opts.Environ,
+	}, arg)
+	if err != nil {
+		return nil, err
+	}
+
+	dir, name := src.dir, src.name
 
 	run := &applyRun{
 		opts:     opts,
@@ -61,9 +126,10 @@ func newApplyRun(opts applyOptions, arg string) (*applyRun, error) {
 		started:  started,
 		dir:      dir,
 		name:     name,
-		injects:  existingDir(filepath.Join(dir, injectsDirName)),
-		configs:  existingDir(configs),
-		wfConfig: wfConfig,
+		injects:  src.injects,
+		configs:  src.configs,
+		wfConfig: src.wfConfig,
+		vars:     src.vars,
 		staged:   false,
 		upserted: 0,
 	}
@@ -124,37 +190,35 @@ func (r *applyRun) preflight(ctx context.Context) (preflightResult, error) {
 		}
 	}
 
-	var configs []configFile
+	var paths []string
 
 	if r.configs != "" {
-		if configs, err = loadConfigs(r.configs); err != nil {
+		if paths, err = configPaths(r.configs); err != nil {
 			return preflightResult{}, fmt.Errorf("checking configs: %w", err)
 		}
 	}
 
-	if len(configs) == 0 && r.injects == "" && r.wfConfig == "" {
+	if len(paths) == 0 && r.injects == "" && r.wfConfig == "" {
 		return preflightResult{}, fmt.Errorf(
 			"nothing to apply: %s has no %s/, %s or %s, and %s/ holds no .json, .yaml or .yml file that is not hidden",
 			r.dir, injectsDirName, workflowConfigName, legacyWorkflowConfig, configsDirName,
 		)
 	}
 
+	configs, wfConfig, err := loadWorkflowFiles(r.dir, paths, r.wfConfig, r.vars)
+	if err != nil {
+		return preflightResult{}, err
+	}
+
 	for _, cfg := range configs {
 		plog.Info(plog.TypeSystem, "config parsed", "step", stepPreflight, "file", r.rel(cfg.Path), "kind", cfg.Kind)
 	}
 
-	if r.wfConfig == "" {
-		return preflightResult{injectsBase: injectsBase, configs: configs, wfConfig: nil}, nil
+	if wfConfig != nil {
+		plog.Info(plog.TypeSystem, "workflow config parsed", "step", stepPreflight, "file", r.rel(wfConfig.Path), "kind", wfConfig.Kind)
 	}
 
-	wfConfig, err := parseConfigFile(r.wfConfig, false)
-	if err != nil {
-		return preflightResult{}, fmt.Errorf("checking the workflow config: %w", err)
-	}
-
-	plog.Info(plog.TypeSystem, "workflow config parsed", "step", stepPreflight, "file", r.rel(wfConfig.Path), "kind", wfConfig.Kind)
-
-	return preflightResult{injectsBase: injectsBase, configs: configs, wfConfig: &wfConfig}, nil
+	return preflightResult{injectsBase: injectsBase, configs: configs, wfConfig: wfConfig}, nil
 }
 
 // checkServer checks that the server answers and supports workflow dry runs,

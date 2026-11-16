@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"phenix/api/workflow"
+	"phenix/util/envsubst"
 )
 
 func TestResolveTopologyDir(t *testing.T) {
@@ -224,7 +225,7 @@ func TestRunWorkflowApplyStopsBeforeContactingServer(t *testing.T) {
 		{
 			name:    "invalid -b",
 			setup:   func(opts *applyOptions) { opts.Name = "bad name" },
-			wantErr: "choose a valid workflow name with -b: ",
+			wantErr: "choose a valid branch name with -b: ",
 			wantIs:  workflow.ErrInvalidName,
 		},
 		{name: "invalid directory name", dirName: ".foo", wantIs: workflow.ErrInvalidName},
@@ -254,6 +255,38 @@ func TestRunWorkflowApplyStopsBeforeContactingServer(t *testing.T) {
 			wantErr: "nope.yml does not exist or is not a file",
 		},
 		{name: "empty argument", emptyArg: true, wantErr: "must not be empty"},
+		{
+			name:    "-e sets the branch name",
+			setup:   func(opts *applyOptions) { opts.Env = []string{"BRANCH_NAME=lab"} },
+			wantErr: "set the branch name with -b",
+			wantIs:  envsubst.ErrReserved,
+		},
+		{
+			name:   "-e is not a variable",
+			setup:  func(opts *applyOptions) { opts.Env = []string{"not a name=x"} },
+			wantIs: envsubst.ErrBadFlag,
+		},
+		{
+			name:   "-e names a variable that the shell does not have",
+			setup:  func(opts *applyOptions) { opts.Env = []string{"NODES"} },
+			wantIs: envsubst.ErrNotInShell,
+		},
+		{
+			name:   "--env-file names a missing file",
+			setup:  func(opts *applyOptions) { opts.EnvFiles = []string{filepath.Join("no-such-folder", "missing.env")} },
+			wantIs: fs.ErrNotExist,
+		},
+		{
+			name:    ".env sets the branch name",
+			files:   mergedFiles(fullTopology(), map[string]string{".env": "A=1\nBRANCH_NAME=lab\n"}),
+			wantErr: ".env:2: ",
+			wantIs:  envsubst.ErrReserved,
+		},
+		{
+			name:    ".env has a line that is not valid",
+			files:   mergedFiles(fullTopology(), map[string]string{".env": "A=1\n\nA B\n"}),
+			wantErr: ".env:3: expected NAME=value",
+		},
 	}
 
 	for _, tt := range tests {
@@ -291,6 +324,67 @@ func TestRunWorkflowApplyStopsBeforeContactingServer(t *testing.T) {
 			}
 
 			checkRequests(t, fake)
+		})
+	}
+}
+
+// TestRunWorkflowApplyVariableProblems checks that a problem with a variable
+// stops the apply in the preflight: the server gets no config, and nothing is
+// staged.
+func TestRunWorkflowApplyVariableProblems(t *testing.T) {
+	topology := strings.Replace(wfTopologyYAML, "name: foo", "name: ${SITE:lab}", 1)
+
+	tests := []struct {
+		name    string
+		env     string
+		setup   func(dir string, opts *applyOptions)
+		wantLog string
+	}{
+		{name: "a variable that is not set", env: "SITE=lab\n", wantLog: "variable is not set and has no default"},
+		{
+			name: "--env-file replaces the .env file of the directory",
+			env:  "NODES=3\n",
+			setup: func(dir string, opts *applyOptions) {
+				opts.EnvFiles = []string{filepath.Join(dir, "other.env")}
+			},
+			wantLog: "variable is not set and has no default",
+		},
+		{
+			name:    "a -e variable that no file uses",
+			env:     "NODES=3\n",
+			setup:   func(_ string, opts *applyOptions) { opts.Env = []string{"NODSE=5"} },
+			wantLog: "no file uses the variable that -e sets",
+		},
+		{
+			name:    "a value with a line break",
+			setup:   func(_ string, opts *applyOptions) { opts.Env = []string{"NODES=3\n4"} },
+			wantLog: "variable value holds a line break",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logs := captureLogs(t)
+			dir := newTopologyDir(t, "foo", mergedFiles(fullTopology(), map[string]string{
+				".env":                        tt.env,
+				"other.env":                   "SITE=other\n",
+				"phenix-configs/topology.yml": topology + "  count: ${NODES}\n",
+			}))
+			injects := t.TempDir()
+			fake := newFakePhenix(t, fakePhenix{options: serverOptions(injects)})
+
+			opts := testApplyOptions(fake.socket, t.TempDir())
+			if tt.setup != nil {
+				tt.setup(dir, &opts)
+			}
+
+			if err := runWorkflowApply(t.Context(), opts, dir); !errors.Is(err, errVariables) {
+				t.Errorf("runWorkflowApply() error = %v, want errVariables", err)
+			}
+
+			checkFields(t, logs.first(t, tt.wantLog), map[string]string{"level": "ERROR", "step": stepPreflight})
+			checkRequests(t, fake, reqOptions)
+			assertEmptyDir(t, injects)
 		})
 	}
 }

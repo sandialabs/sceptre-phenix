@@ -2,9 +2,7 @@ package common
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync/atomic"
 )
@@ -182,35 +180,4 @@ func CurrentDiskCheck() DiskCheck {
 	}
 
 	return DiskCheckError
-}
-
-// EnvPlaceholder matches the ${VAR} and ${VAR:default} placeholders that
-// [ParseEnv] replaces: the name in its first group, the default in its second.
-var EnvPlaceholder = regexp.MustCompile(`\$\{(\w+)(?::([^}]*))?\}`)
-
-// ParseEnv replaces environment variable placeholders in the input string with their corresponding values.
-// Placeholders are in the format ${VAR} or ${VAR:default}, where VAR is the environment variable name,
-// and default is an optional default value to use if the variable is not set.
-// If the environment variable is not found and no default is provided, the placeholder is replaced with an empty string.
-//
-// Example:
-//
-//	os.Setenv("FOO", "bar")
-//	ParseEnv("Value: ${FOO}, Default: ${BAZ:qux}") // returns "Value: bar, Default: qux"
-func ParseEnv(input string) string {
-	return EnvPlaceholder.ReplaceAllStringFunc(input, func(match string) string {
-		parts := EnvPlaceholder.FindStringSubmatch(match)
-		if len(parts) == 0 {
-			return match
-		}
-
-		key := parts[1]
-		defaultValue := parts[2] // May be empty if no default provided
-
-		if value, found := os.LookupEnv(key); found {
-			return value
-		}
-
-		return defaultValue // Return default value (empty string if no default was provided)
-	})
 }

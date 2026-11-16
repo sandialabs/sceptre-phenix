@@ -86,9 +86,6 @@ func usePhenixBase(t *testing.T) string {
 
 	t.Cleanup(func() { common.PhenixBase = previous }) //nolint:reassign // restore
 
-	// Init sets BRANCH_NAME with os.Setenv; t.Setenv restores it afterwards
-	t.Setenv("BRANCH_NAME", "")
-
 	return filepath.Join(base, "configs")
 }
 
@@ -110,8 +107,9 @@ func writeFiles(t *testing.T, dir string, files map[string]string) {
 }
 
 // Init stores the built-in configs and each valid config under
-// <base>/configs, sets BRANCH_NAME to the folder of each file, keeps a stored
-// config, and skips files that are not configs.
+// <base>/configs, fills in ${BRANCH_NAME} with the folder of each file and not
+// with the environment, keeps a stored config, and skips files that are not
+// configs.
 func TestInitSeedsConfigs(t *testing.T) {
 	storetest.UseBolt(t)
 
@@ -131,8 +129,14 @@ func TestInitSeedsConfigs(t *testing.T) {
 		"apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: kept\n  annotations:\n    from: store\nspec:\n  nodes: []\n",
 	)
 
+	t.Setenv("BRANCH_NAME", "from-the-environment")
+
 	if err := config.Init(); err != nil {
 		t.Fatalf("config.Init() error = %v", err)
+	}
+
+	if got := os.Getenv("BRANCH_NAME"); got != "from-the-environment" {
+		t.Errorf("BRANCH_NAME after Init = %q, want it unchanged", got)
 	}
 
 	for _, name := range []string{"topology/foo-topo", "scenario/from-json", "role/global-admin", "image/PHENIX-kali"} {
@@ -281,12 +285,7 @@ func TestGet(t *testing.T) {
 func TestCreateSourcesAndErrors(t *testing.T) {
 	storetest.UseBolt(t)
 
-	dir := t.TempDir()
-	writeFiles(t, dir, map[string]string{
-		"t.yaml":  "apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: from-path\nspec:\n  nodes: []\n",
-		"t.txt":   "kind: Topology\n",
-		"bad.yml": "kind: [unclosed\n",
-	})
+	fromYAML := []byte("apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: from-yaml\nspec:\n  nodes: []\n")
 
 	errCheck := errors.New("injected check failure")
 
@@ -303,10 +302,7 @@ func TestCreateSourcesAndErrors(t *testing.T) {
 		wantErr bool
 		is      error
 	}{
-		{
-			name: "from path",
-			opts: []config.CreateOption{config.CreateFromPath(filepath.Join(dir, "t.yaml")), config.CreateWithValidation()},
-		},
+		{name: "from YAML", opts: []config.CreateOption{config.CreateFromYAML(fromYAML), config.CreateWithValidation()}},
 		{name: "from config", opts: []config.CreateOption{config.CreateFromConfig(fromConfig)}},
 		{name: "checked", opts: []config.CreateOption{
 			config.CreateFromYAML(
@@ -315,11 +311,9 @@ func TestCreateSourcesAndErrors(t *testing.T) {
 			config.CreateWithCheck(func(*store.Config) error { return nil }),
 		}},
 		{name: "no source", wantErr: true},
-		{name: "missing path", opts: []config.CreateOption{config.CreateFromPath(filepath.Join(dir, "missing.yaml"))}, wantErr: true},
-		{name: "wrong extension", opts: []config.CreateOption{config.CreateFromPath(filepath.Join(dir, "t.txt"))}, wantErr: true},
 		{name: "bad YAML", opts: []config.CreateOption{config.CreateFromYAML([]byte("kind: [unclosed\n"))}, wantErr: true},
 		{name: "check fails", opts: []config.CreateOption{
-			config.CreateFromPath(filepath.Join(dir, "t.yaml")),
+			config.CreateFromYAML(fromYAML),
 			config.CreateWithCheck(func(*store.Config) error { return errCheck }),
 		}, wantErr: true, is: errCheck},
 		{name: "invalid spec", opts: []config.CreateOption{
@@ -334,7 +328,7 @@ func TestCreateSourcesAndErrors(t *testing.T) {
 			),
 			config.CreateWithValidation(),
 		}, wantErr: true},
-		{name: "already stored", opts: []config.CreateOption{config.CreateFromPath(filepath.Join(dir, "t.yaml"))}, wantErr: true},
+		{name: "already stored", opts: []config.CreateOption{config.CreateFromYAML(fromYAML)}, wantErr: true},
 	}
 
 	for _, test := range tests {
