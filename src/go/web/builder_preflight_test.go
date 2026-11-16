@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"phenix/store"
 	bdoc "phenix/types/builder"
 	v1 "phenix/types/version/v1"
+	"phenix/util/freshness"
 	"phenix/util/mm"
 	"phenix/web/rbac"
 )
@@ -35,7 +37,7 @@ func preflightDisks() builderOption {
 // phenix, and apps ntp and scorch. hostReads counts the host reads.
 func preflightSources(hostReads *atomic.Int32) builderPreflightSources {
 	return builderPreflightSources{
-		clusterHosts: func() (mm.Hosts, error) {
+		clusterHosts: func(context.Context) (mm.Hosts, error) {
 			hostReads.Add(1)
 
 			return mm.Hosts{
@@ -43,7 +45,7 @@ func preflightSources(hostReads *atomic.Int32) builderPreflightSources {
 				{Name: "head", CPUs: 2, MemTotal: 2048, Schedulable: false},
 			}, nil
 		},
-		bridges: func(hosts ...string) (map[string][]string, error) {
+		bridges: func(_ context.Context, hosts ...string) (map[string][]string, error) {
 			bridges := map[string][]string{}
 			for _, host := range hosts {
 				bridges[host] = []string{"phenix"}
@@ -730,12 +732,12 @@ func TestBuilderPreflightEnvironmentFailures(t *testing.T) {
 
 	api := &builderAPI{
 		preflight: builderPreflightSources{
-			clusterHosts: func() (mm.Hosts, error) {
+			clusterHosts: func(context.Context) (mm.Hosts, error) {
 				reads++
 
 				return nil, failure
 			},
-			bridges: func(...string) (map[string][]string, error) {
+			bridges: func(context.Context, ...string) (map[string][]string, error) {
 				t.Error("the environment read the bridges after the hosts failed")
 
 				return map[string][]string{}, nil
@@ -745,7 +747,7 @@ func TestBuilderPreflightEnvironmentFailures(t *testing.T) {
 		listConfigs: func(string) (store.Configs, error) { return nil, failure },
 		disks:       newBuilderDiskLister(func() ([]disk.Details, error) { return nil, failure }, time.Now, builderDiskListWait),
 	}
-	env := newBuilderPreflightEnvironment(api, builderActor{user: builderAlice, role: *builderFullRole()})
+	env := newBuilderPreflightEnvironment(t.Context(), api, builderActor{user: builderAlice, role: *builderFullRole()})
 	ctx := t.Context()
 
 	checks := map[string]func() error{
@@ -772,14 +774,14 @@ func TestBuilderPreflightEnvironmentFailures(t *testing.T) {
 // caller may list is schedulable.
 func TestBuilderPreflightBridgesOfNoHost(t *testing.T) {
 	api := &builderAPI{preflight: builderPreflightSources{
-		clusterHosts: func() (mm.Hosts, error) { return mm.Hosts{{Name: "head", Schedulable: false}}, nil },
-		bridges: func(...string) (map[string][]string, error) {
+		clusterHosts: func(context.Context) (mm.Hosts, error) { return mm.Hosts{{Name: "head", Schedulable: false}}, nil },
+		bridges: func(context.Context, ...string) (map[string][]string, error) {
 			t.Error("the environment read the bridges of no host")
 
 			return map[string][]string{}, nil
 		},
 	}}
-	env := newBuilderPreflightEnvironment(api, builderActor{user: builderAlice, role: *builderFullRole()})
+	env := newBuilderPreflightEnvironment(t.Context(), api, builderActor{user: builderAlice, role: *builderFullRole()})
 
 	got, err := env.Bridges(t.Context())
 	if err != nil {
@@ -788,5 +790,95 @@ func TestBuilderPreflightBridgesOfNoHost(t *testing.T) {
 
 	if diff := cmp.Diff(map[string][]string{}, got); diff != "" {
 		t.Errorf("Bridges() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// preflightHostsMM records how the schedulable hosts were read; other mm.MM
+// methods panic.
+type preflightHostsMM struct {
+	mm.MM
+
+	marker        *any
+	bridgesMarker *any
+	schedOnly     *bool
+	diskUsage     *bool
+}
+
+//nolint:unparam // mm's signature
+func (m preflightHostsMM) GetClusterHostsObserved(
+	ctx context.Context,
+	schedOnly, diskUsage bool,
+) (mm.Hosts, freshness.Observation, error) {
+	*m.marker, *m.schedOnly, *m.diskUsage = ctx.Value(preflightContextKey{}), schedOnly, diskUsage
+
+	return mm.Hosts{{Name: "h1", Schedulable: true}}, freshness.Observed(time.Now()), nil
+}
+
+func (m preflightHostsMM) GetBridges(ctx context.Context, hosts ...string) (map[string][]string, error) {
+	*m.bridgesMarker = ctx.Value(preflightContextKey{})
+
+	return map[string][]string{hosts[0]: {"phenix"}}, nil
+}
+
+// preflightContextKey marks the request context in
+// TestBuilderPreflightReadsHostsWithTheRequestContext.
+type preflightContextKey struct{}
+
+// The preflight checks read the schedulable hosts without their disk usage,
+// with the context of the request, and their bridges with the context they
+// are given.
+//
+//nolint:paralleltest // replaces mm.DefaultMM
+func TestBuilderPreflightReadsHostsWithTheRequestContext(t *testing.T) {
+	var (
+		marker        any
+		bridgesMarker any
+		schedOnly     bool
+		diskUsage     = true
+	)
+
+	original := mm.DefaultMM
+	t.Cleanup(func() { mm.DefaultMM = original }) //nolint:reassign // restore the default
+
+	mm.DefaultMM = preflightHostsMM{ //nolint:reassign // install test double
+		marker: &marker, bridgesMarker: &bridgesMarker, schedOnly: &schedOnly, diskUsage: &diskUsage,
+	}
+
+	ctx := context.WithValue(t.Context(), preflightContextKey{}, "request")
+	api := &builderAPI{preflight: defaultBuilderPreflightSources()}
+	env := newBuilderPreflightEnvironment(ctx, api, builderActor{user: builderAlice, role: *builderFullRole()})
+
+	hosts, err := env.ClusterHosts(t.Context())
+	if err != nil {
+		t.Fatalf("ClusterHosts() error = %v", err)
+	}
+
+	if diff := cmp.Diff([]bapi.PreflightHost{{Name: "h1"}}, hosts); diff != "" {
+		t.Errorf("ClusterHosts() mismatch (-want +got):\n%s", diff)
+	}
+
+	if marker != "request" {
+		t.Error("the preflight read the cluster hosts without the request context")
+	}
+
+	if !schedOnly {
+		t.Error("the preflight read all the cluster hosts, want only the schedulable ones")
+	}
+
+	if diskUsage {
+		t.Error("the preflight read the cluster hosts with their disk usage, want none")
+	}
+
+	bridges, err := env.Bridges(context.WithValue(t.Context(), preflightContextKey{}, "bridges"))
+	if err != nil {
+		t.Fatalf("Bridges() error = %v", err)
+	}
+
+	if diff := cmp.Diff(map[string][]string{"h1": {"phenix"}}, bridges); diff != "" {
+		t.Errorf("Bridges() mismatch (-want +got):\n%s", diff)
+	}
+
+	if bridgesMarker != "bridges" {
+		t.Error("the preflight read the bridges without the context it was given")
 	}
 }

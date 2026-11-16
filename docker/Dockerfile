@@ -23,8 +23,6 @@ COPY docker/install-certs.sh /tmp/install-certs.sh
 RUN /tmp/install-certs.sh && \
   npm config set cafile /etc/ssl/certs/ca-certificates.crt
 
-RUN npm install -g @redocly/cli@2.62.1
-
 WORKDIR /phenix/src/js
 
 COPY src/js/package.json src/js/package-lock.json ./
@@ -47,10 +45,34 @@ ENV PHENIX_BROTLI_QUALITY=${PHENIX_BROTLI_QUALITY}
 RUN npm run build
 
 COPY src/go/web/public/docs/openapi.yml /phenix/src/go/web/public/docs/openapi.yml
+COPY scripts/api-docs.sh /tmp/api-docs.sh
 
 WORKDIR /phenix/src/go/web/public/docs
 
-RUN redocly build-docs openapi.yml -o index.html --title 'phenix API'
+# scripts/api-docs.sh pins the Redocly CLI version for every build.
+RUN /tmp/api-docs.sh build openapi.yml index.html
+
+
+# ** websharkbuilder **
+# WebShark (https://github.com/QXIP/webshark) views packet captures in the
+# browser; phenix serves its UI at /webshark/. Its license (AGPL-3.0) and a
+# NOTICE naming the source it was built from ship with it, in
+# /opt/phenix/webshark.
+FROM docker.io/library/node:24.22.1 AS websharkbuilder
+
+ARG INSTALL_CERTS=
+COPY docker/install-certs.sh /tmp/install-certs.sh
+RUN /tmp/install-certs.sh && \
+  npm config set cafile /etc/ssl/certs/ca-certificates.crt
+
+ARG WEBSHARK_REPO=https://github.com/QXIP/webshark.git
+ARG WEBSHARK_REF=25f2233e0c0d96dd73b568345cf598a8119b3cdd
+
+RUN git clone ${WEBSHARK_REPO} /webshark \
+  && git -C /webshark checkout --detach ${WEBSHARK_REF}
+
+COPY docker/build-webshark.sh /tmp/build-webshark.sh
+RUN /tmp/build-webshark.sh /webshark /opt/webshark
 
 
 # ** appsbuilder **
@@ -105,7 +127,8 @@ WORKDIR /phenix
 COPY Makefile ./
 COPY src/go ./src/go
 
-RUN make generate
+# generate-go only: jsbuilder renders the API reference, and this stage has no Node.js.
+RUN make generate-go
 
 COPY --from=jsbuilder /phenix/src/js/dist ./src/js/dist
 COPY --from=jsbuilder /phenix/src/go/web/public/docs/index.html ./src/go/web/public/docs/index.html
@@ -116,9 +139,10 @@ ARG PHENIX_COMMIT
 ARG PHENIX_TAG
 ARG PHENIX_REPO
 
-# Build phenix binary (skip UI build since artifacts are already copied)
+# Build phenix binary (skip the UI and API reference builds, since jsbuilder
+# already produced both and this image has no Node.js)
 RUN --mount=type=bind,source=.git,target=/phenix/.git \
-  COMMIT=${PHENIX_COMMIT} TAG=${PHENIX_TAG} REPO=${PHENIX_REPO} make bin/phenix SKIP_UI=1
+  COMMIT=${PHENIX_COMMIT} TAG=${PHENIX_TAG} REPO=${PHENIX_REPO} make bin/phenix SKIP_UI=1 SKIP_API_DOCS=1
 RUN --mount=type=bind,source=.git,target=/phenix/.git \
   COMMIT=${PHENIX_COMMIT} make -C src/go phenix-tunneler
 
@@ -191,7 +215,6 @@ RUN git clone https://gitlab.com/glattercj/vmdb2 /opt/vmdb2 \
   && ln -s /opt/vmdb2/vmdb2 /usr/bin/vmdb2
 
 # Allow the use of PyPI mirrors via build args
-ARG PIP_INDEX="https://pypi.org/"
 ARG PIP_INDEX_URL="https://pypi.org/simple"
 
 # Do this before installing phenix-apps so minimega package is latest version
@@ -219,6 +242,7 @@ COPY --from=appsbuilder /go/bin/phenix-app-* /usr/local/bin
 COPY --from=gobuilder /phenix/bin/phenix   /usr/local/bin/phenix
 
 COPY --from=gobuilder /phenix/src/go/bin/phenix-tunneler-* /opt/phenix/downloads/tunneler/
+COPY --from=websharkbuilder /opt/webshark /opt/phenix/webshark
 
 # Update GitHub workflow config to change the minimum version of minimega
 # required for use with phenix.
@@ -228,5 +252,8 @@ LABEL gov.sandia.phenix.minimega-min-revision="ghcr.io/sandia-minimega/minimega:
   org.opencontainers.image.revision="${PHENIX_COMMIT}"
 
 WORKDIR /opt/phenix
+
+# No HEALTHCHECK: most commands run from this image serve no UI. The UI's
+# check, `phenix healthcheck`, is set in docker-compose.yml and podman/pod.yml.
 
 CMD ["phenix", "help"]

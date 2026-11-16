@@ -8,13 +8,43 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
+	"net/url"
 	"regexp"
+	"strings"
 
 	"phenix/util/plog"
 	"phenix/web/rbac"
 )
 
 var tokenRegex = regexp.MustCompile(`(token=)(.+)(\?|$)`)
+
+// RedactURI is a request URI fit to log. A query parameter whose name ends in
+// token, also when the name is percent-encoded, holds a session token: RedactURI
+// replaces its value and the rest of the URI with REDACTED.
+func RedactURI(uri string) string {
+	uri = tokenRegex.ReplaceAllString(uri, "${1}REDACTED")
+
+	path, query, ok := strings.Cut(uri, "?")
+	if !ok {
+		return uri
+	}
+
+	params := strings.Split(query, "&")
+
+	for i, param := range params {
+		key, _, ok := strings.Cut(param, "=")
+		if !ok {
+			continue
+		}
+
+		// the token middleware reads the parameter by its decoded name
+		if name, err := url.QueryUnescape(key); err == nil && strings.HasSuffix(name, "token") {
+			return path + "?" + strings.Join(append(params[:i:i], key+"=REDACTED"), "&")
+		}
+	}
+
+	return uri
+}
 
 // LogRequests logs requests along with ip/user/role that made the request
 // this method redacts tokens in GET parameters.
@@ -30,7 +60,7 @@ func LogRequests(h http.Handler) http.Handler {
 
 		plog.Info(plog.TypeHTTP, "HTTP request",
 			"method", r.Method,
-			"url", tokenRegex.ReplaceAllString(r.RequestURI, "${1}REDACTED"),
+			"url", RedactURI(r.RequestURI),
 			"address", r.RemoteAddr,
 			"user", user,
 			"role", role)

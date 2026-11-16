@@ -81,7 +81,7 @@ func export(outDir string) error {
 		return err
 	}
 
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
+	if err := os.MkdirAll(outDir, 0o755); err != nil { //nolint:gosec // G301 committed schemas are public
 		return fmt.Errorf("create output directory %s: %w", outDir, err)
 	}
 
@@ -154,7 +154,8 @@ func writeSchema(outDir, fileName string, doc map[string]any) error {
 		return fmt.Errorf("marshal schema file %s: %w", fileName, err)
 	}
 
-	if err := os.WriteFile(filepath.Join(outDir, fileName), formatted.Bytes(), 0o644); err != nil {
+	path := filepath.Join(outDir, fileName)
+	if err := os.WriteFile(path, formatted.Bytes(), 0o644); err != nil { //nolint:gosec // G306 committed schemas are public
 		return fmt.Errorf("write schema file %s: %w", fileName, err)
 	}
 
@@ -490,8 +491,10 @@ func rewriteSchema(schema map[string]any) map[string]any {
 			list, _ := value.([]any)
 			rewritten := make([]any, len(list))
 
+			parentProperties, _ := schema["properties"].(map[string]any)
+
 			for i, child := range list {
-				rewritten[i] = rewriteSubschema(child)
+				rewritten[i] = declareRequired(rewriteSubschema(child), parentProperties)
 			}
 
 			out[key] = rewritten
@@ -598,6 +601,49 @@ func ecmaPattern(pattern string) string {
 	out.WriteString(rest)
 
 	return out.String()
+}
+
+// declareRequired adds to a subschema of an allOf, anyOf or oneOf, as an
+// always-valid property, each property it requires that only the parent
+// schema's properties define. A branch that only requires a property, such as
+// Topology's nodes or includeTopologies, then passes strict validators (Ajv's
+// strictRequired, as SchemaStore compiles schemas), and accepts what it did.
+func declareRequired(child any, parentProperties map[string]any) any {
+	branch, ok := child.(map[string]any)
+	if !ok || len(parentProperties) == 0 {
+		return child
+	}
+
+	required, _ := branch["required"].([]any)
+	own, _ := branch["properties"].(map[string]any)
+
+	var declared map[string]any
+
+	for _, value := range required {
+		name, _ := value.(string)
+		if _, defined := own[name]; defined {
+			continue
+		}
+
+		if _, inParent := parentProperties[name]; !inParent {
+			continue
+		}
+
+		if declared == nil {
+			declared = maps.Clone(own)
+			if declared == nil {
+				declared = map[string]any{}
+			}
+		}
+
+		declared[name] = true
+	}
+
+	if declared != nil {
+		branch["properties"] = declared
+	}
+
+	return branch
 }
 
 // rewriteSubschema rewrites a value in a subschema position, which may also be

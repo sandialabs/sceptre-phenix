@@ -1,6 +1,12 @@
 package vm
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+	"strings"
+
+	"inet.af/netaddr"
+)
 
 type TopologySearch struct {
 	Hostname   map[string]int   `json:"hostname"`
@@ -77,4 +83,47 @@ func (s *TopologySearch) AddIP(k string, n int) {
 	}
 
 	s.IP[k] = append(s.IP[k], n)
+}
+
+// Nodes returns the nodes that match value for a search term (hostname, disk, node-type, os-type,
+// label, annotation, vlan or ip), nil for an unknown term. An ip value can be a CIDR prefix, which
+// matches every address in it; those nodes are in order.
+func (s TopologySearch) Nodes(term, value string) []int {
+	switch strings.ToLower(term) {
+	case "hostname":
+		if node, ok := s.Hostname[value]; ok {
+			return []int{node}
+		}
+	case "disk":
+		return s.Disk[value]
+	case "node-type":
+		return s.Type[value]
+	case "os-type":
+		return s.OSType[value]
+	case "label":
+		return s.Label[value]
+	case "annotation":
+		return s.Annotation[value]
+	case "vlan":
+		return s.VLAN[value]
+	case "ip":
+		prefix, err := netaddr.ParseIPPrefix(value)
+		if err != nil {
+			return s.IP[value]
+		}
+
+		var nodes []int
+
+		for addr, matched := range s.IP {
+			if ip, err := netaddr.ParseIP(addr); err == nil && prefix.Contains(ip) {
+				nodes = append(nodes, matched...)
+			}
+		}
+
+		slices.Sort(nodes)
+
+		return nodes
+	}
+
+	return nil
 }

@@ -1,9 +1,7 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { describe, expect, test, vi } from 'vitest';
+import { mount } from '@vue/test-utils';
 import PipelineNode from '@/components/pipeline/PipelineNode.vue';
-
-enableAutoUnmount(afterEach);
 
 function mountNode(status) {
   return mount(PipelineNode, {

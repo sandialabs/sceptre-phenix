@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 )
@@ -42,8 +43,10 @@ func (h uiHandler) Handle(_ context.Context, r slog.Record) error {
 	logtype := string(TypeSystem)
 
 	for _, attr := range h.attrs {
-		if _, ok := logKeysIgnored[attr.Key]; !ok {
-			attrs = append(attrs, fmt.Sprintf("%s=%v", attr.Key, attr.Value.Any()))
+		if attr.Key == logAttrType {
+			logtype = attr.Value.String()
+		} else if _, ok := logKeysIgnored[attr.Key]; !ok {
+			attrs = append(attrs, fmt.Sprintf("%s=%v", attr.Key, attr.Value.Resolve().Any()))
 		}
 	}
 
@@ -51,7 +54,7 @@ func (h uiHandler) Handle(_ context.Context, r slog.Record) error {
 		if attr.Key == logAttrType {
 			logtype = attr.Value.String()
 		} else if _, ok := logKeysIgnored[attr.Key]; !ok {
-			attrs = append(attrs, fmt.Sprintf("%s=%v", attr.Key, attr.Value.Any()))
+			attrs = append(attrs, fmt.Sprintf("%s=%v", attr.Key, attr.Value.Resolve().Any()))
 		}
 
 		return true
@@ -66,7 +69,7 @@ func (h uiHandler) Handle(_ context.Context, r slog.Record) error {
 func (h *uiHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &uiHandler{
 		level:    h.level,
-		attrs:    append(h.attrs, attrs...),
+		attrs:    slices.Concat(h.attrs, attrs),
 		callback: h.callback,
 	}
 }

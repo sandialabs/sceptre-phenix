@@ -17,7 +17,7 @@ import {
   savePanes,
 } from '@/builder/panes.js';
 
-import { memoryStorage } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
 
 const throwing = {
   getItem() {

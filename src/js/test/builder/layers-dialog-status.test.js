@@ -4,17 +4,15 @@
 // it again after the dialog closes. The saves to the library say the store's
 // sentence first, then their warnings.
 
-import { afterEach, describe, expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import LayersDialog from '@/components/builder/dialogs/LayersDialog.vue';
 import { unsaidPart } from '@/builder/announce.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument } from './fixtures.js';
-
-enableAutoUnmount(afterEach);
 
 function mountDialog() {
   const pinia = createPinia();

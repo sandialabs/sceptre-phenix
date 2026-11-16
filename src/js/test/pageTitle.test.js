@@ -16,11 +16,15 @@ describe('routeTitle', () => {
   test.each([
     ['/experiments', 'Experiments - phēnix'],
     ['/experiment/demo', 'demo - Experiment - phēnix'],
-    ['/soh/demo', 'demo - State of health - phēnix'],
+    ['/soh', 'State of Health - phēnix'],
+    ['/soh/demo', 'demo - State of Health - phēnix'],
     ['/scorch', 'SCORCH - phēnix'],
     ['/scorch/demo', 'demo - SCORCH runs - phēnix'],
     ['/configs/', 'Configs - phēnix'],
     ['/disks/', 'Disks - phēnix'],
+    ['/vmtiles', 'VM tiles - phēnix'],
+    ['/packets', 'WebShark - phēnix'],
+    ['/no-such-page', 'Page not found - phēnix'],
     // The user name in the path is not the item of the page.
     ['/proxysignup/alice', 'Sign up - phēnix'],
   ])('%s is titled %s', (path, title) => {

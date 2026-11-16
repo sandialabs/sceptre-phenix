@@ -2,17 +2,15 @@
 // The Scenario dialog, which edits the Scenario configs a diagram names, and
 // its editor: mounted and driven as a user would.
 
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import ScenarioDialog from '@/components/builder/dialogs/ScenarioDialog.vue';
 import ScenarioEditorDialog from '@/components/builder/dialogs/ScenarioEditorDialog.vue';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument } from './fixtures.js';
-
-enableAutoUnmount(afterEach);
 
 // Opens the dialog in the page for a diagram listing `scenarios`, on a server
 // listing `stored`.
@@ -232,7 +230,7 @@ describe('View, Edit and Create new scenario', () => {
     // A spinner replaces the button while the config is read, and the
     // other buttons do nothing.
     expect(view.attributes('aria-busy')).toBe('true');
-    expect(view.attributes('aria-label')).toBe('Loading plant-ntp');
+    expect(view.attributes('aria-label')).toBe('View plant-ntp, loading');
     expect(edit.attributes('aria-busy')).toBeUndefined();
     expect(edit.attributes('aria-disabled')).toBe('true');
     expect(textOf(wrapper, 'scenario-status')).toBe(

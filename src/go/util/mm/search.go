@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net"
 	"regexp"
-	"slices"
 	"strings"
 
 	"phenix/util/plog"
@@ -14,9 +13,25 @@ var (
 	ipv4Re              = regexp.MustCompile(`(?:\d{1,3}[.]){3}\d{1,3}(?:\/\d{1,2})?`)
 	stateRe             = regexp.MustCompile(`^(?:error|quit|running|shutdown|paused)$`)
 	boolOps             = regexp.MustCompile(`^(?:and|or|not)$`)
-	groups              = regexp.MustCompile(`(?:[(][^ ])|(?:[^ ][)])`)
-	keywordEscape       = regexp.MustCompile(`['"]([^'"]+)['"]`)
+	keywordEscape       = regexp.MustCompile(`'([^']+)'`)
 	defaultSearchFields = []string{"Name", "Networks", "Host", "Disk", "Tags"} //nolint:gochecknoglobals // default fields
+
+	errMalformedFilter = errors.New("malformed search filter")
+)
+
+// The Boolean operators.
+const (
+	opAnd = "and"
+	opOr  = "or"
+	opNot = "not"
+)
+
+// Binding strength of the Boolean operators: "not" binds tightest, then
+// "and", then "or".
+const (
+	precedenceOr = iota + 1
+	precedenceAnd
+	precedenceNot
 )
 
 type Stack struct {
@@ -49,42 +64,19 @@ type ExpressionTree struct {
 	searchFields []string
 }
 
+// BuildTree parses a search filter into an expression tree. "not" binds
+// tightest, then "and", then "or"; parentheses group terms, and two terms
+// with no operator between them are joined with "and". BuildTree returns nil
+// for an empty filter and for a filter that it cannot parse.
 func BuildTree(searchFilter string) *ExpressionTree {
-	if len(searchFilter) == 0 {
-		return nil
-	}
-
-	// Adjust any parentheses so that they are
-	// space delimited
-	if groups.MatchString(searchFilter) {
-		searchFilter = strings.ReplaceAll(searchFilter, "(", "( ")
-		searchFilter = strings.ReplaceAll(searchFilter, ")", " )")
-	}
-
-	searchString := strings.ToLower(searchFilter)
-	stringParts := strings.Split(searchString, " ")
-
-	// If no operators were found, assume a default
-	// operator of "and"
-	match := slices.ContainsFunc(stringParts, boolOps.MatchString)
-
-	if !match {
-		tmp := strings.Join(stringParts, " and ")
-		stringParts = strings.Split(tmp, " ")
-	}
-
-	postFix, err := postfix(stringParts)
+	tokens, err := tokenize(searchFilter)
 	if err != nil {
 		return nil
 	}
 
-	// If the only term that was passed in
-	// is a boolean operator, then skip
-	// building the tree
-	if len(postFix) == 1 {
-		if boolOps.MatchString(postFix[0]) {
-			return nil
-		}
+	postFix, err := postfix(tokens)
+	if err != nil {
+		return nil
 	}
 
 	expressionTree, err := createTree(postFix)
@@ -115,106 +107,218 @@ func (node *ExpressionTree) Evaluate(vm *VM) bool {
 	}
 
 	switch node.term {
-	case "and":
+	case opAnd:
 		return rightSide && leftSide
 
-	case "or":
+	case opOr:
 		return rightSide || leftSide
 
-	case "not":
+	case opNot:
 		return !rightSide
 	}
 
 	return false
 }
 
-// Shunting yard algorithm by Edsger Dijkstra
-// for putting search terms and operators into
-// postfix notation.
-func postfix(terms []string) ([]string, error) {
+// tokenize splits a lower-case copy of the filter into terms, operators and
+// parentheses. A double-quoted string is one term that keeps its quotes,
+// spaces and parentheses. tokenize returns errMalformedFilter for a quote
+// with no end or for an empty quoted string.
+func tokenize(searchFilter string) ([]string, error) {
+	var tokens []string
+
+	rest := strings.ToLower(searchFilter)
+
+	for {
+		before, after, quoted := strings.Cut(rest, `"`)
+		tokens = append(tokens, splitTerms(before)...)
+
+		if !quoted {
+			return tokens, nil
+		}
+
+		term, next, closed := strings.Cut(after, `"`)
+		if !closed || term == "" {
+			return nil, errMalformedFilter
+		}
+
+		tokens = append(tokens, `"`+term+`"`)
+		rest = next
+	}
+}
+
+// splitTerms splits text with no double quotes into terms, operators and
+// parentheses.
+func splitTerms(text string) []string {
+	text = strings.ReplaceAll(text, "(", " ( ")
+	text = strings.ReplaceAll(text, ")", " ) ")
+
+	return strings.Fields(text)
+}
+
+// literal returns the text in a term that tokenize made from a double-quoted
+// string, and reports whether term is such a term.
+func literal(term string) (string, bool) {
+	if len(term) < 2 || term[0] != '"' || term[len(term)-1] != '"' {
+		return "", false
+	}
+
+	return term[1 : len(term)-1], true
+}
+
+func precedence(operator string) int {
+	switch operator {
+	case opNot:
+		return precedenceNot
+	case opAnd:
+		return precedenceAnd
+	case opOr:
+		return precedenceOr
+	default:
+		return 0
+	}
+}
+
+// postfix puts the tokens into postfix order with the shunting yard
+// algorithm by Edsger Dijkstra. It adds an "and" between two operands that
+// have no operator between them, and returns errMalformedFilter for
+// unbalanced parentheses or an operator with a missing operand.
+func postfix(tokens []string) ([]string, error) {
 	var output []string
 
 	opStack := new(Stack)
+	expectOperand := true
 
-	for _, term := range terms {
-		if len(term) == 0 {
-			continue
+	for _, token := range tokens {
+		startsOperand := token == "(" || token == opNot || !isSyntax(token)
+		if !expectOperand && startsOperand {
+			output = pushBinary(output, opStack, opAnd)
+			expectOperand = true
 		}
 
-		switch {
-		case boolOps.MatchString(term) || term == "(":
-			opStack.Push(term)
-		case term == ")":
-			token := ""
-			for token != "(" {
-				if tmpToken, ok := opStack.Pop().(string); !ok {
-					return output, errors.New("error: type assertion parsing token")
-				} else {
-					token = tmpToken
+		switch token {
+		case "(", opNot:
+			opStack.Push(token)
+		case ")":
+			if expectOperand {
+				return nil, errMalformedFilter
+			}
+
+			for {
+				if opStack.IsEmpty() {
+					return nil, errMalformedFilter
 				}
 
-				if token != "(" {
-					output = append(output, token)
+				top, _ := opStack.Pop().(string)
+				if top == "(" {
+					break
 				}
+
+				output = append(output, top)
 			}
+		case opAnd, opOr:
+			if expectOperand {
+				return nil, errMalformedFilter
+			}
+
+			output = pushBinary(output, opStack, token)
+			expectOperand = true
 		default:
-			output = append(output, term)
+			output = append(output, token)
+			expectOperand = false
 		}
 	}
 
+	if expectOperand {
+		return nil, errMalformedFilter
+	}
+
 	for !opStack.IsEmpty() {
-		if token, ok := opStack.Pop().(string); !ok {
-			return output, errors.New("error: type assertion parsing token")
-		} else {
-			output = append(output, token)
+		top, _ := opStack.Pop().(string)
+		if top == "(" {
+			return nil, errMalformedFilter
 		}
+
+		output = append(output, top)
 	}
 
 	return output, nil
 }
 
+// pushBinary moves the stacked operators that bind at least as tightly as
+// operator to the output, then pushes operator. This makes "and" and "or"
+// left-associative.
+func pushBinary(output []string, opStack *Stack, operator string) []string {
+	for !opStack.IsEmpty() {
+		top, _ := opStack.Pop().(string)
+		if precedence(top) < precedence(operator) {
+			opStack.Push(top)
+
+			break
+		}
+
+		output = append(output, top)
+	}
+
+	opStack.Push(operator)
+
+	return output
+}
+
+func isSyntax(token string) bool {
+	return token == "(" || token == ")" || boolOps.MatchString(token)
+}
+
+// createTree builds the expression tree from tokens in postfix order. It
+// returns errMalformedFilter when an operator has no operand or operands
+// are left over.
 func createTree(postFix []string) (*ExpressionTree, error) {
 	stack := new(Stack)
 
 	for _, term := range postFix {
-		if boolOps.MatchString(term) {
-			opTree := new(ExpressionTree)
-			opTree.term = term
+		node := new(ExpressionTree)
 
-			if t1, ok := stack.Pop().(*ExpressionTree); !ok {
-				return nil, errors.New("error: type assertion parsing token")
-			} else {
-				opTree.right = t1
+		switch term {
+		case opNot:
+			node.term = term
+			node.right, _ = stack.Pop().(*ExpressionTree)
+
+			if node.right == nil {
+				return nil, errMalformedFilter
 			}
+		case opAnd, opOr:
+			node.term = term
+			node.right, _ = stack.Pop().(*ExpressionTree)
+			node.left, _ = stack.Pop().(*ExpressionTree)
 
-			if !stack.IsEmpty() && term != "not" {
-				if t2, ok := stack.Pop().(*ExpressionTree); !ok {
-					return nil, errors.New("error: type assertion parsing token")
-				} else {
-					opTree.left = t2
-				}
+			if node.left == nil || node.right == nil {
+				return nil, errMalformedFilter
 			}
+		default:
+			text, isLiteral := literal(term)
 
-			stack.Push(opTree)
-		} else {
-			operand := new(ExpressionTree)
-			if keywordEscape.MatchString(term) {
-				operand.term = keywordEscape.FindAllStringSubmatch(term, -1)[0][1]
-				operand.searchFields = defaultSearchFields
-			} else {
-				operand.term = term
-				operand.searchFields = getSearchFields(term)
+			switch {
+			case isLiteral:
+				node.term = text
+				node.searchFields = defaultSearchFields
+			case keywordEscape.MatchString(term):
+				node.term = keywordEscape.FindAllStringSubmatch(term, -1)[0][1]
+				node.searchFields = defaultSearchFields
+			default:
+				node.term = term
+				node.searchFields = getSearchFields(term)
 			}
-
-			stack.Push(operand)
 		}
+
+		stack.Push(node)
 	}
 
-	if expressionTree, ok := stack.Pop().(*ExpressionTree); !ok {
-		return nil, errors.New("error: type assertion parsing token")
-	} else {
-		return expressionTree, nil
+	expressionTree, _ := stack.Pop().(*ExpressionTree)
+	if expressionTree == nil || !stack.IsEmpty() {
+		return nil, errMalformedFilter
 	}
+
+	return expressionTree, nil
 }
 
 func getSearchFields(term string) []string {
@@ -239,7 +343,12 @@ func (node *ExpressionTree) match(vm *VM) bool { //nolint:funlen // complex logi
 		switch field {
 		case "IPv4":
 			{
-				_, refNet, err := net.ParseCIDR(node.term)
+				cidr := node.term
+				if !strings.Contains(cidr, "/") {
+					cidr += "/32"
+				}
+
+				_, refNet, err := net.ParseCIDR(cidr)
 				if err != nil {
 					plog.Debug(plog.TypeSystem, "unable to parse network", "network", node.term)
 

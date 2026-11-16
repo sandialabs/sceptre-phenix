@@ -1,6 +1,8 @@
 package tap
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
 	"github.com/hashicorp/go-multierror"
@@ -11,6 +13,34 @@ import (
 	"phenix/util/plog"
 )
 
+// ErrInvalidIP is returned for a tap with external access whose ip is not an address in CIDR form.
+var ErrInvalidIP = errors.New("tap ip is not an address in CIDR form")
+
+// Validate returns an error when t has external access and its ip is not an
+// address in CIDR form. Create calls it before it makes anything.
+func (t *Tap) Validate() error {
+	_, err := t.externalIP()
+
+	return err
+}
+
+// externalIP returns the ip of t, which has external access, as a prefix. It
+// returns the zero prefix for a tap without external access.
+func (t *Tap) externalIP() (netaddr.IPPrefix, error) {
+	if !t.External.Enabled {
+		return netaddr.IPPrefix{}, nil
+	}
+
+	ip, err := netaddr.ParseIPPrefix(t.IP)
+	if err != nil {
+		return netaddr.IPPrefix{}, fmt.Errorf(
+			"%w: tap for VLAN %s has ip %q, want an address such as 10.0.0.254/24", ErrInvalidIP, t.VLAN, t.IP,
+		)
+	}
+
+	return ip, nil
+}
+
 func (t *Tap) Init(bridge string, opts ...Option) {
 	t.o = NewOptions(opts...)
 
@@ -20,7 +50,12 @@ func (t *Tap) Init(bridge string, opts ...Option) {
 }
 
 func (t *Tap) Create(host string) (netaddr.IPPrefix, error) {
-	err := t.create(host)
+	ip, err := t.externalIP()
+	if err != nil {
+		return netaddr.IPPrefix{}, err
+	}
+
+	err = t.create(host)
 	if err != nil {
 		// attempt to clean up any progress already made
 		_ = t.delete(host)
@@ -30,7 +65,7 @@ func (t *Tap) Create(host string) (netaddr.IPPrefix, error) {
 
 	if t.External.Enabled {
 		used := t.o.used
-		used = append(used, netaddr.MustParseIPPrefix(t.IP))
+		used = append(used, ip)
 
 		pair, err := util.UnusedSubnet(t.o.subnet, used)
 		if err != nil {
@@ -109,247 +144,100 @@ func (t *Tap) delete(host string) error {
 	return nil
 }
 
-func (t *Tap) connect(host string, subnet netaddr.IPPrefix) error { //nolint:funlen // complex logic
+func (t *Tap) connect(host string, subnet netaddr.IPPrefix) error {
+	if err := mm.ValidateShellWord(t.Name); err != nil {
+		return fmt.Errorf("tap name: %w", err)
+	}
+
 	t.Subnet = subnet.Masked().String()
 
 	var (
+		name  = t.Name
+		peer  = t.Name[:9] + "_right"
 		left  = subnet.IP().Next()
 		right = subnet.IP().Next().Next()
 	)
 
-	plog.Info(plog.TypeSystem, "creating veth pair for tap on host", "tap", t.Name, "host", host)
+	plog.Info(plog.TypeSystem, "connecting tap for external access on host", "tap", name, "host", host)
 
-	cmd := fmt.Sprintf("ip link add %s type veth peer name %s_right", t.Name, t.Name[:9])
+	ns := func(action string) string {
+		return fmt.Sprintf("%s in network namespace %s on host %s", action, name, host)
+	}
+	sys := func(action string) string { return fmt.Sprintf("%s in system namespace on host %s", action, host) }
 
-	err := mm.MeshShell(host, cmd)
-	if err != nil {
-		return fmt.Errorf("creating veth pair for tap %s on host %s: %w", t.Name, host, err)
+	steps := []mm.ShellStep{
+		{
+			Action:  fmt.Sprintf("creating veth pair for tap %s on host %s", name, host),
+			Command: fmt.Sprintf("ip link add %s type veth peer name %s", name, peer),
+		},
+		{
+			Action:  fmt.Sprintf("attaching veth interface to network namespace %s on host %s", name, host),
+			Command: fmt.Sprintf("ip link set dev %s netns %s", peer, name),
+		},
+		{Action: ns("renaming veth interface"), Command: fmt.Sprintf("ip netns exec %s ip link set %s name eth0", name, peer)},
+		{Action: ns("enabling veth interface"), Command: fmt.Sprintf("ip netns exec %s ip link set dev eth0 up", name)},
+		{
+			Action:  ns("setting IP for veth interface"),
+			Command: fmt.Sprintf("ip netns exec %s ip addr add %s/30 dev eth0", name, right),
+		},
+		{
+			Action:  ns("setting default route"),
+			Command: fmt.Sprintf("ip netns exec %s ip route add default via %s", name, left),
+		},
+		{
+			Action:  ns("configuring iptables masquerading"),
+			Command: fmt.Sprintf("ip netns exec %s iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE", name),
+		},
+		{
+			Action:  sys("configuring iptables masquerading"),
+			Command: fmt.Sprintf("iptables -t nat -A POSTROUTING -s %s ! -o %s -j MASQUERADE", right, name),
+		},
+		{
+			Action:  sys("configuring iptables forwarding"),
+			Command: fmt.Sprintf("iptables -A FORWARD -i %s ! -o %s -j ACCEPT", name, name),
+		},
+		{
+			Action:  sys("configuring iptables forwarding"),
+			Command: fmt.Sprintf("iptables -A FORWARD -o %s -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT", name),
+		},
+		{Action: sys("setting IP for veth interface"), Command: fmt.Sprintf("ip addr add %s/30 dev %s", left, name)},
+		{Action: sys("enabling veth interface"), Command: fmt.Sprintf("ip link set dev %s up", name)},
 	}
 
-	plog.Info(
-		plog.TypeSystem,
-		"attaching veth interface to network namespace on host",
-		"ns",
-		t.Name,
-		"host",
-		host,
-	)
-
-	cmd = fmt.Sprintf("ip link set dev %s_right netns %s", t.Name[:9], t.Name)
-
-	err = mm.MeshShell(host, cmd)
-	if err != nil {
-		return fmt.Errorf(
-			"attaching veth interface to network namespace %s on host %s: %w",
-			t.Name,
-			host,
-			err,
-		)
-	}
-
-	plog.Info(
-		plog.TypeSystem,
-		"enabling and configuring veth interface in network namespace on host",
-		"ns",
-		t.Name,
-		"host",
-		host,
-	)
-
-	cmd = fmt.Sprintf("ip netns exec %s ip link set %s_right name eth0", t.Name, t.Name[:9])
-
-	err = mm.MeshShell(host, cmd)
-	if err != nil {
-		return fmt.Errorf(
-			"renaming veth interface in network namespace %s on host %s: %w",
-			t.Name,
-			host,
-			err,
-		)
-	}
-
-	cmd = fmt.Sprintf("ip netns exec %s ip link set dev eth0 up", t.Name)
-
-	err = mm.MeshShell(host, cmd)
-	if err != nil {
-		return fmt.Errorf(
-			"enabling veth interface in network namespace %s on host %s: %w",
-			t.Name,
-			host,
-			err,
-		)
-	}
-
-	cmd = fmt.Sprintf("ip netns exec %s ip addr add %s/30 dev eth0", t.Name, right)
-
-	err = mm.MeshShell(host, cmd)
-	if err != nil {
-		return fmt.Errorf(
-			"setting IP for veth interface in network namespace %s on host %s: %w",
-			t.Name,
-			host,
-			err,
-		)
-	}
-
-	cmd = fmt.Sprintf("ip netns exec %s ip route add default via %s", t.Name, left)
-
-	err = mm.MeshShell(host, cmd)
-	if err != nil {
-		return fmt.Errorf(
-			"setting default route for network namespace %s on host %s: %w",
-			t.Name,
-			host,
-			err,
-		)
-	}
-
-	plog.Info(
-		plog.TypeSystem,
-		"configuring iptables in network namespace on host",
-		"ns",
-		t.Name,
-		"host",
-		host,
-	)
-
-	cmd = fmt.Sprintf(
-		"ip netns exec %s iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE",
-		t.Name,
-	)
-
-	err = mm.MeshShell(host, cmd)
-	if err != nil {
-		return fmt.Errorf(
-			"configuring iptables masquerading in network namespace %s on host %s: %w",
-			t.Name,
-			host,
-			err,
-		)
-	}
-
-	plog.Info(plog.TypeSystem, "configuring iptables in the system namespace on host", "host", host)
-
-	cmd = fmt.Sprintf("iptables -t nat -A POSTROUTING -s %s ! -o %s -j MASQUERADE", right, t.Name)
-
-	err = mm.MeshShell(host, cmd)
-	if err != nil {
-		return fmt.Errorf(
-			"configuring iptables masquerading in system namespace on host %s: %w",
-			host,
-			err,
-		)
-	}
-
-	cmd = fmt.Sprintf("iptables -A FORWARD -i %s ! -o %s -j ACCEPT", t.Name, t.Name)
-
-	err = mm.MeshShell(host, cmd)
-	if err != nil {
-		return fmt.Errorf(
-			"configuring iptables forwarding in system namespace on host %s: %w",
-			host,
-			err,
-		)
-	}
-
-	cmd = fmt.Sprintf(
-		"iptables -A FORWARD -o %s -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT",
-		t.Name,
-	)
-
-	err = mm.MeshShell(host, cmd)
-	if err != nil {
-		return fmt.Errorf(
-			"configuring iptables forwarding in system namespace on host %s: %w",
-			host,
-			err,
-		)
-	}
-
-	plog.Info(
-		plog.TypeSystem,
-		"enabling and configuring veth interface in the system namespace on host",
-		"host",
-		host,
-	)
-
-	cmd = fmt.Sprintf("ip addr add %s/30 dev %s", left, t.Name)
-
-	err = mm.MeshShell(host, cmd)
-	if err != nil {
-		return fmt.Errorf(
-			"setting IP for veth interface in system namespace on host %s: %w",
-			host,
-			err,
-		)
-	}
-
-	cmd = fmt.Sprintf("ip link set dev %s up", t.Name)
-
-	err = mm.MeshShell(host, cmd)
-	if err != nil {
-		return fmt.Errorf("enabling veth interface in system namespace on host %s: %w", host, err)
-	}
-
-	return nil
+	return mm.MeshShellSteps(host, steps...)
 }
 
 func (t *Tap) disconnect(host string) error {
+	if err := mm.ValidateShellWord(t.Name); err != nil {
+		return fmt.Errorf("tap name: %w", err)
+	}
+
 	subnet, err := netaddr.ParseIPPrefix(t.Subnet)
 	if err != nil {
 		return fmt.Errorf("parsing tap subnet %s: %w", t.Subnet, err)
 	}
 
 	var (
+		name  = t.Name
 		right = subnet.IP().Next().Next()
-		errs  error
 	)
 
-	plog.Info(
-		plog.TypeSystem,
-		"deleting iptables configs in the system namespace on host",
-		"host",
-		host,
-	)
+	plog.Info(plog.TypeSystem, "deleting iptables configs in the system namespace on host", "host", host)
 
-	cmd := fmt.Sprintf("iptables -t nat -D POSTROUTING -s %s ! -o %s -j MASQUERADE", right, t.Name)
-	if err := mm.MeshShell(host, cmd); err != nil {
-		errs = multierror.Append(
-			errs,
-			fmt.Errorf(
-				"deleting iptables masquerading in system namespace on host %s: %w",
-				host,
-				err,
-			),
-		)
+	steps := []mm.ShellStep{
+		{
+			Action:  "deleting iptables masquerading in system namespace",
+			Command: fmt.Sprintf("iptables -t nat -D POSTROUTING -s %s ! -o %s -j MASQUERADE", right, name),
+		},
+		{
+			Action:  "deleting iptables forwarding in system namespace",
+			Command: fmt.Sprintf("iptables -D FORWARD -i %s ! -o %s -j ACCEPT", name, name),
+		},
+		{
+			Action:  "deleting iptables forwarding in system namespace",
+			Command: fmt.Sprintf("iptables -D FORWARD -o %s -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT", name),
+		},
 	}
 
-	cmd = fmt.Sprintf("iptables -D FORWARD -i %s ! -o %s -j ACCEPT", t.Name, t.Name)
-	if err := mm.MeshShell(host, cmd); err != nil {
-		errs = multierror.Append(
-			errs,
-			fmt.Errorf(
-				"deleting iptables forwarding in system namespace on host %s: %w",
-				host,
-				err,
-			),
-		)
-	}
-
-	cmd = fmt.Sprintf(
-		"iptables -D FORWARD -o %s -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT",
-		t.Name,
-	)
-	if err := mm.MeshShell(host, cmd); err != nil {
-		errs = multierror.Append(
-			errs,
-			fmt.Errorf(
-				"deleting iptables forwarding in system namespace on host %s: %w",
-				host,
-				err,
-			),
-		)
-	}
-
-	return errs
+	return mm.MeshShellEach(context.Background(), host, steps...)
 }

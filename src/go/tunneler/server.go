@@ -19,26 +19,38 @@ import (
 
 const socketDirMode = 0o700
 
-func startUnixSocket() error {
+// socketPath gives the path of the unix socket that the serve command and the
+// client commands share. Tests replace it.
+var socketPath = func() string { //nolint:gochecknoglobals // tests replace it
+	return filepath.Join(os.TempDir(), "phenix", "tunneler.sock")
+}
+
+// startUnixSocket listens on socketPath and serves each connection. Close the
+// returned listener to stop it.
+func startUnixSocket() (net.Listener, error) {
 	var (
-		usockDir  = filepath.Join(os.TempDir(), "phenix")
-		usockPath = filepath.Join(usockDir, "tunneler.sock")
+		usockPath = socketPath()
+		usockDir  = filepath.Dir(usockPath)
 	)
 
 	if err := os.MkdirAll(usockDir, socketDirMode); err != nil {
-		return fmt.Errorf("creating socket directory: %w", err)
+		return nil, fmt.Errorf("creating socket directory: %w", err)
 	}
 
 	_ = os.Remove(usockPath)
 
 	usock, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", usockPath) //nolint:exhaustruct // partial initialization
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	go func() {
 		for {
 			conn, err := usock.Accept()
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "ERROR: accepting connection on unix socket: %v", err)
 
@@ -49,7 +61,7 @@ func startUnixSocket() error {
 		}
 	}()
 
-	return nil
+	return usock, nil
 }
 
 //nolint:funlen // handler
@@ -191,8 +203,6 @@ func handleConnection(conn net.Conn) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "ERROR: encoding %v message: %v\n", msg.Type, err)
 		}
-	case CREATE, DELETE:
-		// TODO: implement
 	}
 }
 
@@ -226,7 +236,7 @@ func getRemoteListeners() ([]ft.Listener, error) {
 				)
 			}
 
-			resp, err := httpCli.Do(req) //nolint:gosec // SSRF via taint analysis
+			resp, err := httpCli.Do(req) //nolint:gosec // G704 the phenix server the user named
 			if err != nil {
 				return nil, fmt.Errorf(
 					"getting port forwards for VM %s in experiment %s: %w",
@@ -278,7 +288,7 @@ func getRemoteExperiments(client *http.Client, url string) ([]string, error) {
 		return nil, fmt.Errorf("creating HTTP request for getting experiments: %w", err)
 	}
 
-	resp, err := client.Do(req) //nolint:gosec // SSRF via taint analysis
+	resp, err := client.Do(req) //nolint:gosec // G704 the phenix server the user named
 	if err != nil {
 		return nil, fmt.Errorf("getting experiments: %w", err)
 	}
@@ -300,14 +310,13 @@ func getRemoteExperiments(client *http.Client, url string) ([]string, error) {
 		list           []string
 	)
 
+	// skip an entry that is not an object, is not running, or has no name
 	for _, e := range experiments {
-		var (
-			exp, _  = e.(map[string]any)
-			running = exp["running"].(bool)
-		)
+		exp, _ := e.(map[string]any)
+		running, _ := exp["running"].(bool)
+		name, _ := exp["name"].(string)
 
-		if running {
-			name, _ := exp["name"].(string)
+		if running && name != "" {
 			list = append(list, name)
 		}
 	}
@@ -321,7 +330,7 @@ func getRemoteVMs(client *http.Client, url string) ([]string, error) {
 		return nil, fmt.Errorf("creating HTTP request for getting VMs: %w", err)
 	}
 
-	resp, err := client.Do(req) //nolint:gosec // SSRF via taint analysis
+	resp, err := client.Do(req) //nolint:gosec // G704 the phenix server the user named
 	if err != nil {
 		return nil, fmt.Errorf("getting VMs: %w", err)
 	}
@@ -343,10 +352,13 @@ func getRemoteVMs(client *http.Client, url string) ([]string, error) {
 		list   []string
 	)
 
+	// skip an entry that is not an object or has no name
 	for _, e := range vms {
 		vm, _ := e.(map[string]any)
-		name, _ := vm["name"].(string)
-		list = append(list, name)
+
+		if name, _ := vm["name"].(string); name != "" {
+			list = append(list, name)
+		}
 	}
 
 	return list, nil
@@ -446,33 +458,44 @@ func activateLocalListener(ll *LocalListener) error {
 				return
 			}
 
-			go func() {
-				wsURL := ll.WebSocketURL(wsEndpoint)
-
-				config, err := websocket.NewConfig(wsURL, origin)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "ERROR: creating websocket config: %v\n", err)
-
-					return
-				}
-
-				config.Header = headers
-
-				ws, err := websocket.DialConfig(config)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "ERROR: dialing websocket (%s): %v\n", wsURL, err)
-
-					return
-				}
-
-				go func() { _, _ = io.Copy(ws, conn) }()
-
-				_, _ = io.Copy(conn, ws)
-			}()
+			go forwardConnection(conn, ll.WebSocketURL(wsEndpoint))
 		}
 	}()
 
 	return nil
+}
+
+// forwardConnection copies conn to and from a websocket to wsURL, the VM's
+// forward on phēnix. It closes conn and the websocket once either side ends or
+// the dial fails, so the program connected to the local port sees the end.
+func forwardConnection(conn net.Conn, wsURL string) {
+	defer func() { _ = conn.Close() }()
+
+	config, err := websocket.NewConfig(wsURL, origin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: creating websocket config: %v\n", err)
+
+		return
+	}
+
+	config.Header = headers
+
+	ws, err := websocket.DialConfig(config)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: dialing websocket (%s): %v\n", wsURL, err)
+
+		return
+	}
+
+	defer func() { _ = ws.Close() }()
+
+	// the local side ended: close the websocket so the copy below ends too
+	go func() {
+		_, _ = io.Copy(ws, conn)
+		_ = ws.Close()
+	}()
+
+	_, _ = io.Copy(conn, ws)
 }
 
 func deactivateLocalListener(ll *LocalListener) error {

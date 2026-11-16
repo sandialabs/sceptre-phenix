@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 const exporters = vi.hoisted(() => ({
   exportImage: vi.fn(),
@@ -24,8 +24,6 @@ import { builderSettings } from '@/builder/settings.js';
 import { iconLibrary } from '@/builder/iconLibrary.js';
 
 import { sampleDocument } from './fixtures.js';
-
-enableAutoUnmount(afterEach);
 
 // Promises a test has not settled. afterEach settles them, so that the
 // shared download task of a failed test does not stay busy for the next.

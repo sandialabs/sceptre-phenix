@@ -230,7 +230,7 @@ func builderTemplateError(w http.ResponseWriter, err error, format string, args 
 		w.Header().Set("ETag", stale.etag)
 
 		return weberror.NewWebError(nil, "%s", stale.Error()).
-			SetStatus(http.StatusPreconditionFailed).WithCode(string(bdoc.CodeTemplateItemStale))
+			SetStatus(http.StatusPreconditionFailed).WithCode(weberror.Code(bdoc.CodeTemplateItemStale))
 	case errors.As(err, &refused):
 		return builderWebError(err, "%s", refused.Reason)
 	case errors.As(err, &missing):
@@ -398,7 +398,7 @@ func (b *builderAPI) preloadedCollections() []builderPreloadedCollection {
 func (b *builderAPI) refuseReadOnly(templateIDs, collectionIDs []string) error {
 	readOnly := func(format string, args ...any) error {
 		return weberror.NewWebError(nil, format, args...).
-			SetStatus(http.StatusConflict).WithCode(string(bdoc.CodeTemplateItemReadOnly))
+			SetStatus(http.StatusConflict).WithCode(weberror.Code(bdoc.CodeTemplateItemReadOnly))
 	}
 
 	for _, template := range bdoc.BuiltinTemplates() {

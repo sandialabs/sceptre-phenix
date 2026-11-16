@@ -112,6 +112,7 @@ func runConfigCreate(t *testing.T, path string) error {
 	return err
 }
 
+// A schema error from config create gives one line for each problem, with its line number and a hint.
 func TestConfigCreateExplainsValidationErrors(t *testing.T) {
 	tests := []struct {
 		file    string
@@ -167,6 +168,7 @@ func TestConfigCreateExplainsValidationErrors(t *testing.T) {
 	}
 }
 
+// An error that is not a schema error stays as one line.
 func TestConfigCreateKeepsOtherErrorsUnchanged(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "broken.yml")
 	if err := os.WriteFile(path, []byte("kind: [\n"), 0o600); err != nil {

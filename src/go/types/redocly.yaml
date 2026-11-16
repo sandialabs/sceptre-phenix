@@ -1,0 +1,11 @@
+# Redocly lint configuration for the config schemas: the envelope in
+# schemas/ and each kind's spec in version/schemas/. They are OpenAPI 3.0
+# documents with components and no paths, which phenix validates configs
+# against with kin-openapi. scripts/api-docs.sh lint-schemas uses it.
+extends:
+  - spec
+rules:
+  # A property that takes more than one type (a list or a single name, say)
+  # and null declares nullable beside its oneOf or anyOf: kin-openapi, which
+  # validates configs, honors nullable only on the schema it visits.
+  nullable-type-sibling: "off"

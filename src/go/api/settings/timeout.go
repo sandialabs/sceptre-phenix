@@ -56,15 +56,15 @@ func GetTimeoutSettingsFromList(settings []types.Setting) (TimeoutSettings, erro
 }
 
 func UpdateTimeoutSettings(newSettings TimeoutSettings) error {
-	if _, err := Update("Timeout", "Enabled", strconv.FormatBool(newSettings.Enabled)); err != nil {
+	if err := Update("Timeout", "Enabled", strconv.FormatBool(newSettings.Enabled)); err != nil {
 		return fmt.Errorf("error updating Timeout.Enabled: %w", err)
 	}
 
-	if _, err := Update("Timeout", "TimeoutMin", formatFloat(newSettings.TimeoutMin)); err != nil {
+	if err := Update("Timeout", "TimeoutMin", formatFloat(newSettings.TimeoutMin)); err != nil {
 		return fmt.Errorf("error updating Timeout.TimeoutMin: %w", err)
 	}
 
-	if _, err := Update("Timeout", "WarningMin", formatFloat(newSettings.WarningMin)); err != nil {
+	if err := Update("Timeout", "WarningMin", formatFloat(newSettings.WarningMin)); err != nil {
 		return fmt.Errorf("error updating Timeout.WarningMin: %w", err)
 	}
 

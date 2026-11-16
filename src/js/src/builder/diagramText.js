@@ -8,6 +8,7 @@ import { count, listOf } from './announce.js';
 import { ICON_ORDER, iconLabel } from './iconLabels.js';
 import {
   connectionEndLabel,
+  deviceHandles,
   deviceTypeLabel,
   documentSummary,
   effectiveLayers,
@@ -22,11 +23,8 @@ import {
 } from './model.js';
 import { capitalize } from './text.js';
 
-// Notes are named by the start of their text, up to this many characters.
-const NOTE_SUMMARY_LENGTH = 80;
-
-// Words for the device icon keys, which are the only visible sign of a
-// device's type. Each word is the icon's label (iconLabel). A plain device
+// Words for the device icon keys, which show a device's kind on the canvas.
+// Each word is the icon's label (iconLabel). A plain device
 // is a Linux VM, shown with the server or Linux icon. Those two keys have
 // no word, because "Linux" on every node is noise. ALSO_WORDS lists other
 // words that name the type in a label.
@@ -163,15 +161,24 @@ function scanIndex(doc) {
 }
 
 /**
- * Accessible name for a node, as "Device node, 2 connections, on EXP and
- * EXP-2". Pass labelIndex(doc) when naming many nodes.
+ * Accessible name for a node, as "Device node, VirtualMachine, 2 interfaces,
+ * 2 connections, on EXP and EXP-2". The kind comes first, then the text the
+ * node shows, in its order and in one run (WCAG 2.5.3 Label in Name), then
+ * what only the name says. Pass labelIndex(doc) when naming many nodes.
  */
 export function nodeAccessibleName(doc, node, index = scanIndex(doc)) {
   const links = index.links(node.id);
-  const parts = [nodeName(node), ...deviceTypes(node)];
+  const parts = [nodeName(node), ...deviceShownParts(node)];
+  const comment = nodeComment(node);
+
+  if (comment && node.kind !== 'note') {
+    parts.push(comment);
+  }
+
+  parts.push(...deviceIconWord(node));
 
   if (includedFrom(node)) {
-    parts.push(`from included topology ${includedFrom(node)}, read only`);
+    parts.push('read only');
   }
 
   const parent = node.parentId ? index.node(node.parentId) : null;
@@ -212,13 +219,22 @@ export function nodeAccessibleName(doc, node, index = scanIndex(doc)) {
     parts.push(`on ${listOf(networks)}`);
   }
 
-  const comment = nodeComment(node);
+  return parts.join(', ');
+}
 
-  if (comment && node.kind !== 'note') {
-    parts.push(`comment: ${comment}`);
+// What a device shows below its label (DeviceNode.vue): where it is from or
+// its type, then its count of interfaces.
+function deviceShownParts(node) {
+  if (node.kind !== 'device') {
+    return [];
   }
 
-  return parts.join(', ');
+  const from = includedFrom(node);
+
+  return [
+    from ? `Included from ${from}` : deviceTypeLabel(node),
+    count(deviceHandles(node).length, 'interface'),
+  ];
 }
 
 // The names of the networks the connections are on, once each, sorted by
@@ -246,33 +262,33 @@ function arrowheads(line) {
   return line?.endArrow ? 'arrowhead at its end' : '';
 }
 
-// Kind and label, without a repeat of a label that only names the kind
-// ("Group Group"). A shape's kind is its figure ("Circle DMZ"). A note adds
-// the start of its text. Its label stays "Note" unless renamed, so the text
-// is what makes notes different.
-function nodeName(node) {
-  const kind = node.kind === 'shape' ? kindLabel(node) : capitalize(node.kind);
-  const label = nodeLabel(node);
-  const text = node.kind === 'note' ? noteSummary(node.note?.text) : '';
-  // The whole text, because a first line longer than the summary also
-  // starts it.
-  const redundant =
-    !label ||
-    label.toLowerCase() === kind.toLowerCase() ||
-    (text && noteSummary(node.note?.text, Infinity).startsWith(label));
-  const name = redundant ? kind : `${kind} ${label}`;
+/** What a note with no text shows (NoteNode.vue). */
+export const NOTE_PLACEHOLDER =
+  'Select the note and use the Inspector to add text.';
 
-  return text ? `${name}: ${text}` : name;
+/** The heading of a note on the canvas: its label, or "Note" (NoteNode.vue). */
+export function noteHeading(node) {
+  return node?.label || 'Note';
 }
 
-function noteSummary(text, length = NOTE_SUMMARY_LENGTH) {
-  const flat = String(text || '')
+// Kind and label, without a repeat of a label that only names the kind
+// ("Group Group"). A shape's kind is its figure ("Circle DMZ"). A note is
+// named as it shows: its heading, then all of its text.
+function nodeName(node) {
+  const kind = node.kind === 'shape' ? kindLabel(node) : capitalize(node.kind);
+  const label = node.kind === 'note' ? noteHeading(node) : nodeLabel(node);
+  const redundant = !label || label.toLowerCase() === kind.toLowerCase();
+  const name = redundant ? kind : `${kind} ${label}`;
+
+  if (node.kind !== 'note') {
+    return name;
+  }
+
+  const text = String(node.note?.text || '')
     .replace(/\s+/g, ' ')
     .trim();
 
-  return flat.length > length
-    ? `${flat.slice(0, length - 1).trimEnd()}…`
-    : flat;
+  return `${name}: ${text || NOTE_PLACEHOLDER}`;
 }
 
 // Whether a label's words hold all the words of a name, in a row. Only
@@ -286,41 +302,23 @@ function holdsWords(words, name) {
   );
 }
 
-// The types the canvas shows no word for: no type at all, and the type of
-// a plain device.
-const PLAIN_TYPES = ['device', 'virtualmachine'];
-
-// A device's type, as up to two parts of its name: its icon's word and its
-// phenix node type, each left out when the label already says it. A Router
-// with the Linux icon named "edge-1" is "Device edge-1, Router".
-function deviceTypes(node) {
+// The word of a device's icon, as a part of its name, unless the label or
+// the shown type already says it. A device with the Windows icon named
+// "web-01" adds "Windows".
+function deviceIconWord(node) {
   if (node.kind !== 'device') {
     return [];
   }
 
   const iconNames = iconWords(node.device?.iconKey);
-  const words = labelWords(nodeLabel(node));
-  const parts = [];
+  const said = [nodeLabel(node), deviceTypeLabel(node)].map(labelWords);
 
-  if (
-    iconNames.length &&
-    !iconNames.some((name) => holdsWords(words, labelWords(name)))
-  ) {
-    parts.push(iconNames[0]);
-  }
-
-  const type = deviceTypeLabel(node);
-  const typeWords = labelWords(type);
-
-  if (
-    !PLAIN_TYPES.includes(type.toLowerCase()) &&
-    !holdsWords(words, typeWords) &&
-    !iconNames.some((name) => holdsWords(labelWords(name), typeWords))
-  ) {
-    parts.push(type);
-  }
-
-  return parts;
+  return iconNames.length &&
+    !iconNames.some((name) =>
+      said.some((words) => holdsWords(words, labelWords(name))),
+    )
+    ? [iconNames[0]]
+    : [];
 }
 
 // A label's words, lower case and without a trailing number: "router-2" and

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/spf13/viper"
 
 	"phenix/api/experiment"
+	"phenix/api/minimega"
 	"phenix/store"
 	"phenix/util"
 	"phenix/util/common"
@@ -25,14 +25,18 @@ import (
 // so a hung minimega cannot hang the shell.
 const minimegaSuggestTimeout = 2 * time.Second
 
-type noPager struct{}
+// noPager writes the output of the minimega console to w, without a pager.
+type noPager struct {
+	w io.Writer
+}
 
-func (noPager) Page(output string) {
+// Page writes output and a newline, or nothing for an empty output.
+func (p noPager) Page(output string) {
 	if output == "" {
 		return
 	}
 
-	fmt.Fprintln(os.Stdout, output)
+	fmt.Fprintln(p.w, output)
 }
 
 func newMMCmd() *cobra.Command {
@@ -63,8 +67,8 @@ func newMMCmd() *cobra.Command {
 		ValidArgsFunction: mmArgsCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
-				attach    = MustGetBool(cmd.Flags(), "attach")
-				namespace = MustGetString(cmd.Flags(), "namespace")
+				attach    = mustGet(cmd.Flags().GetBool, "attach")
+				namespace = mustGet(cmd.Flags().GetString, "namespace")
 			)
 
 			if !attach && len(args) == 0 {
@@ -82,7 +86,7 @@ func newMMCmd() *cobra.Command {
 
 			defer func() { _ = mm.Close() }()
 
-			mm.Pager = new(noPager)
+			mm.Pager = noPager{w: cmd.OutOrStdout()}
 
 			if attach {
 				mm.Attach(namespace)
@@ -116,112 +120,18 @@ func newMMCmd() *cobra.Command {
 }
 
 // runMinimegaCommand sends command to minimega and writes the rendered
-// response to out. Errors minimega reports, and a lost connection, are logged
-// and returned.
+// response to out, as minimega.Run does. Errors minimega reports, and a lost
+// connection, are logged and returned.
 func runMinimegaCommand(mm *miniclient.Conn, command string, out io.Writer) error {
-	var errs []error
+	_, err := minimega.Run(mm, command, func(rendered string) { fmt.Fprintln(out, rendered) })
 
-	for resp := range mm.Run(command) {
-		if resp.Rendered != "" {
-			fmt.Fprintln(out, resp.Rendered)
-		}
-
-		for _, r := range resp.Resp {
-			if r.Error == "" {
-				continue
-			}
-
-			plog.Error(
-				plog.TypeMinimega,
-				"minimega command failed",
-				"command", command,
-				"host", r.Host,
-				"error", r.Error,
-			)
-
-			errs = append(errs, fmt.Errorf("%s: %s", r.Host, r.Error))
-		}
-	}
-
-	if err := mm.Error(); err != nil {
-		plog.Error(plog.TypeMinimega, "lost connection to minimega", "command", command, "error", err)
-
-		errs = append(errs, fmt.Errorf("lost connection to minimega: %w", err))
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("running minimega command %q: %w", command, errors.Join(errs...))
-	}
-
-	return nil
+	return err //nolint:wrapcheck // minimega.Run names the command
 }
 
-// minimegaCommand builds the command line sent to minimega. A single argument
-// is sent as-is, so a whole command can be passed as one string in minimega's
-// own syntax; multiple arguments are quoted as needed and joined.
+// minimegaCommand builds the command line sent to minimega (see
+// minimega.CommandLine).
 func minimegaCommand(namespace string, args []string) string {
-	var command string
-
-	if len(args) == 1 {
-		command = args[0]
-	} else {
-		command = quoteMinimegaArgs(args)
-	}
-
-	if namespace != "" {
-		command = "namespace " + quoteMinimegaArg(namespace) + " " + command
-	}
-
-	return command
-}
-
-func quoteMinimegaArgs(args []string) string {
-	quoted := make([]string, len(args))
-
-	for i, arg := range args {
-		quoted[i] = quoteMinimegaArg(arg)
-	}
-
-	return strings.Join(quoted, " ")
-}
-
-// quoteMinimegaArg quotes arg so that minimega's command lexer reads it back as
-// one unchanged argument. Outside quotes the lexer splits on whitespace,
-// starts a quoted string at `"` or `'`, treats `\` as an escape, and drops
-// everything from `#` on as a comment. Inside double quotes only `"` and `\`
-// are special. An empty argument must be quoted or the lexer drops it.
-func quoteMinimegaArg(arg string) string {
-	if arg != "" && !strings.ContainsFunc(arg, needsMinimegaQuote) {
-		return arg
-	}
-
-	var b strings.Builder
-
-	b.WriteByte('"')
-
-	for _, r := range arg {
-		switch r {
-		case '"', '\\':
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\r':
-			b.WriteString(`\r`)
-		case '\t':
-			b.WriteString(`\t`)
-		default:
-			b.WriteRune(r)
-		}
-	}
-
-	b.WriteByte('"')
-
-	return b.String()
-}
-
-func needsMinimegaQuote(r rune) bool {
-	return unicode.IsSpace(r) || strings.ContainsRune(`"'\#`, r)
+	return minimega.CommandLine(namespace, args)
 }
 
 // mmArgsCompletion completes minimega commands using suggestions from the
@@ -233,18 +143,18 @@ func mmArgsCompletion(
 	args []string,
 	toComplete string,
 ) ([]string, cobra.ShellCompDirective) {
-	if MustGetBool(cmd.Flags(), "attach") {
+	if mustGet(cmd.Flags().GetBool, "attach") {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
 	// The root command's PersistentPreRunE runs for the completion request,
 	// not for the command line being completed, so common.MinimegaBase misses
-	// a --base-dir.minimega typed on that line. Read it from the parsed flags.
-	base := getEffectiveString("base-dir.minimega", cmd.Flags().Changed("base-dir.minimega"))
+	// a --base-dir.minimega typed on that line. viper reads the parsed flags.
+	base := viper.GetString("base-dir.minimega")
 
 	line := toComplete
 	if len(args) > 0 {
-		line = quoteMinimegaArgs(args) + " " + toComplete
+		line = minimega.QuoteArgs(args) + " " + toComplete
 	}
 
 	suggestions, err := suggestMinimega(base, line)

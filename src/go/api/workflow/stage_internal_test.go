@@ -11,6 +11,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"pgregory.net/rapid"
 )
 
 // swapTestWrite creates path, and any missing parents, with content.
@@ -396,4 +398,51 @@ func TestWithSecondErrorJoinsSeveral(t *testing.T) {
 	if got := withSecondError(nil, nil, nil); got != nil {
 		t.Errorf("withSecondError(nil, nil, nil) = %v, want nil", got)
 	}
+}
+
+// withSecondError drops the nil errors, returns a lone error as it is, and joins several on one line in order,
+// each found by [errors.Is].
+func TestWithSecondErrorProperties(t *testing.T) {
+	t.Parallel()
+
+	pool := []error{
+		nil,
+		fs.ErrPermission,
+		&os.PathError{Op: "close", Path: "a", Err: syscall.EIO},
+		&os.LinkError{Op: "rename", Old: "b", New: "c", Err: syscall.ENOSPC},
+	}
+
+	rapid.Check(t, func(t *rapid.T) {
+		errs := rapid.SliceOfN(rapid.SampledFrom(pool), 1, 5).Draw(t, "errs")
+		got := withSecondError(errs[0], errs[1:]...)
+
+		var texts []string
+
+		for _, err := range errs {
+			if err == nil {
+				continue
+			}
+
+			texts = append(texts, err.Error())
+
+			if !errors.Is(got, err) {
+				t.Fatalf("withSecondError(%v) = %v, want errors.Is to find %v", errs, got, err)
+			}
+		}
+
+		switch nonNil := slices.DeleteFunc(slices.Clone(errs), func(err error) bool { return err == nil }); len(nonNil) {
+		case 0:
+			if got != nil {
+				t.Fatalf("withSecondError(%v) = %v, want nil", errs, got)
+			}
+		case 1:
+			if got != nonNil[0] { //nolint:errorlint // the lone error is returned as it is
+				t.Fatalf("withSecondError(%v) = %#v, want %#v as it is", errs, got, nonNil[0])
+			}
+		default:
+			if want := strings.Join(texts, "; "); got == nil || got.Error() != want {
+				t.Fatalf("withSecondError(%v) = %v, want %q", errs, got, want)
+			}
+		}
+	})
 }

@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Builder packages: strict decoding, what the diagram needs, which needs the
 // user may have created, and the Upload dialog's list.
 

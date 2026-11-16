@@ -165,7 +165,7 @@ test("a session the server ends logs out, and the Builder's data in this browser
 
   // The server forgets the page's session, as a logout elsewhere does. The
   // next save gets a 401, and the page logs out.
-  expect((await alice.api.get(`${API}/logout`)).status()).toBe(204);
+  expect((await alice.api.post(`${API}/logout`)).status()).toBe(204);
   await page.unroute(snapshots);
   await page.getByTestId('palette-switch').click();
   await expect(page).toHaveURL(/\/signin$/);

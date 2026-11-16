@@ -2489,13 +2489,12 @@
   }
 
   const headerTips = computed(() => {
-    const resetKeys = shortcutLabel('view.reset');
-    const reset = resetKeys ? `${RESET_TIP} (${resetKeys})` : RESET_TIP;
+    // The descriptions reach only screen readers, so their keys are words.
+    const spoken = { spoken: true };
+    const reset = withShortcut(RESET_TIP, 'view.reset');
     const sheetKeys = shortcutLabel('shortcuts.open');
-    const focus = withShortcut(
-      FOCUS_TIPS[focusMode.on ? 'exit' : 'enter'],
-      'view.focusMode',
-    );
+    const focusTip = FOCUS_TIPS[focusMode.on ? 'exit' : 'enter'];
+    const focus = withShortcut(focusTip, 'view.focusMode');
     // The theme button's keys are those of the palette's command for the
     // theme it moves to.
     const { label, tip: themeTip, next } = themeButton.value;
@@ -2507,19 +2506,19 @@
       reset: {
         text: reset,
         iconText: named('Reset view', reset),
-        description: reset,
+        description: withShortcut(RESET_TIP, 'view.reset', spoken),
         aria: ariaShortcuts('view.reset'),
       },
       shortcuts: {
         text: sheetKeys
           ? `Keyboard shortcuts (${sheetKeys})`
           : 'Keyboard shortcuts',
-        description: sheetKeys,
+        description: shortcutLabel('shortcuts.open', spoken),
         aria: ariaShortcuts('shortcuts.open'),
       },
       settings: {
         text: withShortcut('Builder settings', 'settings.open'),
-        description: shortcutLabel('settings.open'),
+        description: shortcutLabel('settings.open', spoken),
         aria: ariaShortcuts('settings.open'),
       },
       help: {
@@ -2528,20 +2527,20 @@
       },
       focus: {
         text: named(focusMode.on ? 'Exit focus mode' : 'Focus mode', focus),
-        description: focus,
+        description: withShortcut(focusTip, 'view.focusMode', spoken),
         aria: ariaShortcuts('view.focusMode'),
       },
       // Commands' names the palette. The theme's says what a press does,
       // and names the button too while it shows only its icon.
       commands: {
         text: withShortcut('Command palette', 'palette.open'),
-        description: shortcutLabel('palette.open'),
+        description: shortcutLabel('palette.open', spoken),
         aria: ariaShortcuts('palette.open'),
       },
       theme: {
         text: withShortcut(themeTip, themeCommand),
         iconText: withShortcut(`Theme: ${label}. ${themeTip}`, themeCommand),
-        description: shortcutLabel(themeCommand),
+        description: shortcutLabel(themeCommand, spoken),
         aria: ariaShortcuts(themeCommand),
       },
     };
@@ -2630,7 +2629,7 @@
 
   // How to leave focus mode, for its announcements.
   function focusModeExit() {
-    const keys = shortcutLabel('view.focusMode', { text: true });
+    const keys = shortcutLabel('view.focusMode', { spoken: true });
 
     return keys ? `Exit focus mode or ${keys}` : 'Exit focus mode';
   }

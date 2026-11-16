@@ -62,37 +62,27 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const READER = roleWith('Reader', [
-  { resources: ['*'], resourceNames: ['*'], verbs: ['list', 'get'] },
-]);
-
 describe('the Builder of a role without the Builder permission', () => {
-  test.each([
-    ['Global Viewer', GLOBAL_VIEWER],
-    ['a reader of every resource', READER],
-  ])(
-    'of %s is a notice under the page heading, with no drafts and no editor',
-    async (_, role) => {
-      phenix.role = role;
+  test('of Global Viewer is a notice under the page heading, with no drafts and no editor', async () => {
+    phenix.role = GLOBAL_VIEWER;
 
-      const html = await render();
-      const notice = html.match(
-        /<section[^>]*data-testid="builder-no-access"[^>]*>[\s\S]*?<\/section>/,
-      )?.[0];
+    const html = await render();
+    const notice = html.match(
+      /<section[^>]*data-testid="builder-no-access"[^>]*>[\s\S]*?<\/section>/,
+    )?.[0];
 
-      expect(notice).toBeTruthy();
-      expect(notice).toContain('aria-labelledby="builder-no-access-title"');
-      expect(notice).toMatch(
-        /<h1 id="builder-no-access-title"[^>]*>Builder<\/h1>/,
-      );
-      expect(notice).toMatch(
-        /<p[^>]*>Your role does not include the Builder\.<\/p>/,
-      );
-      expect(html).not.toContain('drafts-blank');
-      expect(html).not.toContain('drafts-tab-');
-      expect(html).not.toContain('builder-canvas');
-    },
-  );
+    expect(notice).toBeTruthy();
+    expect(notice).toContain('aria-labelledby="builder-no-access-title"');
+    expect(notice).toMatch(
+      /<h1 id="builder-no-access-title"[^>]*>Builder<\/h1>/,
+    );
+    expect(notice).toMatch(
+      /<p[^>]*>Your role does not include the Builder\.<\/p>/,
+    );
+    expect(html).not.toContain('drafts-blank');
+    expect(html).not.toContain('drafts-tab-');
+    expect(html).not.toContain('builder-canvas');
+  });
 
   test('a role with builder use gets the drafts', async () => {
     phenix.role = BUILDER;

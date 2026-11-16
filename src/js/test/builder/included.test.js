@@ -283,7 +283,7 @@ describe('presentation', () => {
     const { doc, bravo, bravoEdge } = includedDocument();
 
     expect(nodeAccessibleName(doc, bravo)).toBe(
-      'Device bravo, from included topology shared, read only, 1 connection, on EXP',
+      'Device bravo, Included from shared, 1 interface, read only, 1 connection, on EXP',
     );
     // The palette's Disconnect offers its connection, but refuses it.
     expect(
@@ -298,7 +298,7 @@ describe('presentation', () => {
 
     const flow = toFlowNodes(doc).find((node) => node.id === bravo.id);
     expect(flow.data.includedFrom).toBe('shared');
-    expect(flow.ariaLabel).toMatch(/from included topology shared, read only/);
+    expect(flow.ariaLabel).toBe(nodeAccessibleName(doc, bravo));
   });
 
   test('the Inspector locks an included device, and the name of its network', () => {

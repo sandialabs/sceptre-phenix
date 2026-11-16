@@ -2,13 +2,11 @@
 // The item action button (BuilderActionButton.vue) and the confirmation that
 // uses it: icon, label, color, the busy label, and no press while busy.
 
-import { afterEach, describe, expect, test } from 'vitest';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { describe, expect, test } from 'vitest';
+import { mount } from '@vue/test-utils';
 
 import BuilderActionButton from '@/components/builder/BuilderActionButton.vue';
 import BuilderConfirm from '@/components/builder/BuilderConfirm.vue';
-
-enableAutoUnmount(afterEach);
 
 function button(props, slots = {}) {
   return mount(BuilderActionButton, {

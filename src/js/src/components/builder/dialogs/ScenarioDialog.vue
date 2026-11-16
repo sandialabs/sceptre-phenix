@@ -67,7 +67,7 @@
                 :busy="isPending('view', row.name)"
                 :aria-label="
                   isPending('view', row.name)
-                    ? `Loading ${row.name}`
+                    ? `View ${row.name}, loading`
                     : undefined
                 "
                 :disabled="Boolean(pending)"
@@ -81,7 +81,7 @@
                 :busy="isPending('edit', row.name)"
                 :aria-label="
                   isPending('edit', row.name)
-                    ? `Loading ${row.name}`
+                    ? `Edit ${row.name}, loading`
                     : undefined
                 "
                 :disabled="Boolean(pending)"
@@ -115,7 +115,7 @@
           class="scenario-create"
           icon="plus"
           :busy="isPending('create')"
-          busy-label="Loading the new scenario"
+          busy-label="Create new scenario, loading"
           :disabled="full || Boolean(pending)"
           :aria-describedby="full ? 'scenario-limit' : undefined"
           data-testid="scenario-create"

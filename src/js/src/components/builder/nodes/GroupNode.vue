@@ -30,6 +30,8 @@
         :size="iconPixels(iconSize)" />
       <span class="builder-node__label">{{ data.label }}</span>
     </div>
+    <!-- Keeps the title and the comment apart as words (see DeviceNode). -->
+    {{ ' ' }}
     <span v-if="data.comment" class="builder-node__comment">
       {{ data.comment }}
     </span>

@@ -2,17 +2,15 @@
 // The notice of the newer snapshots in the editor (BuilderNewerHistory.vue),
 // and what the History dialog's Restore says of them (HistoryDialog.vue).
 
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
 import { markRaw } from 'vue';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import BuilderNewerHistory from '@/components/builder/BuilderNewerHistory.vue';
 import HistoryDialog from '@/components/builder/dialogs/HistoryDialog.vue';
 import { formatTimestamp } from '@/builder/format.js';
 import { useBuilderStore } from '@/builder/store.js';
-
-enableAutoUnmount(afterEach);
 
 const NEWEST = {
   id: 's3',

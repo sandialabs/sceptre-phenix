@@ -3,7 +3,8 @@
 // keyboard: filtering, the highlight, steps, running, and focus after it.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
+import { nextTick } from 'vue';
 
 import BuilderCommandPalette from '@/components/builder/BuilderCommandPalette.vue';
 import {
@@ -12,11 +13,11 @@ import {
   setShortcut,
 } from '@/builder/keymap.js';
 import { RECENT_STORAGE_KEY } from '@/builder/recent.js';
+import { COUNT_DELAY_MS } from '@/builder/announce.js';
 
 import { context } from './command-context.js';
-import { memoryStorage, sampleDocument } from './fixtures.js';
-
-enableAutoUnmount(afterEach);
+import { memoryStorage } from '../helpers/storage.js';
+import { holdsShownText, sampleDocument, shownText } from './fixtures.js';
 
 beforeEach(() => {
   setPlatform('other');
@@ -25,6 +26,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   setPlatform(null);
   loadShortcutSettings(memoryStorage());
   localStorage.clear();
@@ -75,8 +77,15 @@ async function press(field, key, mods = {}) {
   await field.trigger('keydown', { key, ...mods });
 }
 
+async function countAfterPause(wrapper) {
+  await vi.advanceTimersByTimeAsync(COUNT_DELAY_MS);
+  await nextTick();
+  return wrapper.get('[data-testid="command-palette-count"]').text();
+}
+
 describe('the command palette', () => {
   test('opens with focus in its search field, on the first command, by group', async () => {
+    vi.useFakeTimers();
     const { wrapper, field } = open({ store: { canUndo: true } });
 
     expect(document.activeElement).toBe(field.element);
@@ -105,14 +114,14 @@ describe('the command palette', () => {
     expect(highlighted(wrapper)).toBe('Keyboard shortcuts');
 
     // The count waits for typing to pause.
-    await vi.waitFor(() =>
-      expect(
-        wrapper.get('[data-testid="command-palette-count"]').text(),
-      ).toMatch(/^\d+ results$/),
+    expect(wrapper.get('[data-testid="command-palette-count"]').text()).toBe(
+      '',
     );
+    expect(await countAfterPause(wrapper)).toMatch(/^\d+ results$/);
   });
 
   test('typing filters the options, and the highlight goes back to the first', async () => {
+    vi.useFakeTimers();
     const { wrapper, field } = open();
 
     await field.setValue('zoom');
@@ -135,11 +144,7 @@ describe('the command palette', () => {
     expect(wrapper.find('[data-testid="command-palette-empty"]').exists()).toBe(
       true,
     );
-    await vi.waitFor(() =>
-      expect(wrapper.get('[data-testid="command-palette-count"]').text()).toBe(
-        'No results',
-      ),
-    );
+    expect(await countAfterPause(wrapper)).toBe('No results');
   });
 
   test('Up and Down move the highlight and wrap, and Page Up and Page Down move between groups', async () => {
@@ -427,5 +432,54 @@ describe('the command palette', () => {
 
     expect(wrapper.emitted('close')).toBeUndefined();
     expect(ctx.store.undo).not.toHaveBeenCalled();
+  });
+});
+
+// axe-core's label-content-name-mismatch (WCAG 2.5.3): an option's name
+// holds all that it shows, in its order, the key caps and hints too.
+describe('the name of an option', () => {
+  test.each(['other', 'mac'])(
+    'holds what the option shows, on %s',
+    async (platform) => {
+      setPlatform(platform);
+
+      const { wrapper, field } = open();
+      let checked = 0;
+
+      for (const query of ['', 'undo', 'group', 'zoom', '@', '#', 'alp']) {
+        await field.setValue(query);
+
+        for (const option of wrapper.findAll('[role="option"]')) {
+          const name = option.attributes('aria-label');
+          const text = shownText(option.element);
+
+          expect(holdsShownText(name, text), `"${text}" in "${name}"`).toBe(
+            true,
+          );
+          checked += 1;
+        }
+      }
+
+      expect(checked).toBeGreaterThan(10);
+    },
+  );
+
+  test('the keys in words describe an option only where the caps differ from them', async () => {
+    const { wrapper, field } = open();
+    const option = () => wrapper.get('[role="option"]');
+
+    await field.setValue('undo');
+    expect(option().attributes('aria-label')).toBe(
+      'Undo, Unavailable: Nothing to undo., Ctrl+Z',
+    );
+    expect(option().attributes('aria-describedby')).toBeUndefined();
+
+    setPlatform('mac');
+    await field.setValue('undo ');
+
+    const described = option().attributes('aria-describedby');
+
+    expect(option().attributes('aria-label')).toMatch(/, ⌘Z$/);
+    expect(wrapper.get(`#${described}`).text()).toBe('Command+Z');
   });
 });

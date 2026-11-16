@@ -2558,20 +2558,6 @@ describe('colors, line styles and group fields', () => {
 });
 
 describe('snapping a point', () => {
-  test('a point just left of zero snaps to 0, not -0', () => {
-    const point = snappedPoint({}, { x: -0.3, y: 0.2 }, false);
-
-    expect(Object.is(point.x, 0)).toBe(true);
-    expect(Object.is(snappedPoint({}, { x: -0, y: 0 }, true).x, 0)).toBe(true);
-    const bend = snappedLinePoint(
-      { position: { x: 0, y: 0 } },
-      { x: -0.3, y: 0.2 },
-      { size: 16 },
-    );
-
-    expect(Object.is(bend.x, 0)).toBe(true);
-  });
-
   const coordinate = fc.oneof(
     fc.double({ min: -1e4, max: 1e4, noNaN: true }),
     fc.constant(-0),
@@ -2600,7 +2586,13 @@ describe('snapping a point', () => {
           }
         },
       ),
-      { numRuns: 300 },
+      {
+        numRuns: 300,
+        examples: [
+          [-0.3, 0.2, 16, false],
+          [-0, 0, 16, true],
+        ],
+      },
     );
   });
 
@@ -2619,7 +2611,7 @@ describe('snapping a point', () => {
           expect(Object.is(bend.x, -0) || Object.is(bend.y, -0)).toBe(false);
         },
       ),
-      { numRuns: 200 },
+      { numRuns: 200, examples: [[-0.3, 0.2, 0, 16, false]] },
     );
   });
 

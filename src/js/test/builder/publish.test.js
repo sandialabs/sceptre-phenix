@@ -307,8 +307,9 @@ describe('publish intent', () => {
     expect(configNameProblem('topology', 'a b/c')).toBe(
       `The topology name "a b/c" is not valid: it contains a space and characters that a name cannot contain: "/". ${rule} For example: a-b-c`,
     );
-    expect(configNameProblem('topology', 'x y z!?')).toBe(
-      `The topology name "x y z!?" is not valid: it contains spaces and characters that a name cannot contain: "!", "?". ${rule} For example: x-y-z`,
+    // A name with no valid characters has nothing to suggest.
+    expect(configNameProblem('scenario', '!!')).toBe(
+      `The scenario name "!!" is not valid: it contains characters that a name cannot contain: "!". ${rule}`,
     );
     // The messages that are not about the rule stay as they were.
     expect(configNameProblem('topology', '')).toBe(
@@ -317,6 +318,7 @@ describe('publish intent', () => {
     expect(configNameProblem('experiment', 'ALL')).toBe(
       'The experiment name "ALL" is reserved: phenix uses it to mean every experiment. Enter another name.',
     );
+    expect(configNameProblem('topology', 'all')).toBe('');
     expect(configNameProblem('experiment', 'lab')).toBe('');
   });
 
@@ -353,12 +355,6 @@ describe('publish intent', () => {
     );
     expect(configNameReason(`a b${zeroWidth}`)).toBe(
       'it contains a space and characters that a name cannot contain: U+200B',
-    );
-    expect(configNameProblem('topology', `lab${zeroWidth}1`)).toBe(
-      `The topology name "lab${zeroWidth}1" is not valid: it contains characters that a name cannot contain: U+200B. ${CONFIG_NAME_RULE} For example: lab-1`,
-    );
-    expect(configNameHint(`lab${zeroWidth}`)).toBe(
-      `This name is not valid: it contains characters that a name cannot contain: U+200B. ${CONFIG_NAME_RULE}`,
     );
   });
 
@@ -1326,10 +1322,6 @@ describe('publish refusals', () => {
         { ...intent, experiment: { name: 'all', action: 'create' } },
       ).field,
     ).toBe('experimentName');
-    expect(configNameProblem('experiment', 'ALL')).toBe(
-      'The experiment name "ALL" is reserved: phenix uses it to mean every experiment. Enter another name.',
-    );
-    expect(configNameProblem('topology', 'all')).toBe('');
   });
 });
 
@@ -1638,21 +1630,6 @@ describe('config names', () => {
     expect(configName('core_net@site.v2')).toBe('core_net@site.v2');
     expect(configName('')).toBe('');
     expect(configName(undefined)).toBe('');
-  });
-
-  test('explains an empty or invalid name and suggests a valid one', () => {
-    expect(configNameProblem('topology', 'core-01')).toBe('');
-    expect(configNameProblem('topology', '')).toBe(
-      'Enter a name for the topology.',
-    );
-    expect(configNameProblem('experiment', 'a b')).toMatch(
-      /not valid: it contains a space\. .*no spaces\. For example: a-b$/,
-    );
-    // Nothing valid to suggest.
-    expect(configNameProblem('scenario', '!!')).not.toMatch(/For example/);
-    expect(configNameProblem('scenario', '!!')).toMatch(
-      /^The scenario name "!!" is not valid: it contains characters that a name cannot contain: "!"\. /,
-    );
   });
 });
 

@@ -18,7 +18,7 @@ import {
   tabsNotice,
 } from '@/builder/tabs.js';
 
-import { memoryStorage } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
 import { createMemoryStore } from './memory-store.js';
 
 // Lets the channel's messages, and the states posted once a task ends,

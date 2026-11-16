@@ -6,8 +6,21 @@ import (
 
 func Configured(exp *types.Experiment) bool {
 	for _, app := range exp.Spec.Scenario().Apps() {
-		if app.Name() == "soh" {
+		if app.Name() == appName {
 			return true
+		}
+	}
+
+	return false
+}
+
+// Disabled reports whether the scenario includes the soh app with
+// `disabled: true`, so that it does not run at post-start and runs only when
+// a user starts it.
+func Disabled(exp *types.Experiment) bool {
+	for _, app := range exp.Spec.Scenario().Apps() {
+		if app.Name() == appName {
+			return app.Disabled()
 		}
 	}
 

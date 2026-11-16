@@ -1,0 +1,15 @@
+package broker
+
+import (
+	"testing"
+
+	"go.uber.org/goleak"
+)
+
+// TestMain fails the run when a goroutine is still alive after the tests.
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m,
+		// go-cache stops a cache's janitor only when the cache is collected
+		goleak.IgnoreTopFunction("github.com/patrickmn/go-cache.(*janitor).Run"),
+	)
+}

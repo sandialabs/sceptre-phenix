@@ -2,7 +2,9 @@ package rbac
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/activeshadow/structs"
 
@@ -12,19 +14,93 @@ import (
 )
 
 const experimentFilesResource = "experiments/files"
+const jobsResource = "jobs"
 const experimentFilesCreateVerb = "create"
+const experimentFilesDeleteVerb = "delete"
 const experimentAdminRole = "Experiment Admin"
 const experimentUserRole = "Experiment User"
 
-// EnsureExperimentFilesCreatePermission updates existing roles and users for file uploads.
+// EnsureExperimentFilesCreatePermission lets existing Experiment Admin and
+// Experiment User roles, and users with them, upload experiment files.
 func EnsureExperimentFilesCreatePermission() error {
+	return ensurePermission(experimentFilesResource, []string{experimentFilesCreateVerb}, experimentFilesRole)
+}
+
+// EnsureExperimentFilesDeletePermission lets existing Experiment Admin roles,
+// and users with them, delete experiment files, as the default Experiment Admin
+// role does. Experiment User and viewer roles are left without it.
+func EnsureExperimentFilesDeletePermission() error {
+	return ensurePermission(experimentFilesResource, []string{experimentFilesDeleteVerb}, experimentFilesDeleteRole)
+}
+
+// EnsureJobsPermission lets existing Experiment Admin roles, and users with
+// them, see, cancel and dismiss the background jobs of their experiments that
+// other users started, as the default Experiment Admin role does.
+func EnsureJobsPermission() error {
+	return ensurePermission(jobsResource, []string{"list", "get", "update", "delete"}, experimentFilesDeleteRole)
+}
+
+// vlansResource is the resource of the cluster's VLAN view.
+const vlansResource = "vlans"
+
+// EnsureVLANsPermission lets existing Experiment Admin, Experiment User and
+// Experiment Viewer roles, and users with them, list and get the VLANs of
+// their experiments, as the default roles do.
+func EnsureVLANsPermission() error {
+	return ensurePermission(vlansResource, []string{"list", "get"}, experimentRole)
+}
+
+// experimentRole returns true for the built-in experiment roles.
+func experimentRole(name string) bool {
+	return name == experimentAdminRole || name == experimentUserRole || name == experimentViewerRole
+}
+
+// captureSubnetResource is the resource of starting (create) and stopping
+// (delete) the captures of a subnet.
+const captureSubnetResource = "exp/captureSubnet"
+
+// EnsureCaptureSubnetStopPermission grants the delete verb to the stored roles,
+// and users' roles, that may start subnet captures, so they may stop them too.
+func EnsureCaptureSubnetStopPermission() error {
+	return updateRoles(addCaptureSubnetStop)
+}
+
+// addCaptureSubnetStop lets the role stop subnet captures on each name that it
+// may start them on, and reports whether it changed the role.
+func addCaptureSubnetStop(role *v1.RoleSpec) bool {
+	return addCompanion(role, captureSubnetResource, "create", captureSubnetResource, "delete")
+}
+
+// The resources of saving a VM screenshot (create) and of creating a VM
+// snapshot (create).
+const (
+	screenshotResource = "vms/screenshot"
+	snapshotsResource  = "vms/snapshots"
+)
+
+// EnsureVMScreenshotPermission grants vms/screenshot create to the stored
+// roles, and users' roles, that may create VM snapshots, on the same names, as
+// the default roles have it.
+func EnsureVMScreenshotPermission() error {
+	return updateRoles(addScreenshotCreate)
+}
+
+// addScreenshotCreate lets the role save VM screenshots on each name that it
+// may create VM snapshots on, and reports whether it changed the role.
+func addScreenshotCreate(role *v1.RoleSpec) bool {
+	return addCompanion(role, snapshotsResource, "create", screenshotResource, "create")
+}
+
+// updateRoles applies change to each stored role and each user's role, and
+// saves those that it reports as changed.
+func updateRoles(change func(*v1.RoleSpec) bool) error {
 	roles, err := GetRoles()
 	if err != nil {
 		return fmt.Errorf("getting roles: %w", err)
 	}
 
 	for _, role := range roles {
-		if experimentFilesRole(role.Spec.Name) && ensureExperimentFilesCreatePolicy(role.Spec, nil) {
+		if change(role.Spec) {
 			if err := role.Save(); err != nil {
 				return fmt.Errorf("saving role %s: %w", role.Spec.Name, err)
 			}
@@ -37,11 +113,205 @@ func EnsureExperimentFilesCreatePermission() error {
 	}
 
 	for _, user := range users {
-		if user.Spec.Role == nil || !experimentFilesRole(user.Spec.Role.Name) {
+		if user.Spec.Role == nil || !change(user.Spec.Role) {
 			continue
 		}
 
-		if ensureExperimentFilesCreatePolicy(user.Spec.Role, experimentResourceNames(user.Spec.Role)) {
+		user.config.Spec = structs.MapDefaultCase(user.Spec, structs.CASESNAKE)
+
+		if err := user.Save(); err != nil {
+			return fmt.Errorf("saving user %s: %w", user.Username(), err)
+		}
+	}
+
+	return nil
+}
+
+// addCompanion gives the role, for each policy that grants verb on resource but
+// not toVerb on toResource, a policy that grants toVerb on toResource for the
+// same names. A policy covers a resource when one of its resource patterns
+// matches it, as Role.Allowed matches them, so "vms/*" counts. It reports
+// whether it changed the role.
+func addCompanion(role *v1.RoleSpec, resource, verb, toResource, toVerb string) bool {
+	var added []*v1.PolicySpec
+
+	grants := func(p *v1.PolicySpec, resource, verb string) bool {
+		return coversResource(p, resource) && (slices.Contains(p.Verbs, verb) || slices.Contains(p.Verbs, "*"))
+	}
+
+	grantsTo := func(p *v1.PolicySpec) bool { return grants(p, toResource, toVerb) }
+
+	for _, policy := range role.Policies {
+		if !grants(policy, resource, verb) || grantsTo(policy) {
+			continue
+		}
+
+		same := func(p *v1.PolicySpec) bool {
+			return grantsTo(p) && slices.Equal(p.ResourceNames, policy.ResourceNames)
+		}
+
+		if slices.ContainsFunc(role.Policies, same) || slices.ContainsFunc(added, same) {
+			continue
+		}
+
+		added = append(added, &v1.PolicySpec{
+			Resources:     []string{toResource},
+			ResourceNames: slices.Clone(policy.ResourceNames),
+			Verbs:         []string{toVerb},
+		})
+	}
+
+	role.Policies = append(role.Policies, added...)
+
+	return len(added) > 0
+}
+
+// coversResource reports whether one of the policy's resource patterns matches
+// resource.
+func coversResource(policy *v1.PolicySpec, resource string) bool {
+	return slices.ContainsFunc(policy.Resources, func(pattern string) bool {
+		matched, _ := filepath.Match(pattern, resource)
+
+		return matched
+	})
+}
+
+const (
+	experimentViewerRole = "Experiment Viewer"
+	mountResource        = "vms/mount"
+)
+
+// EnsureExperimentViewerMountScope scopes the vms/mount policy of users who
+// were given the Experiment Viewer role before every unnamed policy was scoped
+// on assignment, and so cannot mount their VMs, to the user's VM names.
+func EnsureExperimentViewerMountScope() error {
+	users, err := GetUsers()
+	if err != nil {
+		return fmt.Errorf("getting users: %w", err)
+	}
+
+	for _, user := range users {
+		if user.Spec.Role == nil || user.Spec.Role.Name != experimentViewerRole || !scopeUnnamed(user.Spec.Role, mountResource) {
+			continue
+		}
+
+		user.config.Spec = structs.MapDefaultCase(user.Spec, structs.CASESNAKE)
+
+		if err := user.Save(); err != nil {
+			return fmt.Errorf("saving user %s: %w", user.Username(), err)
+		}
+	}
+
+	return nil
+}
+
+// DropNullResourceNames removes the resourceNames: null that roles and users
+// saved before an empty list was left out, since the role schema rejects it.
+func DropNullResourceNames() error {
+	configs, err := store.List("Role", "User")
+	if err != nil {
+		return fmt.Errorf("getting roles and users: %w", err)
+	}
+
+	for i := range configs {
+		c := &configs[i]
+
+		policies := c.Spec["policies"]
+		if strings.EqualFold(c.Kind, "User") {
+			role, _ := c.Spec["rbac"].(map[string]any)
+			policies = role["policies"]
+		}
+
+		if !dropNullNames(policies) {
+			continue
+		}
+
+		c.IfRevision = c.Metadata.Revision
+
+		if err := store.Update(c); err != nil {
+			return fmt.Errorf("updating %s: %w", c.FullName(), err)
+		}
+	}
+
+	return nil
+}
+
+// dropNullNames removes resourceNames from the stored policies that hold
+// null there, and reports whether it removed any.
+func dropNullNames(policies any) bool {
+	list, _ := policies.([]any)
+
+	var changed bool
+
+	for _, p := range list {
+		policy, _ := p.(map[string]any)
+		if names, ok := policy["resourceNames"]; ok && names == nil {
+			delete(policy, "resourceNames")
+
+			changed = true
+		}
+	}
+
+	return changed
+}
+
+// scopeUnnamed gives the role's policies on resource that name nothing the
+// names of its first other policy covering resource, and reports whether it
+// changed the role.
+func scopeUnnamed(role *v1.RoleSpec, resource string) bool {
+	covers := func(p *v1.PolicySpec) bool {
+		return len(p.ResourceNames) > 0 && slices.ContainsFunc(p.Resources, func(pattern string) bool {
+			matched, _ := filepath.Match(pattern, resource)
+
+			return matched
+		})
+	}
+
+	i := slices.IndexFunc(role.Policies, covers)
+	if i < 0 {
+		return false
+	}
+
+	var changed bool
+
+	for _, policy := range role.Policies {
+		if len(policy.ResourceNames) == 0 && slices.Equal(policy.Resources, []string{resource}) {
+			policy.ResourceNames = slices.Clone(role.Policies[i].ResourceNames)
+			changed = true
+		}
+	}
+
+	return changed
+}
+
+// ensurePermission adds verbs on resource to the stored roles, and the roles
+// of users, that want it. A user's new permission takes the resource names of
+// the user's experiments policy.
+func ensurePermission(resource string, verbs []string, wants func(role string) bool) error {
+	roles, err := GetRoles()
+	if err != nil {
+		return fmt.Errorf("getting roles: %w", err)
+	}
+
+	for _, role := range roles {
+		if wants(role.Spec.Name) && ensurePolicy(role.Spec, resource, verbs, nil) {
+			if err := role.Save(); err != nil {
+				return fmt.Errorf("saving role %s: %w", role.Spec.Name, err)
+			}
+		}
+	}
+
+	users, err := GetUsers()
+	if err != nil {
+		return fmt.Errorf("getting users: %w", err)
+	}
+
+	for _, user := range users {
+		if user.Spec.Role == nil || !wants(user.Spec.Role.Name) {
+			continue
+		}
+
+		if ensurePolicy(user.Spec.Role, resource, verbs, experimentResourceNames(user.Spec.Role)) {
 			user.config.Spec = structs.MapDefaultCase(user.Spec, structs.CASESNAKE)
 
 			if err := user.Save(); err != nil {
@@ -58,17 +328,27 @@ func experimentFilesRole(name string) bool {
 	return name == experimentAdminRole || name == experimentUserRole
 }
 
-// ensureExperimentFilesCreatePolicy ensures the role can create experiment files for the given names.
-func ensureExperimentFilesCreatePolicy(role *v1.RoleSpec, names []string) bool {
+// experimentFilesDeleteRole returns true for roles that should allow deleting
+// experiment files, and acting on other users' jobs of their experiments.
+func experimentFilesDeleteRole(name string) bool {
+	return name == experimentAdminRole
+}
+
+// ensurePolicy ensures the role can take verbs on resource for the given
+// names.
+func ensurePolicy(role *v1.RoleSpec, resource string, verbs, names []string) bool {
 	for _, policy := range role.Policies {
-		if !slices.Contains(policy.Resources, experimentFilesResource) {
+		if !slices.Contains(policy.Resources, resource) {
 			continue
 		}
 
 		var changed bool
-		if !slices.Contains(policy.Verbs, experimentFilesCreateVerb) {
-			policy.Verbs = append(policy.Verbs, experimentFilesCreateVerb)
-			changed = true
+
+		for _, verb := range verbs {
+			if !slices.Contains(policy.Verbs, verb) {
+				policy.Verbs = append(policy.Verbs, verb)
+				changed = true
+			}
 		}
 
 		for _, name := range names {
@@ -83,7 +363,7 @@ func ensureExperimentFilesCreatePolicy(role *v1.RoleSpec, names []string) bool {
 
 	role.Policies = append(
 		role.Policies,
-		&v1.PolicySpec{Resources: []string{experimentFilesResource}, ResourceNames: names, Verbs: []string{experimentFilesCreateVerb}},
+		&v1.PolicySpec{Resources: []string{resource}, ResourceNames: names, Verbs: slices.Clone(verbs)},
 	)
 
 	return true

@@ -2,12 +2,17 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"pgregory.net/rapid"
 
 	"phenix/store"
 	"phenix/types"
@@ -63,6 +68,14 @@ func TestStartupPreStartC2TriggerMatrix(t *testing.T) {
 			node := newStartupTestNode(t, "linux1", osLinux, tt.snapshot, tt.injectPartition)
 			node.AnnotationsF = tt.annotations
 
+			if got := StartupUsesC2(node); got != tt.wantCommands {
+				t.Errorf("StartupUsesC2() = %v, want %v as PreStart sends commands", got, tt.wantCommands)
+			}
+
+			if got := StartupInjects(node); got != tt.wantStartupInj {
+				t.Errorf("StartupInjects() = %v, want %v as PreStart adds injects", got, tt.wantStartupInj)
+			}
+
 			exp, mmDir := newStartupTestExperiment(t, node, nil)
 			runStartupPreStart(t, exp, mmDir)
 
@@ -94,6 +107,69 @@ func TestStartupPreStartC2TriggerMatrix(t *testing.T) {
 			}
 			if !tt.wantStagedScript && !os.IsNotExist(err) {
 				t.Fatalf("unexpected staged script %s", staged)
+			}
+		})
+	}
+}
+
+// StartupUsesC2 is false for the nodes whose startup scripts PreStart skips: routers, nodes with the default apps
+// off or set to not boot, and operating systems it makes no scripts for.
+func TestStartupUsesC2Skips(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		modify func(*v1.Node)
+		want   bool
+	}{
+		"windows":           {modify: func(n *v1.Node) { n.HardwareF.OSTypeF = osWindows }, want: true},
+		"router":            {modify: func(n *v1.Node) { n.TypeF = "Router" }},
+		"default apps off":  {modify: func(n *v1.Node) { n.AnnotationsF[defaultAppsAnnotation] = false }},
+		"other os":          {modify: func(n *v1.Node) { n.HardwareF.OSTypeF = "plan9" }},
+		"do not boot":       {modify: func(n *v1.Node) { n.GeneralF.DoNotBootF = boolPtr(true) }},
+		"linux, C2 enabled": {modify: func(*v1.Node) {}, want: true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			node := newStartupTestNode(t, "n1", osLinux, true, 1)
+			node.AnnotationsF = map[string]any{startupViaCCAnnotation: true}
+			tc.modify(node)
+
+			if got := StartupUsesC2(node); got != tc.want {
+				t.Errorf("StartupUsesC2() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// StartupInjects is false for the nodes whose startup scripts PreStart does not inject: routers, nodes with the
+// default apps off or startup via cc on, and other operating systems.
+func TestStartupInjects(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		modify func(*v1.Node)
+		want   bool
+	}{
+		"linux":            {modify: func(*v1.Node) {}, want: true},
+		"windows":          {modify: func(n *v1.Node) { n.HardwareF.OSTypeF = osWindows }, want: true},
+		"router":           {modify: func(n *v1.Node) { n.TypeF = "Router" }},
+		"default apps off": {modify: func(n *v1.Node) { n.AnnotationsF = map[string]any{defaultAppsAnnotation: false} }},
+		"startup via cc":   {modify: func(n *v1.Node) { n.AnnotationsF = map[string]any{startupViaCCAnnotation: true} }},
+		"other os":         {modify: func(n *v1.Node) { n.HardwareF.OSTypeF = "plan9" }},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			node := newStartupTestNode(t, "n1", osLinux, true, 1)
+			tc.modify(node)
+
+			if got := StartupInjects(node); got != tc.want {
+				t.Errorf("StartupInjects() = %v, want %v", got, tc.want)
 			}
 		})
 	}
@@ -448,6 +524,74 @@ func TestStartupPreStartWindowsSkipsHostname(t *testing.T) {
 	}
 }
 
+// startupCommand is a node command and whether the startup app generated it for that node.
+type startupCommand struct {
+	cmd   string
+	stale bool
+}
+
+// genStartupCommand draws a command the startup app generated for host in exp1, or one of another host or
+// experiment, or a user's command.
+func genStartupCommand(host string) *rapid.Generator[startupCommand] {
+	exp1 := &types.Experiment{Spec: &v1.ExperimentSpec{ExperimentNameF: "exp1"}}
+	exp2 := &types.Experiment{Spec: &v1.ExperimentSpec{ExperimentNameF: "exp2"}}
+
+	return rapid.Custom(func(t *rapid.T) startupCommand {
+		if rapid.Bool().Draw(t, "user") {
+			return startupCommand{cmd: rapid.SampledFrom([]string{
+				"exec df -h", "send exp1/notes.txt", "exec-once bash /tmp/miniccc/files/exp1/" + host + "-custom.sh",
+			}).Draw(t, "cmd")}
+		}
+
+		owner := rapid.SampledFrom([]string{host, host + "-x", "other"}).Draw(t, "owner")
+		exp := rapid.SampledFrom([]*types.Experiment{exp1, exp2}).Draw(t, "exp")
+		script := rapid.SampledFrom(startupC2ScriptNames(owner)).Draw(t, "script")
+		executor := rapid.SampledFrom([]startupC2Executor{startupC2Linux, startupC2Windows}).Draw(t, "executor")
+
+		send, exec, _ := startupC2Commands(exp, filepath.Join("/startup", script), executor)
+		cmd := rapid.SampledFrom([]string{send, exec}).Draw(t, "cmd")
+
+		return startupCommand{cmd: cmd, stale: owner == host && exp == exp1}
+	})
+}
+
+// removeStartupC2Commands drops exactly the commands generated for the node, keeps the rest in order, and
+// changes nothing when run again.
+func TestRemoveStartupC2CommandsProperties(t *testing.T) {
+	t.Parallel()
+
+	exp := &types.Experiment{Spec: &v1.ExperimentSpec{ExperimentNameF: "exp1"}}
+
+	rapid.Check(t, func(t *rapid.T) {
+		host := rapid.SampledFrom([]string{"linux1", "win1", "a-b"}).Draw(t, "host")
+		commands := rapid.SliceOfN(genStartupCommand(host), 0, 8).Draw(t, "commands")
+
+		node := &v1.Node{GeneralF: &v1.General{HostnameF: host}}
+
+		var want []string
+
+		for _, c := range commands {
+			node.CommandsF = append(node.CommandsF, c.cmd)
+
+			if !c.stale {
+				want = append(want, c.cmd)
+			}
+		}
+
+		removeStartupC2Commands(exp, node)
+
+		if diff := cmp.Diff(want, node.CommandsF, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("removeStartupC2Commands(%s) commands mismatch (-want +got):\n%s", host, diff)
+		}
+
+		removeStartupC2Commands(exp, node)
+
+		if diff := cmp.Diff(want, node.CommandsF, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("removeStartupC2Commands(%s) run again mismatch (-want +got):\n%s", host, diff)
+		}
+	})
+}
+
 // newStartupTestNode builds a minimal VM node with a real test disk path.
 func newStartupTestNode(t *testing.T, hostname, osType string, snapshot bool, injectPartition int) *v1.Node {
 	t.Helper()
@@ -547,4 +691,105 @@ func hasInjection(node *v1.Node, dst string) bool {
 // boolPtr returns a pointer to v.
 func boolPtr(v bool) *bool {
 	return &v
+}
+
+// startupHostScenario returns a scenario whose startup app lists host with md.
+func startupHostScenario(host string, md map[string]any) *v2.ScenarioSpec {
+	return &v2.ScenarioSpec{AppsF: []*v2.ScenarioApp{
+		{NameF: appNameStartup, HostsF: []*v2.ScenarioAppHost{{HostnameF: host, MetadataF: md}}},
+	}}
+}
+
+// PreStart makes and injects the Linux domain join script only for a host
+// with domain_controller metadata, and refuses metadata that lacks a key.
+func TestStartupPreStartLinuxDomainScript(t *testing.T) {
+	dc := func(omit string) map[string]any {
+		m := map[string]any{"domain": "example.test", "username": "admin", "password": "pw"}
+		delete(m, omit)
+
+		return map[string]any{"domain_controller": m}
+	}
+
+	tests := []struct {
+		name     string
+		md       map[string]any
+		want     string // the join line of the script, none for no script
+		wantErr  bool
+		sentinel error
+	}{
+		{name: "no domain_controller", md: map[string]any{}},
+		{name: "null domain_controller", md: map[string]any{"domain_controller": nil}},
+		{name: "empty domain_controller", md: map[string]any{"domain_controller": map[string]any{}}},
+		{name: "complete", md: dc(""), want: `echo "pw" | realm join --user=admin example.test`},
+		{name: "no domain", md: dc("domain"), wantErr: true, sentinel: ErrDomainControllerIncomplete},
+		{name: "no username", md: dc("username"), wantErr: true, sentinel: ErrDomainControllerIncomplete},
+		{name: "no password", md: dc("password"), wantErr: true, sentinel: ErrDomainControllerIncomplete},
+		{name: "not a map", md: map[string]any{"domain_controller": "dc1"}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := newStartupTestNode(t, "linux1", osLinux, true, 1)
+			exp, mmDir := newStartupTestExperiment(t, node, startupHostScenario("linux1", tt.md))
+
+			if tt.wantErr {
+				err := (Startup{}).PreStart(context.Background(), exp)
+				if err == nil {
+					t.Fatalf("PreStart() with metadata %v error = nil, want an error", tt.md)
+				}
+
+				if tt.sentinel != nil && !errors.Is(err, tt.sentinel) {
+					t.Errorf("PreStart() with metadata %v error = %v, want %v", tt.md, err, tt.sentinel)
+				}
+
+				return
+			}
+
+			runStartupPreStart(t, exp, mmDir)
+
+			script := filepath.Join(exp.Spec.BaseDir(), "startup", "linux1-domain.sh")
+			content, err := os.ReadFile(script)
+
+			if tt.want == "" {
+				if !os.IsNotExist(err) {
+					t.Errorf("domain script %s exists, want none", script)
+				}
+
+				if hasInjection(node, linuxDomainInjectDst) {
+					t.Errorf("node injects %s, want no domain script", linuxDomainInjectDst)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("reading domain script: %v", err)
+			}
+
+			if !strings.Contains(string(content), tt.want) {
+				t.Errorf("domain script does not contain %q:\n%s", tt.want, content)
+			}
+
+			if !hasInjection(node, linuxDomainInjectDst) {
+				t.Errorf("node does not inject %s", linuxDomainInjectDst)
+			}
+		})
+	}
+}
+
+// The Windows startup script uses the same domain_controller metadata, and
+// its address too.
+func TestStartupPreStartWindowsDomainControllerIncomplete(t *testing.T) {
+	md := map[string]any{"domain_controller": map[string]any{"domain": "example.test", "username": "admin", "password": "pw"}}
+
+	node := newStartupTestNode(t, "win1", osWindows, true, 1)
+	exp, mmDir := newStartupTestExperiment(t, node, startupHostScenario("win1", md))
+
+	if err := os.MkdirAll(mmDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := (Startup{}).PreStart(context.Background(), exp); !errors.Is(err, ErrDomainControllerIncomplete) {
+		t.Errorf("PreStart() with domain_controller without ip error = %v, want %v", err, ErrDomainControllerIncomplete)
+	}
 }

@@ -40,7 +40,8 @@ import { NOT_ATTEMPTED } from '@/builder/bulk.js';
 import { BUILTIN_NOT_DELETED, LayerSetError } from '@/builder/layerSetStore.js';
 import { useBuilderStore } from '@/builder/store.js';
 
-import { memoryStorage, sampleDocument } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
+import { sampleDocument } from './fixtures.js';
 import { ICON_DATA } from './png.js';
 
 const PURDUE = readLayerSet({

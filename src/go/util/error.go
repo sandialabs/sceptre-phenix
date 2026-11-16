@@ -3,7 +3,8 @@ package util
 import (
 	"errors"
 	"fmt"
-	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/gofrs/uuid/v5"
 
@@ -30,15 +31,22 @@ func HumanizeError(err error, desc string, a ...any) *HumanizedError {
 		return h
 	}
 
-	return &HumanizedError{
-		cause:     err,
-		humanized: fmt.Sprintf(desc, a...),
-		uuid:      LogErrorGetID(err),
-	}
+	h = &HumanizedError{cause: err, humanized: fmt.Sprintf(desc, a...), uuid: ""}
+	h.uuid = LogErrorGetID(h)
+
+	return h
 }
 
+// Error returns the message of the cause. With no cause, it returns the description, or "unknown error".
 func (e HumanizedError) Error() string {
-	return e.cause.Error()
+	switch {
+	case e.cause != nil:
+		return e.cause.Error()
+	case e.humanized != "":
+		return e.humanized
+	default:
+		return "unknown error"
+	}
 }
 
 func (e HumanizedError) Unwrap() error {
@@ -47,10 +55,14 @@ func (e HumanizedError) Unwrap() error {
 
 func (e HumanizedError) Humanize() string {
 	if e.humanized == "" {
-		err := strings.Split(e.cause.Error(), " ")
-		err[0] = strings.ToUpper(err[0][:1]) + err[0][1:]
+		msg := e.Error()
 
-		return strings.Join(err, " ")
+		first, size := utf8.DecodeRuneInString(msg)
+		if first == utf8.RuneError {
+			return msg
+		}
+
+		return string(unicode.ToUpper(first)) + msg[size:]
 	}
 
 	return fmt.Sprintf("%s (search error logs for %s)", e.humanized, e.uuid)

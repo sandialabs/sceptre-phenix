@@ -1,6 +1,13 @@
-import { beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
+import { flushPromises, mount } from '@vue/test-utils';
 
+const save = vi.hoisted(() => vi.fn());
+
+vi.mock('file-saver', () => ({ saveAs: save }));
+
+import BuilderLayerSets from '@/components/builder/BuilderLayerSets.vue';
+import { builderApi, readLayerSet } from '@/builder/api.js';
 import { copySelection, pasteClipboard } from '@/builder/clipboard.js';
 import { layerChoices } from '@/components/builder/inspector/InspectorLayer.vue';
 import {
@@ -706,5 +713,96 @@ describe('layers in the store', () => {
     expect(store.setLayers(PLANT)).toBeNull();
     expect(nodeLayer(findNode(store.doc, sample.alpha.id))).toBeNull();
     expect('layers' in store.doc).toBe(false);
+  });
+});
+
+// The batch actions of the Layers tab with the store's real library code.
+// Only the API calls are stubbed; the library is read again after a delete.
+describe('the batch actions of the Layers tab', () => {
+  const layerSet = (id, name, more = {}) =>
+    readLayerSet({
+      id,
+      name,
+      layers: [{ id: 1, label: 'Control' }],
+      version: 1,
+      etag: '"1"',
+      ...more,
+    });
+  const PURDUE = layerSet('builtin:purdue', 'Purdue Model', { builtin: true });
+  const SETS = [
+    PURDUE,
+    layerSet('plant-a', 'Plant A'),
+    layerSet('plant-b', 'Plant B'),
+  ];
+  const library = (layerSets) => ({
+    layerSets,
+    defaultId: null,
+    defaultEtag: '"0"',
+    damaged: 0,
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    save.mockReset();
+  });
+
+  test('Download selected keeps focus, and Delete selected keeps the built-in set listed and selected', async () => {
+    const list = vi
+      .spyOn(builderApi, 'listLayerSets')
+      .mockResolvedValue(library(SETS));
+    const remove = vi
+      .spyOn(builderApi, 'deleteLayerSet')
+      .mockResolvedValue(undefined);
+    vi.spyOn(builderApi, 'listIcons').mockResolvedValue({ icons: [] });
+
+    const pinia = createPinia();
+    const store = useBuilderStore(pinia);
+
+    store.layerSets = {
+      ...store.layerSets,
+      status: 'ready',
+      loaded: true,
+      items: SETS,
+    };
+
+    const wrapper = mount(BuilderLayerSets, {
+      attachTo: document.body,
+      global: { plugins: [pinia] },
+    });
+    const get = (testid) => wrapper.get(`[data-testid="${testid}"]`);
+    const box = (id) =>
+      wrapper.get(`[data-layer-set="${id}"] [data-testid="layer-set-select"]`);
+    const shown = () =>
+      wrapper
+        .findAll('[data-testid="layer-sets-list"] > li')
+        .map((item) => item.attributes('data-layer-set'));
+
+    await box('plant-a').setValue(true);
+    await box('plant-b').setValue(true);
+
+    const download = get('bulk-download-layer-sets');
+
+    download.element.focus();
+    await download.trigger('click');
+    await flushPromises();
+    expect(save.mock.calls.map(([, name]) => name)).toEqual([
+      'plant-a.layers.yaml',
+      'plant-b.layers.yaml',
+    ]);
+    expect(document.activeElement).toBe(download.element);
+
+    await box('builtin:purdue').setValue(true);
+    list.mockResolvedValue(library([PURDUE]));
+    await get('bulk-delete-layer-sets').trigger('click');
+    await get('confirm-accept').trigger('click');
+    await flushPromises();
+
+    expect(remove.mock.calls).toEqual([
+      ['plant-a', '"1"'],
+      ['plant-b', '"1"'],
+    ]);
+    expect(shown()).toEqual(['builtin:purdue']);
+    expect(box('builtin:purdue').element.checked).toBe(true);
+    expect(document.activeElement).toBe(get('bulk-summary').element);
   });
 });

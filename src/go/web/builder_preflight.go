@@ -46,8 +46,8 @@ type builderPreflightRequest struct {
 // other routes that compare a document with them share. Tests replace them,
 // so no test needs minimega.
 type builderPreflightSources struct {
-	clusterHosts func() (mm.Hosts, error)
-	bridges      func(hosts ...string) (map[string][]string, error)
+	clusterHosts func(ctx context.Context) (mm.Hosts, error)
+	bridges      func(ctx context.Context, hosts ...string) (map[string][]string, error)
 	// defaultApps are the apps that every experiment runs. apps are the
 	// others that the server can run, built in or on its PATH.
 	defaultApps func() []string
@@ -60,11 +60,15 @@ type builderPreflightSources struct {
 // apps as GET /applications does.
 func defaultBuilderPreflightSources() builderPreflightSources {
 	return builderPreflightSources{
-		clusterHosts: func() (mm.Hosts, error) { return mm.GetClusterHosts(true) },
-		bridges:      mm.GetBridges,
-		defaultApps:  app.DefaultApps,
-		apps:         app.List,
-		timeout:      bapi.PreflightTimeout,
+		clusterHosts: func(ctx context.Context) (mm.Hosts, error) {
+			hosts, _, err := mm.GetClusterHostsObserved(ctx, true, false)
+
+			return hosts, err //nolint:wrapcheck // as GetClusterHostsObserved
+		},
+		bridges:     mm.GetBridges,
+		defaultApps: app.DefaultApps,
+		apps:        app.List,
+		timeout:     bapi.PreflightTimeout,
 	}
 }
 
@@ -110,7 +114,7 @@ func (b *builderAPI) preflightDraft(w http.ResponseWriter, r *http.Request) erro
 
 	report := bapi.RunPreflight(r.Context(), document, bapi.PreflightRequest{
 		Checks: checks, Experiment: request.Experiment, Timeout: b.preflight.timeout,
-	}, newBuilderPreflightEnvironment(b, actor))
+	}, newBuilderPreflightEnvironment(r.Context(), b, actor))
 
 	return builderWriteJSON(w, http.StatusOK, "", report)
 }
@@ -143,7 +147,7 @@ func builderPreflightChecks(names []string) ([]bapi.PreflightCheck, error) {
 // builderPreflightInvalid is the 400 of a malformed preflight request.
 func builderPreflightInvalid(message string) error {
 	return weberror.NewWebError(nil, "%s", message).
-		SetStatus(http.StatusBadRequest).WithCode(string(bdoc.CodeRequestInvalid))
+		SetStatus(http.StatusBadRequest).WithCode(weberror.Code(bdoc.CodeRequestInvalid))
 }
 
 // builderPreflightEnvironment is what the preflight checks of one request
@@ -156,10 +160,14 @@ type builderPreflightEnvironment struct {
 }
 
 // newBuilderPreflightEnvironment returns the environment of a request of
-// actor.
-func newBuilderPreflightEnvironment(api *builderAPI, actor builderActor) *builderPreflightEnvironment {
+// actor. The read of the cluster hosts gives up once ctx, the request's
+// context, is done.
+func newBuilderPreflightEnvironment(
+	ctx context.Context, api *builderAPI, actor builderActor,
+) *builderPreflightEnvironment {
 	return &builderPreflightEnvironment{
-		api: api, actor: actor, hosts: sync.OnceValues(api.preflight.clusterHosts),
+		api: api, actor: actor,
+		hosts: sync.OnceValues(func() (mm.Hosts, error) { return api.preflight.clusterHosts(ctx) }),
 	}
 }
 
@@ -184,7 +192,7 @@ func (e *builderPreflightEnvironment) ClusterHosts(context.Context) ([]bapi.Pref
 // Bridges returns the bridges of each schedulable host the caller may list.
 // Bridges are a facility of the hosts, so listing them takes what listing
 // the hosts takes.
-func (e *builderPreflightEnvironment) Bridges(context.Context) (map[string][]string, error) {
+func (e *builderPreflightEnvironment) Bridges(ctx context.Context) (map[string][]string, error) {
 	hosts, err := e.schedulableHosts()
 	if err != nil {
 		return nil, err
@@ -199,7 +207,7 @@ func (e *builderPreflightEnvironment) Bridges(context.Context) (map[string][]str
 		names = append(names, host.Name)
 	}
 
-	return e.api.preflight.bridges(names...)
+	return e.api.preflight.bridges(ctx, names...)
 }
 
 // schedulableHosts returns the hosts that VMs can be scheduled on and that

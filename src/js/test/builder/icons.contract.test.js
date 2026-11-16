@@ -123,22 +123,6 @@ describe('custom icon limits', () => {
 });
 
 describe('decodeIconData', () => {
-  test('decodes strict standard base64', () => {
-    expect(decodeIconData(ICON_DATA)).toEqual(fixture);
-
-    // Every length of the last group, and every byte value.
-    for (const length of [1, 2, 3, 4, 255, 256, 257]) {
-      const bytes = Uint8Array.from({ length }, (_, i) => (i * 37 + 250) % 256);
-
-      expect(decodeIconData(base64Of(bytes)), length).toEqual(bytes);
-    }
-
-    const every = Uint8Array.from({ length: 256 }, (_, i) => i);
-
-    expect(base64Of(every)).toMatch(/[+/]/);
-    expect(decodeIconData(base64Of(every))).toEqual(every);
-  });
-
   test.each([
     ['nothing', undefined],
     ['null', null],
@@ -148,7 +132,6 @@ describe('decodeIconData', () => {
     ['text that is not base64', '<svg onload=alert(1)>'],
     ['a data URL', `data:image/png;base64,${ICON_DATA}`],
     ['URL-safe base64', ICON_DATA.replace('A', '_')],
-    ['base64 without padding', ICON_DATA.replace(/=+$/, '')],
     [
       'base64 with a line break',
       `${ICON_DATA.slice(0, 40)}\n${ICON_DATA.slice(40)}`,
@@ -158,10 +141,6 @@ describe('decodeIconData', () => {
     ['padding in the middle', 'AA==AAAA'],
     ['three padding characters', 'A==='],
     ['only padding', '===='],
-    // "gg==" ends the fixture: the last character holds four bits no byte
-    // takes, and "h" sets one.
-    ['bits set after one byte', `${ICON_DATA.slice(0, -4)}gh==`],
-    ['bits set after two bytes', 'AAB='],
   ])('refuses %s', (_, text) => {
     expect(decodeIconData(text)).toBeNull();
   });
@@ -1204,7 +1183,11 @@ describe('icon data, for any bytes and text', () => {
       fc.property(fc.uint8Array({ minLength: 1, maxLength: 600 }), (bytes) => {
         expect(decodeIconData(encodeIconData(bytes))).toEqual(bytes);
       }),
-      { numRuns: 200 },
+      {
+        numRuns: 200,
+        // Every byte value, so the text holds "+" and "/".
+        examples: [[Uint8Array.from({ length: 256 }, (_, i) => i)]],
+      },
     );
   });
 

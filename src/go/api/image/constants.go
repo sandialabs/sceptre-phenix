@@ -124,30 +124,6 @@ EOF
 chmod +x /root/.init.sh
 `
 
-const PostbuildProtonuke = `
-# -------------------------------------------------- Protonuke ---------------------------------------------------
-cat > /etc/systemd/system/protonuke.service <<EOF
-[Unit]
-Description=protonuke
-After=network-online.target
-Wants=network-online.target
-[Service]
-EnvironmentFile=/etc/default/protonuke
-ExecStart=/opt/minimega/bin/protonuke \$PROTONUKE_ARGS
-[Install]
-WantedBy=multi-user.target
-EOF
-mkdir -p /etc/systemd/system/multi-user.target.wants
-ln -s /etc/systemd/system/protonuke.service /etc/systemd/system/multi-user.target.wants/protonuke.service
-`
-
-const PostbuildEnableDHCP = `
-# ----------------------------------------------------- DHCP -----------------------------------------------------
-echo "#!/bin/bash\ndhclient" > /etc/init.d/dhcp.sh
-chmod +x /etc/init.d/dhcp.sh
-update-rc.d dhcp.sh defaults 100
-`
-
 var DefaultPackages = []string{ //nolint:gochecknoglobals // global constant
 	"curl",
 	"ethtool",

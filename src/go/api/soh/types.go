@@ -3,6 +3,7 @@ package soh
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"time"
 )
 
@@ -12,6 +13,15 @@ const (
 	notifyInterval   = 5 * time.Second
 	c2RetryDelay     = 5 * time.Second
 	monitorMemory    = 512
+
+	// defaultC2Concurrency is how many C2 probes of a run can run at the same time.
+	defaultC2Concurrency = 16
+)
+
+// errElasticServerAddress reports a packet capture Elastic server IP address
+// that is not an IPv4 address in CIDR notation.
+var errElasticServerAddress = errors.New(
+	"packet capture Elastic server IP address must be an IPv4 address in CIDR notation",
 )
 
 type Node struct {
@@ -32,6 +42,7 @@ type Edge struct {
 
 type Network struct {
 	ExpStarted     bool     `json:"started"`
+	SOHDisabled    bool     `json:"soh_disabled"`
 	SOHInitialized bool     `json:"soh_initialized"`
 	SOHRunning     bool     `json:"soh_running"`
 	Nodes          []Node   `json:"nodes"`
@@ -132,6 +143,9 @@ type customHostTest struct {
 type sohMetadata struct {
 	AppProfileKey      string                      `mapstructure:"appMetadataProfileKey"`
 	C2Timeout          string                      `mapstructure:"c2Timeout"`
+	C2AppearGrace      string                      `mapstructure:"c2AppearGrace"`
+	C2ClientGrace      string                      `mapstructure:"c2ClientGrace"`
+	C2Concurrency      *int                        `mapstructure:"c2Concurrency"`
 	ExitOnError        bool                        `mapstructure:"exitOnError"`
 	HostFiles          map[string][]string         `mapstructure:"hostFiles"`
 	HostFilesAbsent    map[string][]string         `mapstructure:"hostFilesAbsent"`
@@ -156,10 +170,13 @@ type sohMetadata struct {
 
 	Other map[string]any `mapstructure:",remain"`
 
-	// set after parsing
-	c2Timeout    time.Duration
-	startupDelay time.Duration
-	uuidHosts    map[string]struct{}
+	// set after parsing; a nil grace keeps the mm default
+	c2Timeout     time.Duration
+	c2AppearGrace *time.Duration
+	c2ClientGrace *time.Duration
+	c2Concurrency int
+	startupDelay  time.Duration
+	uuidHosts     map[string]struct{}
 }
 
 func (m *sohMetadata) init() error {
@@ -192,9 +209,23 @@ func (m *sohMetadata) init() error {
 		}
 	}
 
+	var err error
+
+	if m.c2AppearGrace, err = optionalDuration("C2 appear grace", m.C2AppearGrace); err != nil {
+		return err
+	}
+
+	if m.c2ClientGrace, err = optionalDuration("C2 client grace", m.C2ClientGrace); err != nil {
+		return err
+	}
+
+	m.c2Concurrency = defaultC2Concurrency
+	if m.C2Concurrency != nil {
+		m.c2Concurrency = *m.C2Concurrency
+	}
+
 	// Default startup delay is 0 if not set
 	if m.StartupDelay != "" {
-		var err error
 		if m.startupDelay, err = time.ParseDuration(m.StartupDelay); err != nil {
 			return fmt.Errorf("parsing startup delay setting `%s`: %w", m.StartupDelay, err)
 		}
@@ -202,6 +233,14 @@ func (m *sohMetadata) init() error {
 
 	if m.AppProfileKey == "" {
 		m.AppProfileKey = "sohProfile"
+	}
+
+	// The capture VMs take the addresses after the server's, which only IPv4 supports.
+	if len(m.PacketCapture.CaptureHosts) > 0 {
+		addr := m.PacketCapture.ElasticServer.IPAddress
+		if prefix, err := netip.ParsePrefix(addr); err != nil || !prefix.Addr().Is4() {
+			return fmt.Errorf("parsing '%s': %w", addr, errElasticServerAddress)
+		}
 	}
 
 	m.uuidHosts = make(map[string]struct{})
@@ -234,6 +273,21 @@ func (m *sohMetadata) init() error {
 	return nil
 }
 
+// optionalDuration parses the duration setting name, or gives nil when val is
+// empty.
+func optionalDuration(name, val string) (*time.Duration, error) {
+	if val == "" {
+		return nil, nil //nolint:nilnil // an empty setting is not an error
+	}
+
+	d, err := time.ParseDuration(val)
+	if err != nil {
+		return nil, fmt.Errorf("parsing %s setting '%s': %w", name, val, err)
+	}
+
+	return &d, nil
+}
+
 func (m sohMetadata) useUUIDForC2Active(host string) bool {
 	if _, ok := m.uuidHosts["all"]; ok {
 		return true
@@ -247,7 +301,6 @@ func (m sohMetadata) useUUIDForC2Active(host string) bool {
 }
 
 type sohProfile struct {
-	C2Timeout   string           `mapstructure:"c2Timeout"`
 	Processes   []string         `mapstructure:"processes"`
 	Listeners   []string         `mapstructure:"listeners"`
 	CustomTests []customHostTest `mapstructure:"customTests"`

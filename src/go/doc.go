@@ -77,8 +77,9 @@ Example
 	vm config memory 512
 	vm config snapshot true
 	vm config disk 0b02f5d75d22_foobar_turbine-01_snapshot
-	vm config qemu-append -vga qxl
+	vm config vga qxl
 	vm config net ot MGMT
+	.preprocess false vm config qemu-override "-vnc unix:" "-vnc lossy=on,vnc=unix:"
 	vm launch kvm turbine-01
 
 	disk snapshot foo.qc2 0b02f5d75d22_foobar_turbine-02_snapshot
@@ -88,8 +89,9 @@ Example
 	vm config memory 512
 	vm config snapshot true
 	vm config disk 0b02f5d75d22_foobar_turbine-02_snapshot
-	vm config qemu-append -vga qxl
+	vm config vga qxl
 	vm config net ot MGMT
+	.preprocess false vm config qemu-override "-vnc unix:" "-vnc lossy=on,vnc=unix:"
 	vm launch kvm turbine-02
 
 	$> bin/phenix experiment stop foobar

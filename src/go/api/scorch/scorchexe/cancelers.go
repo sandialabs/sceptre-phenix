@@ -3,6 +3,8 @@ package scorchexe
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -33,6 +35,30 @@ func HasCanceler(exp string, run int) bool {
 	_, ok := cancelers[key]
 
 	return ok
+}
+
+// ExecutingRuns returns, in order, the runs of experiment exp that have a
+// canceler: the runs that this process executes.
+func ExecutingRuns(exp string) []int {
+	runs := []int{}
+
+	cancelersMu.Lock()
+	defer cancelersMu.Unlock()
+
+	for key := range cancelers {
+		rest, ok := strings.CutPrefix(key, exp+"/")
+		if !ok {
+			continue
+		}
+
+		if run, err := strconv.Atoi(rest); err == nil {
+			runs = append(runs, run)
+		}
+	}
+
+	slices.Sort(runs)
+
+	return runs
 }
 
 func GetExperimentCancelers(exp string) []context.CancelFunc {

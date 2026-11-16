@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 
 import BuilderTemplates from '@/components/builder/BuilderTemplates.vue';
 import { createDocument } from '@/builder/model.js';
@@ -29,8 +29,6 @@ function template(id) {
     },
   };
 }
-
-enableAutoUnmount(afterEach);
 
 beforeEach(() => {
   sessionStorage.clear();

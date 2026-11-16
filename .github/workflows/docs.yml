@@ -8,6 +8,7 @@ on:
       - 'docs/**'
       - 'src/go/web/public/docs/openapi.yml'
       - 'src/go/types/version/schemas/**'
+      - 'scripts/api-docs.sh'
       - '.github/workflows/docs.yml'
   pull_request:
     # closed: only to cancel this PR's runs (see concurrency); jobs skip it
@@ -55,11 +56,7 @@ jobs:
         run: pip install -r requirements.txt
       - name: Build API documentation
         working-directory: .
-        run: |
-          npx --yes @redocly/cli@2.53.2 build-docs \
-            src/go/web/public/docs/openapi.yml \
-            --output=/tmp/swagger.html \
-            --title='phenix API'
+        run: ./scripts/api-docs.sh build src/go/web/public/docs/openapi.yml /tmp/swagger.html
       - name: Build documentation
         run: mkdocs build --strict
       - name: Configure Git user

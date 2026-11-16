@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -46,6 +47,35 @@ const (
 	windowsSchedulerAsset      = "startup-scheduler.cmd"
 	windowsSchedulerDst        = "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/startup_scheduler.cmd"
 )
+
+// ErrDomainControllerIncomplete is returned for domain_controller metadata that lacks a key.
+var ErrDomainControllerIncomplete = errors.New("domain_controller metadata is incomplete")
+
+// joinsDomain reports whether md, the startup app metadata of host, has
+// domain_controller, and returns an error when it lacks one of keys.
+func joinsDomain(host string, md map[string]any, keys ...string) (bool, error) {
+	raw, ok := md["domain_controller"]
+	if !ok || raw == nil {
+		return false, nil
+	}
+
+	var dc map[string]any
+	if err := mapstructure.Decode(raw, &dc); err != nil {
+		return false, fmt.Errorf("decoding domain_controller metadata for host %s: %w", host, err)
+	}
+
+	if len(dc) == 0 {
+		return false, nil
+	}
+
+	for _, key := range keys {
+		if v, ok := dc[key]; !ok || v == nil || v == "" {
+			return false, fmt.Errorf("%w: host %s has no %s", ErrDomainControllerIncomplete, host, key)
+		}
+	}
+
+	return true, nil
+}
 
 type Startup struct{}
 
@@ -117,6 +147,38 @@ func startupC2DeliveryEnabled(node ifaces.NodeSpec) bool {
 	}
 
 	return startupViaCCEnabled(node) || firstDriveInjectPartition(node) == 0
+}
+
+// StartupUsesC2 reports whether PreStart sends the startup scripts of node through miniccc: a Linux or Windows VM
+// that is not a router, with the default apps and C2 delivery on. Such a VM needs a running miniccc client.
+func StartupUsesC2(node ifaces.NodeSpec) bool {
+	if node == nil || node.External() || node.Hardware() == nil || strings.EqualFold(node.Type(), "Router") ||
+		!defaultAppsEnabled(node) || !startupC2DeliveryEnabled(node) {
+		return false
+	}
+
+	switch strings.ToLower(node.Hardware().OSType()) {
+	case osLinux, osRHEL, osCentOS, osWindows:
+		return true
+	}
+
+	return false
+}
+
+// StartupInjects reports whether PreStart adds the startup scripts of node as injects: a Linux or Windows VM that is
+// not a router, with the default apps on and without the startup-via-cc annotation.
+func StartupInjects(node ifaces.NodeSpec) bool {
+	if node == nil || node.External() || node.Hardware() == nil || strings.EqualFold(node.Type(), "Router") ||
+		!defaultAppsEnabled(node) || startupViaCCEnabled(node) {
+		return false
+	}
+
+	switch strings.ToLower(node.Hardware().OSType()) {
+	case osLinux, osRHEL, osCentOS, osWindows:
+		return true
+	}
+
+	return false
 }
 
 // firstDriveInjectPartition returns the first disk inject partition, defaulting to one.
@@ -445,7 +507,7 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 		setHostname := startupSetHostnameEnabled(node)
 
 		switch strings.ToLower(node.Hardware().OSType()) {
-		case osLinux, "rhel", "centos":
+		case osLinux, osRHEL, osCentOS:
 			var (
 				hostnameFile = startupDir + "/" + node.General().Hostname() + "-hostname.sh"
 				timezoneFile = startupDir + "/" + node.General().Hostname() + "-timezone.sh"
@@ -505,11 +567,20 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 			if startupApp != nil {
 				for _, host := range startupApp.Hosts() {
 					if host.Hostname() == node.General().Hostname() {
+						join, err := joinsDomain(host.Hostname(), host.Metadata(), "domain", "username", "password")
+						if err != nil {
+							return err
+						}
+
+						if !join {
+							continue
+						}
+
 						domainFile := startupDir + "/" + node.General().Hostname() + "-domain.sh"
 
 						addStartupInject(node, domainFile, linuxDomainInjectDst, suppressStartupInjects)
 
-						err := tmpl.CreateFileFromTemplate(
+						err = tmpl.CreateFileFromTemplate(
 							"linux_domain.tmpl",
 							host.Metadata(),
 							domainFile,
@@ -563,7 +634,13 @@ func (s Startup) PreStart(ctx context.Context, exp *types.Experiment) error {
 				}
 			}
 
-			err := tmpl.CreateFileFromTemplate("windows_startup.tmpl", data, startupFile)
+			// The script also sets the domain controller as the DNS server.
+			_, err := joinsDomain(node.General().Hostname(), data.Metadata, "ip", "domain", "username", "password")
+			if err != nil {
+				return err
+			}
+
+			err = tmpl.CreateFileFromTemplate("windows_startup.tmpl", data, startupFile)
 			if err != nil {
 				return fmt.Errorf("generating windows startup script: %w", err)
 			}

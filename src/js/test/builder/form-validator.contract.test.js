@@ -147,6 +147,85 @@ describe('plain-language errors', () => {
     ]);
   });
 
+  // Each row: an ajv error (keyword, params, parent schema) and its message.
+  test.each([
+    [
+      { keyword: 'maxLength', params: { limit: 8 } },
+      'must be at most 8 characters',
+    ],
+    [
+      {
+        keyword: 'minimum',
+        params: { limit: 1 },
+        parentSchema: { minimum: 1 },
+      },
+      'must be at least 1',
+    ],
+    [
+      {
+        keyword: 'exclusiveMinimum',
+        params: { limit: 0 },
+        parentSchema: { exclusiveMinimum: 0 },
+      },
+      'must be more than 0',
+    ],
+    [
+      {
+        keyword: 'maximum',
+        params: { limit: 9 },
+        parentSchema: { maximum: 9 },
+      },
+      'must be at most 9',
+    ],
+    [
+      {
+        keyword: 'exclusiveMaximum',
+        params: { limit: 9 },
+        parentSchema: { exclusiveMaximum: 9 },
+      },
+      'must be less than 9',
+    ],
+    [
+      { keyword: 'type', params: { type: 'null,integer' } },
+      'must be a whole number',
+    ],
+    [
+      { keyword: 'type', params: { type: ['null', 'number'] } },
+      'must be a number',
+    ],
+    [{ keyword: 'type', params: { type: 'null' } }, 'must be null'],
+    [
+      { keyword: 'minItems', params: { limit: 1 } },
+      'must have at least 1 item',
+    ],
+    [
+      { keyword: 'minItems', params: { limit: 2 } },
+      'must have at least 2 items',
+    ],
+    [{ keyword: 'maxItems', params: { limit: 1 } }, 'can have at most 1 item'],
+    [{ keyword: 'maxItems', params: { limit: 3 } }, 'can have at most 3 items'],
+    [
+      { keyword: 'uniqueItems', params: { i: 0, j: 1 } },
+      'cannot repeat an item',
+    ],
+    [
+      {
+        keyword: 'additionalProperties',
+        params: { additionalProperty: 'extra' },
+      },
+      'has a field this editor does not know: "extra"',
+    ],
+    [{ keyword: 'oneOf' }, 'does not match any of its kinds'],
+    [{ keyword: 'anyOf' }, 'does not match any of its kinds'],
+    [{ keyword: 'x-prime', message: 'must be a prime' }, 'must be a prime'],
+    [{ keyword: 'x-prime' }, 'is not valid'],
+  ])('the error %o says the field %s', (fields, text) => {
+    const schema = { properties: { count: { title: 'Count' } } };
+    const error = { instancePath: '/count', ...fields };
+
+    expect(errorMessage(error, schema)).toBe(`Count ${text}`);
+  });
+
   // The Inspector checks the text phenix parses (see SPEC_FORMATS in
   // schema.js).
   test('say what a duration, an address and a network look like', () => {

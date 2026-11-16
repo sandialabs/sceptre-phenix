@@ -1,12 +1,14 @@
 // The Inspector mounted in the page on a new Builder store, for the happy-dom
 // unit files, with helpers that act on its fields as a user does.
 
-import { reactive } from 'vue';
+import { defineComponent, h, provide, reactive, ref } from 'vue';
 import { createPinia } from 'pinia';
 import { flushPromises, mount } from '@vue/test-utils';
 import { JsonForms } from '@jsonforms/vue';
 
 import BuilderInspector from '@/components/builder/BuilderInspector.vue';
+import { inspectorI18n, inspectorRenderers } from '@/builder/adapters/forms.js';
+import { createFormValidator } from '@/builder/form-validator.js';
 import { settleIcons } from '@/builder/icons.js';
 import { addNode, createDocument } from '@/builder/model.js';
 import { builderSchemaV1 } from '@/builder/schema.js';
@@ -50,6 +52,54 @@ export async function mountInspector({
   await flushPromises();
 
   return { wrapper, store };
+}
+
+// Mounts JSON Forms with the Inspector's renderers on a small `schema`, one
+// control for each property. `provides` maps Inspector keys to their values.
+export async function mountControl({ schema, data = {}, provides = {} }) {
+  const uischema = {
+    type: 'VerticalLayout',
+    elements: Object.keys(schema.properties).map((key) => ({
+      type: 'Control',
+      scope: `#/properties/${key}`,
+    })),
+  };
+  const Form = defineComponent({
+    setup() {
+      const current = ref(data);
+      const ajv = createFormValidator();
+      const i18n = inspectorI18n(schema);
+
+      for (const key of Object.getOwnPropertySymbols(provides)) {
+        provide(key, provides[key]);
+      }
+
+      function onChange(event) {
+        if (JSON.stringify(event.data) !== JSON.stringify(current.value)) {
+          current.value = event.data;
+        }
+      }
+
+      return () =>
+        h('form', { novalidate: true, onSubmit: (e) => e.preventDefault() }, [
+          h(JsonForms, {
+            data: current.value,
+            schema,
+            uischema,
+            renderers: inspectorRenderers,
+            ajv,
+            i18n,
+            validationMode: 'NoValidation',
+            onChange,
+          }),
+        ]);
+    },
+  });
+  const wrapper = mount(Form, { attachTo: document.body });
+
+  await flushPromises();
+
+  return { wrapper };
 }
 
 // The form's data as JSON Forms holds it, a copy.

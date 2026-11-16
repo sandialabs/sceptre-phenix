@@ -16,8 +16,11 @@ vm config cpu {{ .Hardware.CPU }}
 vm config memory {{ .Hardware.Memory }}
 vm config snapshot true
 vm config disk {{ .Hardware.DiskConfig ($.Exp.SnapshotName .General.Hostname) }}
-vm config qemu-append -vga qxl
+vm config vga qxl
 vm config net {{ .Network.InterfaceConfig }}
+{{- if eq .General.VMType "kvm" }}
+.preprocess false vm config qemu-override "-vnc unix:" "-vnc lossy=on,vnc=unix:"
+{{- end }}
 vm launch {{ .General.VMType }} {{ .General.Hostname }}
 {{- end }}
 
@@ -39,8 +42,11 @@ vm config cpu {{ .Hardware.CPU }}
 vm config memory {{ .Hardware.Memory }}
 vm config snapshot true
 vm config disk {{ .Hardware.DiskConfig ($.Exp.SnapshotName .General.Hostname) }}
-vm config qemu-append -vga qxl
+vm config vga qxl
 vm config net {{ .Network.InterfaceConfig }}
+{{- if eq .General.VMType "kvm" }}
+.preprocess false vm config qemu-override "-vnc unix:" "-vnc lossy=on,vnc=unix:"
+{{- end }}
 vm launch {{ .General.VMType }} {{ .General.Hostname }}
 {{- end }}
 

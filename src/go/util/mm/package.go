@@ -1,6 +1,23 @@
 package mm
 
+import (
+	"context"
+	"time"
+
+	"phenix/util/freshness"
+)
+
 func ReadScriptFromFile(ns, filename string) error {
+	return DefaultMM.ReadScriptFromFile(ns, filename)
+}
+
+// ReadC2ScriptFromFile is ReadScriptFromFile for an experiment's script of cc
+// commands, which sets `cc filter` for each VM in turn. The namespace's cc lock
+// (see ccLocks) is held while it runs, so phenix's own cc commands cannot pick
+// up one of its filters or clear one mid-script.
+func ReadC2ScriptFromFile(ns, filename string) error {
+	defer ccLocks.lock(ns)()
+
 	return DefaultMM.ReadScriptFromFile(ns, filename)
 }
 
@@ -8,24 +25,54 @@ func ClearNamespace(ns string) error {
 	return DefaultMM.ClearNamespace(ns)
 }
 
-func LaunchVMs(ns string, start ...string) error {
-	return DefaultMM.LaunchVMs(ns, start...)
+// LaunchVMs launches the VMs queued in namespace ns. They stay in the BUILDING state until StartLaunchedVMs starts
+// them.
+func LaunchVMs(ns string) error {
+	return DefaultMM.LaunchVMs(ns)
 }
 
-func GetLaunchProgress(ns string, expected int) (float64, error) {
-	return DefaultMM.GetLaunchProgress(ns, expected)
+// StartLaunchedVMs starts the launched VMs of namespace ns that start names, every VM when start is nil, or no VM
+// when start is empty.
+func StartLaunchedVMs(ns string, start ...string) error {
+	return DefaultMM.StartLaunchedVMs(ns, start...)
+}
+
+// GetLaunchProgress returns how many of the VMs named vms minimega launched in namespace ns. A VM is launched when
+// minimega lists it with a process, or in a state other than BUILDING.
+func GetLaunchProgress(ctx context.Context, ns string, vms []string) (int, error) {
+	return DefaultMM.GetLaunchProgress(ctx, ns, vms)
 }
 
 func GetVMInfo(opts ...Option) VMs {
 	return DefaultMM.GetVMInfo(opts...)
 }
 
+// vmInfoObserver is the optional part of MM that reports when VM info was
+// read and whether minimega answered. It is kept out of MM so the stand-ins
+// tests use for MM need not implement it.
+type vmInfoObserver interface {
+	GetVMInfoObserved(...Option) (VMs, freshness.Observation)
+}
+
+// GetVMInfoObserved is GetVMInfo, also reporting when the VMs were read and
+// whether minimega answered for all of them. An MM that cannot tell is taken
+// to have answered now.
+func GetVMInfoObserved(opts ...Option) (VMs, freshness.Observation) {
+	if o, ok := DefaultMM.(vmInfoObserver); ok {
+		return o.GetVMInfoObserved(opts...)
+	}
+
+	at := time.Now()
+
+	return DefaultMM.GetVMInfo(opts...), freshness.Observed(at)
+}
+
 func GetVMScreenshot(opts ...Option) ([]byte, error) {
 	return DefaultMM.GetVMScreenshot(opts...)
 }
 
-func GetVNCEndpoint(opts ...Option) (string, error) {
-	return DefaultMM.GetVNCEndpoint(opts...)
+func GetVNCInfo(opts ...Option) (VNCInfo, error) {
+	return DefaultMM.GetVNCInfo(opts...)
 }
 
 func StartVM(opts ...Option) error {
@@ -48,8 +95,20 @@ func GetVMHost(opts ...Option) (string, error) {
 	return DefaultMM.GetVMHost(opts...)
 }
 
+func GetVMHosts(opts ...Option) map[string]string {
+	return DefaultMM.GetVMHosts(opts...)
+}
+
+func GetVMIPv4(opts ...Option) ([]string, error) {
+	return DefaultMM.GetVMIPv4(opts...)
+}
+
 func GetVMState(opts ...Option) (string, error) {
 	return DefaultMM.GetVMState(opts...)
+}
+
+func GetVMStates(opts ...Option) (map[string]string, error) {
+	return DefaultMM.GetVMStates(opts...)
 }
 
 func SetVMTags(opts ...Option) error {
@@ -68,8 +127,12 @@ func CreateBridge(opts ...Option) error {
 	return DefaultMM.CreateBridge(opts...)
 }
 
-func GetBridges(hosts ...string) (map[string][]string, error) {
-	return DefaultMM.GetBridges(hosts...)
+func GetBridges(ctx context.Context, hosts ...string) (map[string][]string, error) {
+	return DefaultMM.GetBridges(ctx, hosts...)
+}
+
+func DestroyBridge(bridge string, hosts ...string) error {
+	return DefaultMM.DestroyBridge(bridge, hosts...)
 }
 
 func CreateTunnel(opts ...Option) error {
@@ -96,16 +159,64 @@ func GetExperimentCaptures(opts ...Option) []Capture {
 	return DefaultMM.GetExperimentCaptures(opts...)
 }
 
+// GetExperimentCapturesChecked lists the VM interface captures of a namespace; a failed minimega read is an error.
+func GetExperimentCapturesChecked(opts ...Option) ([]Capture, error) {
+	return DefaultMM.GetExperimentCapturesChecked(opts...)
+}
+
 func GetVMCaptures(opts ...Option) []Capture {
 	return DefaultMM.GetVMCaptures(opts...)
 }
 
-func GetClusterHosts(schedOnly bool) (Hosts, error) {
-	return DefaultMM.GetClusterHosts(schedOnly)
+// StartNamespaceCapture starts an experiment capture and returns its ID.
+func StartNamespaceCapture(opts ...Option) (string, error) {
+	return DefaultMM.StartNamespaceCapture(opts...)
 }
 
-func GetNamespaceHosts(ns string) (Hosts, error) {
-	return DefaultMM.GetNamespaceHosts(ns)
+// StopNamespaceCapture stops an experiment capture and returns its final rows.
+func StopNamespaceCapture(opts ...Option) ([]NamespaceCapture, error) {
+	return DefaultMM.StopNamespaceCapture(opts...)
+}
+
+// GetNamespaceCaptures lists the experiment captures of a namespace, sorted by ID.
+func GetNamespaceCaptures(opts ...Option) ([]NamespaceCapture, error) {
+	return DefaultMM.GetNamespaceCaptures(opts...)
+}
+
+// GetBridgeMirrors lists the Open vSwitch mirrors of the hosts that MirrorHosts names.
+func GetBridgeMirrors(opts ...Option) ([]BridgeMirror, error) {
+	return DefaultMM.GetBridgeMirrors(opts...)
+}
+
+// clusterHostsObserver is the optional part of MM that reports when the
+// cluster hosts were read; see vmInfoObserver.
+type clusterHostsObserver interface {
+	GetClusterHostsObserved(ctx context.Context, schedOnly, diskUsage bool) (Hosts, freshness.Observation, error)
+}
+
+// GetClusterHostsObserved is GetClusterHosts, also reporting when the hosts
+// were read from minimega; see Minimega.GetClusterHostsObserved. An MM that
+// cannot tell is taken to have read them now. Its minimega commands give up
+// once ctx is done (see Context), where the MM supports it.
+func GetClusterHostsObserved(ctx context.Context, schedOnly, diskUsage bool) (Hosts, freshness.Observation, error) {
+	if o, ok := DefaultMM.(clusterHostsObserver); ok {
+		return o.GetClusterHostsObserved(ctx, schedOnly, diskUsage)
+	}
+
+	at := time.Now()
+
+	hosts, err := DefaultMM.GetClusterHosts(schedOnly, diskUsage)
+	if err != nil {
+		return hosts, freshness.Observation{}, err //nolint:wrapcheck // as GetClusterHosts
+	}
+
+	return hosts, freshness.Observed(at), nil
+}
+
+// GetNamespaceHosts returns the hosts of the namespace ns, without their disk
+// usage; see Minimega.GetNamespaceHosts.
+func GetNamespaceHosts(ctx context.Context, ns string) (Hosts, error) {
+	return DefaultMM.GetNamespaceHosts(ctx, ns)
 }
 
 func Headnode() string {
@@ -116,16 +227,48 @@ func IsHeadnode(node string) bool {
 	return DefaultMM.IsHeadnode(node)
 }
 
-func GetMMArgs() (map[string]string, error) {
-	return DefaultMM.GetMMArgs()
-}
-
 func GetVLANs(opts ...Option) (map[string]int, error) {
 	return DefaultMM.GetVLANs(opts...)
 }
 
+// GetNamespaces lists minimega's namespaces, sorted by name.
+func GetNamespaces(opts ...Option) ([]Namespace, error) {
+	return DefaultMM.GetNamespaces(opts...)
+}
+
+// GetVLANBlacklist lists the VLAN IDs on minimega's blacklist, sorted.
+func GetVLANBlacklist(opts ...Option) ([]int, error) {
+	return DefaultMM.GetVLANBlacklist(opts...)
+}
+
+// BlacklistVLAN adds the VLAN ID to minimega's blacklist.
+func BlacklistVLAN(id int, opts ...Option) error {
+	return DefaultMM.BlacklistVLAN(id, opts...)
+}
+
+// UnblacklistVLAN removes the VLAN ID from minimega's blacklist; see
+// ErrBlacklistRemovalUnsupported.
+func UnblacklistVLAN(id int, opts ...Option) error {
+	return DefaultMM.UnblacklistVLAN(id, opts...)
+}
+
+// VLANBlacklistRemovable reports whether minimega can remove a VLAN ID from
+// its blacklist.
+func VLANBlacklistRemovable(opts ...Option) (bool, error) {
+	return DefaultMM.VLANBlacklistRemovable(opts...)
+}
+
+// ClearVLANs clears every VLAN alias of the namespace that NS names.
+func ClearVLANs(opts ...Option) error {
+	return DefaultMM.ClearVLANs(opts...)
+}
+
 func IsC2ClientActive(opts ...C2Option) error {
 	return DefaultMM.IsC2ClientActive(opts...)
+}
+
+func ActiveC2Clients(ns string, refs []C2ClientRef) map[C2ClientRef]bool {
+	return DefaultMM.ActiveC2Clients(ns, refs)
 }
 
 func ExecC2Command(opts ...C2Option) (string, error) {
@@ -152,8 +295,10 @@ func MeshShell(host, cmd string) error {
 	return DefaultMM.MeshShell(host, cmd)
 }
 
-func MeshShellResponse(host, cmd string) (string, error) {
-	return DefaultMM.MeshShellResponse(host, cmd)
+// MeshShellRead is MeshShellResponse for a shell command that changes
+// nothing, sent on the read-only connections of mmcli.RunReadOnly.
+func MeshShellRead(ctx context.Context, host, cmd string) (string, error) {
+	return DefaultMM.MeshShellRead(ctx, host, cmd)
 }
 
 func MeshSend(ns, host, command string) error {

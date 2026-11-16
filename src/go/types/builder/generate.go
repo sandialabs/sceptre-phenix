@@ -1249,8 +1249,13 @@ func IsBuilderAnnotation(key string) bool {
 	return strings.HasPrefix(key, builderAnnotationPrefix)
 }
 
+// vmDefaultsAnnotation is the annotation in which phenix saves each VM's
+// settings when it creates an experiment. Only phenix writes it, so an import
+// does not keep it.
+const vmDefaultsAnnotation = "phenix/vm-defaults"
+
 // importAnnotations keeps the source config's annotations, other than the
-// Builders' own, on the document's source. In key order, it keeps those that
+// Builders' own and the one phenix writes itself, on the document's source. In key order, it keeps those that
 // fit the bounds [Document.Validate] puts on them, and warns about the rest.
 func (g *generator) importAnnotations(annotations map[string]string) {
 	var (
@@ -1260,7 +1265,7 @@ func (g *generator) importAnnotations(annotations map[string]string) {
 	)
 
 	for _, key := range slices.Sorted(maps.Keys(annotations)) {
-		if IsBuilderAnnotation(key) {
+		if IsBuilderAnnotation(key) || key == vmDefaultsAnnotation {
 			continue
 		}
 

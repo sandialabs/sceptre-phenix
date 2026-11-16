@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 
@@ -145,7 +146,9 @@ func parseConfigFile(path string, requireKind bool) (configFile, error) {
 		return configFile{}, err
 	}
 
-	root, err := parseDocument(path, neutralizePlaceholders(body))
+	masked := neutralizePlaceholders(body)
+
+	root, err := parseDocument(path, masked)
 	if err != nil {
 		return configFile{}, err
 	}
@@ -178,9 +181,39 @@ func parseConfigFile(path string, requireKind bool) (configFile, error) {
 		return configFile{}, fmt.Errorf("%s:%d:%d: kind must be a non-empty string", path, kind.Line, kind.Column)
 	}
 
-	cfg.Kind = kind.Value
+	cfg.Kind = unmaskedScalar(body, masked, kind)
 
 	return cfg, nil
+}
+
+// unmaskedScalar returns the value of node, a scalar parsed from masked, as
+// body writes it. A placeholder in a one-line scalar thus shows as written. For
+// any other scalar it returns the masked value, because neutralizePlaceholders
+// keeps each line and rune column, but not escapes or folded lines.
+func unmaskedScalar(body, masked []byte, node *yaml.Node) string {
+	start := node.Column - 1
+	if node.Style&(yaml.SingleQuotedStyle|yaml.DoubleQuotedStyle) != 0 {
+		start++
+	}
+
+	end := start + utf8.RuneCountInString(node.Value)
+	maskedLine, bodyLine := lineRunes(masked, node.Line), lineRunes(body, node.Line)
+
+	if start < 0 || end > len(maskedLine) || end > len(bodyLine) || string(maskedLine[start:end]) != node.Value {
+		return node.Value
+	}
+
+	return string(bodyLine[start:end])
+}
+
+// lineRunes returns the runes of line n of body, counted from 1.
+func lineRunes(body []byte, n int) []rune {
+	lines := bytes.Split(body, []byte("\n"))
+	if n < 1 || n > len(lines) {
+		return nil
+	}
+
+	return []rune(string(lines[n-1]))
 }
 
 // parseDocument parses body as a single YAML document and returns its root

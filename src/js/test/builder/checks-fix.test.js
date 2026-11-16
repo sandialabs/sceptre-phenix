@@ -2,9 +2,9 @@
 // Fix in the Diagram checks dialog, mounted with a real Builder store: the
 // edit is one Undo step, the dialog says what changed, and focus moves on.
 
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 
 import BuilderChecks from '@/components/builder/BuilderChecks.vue';
 import BuilderLiveRegion from '@/components/builder/BuilderLiveRegion.vue';
@@ -12,8 +12,6 @@ import { connect, findNode } from '@/builder/model.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument } from './fixtures.js';
-
-enableAutoUnmount(afterEach);
 
 // The sample diagram, with bravo renamed to alpha and both devices' eth0
 // on one MAC address: a duplicate hostname and two shared MAC addresses.

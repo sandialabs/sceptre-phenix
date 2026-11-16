@@ -33,7 +33,7 @@ import {
   whereText,
 } from '@/builder/shortcuts.js';
 
-import { memoryStorage } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
 
 // The shortcut settings a Storage holds.
 function saved(storage) {

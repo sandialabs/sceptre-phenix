@@ -10,11 +10,12 @@
           <template v-if="canEdit()">
             <textarea
               class="textarea has-fixed-size"
-              rows="1"
               :aria-label="`Note ${props.index + 1}`"
+              rows="1"
               v-model="props.row.value"
-              @input="resizeNoteTextArea(`note${props.index}`)"
-              @keypress="(evt) => noteKeyHandler(evt, `note${props.index}`)"
+              @input="(evt) => resizeNoteTextArea(evt.target)"
+              @keypress="noteKeyHandler"
+              @vue:mounted="({ el }) => resizeNoteTextArea(el)"
               :ref="`note${props.index}`"></textarea>
           </template>
           <template v-else>
@@ -96,13 +97,15 @@
         v-if="canEdit()"
         label="Save"
         type="is-primary"
+        :loading="saving"
+        :disabled="saving"
         @click="save()" />
     </footer>
   </div>
 </template>
 
 <script>
-  import axiosInstance from '@/utils/axios.js';
+  import * as vmsApi from '@/api/vms.js';
   import { useErrorNotification } from '@/utils/errorNotif';
   import { roleAllowed } from '@/utils/rbac';
   import { isEqual } from 'lodash-es';
@@ -111,6 +114,7 @@
   export default {
     props: {
       vmName: String,
+      experiment: { type: String, required: true },
       tags: Object,
     },
 
@@ -118,6 +122,8 @@
       return {
         workingTags: [],
         workingNotes: [],
+        // whether the save waits on the server
+        saving: false,
       };
     },
 
@@ -132,28 +138,19 @@
           this.workingTags.push({ key: key, value: value });
         }
       }
-      // start with blank space
+      // start with blank space; b-table draws its rows after its columns, so
+      // nothing can be focused yet
       if (this.workingTags.length == 0) {
-        this.addTag();
+        this.workingTags.push({ key: '', value: '' });
       }
       if (this.workingNotes.length == 0) {
-        this.addNote();
+        this.workingNotes.push(this.blankNote());
       }
-
-      this.$nextTick(() => {
-        for (let i = 0; i < this.workingNotes.length; i++) {
-          this.resizeNoteTextArea(`note${i}`);
-        }
-      });
     },
 
     methods: {
       canEdit() {
-        return roleAllowed(
-          'vms',
-          'patch',
-          this.$route.params.id + '/' + this.vmName,
-        );
+        return roleAllowed('vms', 'patch', this.experiment + '/' + this.vmName);
       },
       deleteTag(row) {
         this.workingTags = this.workingTags.filter((e) => e !== row);
@@ -167,63 +164,69 @@
       deleteNote(row) {
         this.workingNotes = this.workingNotes.filter((e) => e !== row);
       },
+      blankNote() {
+        return { key: NOTES_KEY + new Date().toISOString(), value: '' };
+      },
       addNote() {
-        this.workingNotes.push({
-          key: NOTES_KEY + new Date().toISOString(),
-          value: '',
-        });
+        this.workingNotes.push(this.blankNote());
         this.$nextTick(() => {
           this.$refs[`note${this.workingNotes.length - 1}`].focus();
         });
       },
-      resizeNoteTextArea(ref) {
-        const textArea = this.$refs[ref];
+      resizeNoteTextArea(textArea) {
         textArea.style.height = 'auto';
         this.$nextTick(() => {
           textArea.style.height = textArea.scrollHeight + 'px';
         });
       },
-      noteKeyHandler(evt, ref) {
+      noteKeyHandler(evt) {
         if (evt.key === 'Enter' && evt.shiftKey) {
           this.addNote();
           evt.preventDefault();
         } else {
-          this.resizeNoteTextArea(ref);
+          this.resizeNoteTextArea(evt.target);
         }
       },
       save() {
+        if (this.saving) return;
         var finalTags = {};
         for (const row of this.workingTags) {
           if (row.key == '' || row.key in finalTags) continue;
           finalTags[row.key] = row.value;
         }
 
+        // a note with no text is left out
         for (const row of this.workingNotes) {
-          if (row.key == '' || row.key in finalTags) continue;
+          if (row.value.trim() == '' || row.key in finalTags) continue;
           finalTags[row.key] = row.value;
+        }
+
+        // SET replaces every tag, so keep the hidden ones this modal does not show
+        for (const [key, value] of Object.entries(this.tags)) {
+          if (!key.startsWith('__') || key.startsWith(NOTES_KEY)) continue;
+          if (!(key in finalTags)) finalTags[key] = value;
         }
 
         let update = { tag_update_mode: 'SET', tags: finalTags };
 
         if (isEqual(finalTags, this.tags)) {
-          console.log('No change made. Closing');
           this.$emit('close');
           return;
         }
 
-        axiosInstance
-          .patch(
-            'experiments/' + this.$route.params.id + '/vms/' + this.vmName,
-            update,
-          )
-          .then((response) => {
-            if (response.statusText === 'OK') {
-              this.$emit('saved');
-              this.$emit('close');
-            }
+        // the modal stays open with its edits on an error, to try again
+        this.saving = true;
+        vmsApi
+          .updateVm(this.experiment, this.vmName, update)
+          .then(() => {
+            this.$emit('saved');
+            this.$emit('close');
           })
           .catch((err) => {
             useErrorNotification(err);
+          })
+          .finally(() => {
+            this.saving = false;
           });
       },
     },
@@ -238,14 +241,5 @@
 
   textarea {
     overflow-y: hidden;
-  }
-
-  .plain-button {
-    padding: 0;
-    border: none;
-    background: none;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
   }
 </style>

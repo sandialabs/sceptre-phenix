@@ -1,12 +1,11 @@
 package web
 
 import (
-	"encoding/json"
-
 	bapi "phenix/api/builder"
 	"phenix/store"
 	"phenix/util/plog"
 	"phenix/web/rbac"
+	"phenix/web/util"
 )
 
 // builderExperimentLink is what an Experiment config says of the Builder
@@ -60,25 +59,20 @@ func builderExperimentLinks(configs store.Configs) []builderExperimentLink {
 	for i := range configs {
 		config := &configs[i]
 
-		value, ok := config.Metadata.Annotations[builderExperimentAnnotation]
-		if !ok || config.Kind != kindExperiment || config.Metadata.Name == "" {
+		if config.Kind != kindExperiment || config.Metadata.Name == "" {
 			continue
 		}
 
-		var record builderExperimentPublication
-		if err := json.Unmarshal([]byte(value), &record); err != nil {
-			continue
-		}
-
-		if record.DraftID == "" && record.DocumentID == "" {
+		record := util.BuilderLink(config.Metadata.Annotations)
+		if record == nil {
 			continue
 		}
 
 		links = append(links, builderExperimentLink{
 			name:       config.Metadata.Name,
 			topology:   config.Metadata.Annotations["topology"],
-			draftID:    record.DraftID,
-			documentID: record.DocumentID,
+			draftID:    record.GetDraft(),
+			documentID: record.GetDocument(),
 		})
 	}
 

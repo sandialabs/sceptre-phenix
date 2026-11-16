@@ -4,7 +4,7 @@ component.
 -->
 
 <template>
-  <footer>
+  <footer class="app-footer">
     <hr class="mb-4" />
     <div class="container is-fluid">
       <small>
@@ -13,14 +13,6 @@ component.
           Rights Reserved.
         </p>
         <div class="app-footer__end">
-          <nav class="app-footer__links" aria-label="Help">
-            <a
-              href="https://phenix.sceptre.dev/latest/"
-              target="_blank"
-              rel="noopener noreferrer"
-              >Help<span class="is-sr-only"> (opens in new tab)</span></a
-            >
-          </nav>
           <p v-if="version">{{ version }}</p>
         </div>
       </small>
@@ -39,7 +31,7 @@ component.
 
         this.version = formatVersion(version);
       } catch (err) {
-        console.log(`ERROR getting version: ${err}`);
+        console.warn('failed to get the phenix version', err);
       }
     },
 
@@ -58,14 +50,5 @@ component.
     flex-wrap: wrap;
     gap: 0 1.5em;
     color: whitesmoke;
-  }
-
-  .app-footer__links {
-    display: flex;
-    gap: 1em;
-  }
-
-  .app-footer__links a {
-    text-decoration: underline;
   }
 </style>

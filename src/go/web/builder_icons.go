@@ -354,7 +354,7 @@ func (b *builderAPI) deleteIcon(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("ETag", stale.ETag)
 
 		return weberror.NewWebError(nil, "icon %s changed after you last read it", stale.Name).
-			SetStatus(http.StatusPreconditionFailed).WithCode(string(bdoc.CodeRequestStale))
+			SetStatus(http.StatusPreconditionFailed).WithCode(weberror.Code(bdoc.CodeRequestStale))
 	default:
 		return builderIconError(err, "unable to delete the icon")
 	}

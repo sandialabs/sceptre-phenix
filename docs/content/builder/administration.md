@@ -168,6 +168,8 @@ metadata:
   annotations:
     builder-doc:
       path: /phenix/topologies/pump-station/pump-station.builder.json
+spec:
+  ...
 ```
 
 To make such a config:

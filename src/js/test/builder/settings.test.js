@@ -21,7 +21,7 @@ import {
   settingsAtDefaults,
 } from '@/builder/settings.js';
 
-import { memoryStorage } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
 
 const throwing = {
   getItem() {

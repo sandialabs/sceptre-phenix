@@ -13,8 +13,10 @@ on:
       - '.dockerignore'
       - '.github/workflows/podman.yml'
       - 'docker/Dockerfile'
+      - 'docker/build-webshark.sh'
       - 'docker/install-certs.sh'
       - 'podman/**'
+      - 'scripts/api-docs.sh'
   schedule:
     - cron: '47 5 * * 1'
   workflow_dispatch:
@@ -80,7 +82,7 @@ jobs:
           podman run --rm phenix-podman-ci phenix version
           podman run --rm phenix-podman-ci phenix help > /dev/null
           podman run --rm phenix-podman-ci sh -c \
-            'command -v phenix && glow --version && command -v filebeat && test -x /usr/bin/vmdb2'
+            'command -v phenix && glow --version && command -v filebeat && test -x /usr/bin/vmdb2 && test -f /opt/phenix/webshark/index.html'
           podman run --rm phenix-podman-ci python3 -c 'import minimega, phenix_apps'
       - name: Report image size
         run: podman images phenix-podman-ci

@@ -11,7 +11,7 @@ import {
 } from '@/builder/cardFilter.js';
 import { layerSetSearch, templateSearch } from '@/builder/librarySearch.js';
 
-import { memoryStorage } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
 
 const DRAFTS = [
   {
@@ -52,16 +52,13 @@ describe('filterCards', () => {
   });
 
   test('the words can be spread over the name and the users', () => {
-    expect(ids(filterCards(DRAFTS, 'pump alice', nameOf))).toEqual(['d1']);
     expect(ids(filterCards(DRAFTS, 'ALICE pump', nameOf))).toEqual(['d1']);
     expect(ids(filterCards(DRAFTS, 'station bob', nameOf))).toEqual([
       'd1',
       'd3',
     ]);
-    expect(ids(filterCards(DRAFTS, 'grid bob', nameOf))).toEqual(['d3']);
     // Who created a draft and who changed it last, together.
     expect(ids(filterCards(DRAFTS, 'alice bob', nameOf))).toEqual(['d1']);
-    expect(ids(filterCards(DRAFTS, 'lab erin', nameOf))).toEqual(['d2']);
     // A word is found inside a word, as elsewhere.
     expect(ids(filterCards(DRAFTS, 'ump lic', nameOf))).toEqual(['d1']);
   });

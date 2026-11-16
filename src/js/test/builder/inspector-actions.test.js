@@ -4,7 +4,7 @@
 // of the Diagram section (Add note, a note's box, Delete).
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises } from '@vue/test-utils';
+import { flushPromises } from '@vue/test-utils';
 
 import InspectorDiagram from '@/components/builder/inspector/InspectorDiagram.vue';
 import { closeSections } from '@/components/builder/inspector/InspectorSectionRenderer.vue';
@@ -19,7 +19,6 @@ import {
   type,
 } from './inspector-mount.js';
 
-enableAutoUnmount(afterEach);
 afterEach(closeSections);
 
 // The Inspector on the sample's alpha device.

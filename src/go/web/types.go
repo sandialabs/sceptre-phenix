@@ -8,14 +8,14 @@ import (
 
 type SignupRequest struct {
 	Username  string `json:"username"`
-	Password  string `json:"password"` //nolint:gosec // Exported struct field "Password" matches secret pattern
+	Password  string `json:"password"` //nolint:gosec // G117 the request carries the password
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 }
 
 type CreateUserRequest struct {
 	Username      string   `json:"username"`
-	Password      string   `json:"password"` //nolint:gosec // Exported struct field "Password" matches secret pattern
+	Password      string   `json:"password"` //nolint:gosec // G117 the request carries the password
 	FirstName     string   `json:"first_name"`
 	LastName      string   `json:"last_name"`
 	RoleName      string   `json:"role_name"`
@@ -41,7 +41,7 @@ type CreateTokenResponse struct {
 
 type LoginRequest struct {
 	Username string `json:"user"`
-	Password string `json:"pass"` //nolint:gosec // Exported struct field "Password" matches secret pattern
+	Password string `json:"pass"` //nolint:gosec // G117 the request carries the password
 }
 
 type LoginResponse struct {
@@ -67,6 +67,8 @@ type Policy struct {
 type Role struct {
 	Name     string   `json:"name"`
 	Policies []Policy `json:"policies"`
+	// Permissions is set only when a request asks for it with ?permissions=true.
+	Permissions []rbac.Permission `json:"permissions,omitzero"`
 }
 
 func userFromRBAC(u rbac.User) User {
@@ -93,9 +95,20 @@ func roleFromRBAC(r rbac.Role) Role {
 		}
 	}
 
-	role := Role{
+	role := Role{ //nolint:exhaustruct // roleView sets the permissions
 		Name:     r.Spec.Name,
 		Policies: policies,
+	}
+
+	return role
+}
+
+// roleView is roleFromRBAC, with the known permissions that r grants when
+// withPermissions is true.
+func roleView(r rbac.Role, withPermissions bool) Role {
+	role := roleFromRBAC(r)
+	if withPermissions {
+		role.Permissions = r.AllowedPermissions()
 	}
 
 	return role

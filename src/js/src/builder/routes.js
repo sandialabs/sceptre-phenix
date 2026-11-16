@@ -66,6 +66,15 @@ export function fitRoute(points, start, end, tolerance = Infinity) {
     return null;
   }
 
+  // A point that is not a number would reach the path and the downloads.
+  if (
+    !points.every(
+      (point) => Number.isFinite(point?.x) && Number.isFinite(point?.y),
+    )
+  ) {
+    return null;
+  }
+
   if (
     !(distance(points[0], start) <= tolerance) ||
     !(distance(points[points.length - 1], end) <= tolerance)

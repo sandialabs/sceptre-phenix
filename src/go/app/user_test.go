@@ -16,7 +16,7 @@ type runtimeMM struct {
 	vms   mm.VMs
 }
 
-func (m runtimeMM) GetClusterHosts(bool) (mm.Hosts, error) {
+func (m runtimeMM) GetClusterHosts(bool, bool) (mm.Hosts, error) {
 	return m.hosts, nil
 }
 
@@ -39,7 +39,7 @@ func TestPopulateRuntimeIncludesVMTapsInExperimentJSON(t *testing.T) {
 	exp := types.NewExperiment(store.ConfigMetadata{Name: "tap-test"})
 	exp.Spec.SetExperimentName("tap-test")
 
-	if err := PopulateRuntime(exp); err != nil {
+	if err := PopulateRuntime(t.Context(), exp); err != nil {
 		t.Fatalf("populating experiment runtime details: %v", err)
 	}
 

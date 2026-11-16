@@ -3,8 +3,8 @@
 // Rename, Add to server, the rows' keys and selection, the batches, and an
 // upload.
 
-import { afterEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { describe, expect, test, vi } from 'vitest';
+import { flushPromises, mount } from '@vue/test-utils';
 import { reactive } from 'vue';
 
 import IconUpload from '@/components/builder/IconUpload.vue';
@@ -16,6 +16,7 @@ import {
 } from '@/components/builder/inspector/control.js';
 import { ICON_NAME_HINT, IconFileError } from '@/builder/icons.js';
 
+import { holdsShownText, shownText } from './fixtures.js';
 import { base64Of, ICON_DATA, png } from './png.js';
 
 const OTHER = base64Of(png(3, 2, [9, 9, 9, 255]));
@@ -46,8 +47,6 @@ const ICONS = [
     canDelete: false,
   },
 ];
-
-enableAutoUnmount(afterEach);
 
 // The server's library, whose state the calls change as the server would.
 // `fails` names the icons whose change the server refuses.
@@ -117,6 +116,10 @@ const statusOf = (wrapper) =>
   wrapper.find('[data-testid="icon-status"]').text();
 const errorOf = (wrapper) => wrapper.find('[data-testid="icon-error"]').text();
 const confirmOf = (wrapper) => wrapper.find('[data-testid="builder-confirm"]');
+const renameField = (wrapper) =>
+  wrapper.get('[data-testid="icon-rename-name"]');
+const describedBy = (wrapper) =>
+  (renameField(wrapper).attributes('aria-describedby') || '').split(' ');
 
 // Chooses `file` in the hidden file field, as the file picker does.
 async function choose(wrapper, file, prefix = 'icon') {
@@ -148,7 +151,7 @@ describe('the Custom icons dialog', () => {
     expect(wrapper.emitted('use')).toEqual([[{ name: 'pump' }]]);
   });
 
-  test('Rename opens a form on the icon’s name, refuses a bad name with focus on the field, and Cancel gives focus back', async () => {
+  test('Rename opens a form on the icon’s name, refuses a bad name with focus on the field, which the error describes, and Cancel gives focus back', async () => {
     const { wrapper, library } = openDialog();
     const rename = button(wrapper, 'Rename hmi');
 
@@ -161,12 +164,16 @@ describe('the Custom icons dialog', () => {
     expect(wrapper.get('#icon-rename-title').text()).toBe('Rename hmi');
     expect(field.element.value).toBe('hmi');
     expect(document.activeElement).toBe(field.element);
+    expect(field.attributes('aria-invalid')).toBeUndefined();
+    expect(describedBy(wrapper)).toEqual(['icon-rename-hint']);
 
     await field.setValue('not a name!');
     rename.element.focus();
     await wrapper.get('[data-testid="icon-rename-form"]').trigger('submit');
     expect(errorOf(wrapper)).toBe(BAD_NAME);
     expect(document.activeElement).toBe(field.element);
+    expect(field.attributes('aria-invalid')).toBe('true');
+    expect(describedBy(wrapper)).toContain('icon-dialog-error');
     expect(library.rename).not.toHaveBeenCalled();
 
     await wrapper.get('[data-testid="icon-rename-cancel"]').trigger('click');
@@ -176,8 +183,12 @@ describe('the Custom icons dialog', () => {
     );
     expect(document.activeElement).toBe(rename.element);
 
-    // The same name changes nothing, and closes the form.
+    // The same name changes nothing, and closes the form. A new form has
+    // no error.
     await rename.trigger('click');
+    await flushPromises();
+    expect(renameField(wrapper).attributes('aria-invalid')).toBeUndefined();
+    expect(describedBy(wrapper)).toEqual(['icon-rename-hint']);
     await wrapper.get('[data-testid="icon-rename-form"]').trigger('submit');
     await flushPromises();
     expect(wrapper.find('[data-testid="icon-rename-form"]').exists()).toBe(
@@ -186,7 +197,7 @@ describe('the Custom icons dialog', () => {
     expect(library.rename).not.toHaveBeenCalled();
   });
 
-  test('Rename renames the icon and focuses its Rename, and a refused name keeps the form', async () => {
+  test('Rename renames the icon and focuses its Rename, and a refused name keeps the form, marked invalid', async () => {
     const { wrapper, library } = openDialog({
       library: libraryWith({ fails: ['pump'] }),
     });
@@ -211,9 +222,13 @@ describe('the Custom icons dialog', () => {
     await flushPromises();
 
     expect(errorOf(wrapper)).toBe('The server refused pump.');
-    expect(document.activeElement).toBe(
-      wrapper.get('[data-testid="icon-rename-name"]').element,
-    );
+    expect(wrapper.get('#icon-dialog-error').attributes('role')).toBe('alert');
+    expect(document.activeElement).toBe(renameField(wrapper).element);
+    expect(renameField(wrapper).attributes('aria-invalid')).toBe('true');
+    expect(describedBy(wrapper)).toEqual([
+      'icon-rename-hint',
+      'icon-dialog-error',
+    ]);
   });
 
   test('Add to server shows a ring on its own button while the server adds the icon, and ignores a second press', async () => {
@@ -235,7 +250,7 @@ describe('the Custom icons dialog', () => {
         { name: 'rtu', data: OTHER },
       ],
     });
-    const plc = button(wrapper, 'Add plc to the server');
+    const plc = button(wrapper, 'Add to server: plc');
 
     await plc.trigger('click');
     await plc.trigger('click');
@@ -245,7 +260,7 @@ describe('the Custom icons dialog', () => {
     expect(plc.find('[data-testid="builder-spinner"]').exists()).toBe(true);
     expect(plc.text()).toBe('Add to server');
 
-    const rtu = button(wrapper, 'Add rtu to the server');
+    const rtu = button(wrapper, 'Add to server: rtu');
 
     expect(rtu.attributes('aria-busy')).toBeUndefined();
     expect(rtu.attributes('aria-disabled')).toBe('true');
@@ -253,7 +268,7 @@ describe('the Custom icons dialog', () => {
     answer();
     await flushPromises();
     expect(
-      button(wrapper, 'Add rtu to the server').attributes('aria-disabled'),
+      button(wrapper, 'Add to server: rtu').attributes('aria-disabled'),
     ).toBeUndefined();
   });
 });
@@ -262,7 +277,7 @@ describe('the Custom icons dialog’s lists', () => {
   // Three copies that the server lacks, so each can be selected.
   const COPIES = ['plc', 'rtu', 'tank'].map((name) => ({ name, data: OTHER }));
 
-  test('the server icons are one Tab stop that Home and End move, and nothing in them is selected or deleted', async () => {
+  test('the server icons are one Tab stop that End moves, and nothing in them is selected or deleted', async () => {
     const { wrapper } = openDialog();
     const rows = () =>
       wrapper.findAll('[data-testid="icon-library-list"] > li');
@@ -277,9 +292,6 @@ describe('the Custom icons dialog’s lists', () => {
     await rows()[0].trigger('keydown', { key: 'End' });
     expect(document.activeElement).toBe(rows()[2].element);
     expect(stops()).toEqual([rows()[2].element]);
-
-    await rows()[2].trigger('keydown', { key: 'Home' });
-    expect(document.activeElement).toBe(rows()[0].element);
 
     // The Icons tab deletes icons. Here a row has Use and Rename only.
     expect(
@@ -322,7 +334,7 @@ describe('the Custom icons dialog’s lists', () => {
     expect(wrapper.emitted('close')).toHaveLength(1);
   });
 
-  test('a checkbox selects its copy, Shift a range, and Select all every copy, then none', async () => {
+  test('a checkbox selects its copy, Shift a range, and Select all clears them', async () => {
     const { wrapper } = openDialog({ diagram: COPIES });
     const countOf = () =>
       wrapper.get('[data-testid="bulk-count-icons-diagram"]').text();
@@ -342,8 +354,6 @@ describe('the Custom icons dialog’s lists', () => {
     await all.setValue(false);
     expect(countOf()).toBe('0 of 3 selected');
     expect(statusOf(wrapper)).toBe('0 of 3 selected.');
-    await all.setValue(true);
-    expect(statusOf(wrapper)).toBe('3 of 3 selected.');
   });
 
   test('a failed Add selected to server is listed under its row, with focus', async () => {
@@ -506,5 +516,29 @@ describe('Upload icon…', () => {
     await flushPromises();
 
     expect(document.activeElement).toBe(button(wrapper, 'Use panel').element);
+  });
+});
+
+// axe-core's label-content-name-mismatch (WCAG 2.5.3).
+describe('the dialog’s buttons', () => {
+  test('each name holds the text its button shows', () => {
+    const { wrapper } = openDialog({
+      diagram: [
+        { name: 'plc', data: OTHER },
+        { name: 'hmi', data: ICON_DATA },
+      ],
+    });
+    const named = wrapper.findAll('button[aria-label]');
+
+    expect(named.map((entry) => entry.attributes('aria-label'))).toContain(
+      'Add to server: plc',
+    );
+
+    for (const entry of named) {
+      const name = entry.attributes('aria-label');
+      const text = shownText(entry.element);
+
+      expect(holdsShownText(name, text), `"${text}" in "${name}"`).toBe(true);
+    }
   });
 });

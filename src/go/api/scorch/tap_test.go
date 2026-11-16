@@ -3,6 +3,7 @@ package scorch
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"phenix/api/scorch/scorchmd"
@@ -196,5 +197,46 @@ func TestTapCleanupDirectly(t *testing.T) {
 
 	if _, exists := updatedStatus.Taps["test-tap"]; exists {
 		t.Fatalf("expected 'test-tap' to be removed from status.Taps")
+	}
+}
+
+// errListStore is a store that cannot list configs.
+type errListStore struct {
+	store.Store
+}
+
+var errTapList = errors.New("list failed")
+
+func (errListStore) List(...string) (store.Configs, error) { return nil, errTapList }
+
+// discoverUsedPairs finds no tap subnets when it cannot list the experiments.
+//
+//nolint:paralleltest // replaces the store
+func TestDiscoverUsedPairsListError(t *testing.T) {
+	original := store.DefaultStore
+	store.DefaultStore = errListStore{}                 //nolint:reassign // install test double
+	t.Cleanup(func() { store.DefaultStore = original }) //nolint:reassign // restore test double
+
+	if pairs := discoverUsedPairs(); pairs != nil {
+		t.Errorf("discoverUsedPairs() = %v, want nil", pairs)
+	}
+}
+
+// A tap component fails to clean up when minimega cannot delete its tap.
+//
+//nolint:paralleltest // replaces minimega
+func TestTapCleanupDeleteError(t *testing.T) {
+	errTap := errors.New("tap delete failed")
+	useBuiltinTapMM(t, errTap)
+
+	exp := types.NewExperiment(store.ConfigMetadata{Name: "exp"})
+	exp.Spec.SetExperimentName("exp")
+	exp.Status.SetAppStatus("scorch", scorchmd.ScorchStatus{Taps: map[string]*tap.Tap{"tap": {Name: "t", VLAN: "MGMT"}}})
+
+	var tapComp Tap
+	_ = tapComp.Init(Experiment(*exp), Name("tap"))
+
+	if err := tapComp.Cleanup(context.Background()); !errors.Is(err, errTap) {
+		t.Errorf("Tap.Cleanup() error = %v, want %v", err, errTap)
 	}
 }

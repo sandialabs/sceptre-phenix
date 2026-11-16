@@ -167,7 +167,7 @@ func (b *builderAPI) buildPackage(w http.ResponseWriter, r *http.Request) error 
 
 	if err := pkg.Validate(); err != nil {
 		return weberror.NewWebError(err, "unable to package the Builder document: the package would not load").
-			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePackageInvalid))
+			SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(bdoc.CodePackageInvalid))
 	}
 
 	encoded, err := json.Marshal(pkg)
@@ -179,7 +179,7 @@ func (b *builderAPI) buildPackage(w http.ResponseWriter, r *http.Request) error 
 	if len(encoded) > bdoc.MaxPackageBytes {
 		return weberror.NewWebError(
 			nil, "the package is larger than %d bytes. Leave out some of its sections", bdoc.MaxPackageBytes,
-		).SetStatus(http.StatusRequestEntityTooLarge).WithCode(string(bdoc.CodePackageTooLarge))
+		).SetStatus(http.StatusRequestEntityTooLarge).WithCode(weberror.Code(bdoc.CodePackageTooLarge))
 	}
 
 	return builderWriteJSON(w, http.StatusOK, "", builderPackageResponse{Package: pkg, Warnings: warnings})
@@ -400,7 +400,7 @@ func (b *builderAPI) resolvePackage(w http.ResponseWriter, r *http.Request) erro
 		var refusal *weberror.WebError
 
 		if errors.As(err, &refusal) && refusal.Status == http.StatusRequestEntityTooLarge {
-			refusal.Code = string(bdoc.CodePackageTooLarge)
+			refusal.Code = weberror.Code(bdoc.CodePackageTooLarge)
 		}
 
 		return err
@@ -413,7 +413,7 @@ func (b *builderAPI) resolvePackage(w http.ResponseWriter, r *http.Request) erro
 
 	if err != nil {
 		return weberror.NewWebError(err, "unable to read the Builder package").
-			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePackageInvalid))
+			SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(bdoc.CodePackageInvalid))
 	}
 
 	dependencies, err := b.packageDependencies(r.Context(), actor, pkg)

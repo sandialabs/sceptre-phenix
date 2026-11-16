@@ -27,6 +27,9 @@
         :size="iconPixels(iconSize)" />
       <span class="builder-node__label">{{ data.label }}</span>
     </div>
+    <!-- Each {{ ' ' }} keeps two texts apart as words for screen readers
+         and axe-core. The flex layout does not draw it. -->
+    {{ ' ' }}
     <span v-if="data.includedFrom" class="builder-node__origin">
       Included from {{ data.includedFrom }}
     </span>
@@ -36,10 +39,12 @@
       data-testid="node-type">
       {{ data.typeLabel }}
     </span>
+    {{ ' ' }}
     <span class="builder-node__meta">
       {{ interfaceCount }}
       {{ interfaceCount === 1 ? 'interface' : 'interfaces' }}
     </span>
+    {{ ' ' }}
     <span v-if="comment" class="builder-node__comment">{{ comment }}</span>
     <node-issue-mark v-if="data.issue" :node-id="id" :issue="data.issue" />
 

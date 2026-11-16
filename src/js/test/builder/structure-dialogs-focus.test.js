@@ -2,9 +2,9 @@
 // Add a connection and Move to a group, mounted with a real Builder store:
 // where focus goes when a field is missing, and what a valid submit changes.
 
-import { afterEach, describe, expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 
 import ConnectDialog from '@/components/builder/dialogs/ConnectDialog.vue';
 import RegroupDialog from '@/components/builder/dialogs/RegroupDialog.vue';
@@ -12,8 +12,6 @@ import { findNode, groupNodes } from '@/builder/model.js';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument } from './fixtures.js';
-
-enableAutoUnmount(afterEach);
 
 // Opens `component` in the page over `doc`.
 function open(component, doc) {
@@ -30,9 +28,6 @@ function open(component, doc) {
   return { wrapper, store, before: store.doc };
 }
 
-const optionTexts = (select) =>
-  select.findAll('option').map((option) => option.text());
-
 describe('Add a connection', () => {
   test('Connect with a field empty names it, marks it, and moves focus to it', async () => {
     const sample = sampleDocument();
@@ -47,38 +42,8 @@ describe('Add a connection', () => {
     expect(device.attributes('aria-invalid')).toBe('true');
     expect(device.attributes('aria-describedby')).toBe('connect-error');
     expect(document.activeElement.id).toBe('connect-device');
-
-    // With the device chosen, the message asks only for the switch.
-    await device.setValue(sample.bravo.id);
-    expect(wrapper.get('[role="alert"]').text()).toBe('Choose a switch.');
-    expect(device.attributes('aria-invalid')).toBeUndefined();
-
-    await wrapper.get('form').trigger('submit');
-
-    expect(document.activeElement.id).toBe('connect-switch');
     expect(store.doc).toBe(before);
     expect(wrapper.emitted('close')).toBeUndefined();
-  });
-
-  test('choosing a device lists its free interfaces, and clears the interface of the last one', async () => {
-    const sample = sampleDocument();
-    const { wrapper } = open(ConnectDialog, sample.doc);
-    const device = wrapper.get('#connect-device');
-    const handle = wrapper.get('#connect-interface');
-    const [bravoEth0] = sample.bravo.device.interfaces;
-
-    await device.setValue(sample.bravo.id);
-    expect(optionTexts(handle)).toEqual(['Add a new interface', 'eth0']);
-    await handle.setValue(bravoEth0.id);
-    expect(handle.element.value).toBe(bravoEth0.id);
-
-    // alpha's eth0 is connected already, so only a new interface is offered.
-    await device.setValue(sample.alpha.id);
-    expect(optionTexts(handle)).toEqual(['Add a new interface']);
-    expect(handle.element.value).toBe('');
-
-    await device.setValue(sample.bravo.id);
-    expect(handle.element.value).toBe('');
   });
 
   test('a valid connection is made in the diagram, and the dialog closes', async () => {

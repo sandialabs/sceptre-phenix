@@ -70,10 +70,6 @@ const NOT_A_DIAGRAM =
   'Could not convert the legacy diagram. This is not a legacy Builder diagram. ' +
   'A legacy diagram is mxGraph XML, or a Topology config with the builder-xml annotation.';
 
-const XML_HINT =
-  'This is possibly a legacy Builder diagram (XML). ' +
-  'Select "Legacy Builder diagram or Topology" to convert it.';
-
 function vm(hostname, vlans, extra = {}) {
   return {
     type: 'VirtualMachine',
@@ -211,26 +207,7 @@ test('Upload converts a legacy diagram file by keyboard, after its warnings, int
   const error = dialog.getByTestId('upload-error');
   const submit = dialog.getByTestId('upload-submit');
 
-  // A Builder document is never XML: the sources that read one say where
-  // a legacy diagram goes.
-  await test.step('the File and Paste text sources point XML at the legacy source', async () => {
-    const file = dialog.getByTestId('upload-file');
-    await file.setInputFiles(xmlFile('diagram.xml'));
-    await submit.click();
-    await expect.soft(error).toHaveText(XML_HINT);
-    await expect.soft(file).toHaveAttribute('aria-invalid', 'true');
-    await expect.soft(file).toBeFocused();
-
-    await dialog.getByLabel('Paste text', { exact: true }).check();
-    const text = dialog.getByTestId('upload-text');
-    await text.fill(`\n  ${SAMPLE}`);
-    await submit.click();
-    await expect.soft(error).toHaveText(XML_HINT);
-    await expect.soft(text).toBeFocused();
-    await text.fill('');
-    expect(creates).toEqual([]);
-  });
-
+  // legacy-dialog.test.js checks that File and Paste text point XML here.
   const file = dialog.getByTestId('upload-legacy-file');
 
   await test.step('the arrow keys reach the legacy source, and Tab its one field', async () => {
@@ -243,8 +220,6 @@ test('Upload converts a legacy diagram file by keyboard, after its warnings, int
     });
     await expect(legacy).toBeChecked();
     await expect.soft(legacy).toBeFocused();
-    // What the other source was told says nothing of this one.
-    await expect.soft(error).toHaveCount(0);
     await expect.soft(submit).toHaveText('Convert');
 
     await page.keyboard.press('Tab');
@@ -285,9 +260,6 @@ test('Upload converts a legacy diagram file by keyboard, after its warnings, int
     });
     expect.soft(refused.status(), 'status').toBe(422);
     await expect.soft(error).toHaveText(NOT_A_DIAGRAM);
-    await expect
-      .soft(dialog.locator('#upload-error'))
-      .toHaveAttribute('role', 'alert');
     await expect.soft(file).toHaveAttribute('aria-invalid', 'true');
     await expect.soft(file).toBeFocused();
     await expect
@@ -359,21 +331,13 @@ test('Upload converts a legacy diagram file by keyboard, after its warnings, int
     expect.soft(body).not.toHaveProperty('source');
 
     const shown = dialog.getByTestId('upload-warnings');
+    // legacy-dialog.test.js checks the order of the list and the buttons.
     await expect(shown.locator('li')).toHaveText(
       WARNINGS.map((warning) => `Warning: ${warning}`),
     );
-    await expect
-      .soft(dialog.getByTestId('upload-result'))
-      .toContainText('This conversion has 3 warnings.');
-    await expect
-      .soft(dialog.locator('.builder-dialog__actions button'))
-      .toHaveText(['Cancel', 'Continue to editor']);
-    // Focus is on the way on, which the warnings describe, and the
-    // dialog's status says how many there are.
+    // Focus is on the way on, and the dialog's status says how many
+    // warnings there are.
     await expect.soft(next).toBeFocused();
-    await expect
-      .soft(next)
-      .toHaveAccessibleDescription(/The Builder added a switch for 1 network/);
     await expect
       .soft(dialog.getByRole('status'))
       .toHaveText('This conversion has 3 warnings.');
@@ -409,18 +373,11 @@ test('Upload converts a legacy diagram file by keyboard, after its warnings, int
     expect.soft(stored.sourceToken).toBe('uploaded/legacy-xml');
     expect.soft(stored.sourceFile).toBe(`${title}.xml`);
     const document = await builder.serverDocument(draft);
+    // TestLegacySample (Go) checks the settings of each converted node.
     expect.soft(document.source).toMatchObject({
       kind: 'manual',
       warnings: WARNINGS,
     });
-    // The diagram's own settings are the nodes', its variables resolved.
-    const router = document.nodes.find(
-      (node) => node.device?.hostname === 'router-device-0',
-    );
-    expect.soft(router?.device.spec.type).toBe('Router');
-    expect
-      .soft(router?.device.spec.hardware.drives)
-      .toEqual([{ image: 'vyos.qc2' }]);
   });
 
   expectNoFatal(issues);

@@ -1,5 +1,5 @@
-// Writes Brotli and gzip copies (<file>.br, <file>.gz) of the files only
-// Builder loads, when smaller, and lists them in builder-assets.json.
+// Writes Brotli and gzip copies (<file>.br, <file>.gz) of Builder's files,
+// when smaller, and lists them in builder-assets.json.
 // The server (src/go/web/builder_assets.go) sends them cached for good.
 import { Buffer } from 'node:buffer';
 import path from 'node:path';
@@ -88,16 +88,48 @@ function filesFrom(bundle, from, skip) {
   return files;
 }
 
-// The files, sorted, that only Builder loads: those its view's chunk
-// loads, less those the rest of the UI can load without it. null when the
-// bundle has no chunk for the view.
-export function builderFiles(bundle, view) {
-  const chunks = Object.values(bundle).filter((out) => out.type === 'chunk');
-  const viewChunk = chunks.find(
-    (chunk) =>
-      chunk.facadeModuleId &&
-      path.resolve(chunk.facadeModuleId) === path.resolve(view),
+// Of files, the chunks with a module that shared matches, with their styles
+// and assets.
+function sharedFiles(bundle, files, shared) {
+  const kept = new Set();
+  for (const file of files) {
+    const chunk = bundle[file];
+    if (
+      chunk?.type !== 'chunk' ||
+      !chunk.moduleIds?.some((id) => shared.test(id))
+    ) {
+      continue;
+    }
+
+    kept.add(file);
+    for (const asset of [
+      ...(chunk.viteMetadata?.importedCss ?? []),
+      ...(chunk.viteMetadata?.importedAssets ?? []),
+    ]) {
+      kept.add(asset);
+    }
+  }
+
+  return kept;
+}
+
+// The chunk of the bundle whose module is the file at path view, or
+// undefined when there is none.
+export function viewChunkOf(bundle, view) {
+  return Object.values(bundle).find(
+    (out) =>
+      out.type === 'chunk' &&
+      out.facadeModuleId &&
+      path.resolve(out.facadeModuleId) === path.resolve(view),
   );
+}
+
+// The files, sorted, that only Builder loads: those its view's chunk loads,
+// less those the rest of the UI can load too, unless shared (a RegExp) matches
+// a module of their chunk. null when the bundle has no chunk for the view.
+export function builderFiles(bundle, view, shared = null) {
+  const chunks = Object.values(bundle).filter((out) => out.type === 'chunk');
+  const viewChunk = viewChunkOf(bundle, view);
   if (!viewChunk) {
     return null;
   }
@@ -105,17 +137,22 @@ export function builderFiles(bundle, view) {
   const entries = chunks
     .filter((chunk) => chunk.isEntry)
     .map((chunk) => chunk.fileName);
-  const shared = filesFrom(bundle, entries, viewChunk.fileName);
+  const others = filesFrom(bundle, entries, viewChunk.fileName);
+  const loaded = [...filesFrom(bundle, [viewChunk.fileName], null)];
+  const kept = shared ? sharedFiles(bundle, loaded, shared) : new Set();
 
-  return [...filesFrom(bundle, [viewChunk.fileName], null)]
-    .filter((file) => !shared.has(file))
-    .sort();
+  return loaded.filter((file) => !others.has(file) || kept.has(file)).sort();
 }
 
-// The plugin. view is the path of Builder's view, src/views/Builder.vue.
+// The plugin. view is the path of Builder's view, src/views/Builder.vue, and
+// shared matches the modules of the shared files to compress (builderFiles).
 // env holds PHENIX_BROTLI_QUALITY, and is the process's environment unless
 // given.
-export default function builderAssets({ view, env = process.env }) {
+export default function builderAssets({
+  view,
+  shared = null,
+  env = process.env,
+}) {
   let quality = DEFAULT_BROTLI_QUALITY;
 
   return {
@@ -134,7 +171,7 @@ export default function builderAssets({ view, env = process.env }) {
       // After Vite's own hooks, which still change the chunks' code.
       order: 'post',
       handler(_, bundle) {
-        const files = builderFiles(bundle, view);
+        const files = builderFiles(bundle, view, shared);
         if (!files) {
           this.error(
             `The build has no chunk for ${view}, so the server would send Builder's files uncompressed.`,

@@ -134,7 +134,7 @@ func headerOnly(width, height uint32) []byte {
 // storedPixels returns raw pixel bytes as uncompressed pixel chunk data: an empty block, then one
 // block of the bytes, 15 bytes more than they are.
 func storedPixels(raw []byte) []byte {
-	size := uint16(len(raw)) //nolint:gosec // callers pass fewer bytes than a block holds
+	size := uint16(len(raw))
 
 	// The stream's header, a block of no bytes that is not the last, and
 	// the header of the last block: its length and the complement of it.

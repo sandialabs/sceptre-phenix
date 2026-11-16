@@ -3,12 +3,10 @@
 // driven as a user would.
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import BuilderTabsDialog from '@/components/builder/BuilderTabsDialog.vue';
 import { choiceRows } from '@/builder/tabs.js';
-
-enableAutoUnmount(afterEach);
 
 afterEach(() => {
   vi.restoreAllMocks();
