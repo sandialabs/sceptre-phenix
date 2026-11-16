@@ -71,6 +71,14 @@ describe('connection routes', () => {
     expect(fitRoute(route, { x: 102, y: 51 }, route[3], 4)).not.toBeNull();
     expect(fitRoute(undefined, route[0], route[3])).toBeNull();
     expect(fitRoute([route[0]], route[0], route[3])).toBeNull();
+    // A bend that is not a number: a download had x="NaN" for it.
+    expect(
+      fitRoute(
+        [route[0], { x: NaN, y: route[0].y }, route[2], route[3]],
+        route[0],
+        route[3],
+      ),
+    ).toBeNull();
   });
 
   test('a route is drawn with rounded bends, its label halfway along', () => {

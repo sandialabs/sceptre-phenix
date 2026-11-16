@@ -1,6 +1,9 @@
 package app
 
-import "context"
+import (
+	"context"
+	"maps"
+)
 
 type (
 	metadata   struct{}
@@ -8,16 +11,13 @@ type (
 	triggerCLI struct{}
 )
 
+// AddContextMetadata returns a child of ctx with key set to val in a copy of
+// the metadata of ctx. The metadata of ctx does not change.
 func AddContextMetadata(ctx context.Context, key string, val any) context.Context {
-	var (
-		v  = ctx.Value(metadata{})
-		md map[string]any
-	)
+	md := make(map[string]any)
 
-	if v == nil {
-		md = make(map[string]any)
-	} else {
-		md, _ = v.(map[string]any)
+	if parent, ok := ctx.Value(metadata{}).(map[string]any); ok {
+		maps.Copy(md, parent)
 	}
 
 	md[key] = val

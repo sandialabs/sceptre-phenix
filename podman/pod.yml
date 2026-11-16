@@ -11,6 +11,16 @@ spec:
         - phenix
         - ui
         - --hostname-suffixes=-minimega,-phenix
+      # podman kube play runs this as the container's health check
+      livenessProbe:
+        exec:
+          command:
+            - phenix
+            - healthcheck
+        initialDelaySeconds: 60
+        periodSeconds: 30
+        timeoutSeconds: 10
+        failureThreshold: 3
       securityContext:
         privileged: true
         allowPrivilegeEscalation: true

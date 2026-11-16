@@ -62,7 +62,7 @@
 
 <script>
   import { usePhenixStore } from '@/store.js';
-  import axiosInstance from '@/utils/axios.js';
+  import * as authApi from '@/api/auth.js';
   import { useErrorNotification } from '@/utils/errorNotif';
 
   export default {
@@ -100,8 +100,8 @@
           last_name: this.lastName,
         };
 
-        axiosInstance
-          .post('signup', params)
+        authApi
+          .signUp(params)
           .then((response) => {
             const store = usePhenixStore();
             store.login(response.data, false);

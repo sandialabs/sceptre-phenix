@@ -184,7 +184,7 @@ func GetSchema(w http.ResponseWriter, r *http.Request) error {
 		)
 	}
 
-	_, _ = w.Write(body) //nolint:gosec // XSS via taint analysis
+	_, _ = w.Write(body)
 
 	return nil
 }

@@ -2,16 +2,14 @@ package cmd
 
 import (
 	"encoding/csv"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"os"
+	"io"
+	"slices"
 
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 
 	"phenix/api/experiment"
-	"phenix/app"
 	"phenix/util"
 	"phenix/web/rbac"
 )
@@ -31,9 +29,12 @@ func newUtilCmd() *cobra.Command {
 }
 
 func newUtilAppJSONCmd() *cobra.Command {
+	var out *outputFlag
+
 	cmd := &cobra.Command{
-		Use:   "app-json <experiment name>",
-		Short: "Print application JSON input for given experiment to STDOUT",
+		Use:               "app-json <experiment name>",
+		Short:             "Print application JSON input for given experiment to STDOUT",
+		ValidArgsFunction: expNameCompletion(false),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
 				return errors.New("there was no experiment provided")
@@ -41,97 +42,143 @@ func newUtilAppJSONCmd() *cobra.Command {
 
 			name := args[0]
 
-			exp, err := experiment.Get(name)
+			exp, err := experiment.AppInput(cmd.Context(), name)
+			if errors.Is(err, experiment.ErrAppRuntime) {
+				err := util.HumanizeError(err, "Unable to collect runtime experiment information")
+
+				return err.Humanized()
+			}
+
 			if err != nil {
 				err := util.HumanizeError(err, "%s", "Unable to get the "+name+" experiment")
 
 				return err.Humanized()
 			}
 
-			if err := app.PopulateRuntime(exp); err != nil {
-				err := util.HumanizeError(err, "Unable to collect runtime experiment information")
-
-				return err.Humanized()
-			}
-
-			var m []byte
-
-			if MustGetBool(cmd.Flags(), "pretty") {
-				m, err = json.MarshalIndent(exp, "", "  ")
-			} else {
-				m, err = json.Marshal(exp)
-			}
-
-			if err != nil {
-				err := util.HumanizeError(err, "Unable to convert experiment to JSON")
-
-				return err.Humanized()
-			}
-
-			fmt.Fprintln(os.Stdout, string(m))
-
-			return nil
+			return out.print(cmd, exp, nil)
 		},
 	}
 
-	cmd.Flags().BoolP("pretty", "p", false, "Pretty print the JSON output")
+	out = addOutputFlag(cmd, FormatJSON, []string{FormatJSON, FormatYAML}, withPrettyFlag(FormatJSON))
 
 	return cmd
 }
 
-func newUtilRoleTableCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "role-table",
-		Short: "Print a table for permissions and roles",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			roles, _ := rbac.GetRoles()
+// roleTable is what phenix util role-table prints: each permission that
+// phenix checks, and the roles that allow it.
+type roleTable struct {
+	Roles       []string         `json:"roles"       yaml:"roles"`
+	Permissions []rolePermission `json:"permissions" yaml:"permissions"`
+}
 
-			header := make([]string, 0, roleHeaderPadding+len(roles))
-			header = append(header, "", "")
-			for _, r := range roles {
-				header = append(header, r.Spec.Name)
+// rolePermission is one permission of a role table.
+type rolePermission struct {
+	Resource string   `json:"resource" yaml:"resource"`
+	Verb     string   `json:"verb"     yaml:"verb"`
+	Roles    []string `json:"roles"    yaml:"roles"`
+}
+
+// newRoleTable returns the role table of roles.
+func newRoleTable(roles []*rbac.Role) roleTable {
+	table := roleTable{Roles: make([]string, 0, len(roles)), Permissions: make([]rolePermission, 0, len(rbac.Permissions))}
+
+	for _, r := range roles {
+		table.Roles = append(table.Roles, r.Spec.Name)
+	}
+
+	for _, p := range rbac.Permissions {
+		perm := rolePermission{Resource: p.Resource, Verb: p.Verb, Roles: []string{}}
+
+		for _, r := range roles {
+			if r.Allowed(p.Resource, p.Verb) {
+				perm.Roles = append(perm.Roles, r.Spec.Name)
 			}
+		}
 
-			data := make([][]string, 0, len(rbac.Permissions))
+		table.Permissions = append(table.Permissions, perm)
+	}
 
-			for _, p := range rbac.Permissions {
-				row := []string{p.Resource, p.Verb}
-				for _, r := range roles {
-					if r.Allowed(p.Resource, p.Verb) {
-						row = append(row, "Y")
-					} else {
-						row = append(row, "")
-					}
-				}
+	return table
+}
 
-				data = append(data, row)
-			}
+// rows returns the header and the rows of the table: a "Y" in each column of
+// a role that allows the permission.
+func (t roleTable) rows() ([]string, [][]string) {
+	header := make([]string, 0, roleHeaderPadding+len(t.Roles))
+	header = append(header, "", "")
+	header = append(header, t.Roles...)
 
-			if MustGetBool(cmd.Flags(), "pretty") {
-				table := tablewriter.NewWriter(os.Stdout)
-				table.SetHeader(header)
-				table.AppendBulk(data)
-				table.SetBorders(
-					tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false},
-				)
-				table.SetCenterSeparator("|")
-				table.Render()
+	data := make([][]string, 0, len(t.Permissions))
+
+	for _, p := range t.Permissions {
+		row := []string{p.Resource, p.Verb}
+
+		for _, r := range t.Roles {
+			if slices.Contains(p.Roles, r) {
+				row = append(row, "Y")
 			} else {
-				w := csv.NewWriter(os.Stdout)
-
-				_ = w.Write(header)
-				for _, r := range data {
-					_ = w.Write(r)
-				}
-
-				w.Flush()
+				row = append(row, "")
 			}
+		}
+
+		data = append(data, row)
+	}
+
+	return header, data
+}
+
+// views returns the CSV and Markdown views of the table.
+func (t roleTable) views() outputViews {
+	header, data := t.rows()
+
+	return outputViews{
+		formatCSV: func(w io.Writer) error {
+			cw := csv.NewWriter(w)
+
+			_ = cw.Write(header)
+			_ = cw.WriteAll(data)
+
+			return cw.Error() //nolint:wrapcheck // the writer's own error
+		},
+		formatMarkdown: func(w io.Writer) error {
+			table := tablewriter.NewWriter(w)
+			table.SetHeader(header)
+			table.AppendBulk(data)
+			table.SetBorders(
+				tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false},
+			)
+			table.SetCenterSeparator("|")
+			table.Render()
 
 			return nil
 		},
 	}
+}
 
-	cmd.Flags().BoolP("pretty", "p", false, "Pretty print the table output in markdown")
+func newUtilRoleTableCmd() *cobra.Command {
+	var out *outputFlag
+
+	cmd := &cobra.Command{
+		Use:   "role-table",
+		Short: "Print a table for permissions and roles",
+		Args:  argsWithUsage(cobra.NoArgs),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			roles, err := rbac.GetRoles()
+			if err != nil {
+				err := util.HumanizeError(err, "Unable to get the roles")
+
+				return err.Humanized()
+			}
+
+			table := newRoleTable(roles)
+
+			return out.print(cmd, table, table.views())
+		},
+	}
+
+	out = addOutputFlag(
+		cmd, formatCSV, []string{formatCSV, formatMarkdown, FormatJSON, FormatYAML}, withPrettyFlag(formatMarkdown),
+	)
 
 	return cmd
 }
@@ -140,6 +187,8 @@ func init() { //nolint:gochecknoinits // cobra command
 	utilCmd := newUtilCmd()
 
 	utilCmd.AddCommand(newUtilAppJSONCmd())
+	utilCmd.AddCommand(newUtilSchedulerJSONCmd())
+	utilCmd.AddCommand(newUtilScorchJSONCmd())
 	utilCmd.AddCommand(newUtilRoleTableCmd())
 
 	addCommandToRoot(utilCmd, true)

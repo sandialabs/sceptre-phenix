@@ -2,13 +2,11 @@
 // The busy button (BuilderBusyButton.vue): a ring while busy, the same name
 // and focus, and no second press.
 
-import { afterEach, describe, expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { h, nextTick, ref } from 'vue';
-import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 
 import BuilderBusyButton from '@/components/builder/BuilderBusyButton.vue';
-
-enableAutoUnmount(afterEach);
 
 function button(props, label = 'PNG') {
   return mount(BuilderBusyButton, {

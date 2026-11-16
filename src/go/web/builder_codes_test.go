@@ -86,7 +86,7 @@ func TestBuilderErrorsCarryCodes(t *testing.T) {
 				t.Fatalf("builderCodedError(%v) = %T, want a *weberror.WebError", tt.err, tt.err)
 			}
 
-			got := builderAnswer{Status: web.Status, Code: web.Code}
+			got := builderAnswer{Status: web.Status, Code: string(web.Code)}
 			want := builderAnswer{Status: http.StatusConflict, Code: string(tt.want)}
 
 			if diff := cmp.Diff(want, got); diff != "" {
@@ -106,7 +106,7 @@ type builderAnswer struct {
 }
 
 // TestBuilderMethodNotAllowedCarriesCode answers a method no Builder route
-// takes with 405, Allow and a code. Another route keeps the status alone.
+// takes with 405, Allow and a code. Another route gets the server's own 405.
 func TestBuilderMethodNotAllowedCarriesCode(t *testing.T) {
 	harness := newBuilderHarness(t)
 	harness.api.Handle("/configs/{kind}/{name}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -138,17 +138,21 @@ func TestBuilderMethodNotAllowedCarriesCode(t *testing.T) {
 
 	other := harness.do(builderRequest{method: http.MethodPatch, path: "/configs/x/x", user: builderAlice})
 
-	got = builderAnswer{Status: other.Code, Allow: other.Header().Get("Allow"), Body: other.Body.String()}
-	want = builderAnswer{Status: http.StatusMethodNotAllowed}
+	var otherBody builderErrorBody
+
+	harness.decode(other, &otherBody)
+
+	got = builderAnswer{Status: other.Code, Code: otherBody.Code, Allow: other.Header().Get("Allow")}
+	want = builderAnswer{Status: http.StatusMethodNotAllowed, Code: string(weberror.CodeInvalidRequest)}
 
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("PATCH /configs/x/x mismatch (-want +got):\n%s", diff)
 	}
 }
 
-// TestNonBuilderErrorsCarryNoCode asserts a route outside the Builder
-// answers without the code and issues keys of the Builder's errors.
-func TestNonBuilderErrorsCarryNoCode(t *testing.T) {
+// TestNonBuilderErrorsCarryServerCodes asserts a route outside the Builder
+// answers with the code of its status, not a Builder code, and no issues.
+func TestNonBuilderErrorsCarryServerCodes(t *testing.T) {
 	harness := newBuilderStoreHarness(t, nil)
 
 	recorder := harness.do(builderRequest{
@@ -166,10 +170,12 @@ func TestNonBuilderErrorsCarryNoCode(t *testing.T) {
 		t.Errorf("GET /configs/Topology/missing = %v, want a message", body)
 	}
 
-	for _, key := range []string{"code", "issues"} {
-		if _, found := body[key]; found {
-			t.Errorf("GET /configs/Topology/missing = %s, want no %q", recorder.Body, key)
-		}
+	if code := string(weberror.CodeFor(recorder.Code)); body["code"] != code {
+		t.Errorf("GET /configs/Topology/missing = %s, want the code %s", recorder.Body, code)
+	}
+
+	if _, found := body["issues"]; found {
+		t.Errorf("GET /configs/Topology/missing = %s, want no %q", recorder.Body, "issues")
 	}
 
 	// A Builder route of the same server names its code.

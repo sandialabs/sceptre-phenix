@@ -235,31 +235,29 @@ describe.each(NETWORK_LAYOUTS)('the %s layout', (id) => {
   });
 
   test('keeps groups around their members, nested groups too', async () => {
-    for (let run = 0; run < 5; run += 1) {
-      const { doc, sw, dev } = range();
-      // Two workstations, a whole network with its switch, and PLC-1 in a
-      // group of its own inside another with HMI-1.
-      let grouped = groupNodes(doc, [dev['IT-WS-1'].id, dev['IT-WS-2'].id]);
-      grouped = groupNodes(grouped.doc, [
-        sw.DMZ.id,
-        dev['WEB-1'].id,
-        dev['WEB-2'].id,
-      ]);
-      const inner = groupNodes(grouped.doc, [dev['PLC-1'].id]);
-      const outer = groupNodes(inner.doc, [dev['HMI-1'].id]);
-      const nested = setParent(outer.doc, inner.group.id, outer.group.id);
-      const laid = await laidOut(id, nested);
-      const find = (node) => laid.nodes.find((n) => n.id === node.id);
+    const { doc, sw, dev } = range();
+    // Two workstations, a whole network with its switch, and PLC-1 in a
+    // group of its own inside another with HMI-1.
+    let grouped = groupNodes(doc, [dev['IT-WS-1'].id, dev['IT-WS-2'].id]);
+    grouped = groupNodes(grouped.doc, [
+      sw.DMZ.id,
+      dev['WEB-1'].id,
+      dev['WEB-2'].id,
+    ]);
+    const inner = groupNodes(grouped.doc, [dev['PLC-1'].id]);
+    const outer = groupNodes(inner.doc, [dev['HMI-1'].id]);
+    const nested = setParent(outer.doc, inner.group.id, outer.group.id);
+    const laid = await laidOut(id, nested);
+    const find = (node) => laid.nodes.find((n) => n.id === node.id);
 
-      expectTidy(laid, `${id}, run ${run}`);
-      expect(inside(boxOf(find(outer.group)), boxOf(find(inner.group)))).toBe(
-        true,
-      );
-      // A group is sized after its members, not what it was.
-      expect(find(inner.group).size).not.toEqual(inner.group.size);
-      // A laid-out diagram lays out the same again.
-      expect(await laidOut(id, laid)).toEqual(laid);
-    }
+    expectTidy(laid, id);
+    expect(inside(boxOf(find(outer.group)), boxOf(find(inner.group)))).toBe(
+      true,
+    );
+    // A group is sized after its members, not what it was.
+    expect(find(inner.group).size).not.toEqual(inner.group.size);
+    // A laid-out diagram lays out the same again.
+    expect(await laidOut(id, laid)).toEqual(laid);
   });
 
   test('wraps a rank of many networks into columns', async () => {

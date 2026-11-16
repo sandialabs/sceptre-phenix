@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"phenix/api/scorch/scorchmd"
 	"phenix/util"
 	"phenix/util/common"
 	"phenix/util/plog"
@@ -75,7 +76,7 @@ func (u UserComponent) shellOut(ctx context.Context, stage Action) error {
 		return ctx.Err()
 	}
 
-	cmd := "phenix-scorch-component-" + u.options.Type
+	cmd := componentProgram(u.options.Type)
 
 	if !shell.CommandExists(cmd) {
 		return fmt.Errorf(
@@ -85,56 +86,9 @@ func (u UserComponent) shellOut(ctx context.Context, stage Action) error {
 		)
 	}
 
-	// Need to unmarshal the experiment, apply replacements, and then marshal before sending to component
-	blob, err := json.Marshal(u.options.Exp)
+	data, err := componentStdin(u.options)
 	if err != nil {
-		return fmt.Errorf("marshaling experiment: %w", err)
-	}
-
-	var generic map[string]any
-	if err = json.Unmarshal(blob, &generic); err != nil {
-		return fmt.Errorf("unmarshaling experiment to generic map: %w", err)
-	}
-
-	if spec, ok := generic["spec"].(map[string]any); ok {
-		if scenario, ok2 := spec["scenario"].(map[string]any); ok2 {
-			if apps, ok3 := scenario["apps"].([]any); ok3 {
-				for _, a := range apps {
-					appMap, ok4 := a.(map[string]any)
-					if !ok4 {
-						continue
-					}
-
-					meta, ok5 := appMap["metadata"].(map[string]any)
-					if !ok5 {
-						continue
-					}
-
-					cmps, ok6 := meta["components"].([]any)
-					if !ok6 {
-						continue
-					}
-
-					for _, comp := range cmps {
-						cmpMap, ok7 := comp.(map[string]any)
-						if !ok7 {
-							continue
-						}
-
-						if name, ok8 := cmpMap["name"].(string); ok8 && name == u.options.Name {
-							cmpMap["metadata"] = u.options.Meta
-
-							break
-						}
-					}
-				}
-			}
-		}
-	}
-
-	data, err := json.Marshal(generic)
-	if err != nil {
-		return fmt.Errorf("marshaling experiment metadata to JSON: %w", err)
+		return err
 	}
 
 	// TODO: consider letting the child process send a signal indicating it wants
@@ -147,6 +101,78 @@ func (u UserComponent) shellOut(ctx context.Context, stage Action) error {
 	}
 
 	return u.run(ctx, stage, cmd, data)
+}
+
+// componentStdin returns the JSON that the user component of o gets on stdin:
+// the experiment of o, with the metadata of the component (o.Meta, with the
+// replacements of the run applied) in its scenario. A SCORCH run and phenix
+// util scorch-json both make it here, so they cannot differ.
+func componentStdin(o Options) ([]byte, error) {
+	blob, err := json.Marshal(o.Exp)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling experiment: %w", err)
+	}
+
+	var generic map[string]any
+	if err = json.Unmarshal(blob, &generic); err != nil {
+		return nil, fmt.Errorf("unmarshaling experiment to generic map: %w", err)
+	}
+
+	setComponentMetadata(generic, o.Name, o.Meta)
+
+	data, err := json.Marshal(generic)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling experiment metadata to JSON: %w", err)
+	}
+
+	return data, nil
+}
+
+// componentProgram returns the program that runs a user component of type typ.
+func componentProgram(typ string) string {
+	return "phenix-scorch-component-" + typ
+}
+
+// componentArgs returns the arguments of the program of the user component
+// of o in stage: the stage, the component name, and the run, loop and count.
+func componentArgs(o Options, stage Action) []string {
+	return []string{string(stage), o.Name, strconv.Itoa(o.Run), strconv.Itoa(o.Loop), strconv.Itoa(o.Count)}
+}
+
+// componentEnv returns the environment variables that phenix adds for the
+// program of the user component of o.
+func componentEnv(o Options) []string {
+	return []string{
+		"PHENIX_DIR=" + common.PhenixBase,
+		"PHENIX_FILES_DIR=" + o.Exp.FilesDir(),
+		"PHENIX_LOG_LEVEL=" + util.GetEnv("PHENIX_LOG_LEVEL", "DEBUG"),
+		"PHENIX_LOG_FILE=stderr",
+		"PHENIX_DRYRUN=" + strconv.FormatBool(o.Exp.DryRun()),
+		"PHENIX_SCORCH_STARTTIME=" + o.StartTime,
+	}
+}
+
+// setComponentMetadata sets the metadata of each SCORCH component called name
+// in the scenario apps of exp, an experiment decoded from JSON, to md. It
+// changes only the first such component of each app.
+func setComponentMetadata(exp map[string]any, name string, md scorchmd.ComponentMetadata) {
+	spec, _ := exp["spec"].(map[string]any)
+	scenario, _ := spec["scenario"].(map[string]any)
+	apps, _ := scenario["apps"].([]any)
+
+	for _, a := range apps {
+		appMap, _ := a.(map[string]any)
+		meta, _ := appMap["metadata"].(map[string]any)
+		cmps, _ := meta["components"].([]any)
+
+		for _, c := range cmps {
+			if cmpMap, ok := c.(map[string]any); ok && cmpMap["name"] == name {
+				cmpMap["metadata"] = md
+
+				break
+			}
+		}
+	}
 }
 
 func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data []byte) error {
@@ -185,23 +211,10 @@ func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data [
 
 	opts := []shell.Option{
 		shell.Command(cmd),
-		shell.Args(
-			string(stage),
-			u.options.Name,
-			strconv.Itoa(u.options.Run),
-			strconv.Itoa(u.options.Loop),
-			strconv.Itoa(u.options.Count),
-		),
+		shell.Args(componentArgs(u.options, stage)...),
 		shell.Stdin(data),
 		shell.StreamStdout(stdout),
-		shell.Env(
-			"PHENIX_DIR="+common.PhenixBase,
-			"PHENIX_FILES_DIR="+u.options.Exp.FilesDir(),
-			"PHENIX_LOG_LEVEL="+util.GetEnv("PHENIX_LOG_LEVEL", "DEBUG"),
-			"PHENIX_LOG_FILE=stderr",
-			"PHENIX_DRYRUN="+strconv.FormatBool(u.options.Exp.DryRun()),
-			"PHENIX_SCORCH_STARTTIME="+u.options.StartTime,
-		),
+		shell.Env(componentEnv(u.options)...),
 		shell.StreamStderr(stderrChan),
 	}
 
@@ -226,7 +239,7 @@ func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data [
 	if len(stdoutBytes) != 0 {
 		plog.Info(plog.TypePhenixApp, string(stdoutBytes),
 			"experiment", u.options.Exp.Spec.ExperimentName(),
-			"app", "scorch",
+			"app", appName,
 			"component", u.options.Name,
 			"stage", string(stage),
 			"run", strconv.Itoa(u.options.Run),
@@ -240,44 +253,49 @@ func (u UserComponent) run(ctx context.Context, stage Action, cmd string, data [
 
 // processLogChannel reads from ch and calls logFn for each detected log entry.
 // It buffers non-JSON lines for up to 10ms to reconstruct multi-line messages (like stack traces).
+// It joins the parts of a multi-part JSON message into one entry.
 func processLogChannel(ch <-chan []byte, logFn func(level, msg string)) {
 	var (
-		buf   bytes.Buffer
-		timer = time.NewTimer(time.Hour)
+		buf    bytes.Buffer
+		timer  = time.NewTimer(time.Hour)
+		joiner = plog.NewPartJoiner(func(level string, _ struct{}, msg string) { logFn(level, msg) })
 	)
 	timer.Stop()
 
-	flush := func() {
+	resetTimer := func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(logFlushInterval)
+	}
+
+	flushText := func() {
 		if buf.Len() == 0 {
 			return
 		}
 		msg := buf.String()
 		buf.Reset()
 
-		level := levelInfo
-		switch {
-		case strings.Contains(msg, "| ERROR |") || strings.Contains(msg, "| ERR |"):
-			level = levelError
-		case strings.Contains(msg, "| WARN |") || strings.Contains(msg, "| WARNING |"):
-			level = levelWarn
-		case strings.Contains(msg, "| DEBUG |") || strings.Contains(msg, "| DBG |"):
-			level = levelDebug
-		}
-
-		logFn(level, msg)
+		logFn(textLevel(msg), msg)
 	}
 
 	type jsonLog struct {
 		Level     string `json:"level"`
 		Message   string `json:"msg"`
 		Traceback string `json:"traceback"`
+		Part      any    `json:"part"`
+		Parts     any    `json:"parts"`
 	}
 
 	for {
 		select {
 		case line, ok := <-ch:
 			if !ok {
-				flush()
+				joiner.Flush()
+				flushText()
 				return
 			}
 
@@ -296,29 +314,52 @@ func processLogChannel(ch <-chan []byte, logFn func(level, msg string)) {
 			}
 
 			if isJSON {
-				flush()
-
 				if entry.Traceback != "" {
 					entry.Message += "\n" + entry.Traceback
 				}
 
+				if part, ok := plog.ParsePart(entry.Part, entry.Parts); ok {
+					flushText()
+					joiner.Add(entry.Level, part, entry.Message, struct{}{})
+
+					if joiner.Pending() {
+						resetTimer()
+					}
+
+					continue
+				}
+
+				joiner.Flush()
+				flushText()
 				logFn(entry.Level, entry.Message)
 			} else {
+				joiner.Flush()
+
 				if buf.Len() > 0 {
 					buf.WriteByte('\n')
 				}
 				buf.Write(bytes.TrimRight(line, "\r\n"))
 
-				if !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
-				}
-				timer.Reset(logFlushInterval)
+				resetTimer()
 			}
 		case <-timer.C:
-			flush()
+			joiner.Flush()
+			flushText()
 		}
+	}
+}
+
+// textLevel returns the level that the "| LEVEL |" marker in a text entry
+// names, or INFO if the entry has no marker.
+func textLevel(msg string) string {
+	switch {
+	case strings.Contains(msg, "| ERROR |") || strings.Contains(msg, "| ERR |"):
+		return levelError
+	case strings.Contains(msg, "| WARN |") || strings.Contains(msg, "| WARNING |"):
+		return levelWarn
+	case strings.Contains(msg, "| DEBUG |") || strings.Contains(msg, "| DBG |"):
+		return levelDebug
+	default:
+		return levelInfo
 	}
 }

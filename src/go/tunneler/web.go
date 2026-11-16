@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/net/websocket"
 )
@@ -117,13 +118,17 @@ func broadcastWebListeners() {
 	webEvents.broadcast(localListeners.snapshot())
 }
 
+// webReadHeaderTimeout bounds how long a client may take to send a request's
+// headers, so idle half-open connections do not pile up.
+const webReadHeaderTimeout = 10 * time.Second
+
 func startWebServer(addr string) error {
 	handler, err := newWebHandler()
 	if err != nil {
 		return err
 	}
 
-	listener, err := new(net.ListenConfig).Listen( //nolint:gosec // address is configured by the local user
+	listener, err := new(net.ListenConfig).Listen(
 		context.Background(), "tcp", addr,
 	)
 
@@ -131,7 +136,8 @@ func startWebServer(addr string) error {
 		return err
 	}
 
-	server := &http.Server{Handler: handler}
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: webReadHeaderTimeout}
+
 	go server.Serve(listener) //nolint:errcheck // Goroutine
 
 	return nil

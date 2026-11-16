@@ -69,7 +69,9 @@ test('with proxy auth, a known user goes on to the page', async () => {
 });
 
 test('with proxy auth, an unknown user goes to sign up with their name', async () => {
-  http.get.mockRejectedValue({ response: { data: ' bob \n' } });
+  http.get.mockRejectedValue({
+    response: { data: { metadata: { username: 'bob' } } },
+  });
   const router = await freshRouter('proxy');
 
   await router.push('/experiments');

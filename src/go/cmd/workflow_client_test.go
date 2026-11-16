@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/api/workflow"
 )
 
@@ -104,8 +106,8 @@ func TestWorkflowClientApply(t *testing.T) {
 				Plan:   workflow.Plan{Action: workflow.ActionRestart, Experiment: "foo", Reason: ""},
 				DryRun: tt.dryRun,
 			}
-			if got != want {
-				t.Errorf("apply() = %+v, want %+v", got, want)
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("apply() mismatch (-want +got):\n%s", diff)
 			}
 
 			reqs := fake.recorded()
@@ -173,8 +175,8 @@ func TestWorkflowClientApplyRefusesOtherDryRunAnswers(t *testing.T) {
 				t.Errorf("apply() error = %v, want %q", err, tt.want)
 			}
 
-			if got != (workflow.Result{}) {
-				t.Errorf("apply() = %+v, want the zero result with an error", got)
+			if diff := cmp.Diff(workflow.Result{}, got); diff != "" {
+				t.Errorf("apply() = %+v, want the zero result with an error:\n%s", got, diff)
 			}
 		})
 	}

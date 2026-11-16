@@ -370,8 +370,8 @@ A note is text on the canvas. Publishing ignores it.
    internet.`
 3. Click **Apply**.
 
-A screen reader names a note by the start of its text. A note also has a
-**Color**.
+A screen reader names a note by its heading and all of its text. A note
+also has a **Color**.
 
 ## Groups
 

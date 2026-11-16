@@ -2,14 +2,12 @@
 // Draft History while a snapshot is restored: a ring in place of its row's
 // Restore icon, the other actions wait, and the dialog closes after.
 
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import HistoryDialog from '@/components/builder/dialogs/HistoryDialog.vue';
 import { useBuilderStore } from '@/builder/store.js';
-
-enableAutoUnmount(afterEach);
 
 describe('Draft History', () => {
   test('restoring a snapshot shows a ring on its Restore, which keeps its name and focus', async () => {

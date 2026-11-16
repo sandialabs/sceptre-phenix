@@ -1,17 +1,22 @@
 package scheduler
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	ifaces "phenix/types/interfaces"
-	"phenix/util/mm"
+	"phenix/util/plog"
 )
 
-const maxUsageRatio = 1.0
+const (
+	isolateName   = "isolate-experiment"
+	maxUsageRatio = 1.0
+)
 
 func init() { //nolint:gochecknoinits // scheduler registration
-	schedulers["isolate-experiment"] = new(isolateExperiment)
+	schedulers[isolateName] = new(isolateExperiment)
 }
 
 type isolateExperiment struct{}
@@ -21,17 +26,12 @@ func (isolateExperiment) Init(...Option) error {
 }
 
 func (isolateExperiment) Name() string {
-	return "isolate-experiment"
+	return isolateName
 }
 
-func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
+func (isolateExperiment) Schedule(ctx context.Context, spec ifaces.ExperimentSpec) ([]string, error) {
 	if len(spec.Topology().Nodes()) == 0 {
-		return errors.New("no VMs defined for experiment")
-	}
-
-	cluster, err := mm.GetClusterHosts(true)
-	if err != nil {
-		return fmt.Errorf("getting cluster hosts: %w", err)
+		return nil, errors.New("no VMs defined for experiment")
 	}
 
 	var (
@@ -53,6 +53,20 @@ func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 		}
 	}
 
+	// only external nodes: nothing to place
+	if first == "" {
+		return nil, nil
+	}
+
+	cluster, err := schedulableHosts(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+
+	read := slices.Clone(cluster)
+	missing := missingHostPins(spec, read)
+	warnings := func(host string) []string { return movedPinWarnings(spec, read, missing, host) }
+
 	// if first VM is scheduled manually, put all VMs there
 
 	if name, ok := spec.Schedules()[first]; ok {
@@ -62,19 +76,25 @@ func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 				memUsage := float64(totalMEM+host.MemCommit) / float64(host.MemTotal)
 
 				if cpuUsage > maxUsageRatio || memUsage > maxUsageRatio {
-					fmt.Printf("Using host %s. It may become overloaded.", host.Name) //nolint:forbidigo // CLI output
+					plog.Warn(
+						plog.TypeSystem,
+						"using host for isolated experiment; host may become overloaded",
+						"host", host.Name,
+						"exp", spec.ExperimentName(),
+					)
 				}
 
-				for _, node := range spec.Topology().Nodes() {
-					if node.Schedulable() {
-						spec.Schedules()[node.General().Hostname()] = host.Name
-					}
-				}
+				placeAll(spec, host.Name)
 
-				return nil
+				return warnings(host.Name), nil
 			}
 
-			fmt.Printf("Host %s is currently in use; will not use.\n", host.Name) //nolint:forbidigo // CLI output
+			plog.Warn(
+				plog.TypeSystem,
+				"scheduled host is in use; not using it for isolated experiment",
+				"host", host.Name,
+				"exp", spec.ExperimentName(),
+			)
 		}
 	}
 
@@ -88,14 +108,10 @@ func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 			cpuUsage := float64(totalCPU+host.CPUCommit) / float64(host.CPUs)
 			memUsage := float64(totalMEM+host.MemCommit) / float64(host.MemTotal)
 
-			if cpuUsage < maxUsageRatio && memUsage < maxUsageRatio {
-				for _, node := range spec.Topology().Nodes() {
-					if node.Schedulable() {
-						spec.Schedules()[node.General().Hostname()] = host.Name
-					}
-				}
+			if cpuUsage <= maxUsageRatio && memUsage <= maxUsageRatio {
+				placeAll(spec, host.Name)
 
-				return nil
+				return warnings(host.Name), nil
 			}
 		}
 	}
@@ -104,17 +120,26 @@ func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 
 	for _, host := range cluster {
 		if host.VMs == 0 {
-			for _, node := range spec.Topology().Nodes() {
-				if node.Schedulable() {
-					spec.Schedules()[node.General().Hostname()] = host.Name
-				}
-			}
+			placeAll(spec, host.Name)
 
-			return nil
+			return warnings(host.Name), nil
 		}
 	}
 
 	// if that doesn't work either, there are no unoccupied hosts
 
-	return errors.New("no unused hosts -- cannot isolate experiment")
+	if len(cluster) == 0 {
+		return nil, fmt.Errorf("isolating experiment: %w", ErrNoSchedulableHosts)
+	}
+
+	return nil, errors.New("no unused hosts -- cannot isolate experiment")
+}
+
+// placeAll puts every schedulable VM of spec on host.
+func placeAll(spec ifaces.ExperimentSpec, host string) {
+	for _, node := range spec.Topology().Nodes() {
+		if node.Schedulable() {
+			spec.Schedules()[node.General().Hostname()] = host
+		}
+	}
 }

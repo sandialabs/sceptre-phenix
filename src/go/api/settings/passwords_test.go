@@ -86,6 +86,15 @@ func useMemoryStore(t *testing.T) {
 	}
 	m.EXPECT().Create(gomock.Any()).DoAndReturn(put(false)).AnyTimes()
 	m.EXPECT().Update(gomock.Any()).DoAndReturn(put(true)).AnyTimes()
+	m.EXPECT().Delete(gomock.Any()).DoAndReturn(func(c *store.Config) error {
+		if _, ok := configs[key(c)]; !ok {
+			return store.ErrNotExist
+		}
+
+		delete(configs, key(c))
+
+		return nil
+	}).AnyTimes()
 
 	storetest.Use(t, m)
 }
@@ -372,5 +381,35 @@ func TestUpdatePasswordSettingsStoreError(t *testing.T) {
 				t.Errorf("UpdatePasswordSettings() error = %v, want an error naming Settings.%s", err, name)
 			}
 		})
+	}
+}
+
+// TestPasswordRules checks that the rules are the sentences of the HTML list,
+// and that a store that cannot be read gives an error.
+func TestPasswordRules(t *testing.T) {
+	useSettingsStore(t)
+
+	ps := settings.PasswordSettings{UppercaseReq: true, SymbolReq: true, MinLength: 12}
+	if err := settings.UpdatePasswordSettings(ps); err != nil {
+		t.Fatalf("UpdatePasswordSettings(%+v) error = %v", ps, err)
+	}
+
+	got, err := settings.PasswordRules()
+	if err != nil {
+		t.Fatalf("PasswordRules() error = %v", err)
+	}
+
+	want := []string{
+		"Password requires 12 characters", "Password must be at most 72 bytes",
+		"Password requires an uppercase letter", "Password requires a symbol",
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("PasswordRules() mismatch (-want +got):\n%s", diff)
+	}
+
+	useFailingStore(t)
+
+	if rules, err := settings.PasswordRules(); err == nil {
+		t.Errorf("PasswordRules() with a failing store = %q, nil, want an error", rules)
 	}
 }

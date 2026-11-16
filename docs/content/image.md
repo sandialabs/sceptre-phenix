@@ -1,6 +1,22 @@
 # Virtual Disk Images Management
 
-This is only available from the command line binary at this time.
+Disk images are built only with the command line binary. The
+Disks page of the web UI lists the images the phēnix server has,
+and can snapshot, clone, rename, download, upload and delete the ones in the
+minimega files directory.
+
+Click the `In use` count above the table to show only the images in use.
+Click it again, or click the `X` beside the search box, to show all images.
+
+If the file of an image is a symbolic link (symlink), the Disks page shows
+`Symlink to` and the target of the link under the name of the image. The
+details card of the image also shows the target. A relative target is relative
+to the folder of the image. The table of `phenix disk list` shows the target
+after the path, for example `link.qc2 -> win/win10.qc2`.
+
+Before it deletes an image, phēnix checks for images that it backs and for
+experiments that use it. If it finds any, the Disks page lists them, and you can
+cancel or select **Delete anyway**.
 
 ## Listing disk images
 
@@ -124,6 +140,20 @@ the new configuration.
 ```shell
 phenix image delete <image name>
 ```
+
+A name can contain the wildcard `*`, which matches zero or more characters.
+Other characters, such as `?` and `[`, match only themselves. Put quotation
+marks around a pattern. If you do not, zsh stops with "no matches found", and
+bash can change the pattern to the names of local files.
+
+```shell
+phenix image delete 'cm-*' --dry-run
+phenix image delete 'cm-*'
+```
+
+Before phenix deletes the configurations that a pattern selects, it shows
+their names and their count. The pattern `'*'` selects all image
+configurations. Another pattern that selects no configuration is an error.
 
 An alternative could be to use the configuration management tool.
 

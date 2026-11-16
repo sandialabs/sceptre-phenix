@@ -1,5 +1,4 @@
-// const data = require('./data.js')
-import { EdgeService } from '@/components/pipeline/line.js';
+import { DefaultStyleService } from '@/components/pipeline/line.js';
 
 class Pipeline {
   /**
@@ -9,17 +8,14 @@ class Pipeline {
    * @param {*} starty
    * @param {*} xstep
    * @param {*} ystep
-   * @param {*} lineStyle 线型，目前支持三种线型： default(默认)，line(直线)，bessel(贝塞尔曲线)
    */
-  constructor(nodes, startx, starty, xstep, ystep, lineStyle = 'default') {
+  constructor(nodes, startx, starty, xstep, ystep) {
     this.nodes = nodes;
     this.startx = startx;
     this.starty = starty;
     this.xstep = xstep;
     this.ystep = ystep;
-    this.positionList = new Set();
     this.solvedList = [];
-    this.lineStyle = lineStyle;
     this.sortedList = this.topologicalSorting();
     this.matrix = []; //存放各个顶点的相对坐标
     for (let i = 0; i < nodes.length; i++) {
@@ -87,10 +83,7 @@ class Pipeline {
 
   getLines() {
     let list = [];
-    var drawService = EdgeService.getDrawEdgeService(this.lineStyle, {
-      x: this.xstep,
-      y: this.ystep,
-    });
+    const drawService = new DefaultStyleService(this.xstep, this.ystep);
     for (let i = 0; i < this.nodes.length; i++) {
       let node = this.nodes[i];
       if (!node.next) {
@@ -125,7 +118,12 @@ class Pipeline {
    */
   calculateAllPosition() {
     if (this.isTree()) {
-      this.assignNodeForTree(0, 0, 0);
+      // each tree of a forest starts below the tree before it
+      let y = 0;
+      for (const root of this.findRoots()) {
+        this.assignNodeForTree(root, 0, y);
+        y += this.getWidthOfTree(root);
+      }
     } else {
       this.assignNodeForGraph();
     }
@@ -136,32 +134,53 @@ class Pipeline {
    * 为图的每个节点计算坐标位置
    */
   assignNodeForGraph() {
-    // 查找最长的路径，并为其分配坐标
-    let list = this.findLongestWay(0);
-    list.forEach((it, index) => {
-      this.matrix[0][index] = it;
-      this.solvedList[it] = true;
-    });
+    // a node's column is the longest way to it from a root
+    this.columns = [];
+    for (const index of this.sortedList) {
+      const parents = this.findParents(index).map((it) => this.columns[it]);
+      this.columns[index] = Math.max(-1, ...parents) + 1;
+    }
 
-    for (let i = 0; i < this.sortedList.length; i++) {
-      let sindex = this.sortedList[i];
-      if (!this.solvedList[sindex]) {
-        let fatherIndex = this.findSolvedFather(sindex);
-        let [y, x] = this.getPositionInMatrix(fatherIndex); //找到父节点在矩阵中的坐标
-        let list = this.findLongestWay(sindex);
-        let startx = x + 1;
-
-        let starty = y;
-        while (this.matrix[starty][startx]) {
-          starty++;
-        }
-        // starty-=1;
-        list.forEach((it) => {
-          this.matrix[starty][startx++] = it;
-          this.solvedList[it] = true;
-        });
+    // in topological order, place the longest path from each node not yet placed
+    for (const sindex of this.sortedList) {
+      if (this.solvedList[sindex]) {
+        continue;
+      }
+      const fatherIndex = this.findSolvedFather(sindex);
+      const list = this.findLongestWay(sindex);
+      if (fatherIndex === null) {
+        // a root starts in column 0 of the first empty row
+        const row = this.matrix.findIndex((it) => it.length == 0);
+        this.placeWay(list, 0, row);
+      } else {
+        const [y] = this.getPositionInMatrix(fatherIndex); //找到父节点在矩阵中的坐标
+        const x = this.columns[sindex];
+        this.placeWay(list, x, this.findFreeRow(y, x, list.length));
       }
     }
+  }
+
+  /**
+   * Find the first row from {starty} down where the cells from column
+   * {startx} to {startx + length - 1} are all empty.
+   */
+  findFreeRow(starty, startx, length) {
+    const used = (y) =>
+      Array.from({ length }, (_, i) => this.matrix[y][startx + i]).some(
+        (it) => it !== undefined,
+      );
+    let y = starty;
+    while (used(y)) {
+      y++;
+    }
+    return y;
+  }
+
+  placeWay(list, startx, y) {
+    list.forEach((it, i) => {
+      this.matrix[y][startx + i] = it;
+      this.solvedList[it] = true;
+    });
   }
 
   calCoordinateForMatrix() {
@@ -182,26 +201,6 @@ class Pipeline {
   }
 
   /**
-   * 优化节点的位置,使其在x轴上左右居中,线的处理上还有bug
-   */
-  optimize() {
-    for (let i = 0; i < this.nodes.length; i++) {
-      let node = this.nodes[i];
-      if (node.y == this.starty) {
-        // 第一行不变
-        continue;
-      }
-      let parents = this.findParents(i);
-      let children = this.findChildren(i);
-      console.log(parents, children);
-      let startx = Math.max(...parents.map((item) => this.nodes[item].x));
-      let endx = Math.min(...children.map((item) => this.nodes[item].x));
-      node.x = (startx + endx) / 2;
-      this.nodes[i] = node;
-    }
-  }
-
-  /**
    * 图的拓扑排序
    */
   topologicalSorting() {
@@ -215,7 +214,8 @@ class Pipeline {
       if (list.length == 0 || list.every((it) => visited[it] == true)) {
         visited[i] = true;
         result.push(i);
-        i = 0;
+        // the loop adds 1, so the next scan starts at node 0
+        i = -1;
       }
     }
     return result;
@@ -231,7 +231,8 @@ class Pipeline {
   }
 
   /**
-   * 往前找到第一个解决的父节点
+   * Find the parent in the rightmost column, or null for a root. All parents
+   * are placed before a node in topological order.
    * @param {*} index
    */
   findSolvedFather(index) {
@@ -239,11 +240,7 @@ class Pipeline {
     if (list.length == 0) {
       return null;
     }
-    const father = list[0];
-    if (this.solvedList[father]) {
-      return father;
-    }
-    return this.findSolvedFather(father);
+    return list.reduce((a, b) => (this.columns[b] > this.columns[a] ? b : a));
   }
 
   /**
@@ -264,6 +261,12 @@ class Pipeline {
     return arr;
   }
 
+  findRoots() {
+    return this.nodes
+      .map((_, i) => i)
+      .filter((i) => this.findParents(i).length == 0);
+  }
+
   findChildren(index) {
     if (!this.nodes[index].next) {
       return [];
@@ -273,6 +276,7 @@ class Pipeline {
 
   /**
    * 查找从第{index}个节点开始的最长路径，返回经过的未被计算位置的节点,
+   * The path goes only to children in the next column.
    * @param {*} index
    */
   findLongestWay(index) {
@@ -283,45 +287,20 @@ class Pipeline {
     let arr = [],
       maxLength = 0;
     for (let i = 0; i < children.length; i++) {
-      if (this.solvedList[children[i]]) {
+      const child = children[i];
+      if (
+        this.solvedList[child] ||
+        this.columns[child] != this.columns[index] + 1
+      ) {
         continue;
       }
-      let list = this.findLongestWay(children[i]);
+      let list = this.findLongestWay(child);
       if (list.length > maxLength) {
         maxLength = list.length;
         arr = list.slice();
       }
     }
     return [index].concat(arr);
-  }
-
-  /**
-   * 从第{index}个节点出发，深度优先搜索图
-   * @param {*} nodes
-   * @param {*} index
-   */
-  dfs(index) {
-    const queue = [];
-    const visited = [];
-    const result = [];
-    visited[index] = true;
-    queue.push(index);
-
-    while (queue.length > 0) {
-      let first = queue.pop();
-      visited[first] = true;
-      console.log(first);
-      result.push(first);
-      let children = this.findChildren(first);
-      for (let i = 0; i < children.length; i++) {
-        let j = children[i];
-        if (!visited[j]) {
-          queue.push(j);
-          visited[j] = true;
-        }
-      }
-    }
-    return result;
   }
 }
 

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://unpkg.com/knip@6.38.0/schema.json",
+  "project": ["src/**/*.{js,vue,scss,sass}", "test/**/*.js"],
+  "paths": { "@/*": ["./src/*"] },
+  // the e2e suite is an npm project of its own, with its own lockfile
+  "ignore": ["e2e/**"],
+  // src/assets/main.scss imports it with @import, which knip does not follow
+  "ignoreDependencies": ["bulma"],
+  // test/sohGexf.test.js runs it when the machine has it
+  "ignoreBinaries": ["xmllint"],
+}

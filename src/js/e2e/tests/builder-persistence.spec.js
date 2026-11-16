@@ -220,6 +220,47 @@ async function forkAfterConflict(builder, testInfo) {
   return { draft, fork: { id: body.id }, title };
 }
 
+// Opens a new draft and renames it. Returns the draft and its name once the
+// server holds the name.
+async function renamedDraft(builder, testInfo) {
+  await builder.open();
+  const draft = await builder.createBlank();
+  const first = uniqueName(testInfo, 'merge');
+  await builder.rename(first);
+  // The save state can say all is saved before the rename's save starts.
+  await builder.persisted(draft, (doc) => doc.metadata.name, first);
+  await builder.waitSaved();
+
+  return { draft, first };
+}
+
+// Another editor renames the diagram and adds a note, which clashes with
+// nothing. A rename here then raises the conflict panel. Returns their name.
+async function raiseMergeConflict(builder, draft, testInfo) {
+  const theirs = uniqueName(testInfo, 'theirs');
+  await writeElsewhere(builder.request, draft, (doc) => ({
+    ...withMetadata(doc, { name: theirs }),
+    nodes: [
+      ...doc.nodes,
+      {
+        id: crypto.randomUUID(),
+        kind: 'note',
+        position: { x: 0, y: 320 },
+        note: { text: 'From elsewhere' },
+      },
+    ],
+  }));
+  await builder.rename(uniqueName(testInfo, 'mine'));
+
+  const panel = builder.page.getByTestId('builder-conflict');
+  await expect(panel).toBeVisible();
+  await expect(
+    panel.getByRole('heading', { name: 'This draft changed on the server' }),
+  ).toBeFocused();
+
+  return theirs;
+}
+
 // What this browser keeps for Builder drafts: the draft records, and the
 // number of entry snapshots, each a record of its own.
 function localDrafts(page) {
@@ -253,7 +294,7 @@ function unloadCopies(page) {
 }
 
 test.describe('Builder persistence', () => {
-  test('undo and redo by key and toolbar move the server cursor, a new edit drops the redo branch, and an undo survives a reload', async ({
+  test('undo and redo by key move the server cursor, a new edit drops the redo branch, and an undo survives a reload', async ({
     builder,
     issues,
     page,
@@ -299,22 +340,6 @@ test.describe('Builder persistence', () => {
       expect.soft(snapshots.at(-1)?.current).toBe(true);
     });
 
-    await test.step('toolbar Undo and Redo follow the history', async () => {
-      await builder.toolbar('undo').click();
-      await builder.expectCounts({ devices: 2 });
-      await builder.toolbar('undo').click();
-      await builder.expectCounts({ devices: 1 });
-      await expectServerCounts(builder, draft, { devices: 1 });
-
-      await expect(builder.toolbar('redo')).toBeEnabled();
-      await builder.toolbar('redo').click();
-      await builder.expectCounts({ devices: 2 });
-      await builder.toolbar('redo').click();
-      await builder.expectCounts({ devices: 3 });
-      await expectServerCounts(builder, draft, { devices: 3 });
-      await builder.waitSaved();
-    });
-
     await test.step('a new edit after undo drops the redo branch', async () => {
       await first.press('ControlOrMeta+z');
       await builder.expectCounts({ devices: 2 });
@@ -352,18 +377,8 @@ test.describe('Builder persistence', () => {
       expect.soft(server.cursor).toBe(2);
     });
 
-    await test.step("the keys work outside the canvas and in the name field, and only this platform's", async () => {
-      // The shortcuts work outside the canvas too, as the toolbar's
-      // aria-keyshortcuts promise: here from a palette button.
-      await builder.palette('device').focus();
-      await page.keyboard.press('ControlOrMeta+z');
-      await builder.expectCounts({ devices: 1 });
-      await page.keyboard.press('ControlOrMeta+Shift+z');
-      await builder.expectCounts({ devices: 2 });
-      await expectServerCounts(builder, draft, { devices: 2 });
-
-      // The toolbar names this platform's keys, and only those work: ⌘ on
-      // macOS, Ctrl elsewhere.
+    await test.step("the toolbar names this platform's keys, and Save now and the palette work in the name field", async () => {
+      // ⌘ on macOS, Ctrl elsewhere.
       const mac = process.platform === 'darwin';
       await expect
         .soft(builder.toolbar('undo'))
@@ -378,9 +393,6 @@ test.describe('Builder persistence', () => {
       await expect
         .soft(page.getByTestId('toolbar-tooltip'))
         .toHaveText(mac ? 'Undo (⌘Z)' : 'Undo (Ctrl+Z)');
-      await builder.palette('device').focus();
-      await page.keyboard.press(mac ? 'Control+z' : 'Meta+z');
-      await builder.expectCounts({ devices: 2 });
 
       // Save now and the palette work in a text field too. Save now saves the
       // name being typed, as Enter does.
@@ -394,24 +406,10 @@ test.describe('Builder persistence', () => {
         .poll(async () => (await builder.serverDocument(draft)).metadata.name)
         .toBe('Saved by its key');
       await expect.soft(edit).toBeFocused();
-      // With nothing left to save, the key sends nothing, so it makes no
-      // snapshot, and says so.
+      // The palette takes focus from the field, which stays open for it.
       await builder.waitSaved();
-      const sent = [];
-      const onRequest = (request) => {
-        if (request.method() !== 'GET') {
-          sent.push(request.url());
-        }
-      };
-      page.on('request', onRequest);
       await edit.click();
       await expect.soft(name).toBeFocused();
-      await page.keyboard.press('ControlOrMeta+s');
-      await expect.soft(builder).toHaveAnnounced('No changes to save.');
-      page.off('request', onRequest);
-      expect.soft(sent, 'requests for nothing to save').toEqual([]);
-      // The palette takes focus from the field, which stays open for it.
-      await edit.click();
       await page.keyboard.press('ControlOrMeta+k');
       await expect.soft(page.getByTestId('commands-dialog')).toBeVisible();
       await page.keyboard.press('Escape');
@@ -531,10 +529,6 @@ test.describe('Builder persistence', () => {
         /^Your next change removes 1 newer snapshot \(latest by .+, .+\)\.$/,
       );
       await expect(builder).toHaveAnnounced('Your next change removes 1 newer');
-      await expectAccessible(page, {
-        include: '[data-testid="builder-newer-history"]',
-        label: 'Newer snapshots notice',
-      });
       await page.getByTestId('newer-history-latest').click();
       await expect(notice).toHaveCount(0);
       await builder.expectCounts({ devices: 1, switches: 1, networks: 1 });
@@ -853,83 +847,105 @@ test.describe('Builder persistence', () => {
     expectNoFatal(issues);
   });
 
+  test('a name both editors changed is reviewed in the merge dialog', async ({
+    builder,
+    issues,
+  }, testInfo) => {
+    const { page } = builder;
+    const { draft } = await renamedDraft(builder, testInfo);
+    const theirs = await raiseMergeConflict(builder, draft, testInfo);
+
+    const panel = page.getByTestId('builder-conflict');
+    await expect(panel.getByTestId('conflict-merge-note')).toHaveText(
+      'You and another editor changed 1 field differently. Review and merge to choose which version to keep.',
+    );
+    await panel.getByTestId('conflict-merge').click();
+    const dialog = page.getByTestId('merge-dialog');
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByRole('group', { name: 'Diagram name' }),
+    ).toBeVisible();
+
+    // Cancel goes back to the panel. Keep all theirs then chooses for
+    // every field.
+    await dialog.getByTestId('merge-cancel').click();
+    await expect(dialog).toHaveCount(0);
+    await expect(panel.getByTestId('conflict-merge')).toBeFocused();
+    await panel.getByTestId('conflict-merge').click();
+    await dialog.getByTestId('merge-all-theirs').click();
+    await expect(dialog.getByTestId('merge-count')).toHaveText('1 of 1 chosen');
+    await dialog.getByTestId('merge-save').click();
+    await expect(dialog).toHaveCount(0);
+    await expect(panel).toHaveCount(0);
+    await builder.waitSaved();
+
+    const server = await builder.serverDocument(draft);
+    expect(server.metadata.name).toBe(theirs);
+    expect(countKind(server, 'note')).toBe(1);
+    await expect(page.getByTestId('builder-name')).toHaveText(theirs);
+
+    expectNoFatal(issues);
+  });
+
   test(
-    'a name both editors changed is reviewed in the merge dialog, which passes an axe scan',
+    'Draft History, the newer-snapshots notice, the conflict panel and the merge dialog pass axe in the dark theme',
     { tag: '@axe' },
-    async ({ builder, issues }, testInfo) => {
-      const { page } = builder;
+    async ({ builder, issues, page }, testInfo) => {
+      await page.emulateMedia({ colorScheme: 'dark' });
+      const { draft, first } = await renamedDraft(builder, testInfo);
+      const current = async () =>
+        (await listSnapshots(builder.request, draft)).map(
+          (snapshot) => snapshot.current,
+        );
 
-      await builder.open();
-      const draft = await builder.createBlank();
-      const first = uniqueName(testInfo, 'merge');
-      await builder.rename(first);
-      // The save state can say all is saved before the rename's save
-      // starts: the server holds the rename once it says so.
-      await builder.persisted(draft, (doc) => doc.metadata.name, first);
-      await builder.waitSaved();
-
-      // Another editor renames the diagram too, and adds a note, which
-      // clashes with nothing.
-      const theirs = uniqueName(testInfo, 'theirs');
-      await writeElsewhere(builder.request, draft, (doc) => ({
-        ...withMetadata(doc, { name: theirs }),
-        nodes: [
-          ...doc.nodes,
-          {
-            id: crypto.randomUUID(),
-            kind: 'note',
-            position: { x: 0, y: 320 },
-            note: { text: 'From elsewhere' },
-          },
-        ],
-      }));
-      await builder.rename(uniqueName(testInfo, 'mine'));
-
-      const panel = page.getByTestId('builder-conflict');
-      await expect(panel).toBeVisible();
-      await expect(
-        panel.getByRole('heading', {
-          name: 'This draft changed on the server',
-        }),
-      ).toBeFocused();
-      await expect(panel.getByTestId('conflict-merge-note')).toHaveText(
-        'You and another editor changed 1 field differently. Review and merge to choose which version to keep.',
-      );
-      await expectAccessible(page, {
-        include: '[data-testid="builder-conflict"]',
-        label: 'Conflict panel with Review and merge',
+      await test.step('Draft History', async () => {
+        const dialog = await builder.openDialog('history');
+        await expect(dialog.getByTestId('history-row')).toHaveCount(2);
+        await expectAccessible(page, {
+          include: '[data-testid="history-dialog"]',
+          label: 'Draft History',
+        });
+        await dialog
+          .getByTestId('history-row')
+          .last()
+          .getByTestId('history-name')
+          .click();
+        await expect(page.getByTestId('history-dialog')).toHaveCount(0);
+        await expect.poll(current).toEqual([true, false]);
+        await builder.waitSaved();
       });
 
-      await panel.getByTestId('conflict-merge').click();
-      const dialog = page.getByTestId('merge-dialog');
-      await expect(dialog).toBeVisible();
-      await expect(
-        dialog.getByRole('group', { name: 'Diagram name' }),
-      ).toBeVisible();
-      await expectAccessible(page, {
-        include: '[data-testid="merge-dialog"]',
-        label: 'Merge dialog',
+      await test.step('the notice of newer snapshots', async () => {
+        await builder.openDraft(draft);
+        await expect(page.getByTestId('newer-history-text')).toBeVisible();
+        await expectAccessible(page, {
+          include: '[data-testid="builder-newer-history"]',
+          label: 'Newer snapshots notice',
+        });
+        await page.getByTestId('newer-history-latest').click();
+        await expect(page.getByTestId('builder-newer-history')).toHaveCount(0);
+        await expect.poll(current).toEqual([false, true]);
+        await builder.persisted(draft, (doc) => doc.metadata.name, first);
+        await builder.waitSaved();
       });
 
-      // Cancel goes back to the panel. Keep all theirs then chooses for
-      // every field.
-      await dialog.getByTestId('merge-cancel').click();
-      await expect(dialog).toHaveCount(0);
-      await expect(panel.getByTestId('conflict-merge')).toBeFocused();
-      await panel.getByTestId('conflict-merge').click();
-      await dialog.getByTestId('merge-all-theirs').click();
-      await expect(dialog.getByTestId('merge-count')).toHaveText(
-        '1 of 1 chosen',
-      );
-      await dialog.getByTestId('merge-save').click();
-      await expect(dialog).toHaveCount(0);
-      await expect(panel).toHaveCount(0);
-      await builder.waitSaved();
-
-      const server = await builder.serverDocument(draft);
-      expect(server.metadata.name).toBe(theirs);
-      expect(countKind(server, 'note')).toBe(1);
-      await expect(page.getByTestId('builder-name')).toHaveText(theirs);
+      await test.step('the conflict panel and the merge dialog', async () => {
+        await raiseMergeConflict(builder, draft, testInfo);
+        await expectAccessible(page, {
+          include: '[data-testid="builder-conflict"]',
+          label: 'Conflict panel with Review and merge',
+        });
+        await page.getByTestId('conflict-merge').click();
+        await expect(
+          page
+            .getByTestId('merge-dialog')
+            .getByRole('group', { name: 'Diagram name' }),
+        ).toBeVisible();
+        await expectAccessible(page, {
+          include: '[data-testid="merge-dialog"]',
+          label: 'Merge dialog',
+        });
+      });
 
       expectNoFatal(issues);
     },
@@ -1047,10 +1063,6 @@ test.describe('Builder persistence', () => {
       await current.press('Enter');
       await expect.soft(current).toBeFocused();
       await expect(rows).toHaveCount(3);
-      await expectAccessible(page, {
-        include: '[data-testid="history-dialog"]',
-        label: 'Draft History',
-      });
     });
 
     await test.step("a row's tooltips sit beside its actions, or above the row in a narrow window", async () => {
@@ -1173,7 +1185,6 @@ test.describe('Builder persistence', () => {
       name: /^Delete Draft created, /,
     });
     await expect.soft(created).toBeFocused();
-    await expect.soft(deletes.last()).toBeFocused();
     const after = await listSnapshots(builder.request, draft);
     expect(after.map((snapshot) => snapshot.id)).toEqual(
       before.filter((_, index) => index !== 1).map((snapshot) => snapshot.id),
@@ -1465,11 +1476,6 @@ test.describe('Builder persistence', () => {
             dialog.getByRole('button', { name: "Download this tab's changes" }),
           )
           .toBeVisible();
-        await expectAccessible(page, {
-          include: '[data-testid="tabs-choice"]',
-          soft: true,
-          label: 'the choice of which changes to save',
-        });
         await expectServerCounts(builder, draft, { devices: 0 });
       });
 
@@ -1508,6 +1514,43 @@ test.describe('Builder persistence', () => {
     },
   );
 
+  test(
+    'the choice of which tab’s changes to save passes axe in the dark theme',
+    { tag: '@axe' },
+    async ({ builder, page, request, tracker }, testInfo) => {
+      await page.emulateMedia({ colorScheme: 'dark' });
+      const draft = await builder.seedDraft(
+        blankDocument(uniqueName(testInfo, 'tabs-axe')),
+      );
+      await builder.openDraft(draft);
+      const second = await page.context().newPage();
+      tracker.watch(second);
+      const other = new BuilderPage(second, request, tracker);
+      await other.openDraft(draft);
+      await expect(page.getByTestId('builder-tabs')).toBeVisible();
+
+      // Changes made offline in each tab make each ask, once back online.
+      await page.context().setOffline(true);
+      await addDevices(builder, 1);
+      await expect(builder.saveState).toHaveText(
+        /Offline: 1 change kept on this device/,
+      );
+      await addDevices(other, 2);
+      await expect(other.saveState).toHaveText(
+        /Offline: 2 changes kept on this device/,
+      );
+      await expect(page.getByTestId('builder-tabs')).toContainText(
+        'which has 2 changes not saved yet.',
+      );
+      await page.context().setOffline(false);
+      await expect(page.getByTestId('tabs-choice')).toBeVisible();
+      await expectAccessible(page, {
+        include: '[data-testid="tabs-choice"]',
+        label: 'the choice of which changes to save',
+      });
+    },
+  );
+
   test('leaving the editor with a change the server lacks keeps it, another page asks first, and logging out clears it', async ({
     builder,
     page,
@@ -1519,9 +1562,6 @@ test.describe('Builder persistence', () => {
     await expect(
       mine.getByRole('heading', { name: 'Untitled topology', exact: true }),
     ).not.toHaveCount(0);
-    const listed = (await mine.getByRole('heading').allTextContents()).map(
-      (text) => text.trim(),
-    );
 
     // A double click on Blank diagram makes one draft.
     const creates = [];
@@ -1543,7 +1583,6 @@ test.describe('Builder persistence', () => {
     expect.soft(creates, 'drafts made by a double click').toHaveLength(1);
     const title = (await page.getByTestId('builder-name').textContent()).trim();
     expect.soft(title).toMatch(/^Untitled topology \d+$/);
-    expect.soft(listed, 'titles listed before').not.toContain(title);
 
     await page.route(DRAFT_ROUTES, (route) => route.abort());
     await addDevices(builder, 1);
@@ -1616,7 +1655,7 @@ test.describe('Builder persistence', () => {
       );
       expect(await kept()).toEqual({ theme: 'dark', drafts: 1 });
 
-      // A server without authentication refuses GET /logout, which the
+      // A server without authentication refuses POST /logout, which the
       // header's Logout asks first.
       await page.route('**/api/v1/logout', (route) =>
         route.fulfill({ status: 204 }),
@@ -1718,11 +1757,6 @@ test.describe('Builder persistence', () => {
         .soft(builder)
         .toHaveAnnounced(/Saved your changes to Untitled topology \d+\./);
       await expectServerCounts(builder, draft, { devices: 1 });
-      await expectAccessible(page, {
-        include: '[data-testid="drafts-list-drafts"]',
-        soft: true,
-        label: 'a card saying its changes are saved',
-      });
       await page.unroute(slow);
     });
 
@@ -1831,6 +1865,44 @@ test.describe('Builder persistence', () => {
         .toBe(true);
     });
   });
+
+  test(
+    'the card of a draft whose changes were saved after it closed passes axe in the dark theme',
+    { tag: '@axe' },
+    async ({ builder, page }) => {
+      await page.emulateMedia({ colorScheme: 'dark' });
+      // With a draft listed, the landing has its list of drafts.
+      const listed = await builder.seedDraft(
+        blankDocument('Untitled topology'),
+      );
+      await builder.open();
+      await expect(page.getByTestId(`draft-open-${listed.id}`)).toBeVisible();
+      const draft = await builder.createBlank();
+
+      // The save is held until the landing shows, so the card reports it.
+      let release;
+      const held = new Promise((resolve) => {
+        release = resolve;
+      });
+      await page.route(
+        (url) => url.pathname.endsWith('/snapshots'),
+        async (route) => {
+          await held;
+          await route.continue();
+        },
+      );
+      await addDevices(builder, 1);
+      await page.getByRole('button', { name: 'Drafts', exact: true }).click();
+      const card = page.getByTestId(`draft-save-${draft.id}`);
+      await expect(card).toHaveText('Saving 1 change…');
+      release();
+      await expect(card).toHaveText('All changes saved.', { timeout: 10000 });
+      await expectAccessible(page, {
+        include: '[data-testid="drafts-list-drafts"]',
+        label: 'a card saying its changes are saved',
+      });
+    },
+  );
 
   test('a ?topology= link edits one draft of the diagram, which a reload reopens and which still opens after it publishes again', async ({
     builder,

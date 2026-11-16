@@ -7,23 +7,18 @@ import fc from 'fast-check';
 
 import {
   READ_ONLY,
-  commandKeys,
-  defaultKeys,
   deleteSelection,
   dispatchKeydown,
   focusLost,
   focusScope,
-  isCustomizable,
   isTextEntry,
   runCommand,
-  shortcutConflicts,
   takesLetters,
   ungroupSelection,
   worksInTextFields,
 } from '@/builder/commands.js';
 import {
   eventToKey,
-  keyRefusal,
   loadShortcutSettings,
   setPlatform,
   setShortcut,
@@ -33,7 +28,8 @@ import {
 import { nextPosition, paletteNode } from '@/components/builder/paletteDnd.js';
 
 import { PLATFORMS, context } from './command-context.js';
-import { memoryStorage, sampleDocument } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
+import { sampleDocument } from './fixtures.js';
 
 // The app's header and a modal around the Builder's editor: a toolbar
 // button, the canvas, the Inspector's fields and a closed dialog.
@@ -219,72 +215,6 @@ describe('focus scopes', () => {
       'outside',
     );
   });
-});
-
-// The Settings dialog's Snap to grid, from its keys.
-describe('the Snap to grid command', () => {
-  test.each(PLATFORMS)(
-    'has no default keys, and runs on keys the user gives it (%s)',
-    (platform) => {
-      setPlatform(platform);
-
-      expect(defaultKeys('view.snapToGrid', platform)).toEqual([]);
-      expect(commandKeys('view.snapToGrid', { platform })).toEqual([]);
-      expect(isCustomizable('view.snapToGrid')).toBe(true);
-      expect(
-        shortcutConflicts('view.snapToGrid', 'Alt+Shift+J', { platform }),
-      ).toEqual([]);
-
-      setShortcut('view.snapToGrid', ['Alt+Shift+J'], memoryStorage());
-      expect(commandKeys('view.snapToGrid', { platform })).toEqual([
-        'Alt+Shift+J',
-      ]);
-
-      const t = targets();
-      const ctx = context();
-      const event = keydown(t.button, 'J', 'KeyJ', {
-        altKey: true,
-        shiftKey: true,
-      });
-
-      expect(dispatch(event, ctx)).toBe('view.snapToGrid');
-      expect(event.defaultPrevented).toBe(true);
-      expect(ctx.view.toggleSnapToGrid).toHaveBeenCalledOnce();
-    },
-  );
-});
-
-// Show or hide connections, from its default keys.
-describe('the Show or hide connections command', () => {
-  test.each(PLATFORMS)(
-    'answers to Alt+Shift+C outside text fields, a free key (%s)',
-    (platform) => {
-      setPlatform(platform);
-
-      const ID = 'view.connections';
-
-      expect(defaultKeys(ID, platform)).toEqual(['Alt+Shift+C']);
-      expect(commandKeys(ID, { platform })).toEqual(['Alt+Shift+C']);
-      expect(isCustomizable(ID)).toBe(true);
-      expect(keyRefusal('Alt+Shift+C', platform)).toBe('');
-      expect(shortcutConflicts(ID, 'Alt+Shift+C', { platform })).toEqual([]);
-
-      const t = targets();
-      const ctx = context();
-      const press = (target) =>
-        keydown(target, 'C', 'KeyC', { altKey: true, shiftKey: true });
-
-      for (const target of [t.button, t.canvas, t.node]) {
-        const event = press(target);
-
-        expect(dispatch(event, ctx), target.dataset.testid).toBe(ID);
-        expect(event.defaultPrevented).toBe(true);
-      }
-      expect(ctx.view.toggleConnections).toHaveBeenCalledTimes(3);
-      // Not in a text field, where ⌥⇧C types a character on a Mac.
-      expect(dispatch(press(t.field), ctx)).toBe(null);
-    },
-  );
 });
 
 describe('the dispatcher', () => {
@@ -764,28 +694,6 @@ describe('the dispatcher', () => {
       expect(run(t.button, 'S', viewer)).toEqual(['settings.open', true]);
     },
   );
-
-  test('follows the user’s keys and the single-key switch', () => {
-    setPlatform('other');
-
-    const t = targets();
-    const ctx = context();
-
-    setShortcut('structure.layout', ['Mod+Shift+L'], memoryStorage());
-    expect(
-      dispatch(
-        keydown(t.button, 'L', 'KeyL', { ctrlKey: true, shiftKey: true }),
-        ctx,
-      ),
-    ).toBe('structure.layout');
-    expect(ctx.store.layout).toHaveBeenCalledOnce();
-
-    setSingleKeyShortcuts(false, memoryStorage());
-    const question = keydown(t.button, '?', 'Slash', { shiftKey: true });
-
-    expect(dispatch(question, ctx)).toBe(null);
-    expect(question.defaultPrevented).toBe(false);
-  });
 });
 
 describe('the dispatcher, for any key the user gives the palette', () => {

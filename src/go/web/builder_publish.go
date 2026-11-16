@@ -70,7 +70,7 @@ var errBuilderExperimentRunning = errors.New("phenix cannot update a running exp
 
 // builderExperimentAnnotation records the draft and document that last published an experiment, and its digest after configure.
 // A draft updates the experiment only while it still has that digest.
-const builderExperimentAnnotation = "builder-experiment"
+const builderExperimentAnnotation = util.BuilderExperimentAnnotation
 
 // builderExperimentPublication is the value of [builderExperimentAnnotation].
 type builderExperimentPublication struct {
@@ -147,7 +147,7 @@ type builderPublishOps struct {
 	lockExperiment      func(string, string) error
 	unlockExperiment    func(string)
 	broadcastConfig     func(*store.Config, string) error
-	broadcastExperiment func(string, string) error
+	broadcastExperiment func(context.Context, string, string) error
 	// decodeTopology merges a topology config's includeTopologies, as phenix
 	// does when it creates an experiment.
 	decodeTopology func(store.Config) (ifaces.TopologySpec, error)
@@ -165,19 +165,28 @@ type builderPublishOps struct {
 func newBuilderPublishOps() builderPublishOps {
 	return builderPublishOps{
 		createConfig: func(cfg *store.Config) (*store.Config, error) {
+			cfg.FilesRoot = experiment.BaseDirRoot()
+
 			return config.Create(config.CreateFromConfig(cfg), config.CreateWithValidation())
 		},
-		updateConfig: config.Update,
+		updateConfig: func(name string, cfg *store.Config) error {
+			cfg.FilesRoot = experiment.BaseDirRoot()
+
+			return config.Update(name, cfg)
+		},
 		createExperiment: func(
 			ctx context.Context,
 			name, topology, scenario string,
 			aliases map[string]int,
 		) error {
+			// the apps run to their end, also after the client leaves
 			return experiment.Create(
+				context.Background(),
 				experiment.CreateWithName(name),
 				experiment.CreateWithTopology(topology),
 				experiment.CreateWithScenario(scenario),
 				experiment.CreateWithVLANAliases(aliases),
+				experiment.CreateWithBaseDirInside(experiment.BaseDirRoot()),
 			)
 		},
 		lockExperiment: func(name, action string) error {
@@ -192,7 +201,7 @@ func newBuilderPublishOps() builderPublishOps {
 		broadcastExperiment: builderBroadcastExperiment,
 		decodeTopology:      types.DecodeTopologyFromConfig,
 		// As the configs API, the workflow API and the CLI do after an update.
-		reconfigureExperiment: experiment.Reconfigure,
+		reconfigureExperiment: func(name string) error { return experiment.Reconfigure(context.Background(), name) },
 		annotateConfig:        store.Update,
 		deleteConfig:          deleteConfig,
 	}
@@ -205,14 +214,14 @@ func builderBroadcastConfig(cfg *store.Config, action string) error {
 }
 
 // builderBroadcastExperiment broadcasts a published experiment as the
-// experiments API does.
-func builderBroadcastExperiment(name, action string) error {
+// experiments API does, reading its VMs even once the client has left.
+func builderBroadcastExperiment(ctx context.Context, name, action string) error {
 	exp, err := experiment.Get(name)
 	if err != nil {
 		return fmt.Errorf("loading experiment for broadcast: %w", err)
 	}
 
-	vms, _ := vm.List(name)
+	vms := vm.ListFor(context.WithoutCancel(ctx), exp)
 
 	body, err := marshaler.Marshal(util.ExperimentToProtobuf(*exp, "", vms))
 	if err != nil {
@@ -444,7 +453,7 @@ func (b *builderAPI) publishExperimentStage(
 	})
 
 	if !plan.applied {
-		if err := b.publish.broadcastExperiment(plan.name, plan.action); err != nil {
+		if err := b.publish.broadcastExperiment(ctx, plan.name, plan.action); err != nil {
 			response.Warnings = append(response.Warnings, bdoc.NewIssue(bdoc.CodePublishBroadcastFailed, "",
 				"phenix stored the experiment, but could not broadcast its live update"))
 			plog.Error(plog.TypeSystem, "broadcasting published experiment", "err", err)
@@ -675,11 +684,11 @@ func publishProjectionRefusal(topologyName string, err error) error {
 	problems, named := projectionProblems(err)
 	if !named {
 		return weberror.NewWebError(err, "Builder document cannot be published as topology %s", topologyName).
-			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishTopologyInvalid))
+			SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(bdoc.CodePublishTopologyInvalid))
 	}
 
 	return weberror.NewWebError(err, "phenix cannot publish topology %s: %s", topologyName, problems).
-		SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishBlocked))
+		SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(bdoc.CodePublishBlocked))
 }
 
 // projectionProblems names, as clients show them, the first few problems that err reports, then how many more.
@@ -760,7 +769,7 @@ func mergedIncludesRefusal(actor builderActor, experimentName string, includes b
 			nil,
 			"phenix cannot update experiment %s: it cannot merge included topology %s: %v",
 			experimentName, problem.Name, problem.Err,
-		).SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishExperimentUnmerged))
+		).SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(bdoc.CodePublishExperimentUnmerged))
 	}
 
 	return nil
@@ -792,7 +801,7 @@ func includedHostnameRefusal(experimentName string, includes bdoc.IncludeReport)
 
 	return weberror.NewWebError(
 		nil, "phenix cannot publish experiment %s: %s", experimentName, problemSentences(reasons),
-	).SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishIncludeHostname))
+	).SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(bdoc.CodePublishIncludeHostname))
 }
 
 // includeClashRefusal refuses a topology whose included topologies define a
@@ -812,7 +821,7 @@ func includeClashRefusal(topologyName string, includes bdoc.IncludeReport) error
 			"phenix cannot publish topology %s: node %s is in this topology and in its included topology %s. "+
 				"phenix rejects duplicate hostnames. Rename the node here or in %s",
 			topologyName, clashes[0].Hostname, clashes[0].Include, clashes[0].Include,
-		).SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishIncludeClash))
+		).SetStatus(http.StatusConflict).WithCode(weberror.Code(bdoc.CodePublishIncludeClash))
 	default:
 		nodes := make([]string, 0, listed+1)
 
@@ -829,7 +838,7 @@ func includeClashRefusal(topologyName string, includes bdoc.IncludeReport) error
 			"phenix cannot publish topology %s: nodes %s and %s are in this topology and in its included topologies. "+
 				"phenix rejects duplicate hostnames. Rename them here or in those topologies",
 			topologyName, strings.Join(nodes[:len(nodes)-1], ", "), nodes[len(nodes)-1],
-		).SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishIncludeClash))
+		).SetStatus(http.StatusConflict).WithCode(weberror.Code(bdoc.CodePublishIncludeClash))
 	}
 }
 
@@ -958,7 +967,7 @@ func sourceChangedRefusal(source *bdoc.Source) error {
 			"Publish refuses this diagram under any name. "+
 			"To continue, make a new draft of %[1]s %[2]s: %[3]s. Then copy your changes to the new draft",
 		kind, source.Name, again,
-	).SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishSourceChanged))
+	).SetStatus(http.StatusConflict).WithCode(weberror.Code(bdoc.CodePublishSourceChanged))
 }
 
 // sourceHoldsDraftPublication reports whether only a publish of this draft, or of its origin document, changed a source.
@@ -1358,10 +1367,10 @@ func (b *builderAPI) topologyUpdateRefusal(
 	case held.owned && held.file:
 		return weberror.NewWebError(
 			nil, "topology %s is not what its Builder file publishes. Thus this draft cannot update it", name,
-		).SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishTopologyFileMismatch))
+		).SetStatus(http.StatusConflict).WithCode(weberror.Code(bdoc.CodePublishTopologyFileMismatch))
 	case held.owned:
 		return weberror.NewWebError(nil, "topology %s changed after this draft published it", name).
-			SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishTopologyChanged))
+			SetStatus(http.StatusConflict).WithCode(weberror.Code(bdoc.CodePublishTopologyChanged))
 	}
 
 	// Check this before the import rule. A document read from the file may
@@ -1370,7 +1379,7 @@ func (b *builderAPI) topologyUpdateRefusal(
 	if opened, _, ok := openedBuilderFile(meta.SourceToken); ok && opened == name {
 		return weberror.NewWebError(
 			nil, "topology %s or its Builder file changed after Builder opened this draft from the file", name,
-		).SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishTopologyFileChanged))
+		).SetStatus(http.StatusConflict).WithCode(weberror.Code(bdoc.CodePublishTopologyFileChanged))
 	}
 
 	if topologyUpdateMatchesSource(meta, document, existing) {
@@ -1378,7 +1387,7 @@ func (b *builderAPI) topologyUpdateRefusal(
 	}
 
 	return weberror.NewWebError(nil, "topology %s is not the source of this draft", name).
-		SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishTopologyNotSource))
+		SetStatus(http.StatusConflict).WithCode(weberror.Code(bdoc.CodePublishTopologyNotSource))
 }
 
 // topologyUpdateMatchesSource reports whether the document was imported from the topology, or from an experiment of it.
@@ -1551,7 +1560,7 @@ const builderScenarioMetadata = "scenario"
 // scenarios that the draft document lists. The answer has 422, the refusal
 // code, and the scenario name in its metadata.
 func builderScenarioRefusal(refusal *weberror.WebError, code bdoc.Code, name string) *weberror.WebError {
-	return refusal.SetStatus(http.StatusUnprocessableEntity).WithCode(string(code)).
+	return refusal.SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(code)).
 		WithMetadata(builderScenarioMetadata, name, true)
 }
 
@@ -1643,16 +1652,16 @@ func (b *builderAPI) preflightExperiment(
 	current, err := types.DecodeExperimentFromConfig(*existing)
 	if err != nil {
 		return nil, weberror.NewWebError(err, "phenix cannot decode experiment %s", target.Name).
-			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishExperimentInvalid))
+			SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(bdoc.CodePublishExperimentInvalid))
 	}
 	if current.Running() {
 		return nil, weberror.NewWebError(nil, "phenix cannot update running experiment %s", target.Name).
-			SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishExperimentRunning))
+			SetStatus(http.StatusConflict).WithCode(weberror.Code(bdoc.CodePublishExperimentRunning))
 	}
 
 	if topologyErr != nil {
 		return nil, weberror.NewWebError(topologyErr, "phenix cannot update experiment %s", target.Name).
-			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishExperimentInvalid))
+			SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(bdoc.CodePublishExperimentInvalid))
 	}
 
 	plan.rebuild = func(current *store.Config) (*store.Config, []bapi.HostPin, error) {
@@ -1680,12 +1689,12 @@ func (b *builderAPI) preflightExperiment(
 	updated, removed, err := plan.rebuild(existing)
 	if err != nil {
 		return nil, weberror.NewWebError(err, "phenix cannot update experiment %s", target.Name).
-			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishExperimentInvalid))
+			SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(bdoc.CodePublishExperimentInvalid))
 	}
 
 	if err := types.ValidateConfigSpec(*updated); err != nil {
 		return nil, weberror.NewWebError(err, "experiment %s is not valid", target.Name).
-			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishExperimentInvalid))
+			SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(bdoc.CodePublishExperimentInvalid))
 	}
 
 	plan.removedPins = removed
@@ -1700,7 +1709,7 @@ func experimentCreateRefusal(name string, projection *bdoc.Topology) error {
 
 	if strings.EqualFold(name, "all") {
 		return weberror.NewWebError(nil, "experiment %s is reserved: phenix uses the name to mean every experiment", name).
-			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishExperimentReserved))
+			SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(bdoc.CodePublishExperimentReserved))
 	}
 
 	if common.BridgeMode == common.BridgeModeAuto && len(name) > maxBridgeName {
@@ -1708,7 +1717,7 @@ func experimentCreateRefusal(name string, projection *bdoc.Topology) error {
 			nil,
 			"experiment %s has a name longer than %d characters, and this server names each experiment's bridge after it",
 			name, maxBridgeName,
-		).SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishExperimentNameLong))
+		).SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(bdoc.CodePublishExperimentNameLong))
 	}
 
 	created, err := store.NewConfig(kindExperiment + "/" + name)
@@ -1725,7 +1734,7 @@ func experimentCreateRefusal(name string, projection *bdoc.Topology) error {
 
 	if err := types.ValidateConfigSpec(*created); err != nil {
 		return weberror.NewWebError(err, "experiment %s is not valid", name).
-			SetStatus(http.StatusUnprocessableEntity).WithCode(string(bdoc.CodePublishExperimentInvalid))
+			SetStatus(http.StatusUnprocessableEntity).WithCode(weberror.Code(bdoc.CodePublishExperimentInvalid))
 	}
 
 	return nil
@@ -1747,11 +1756,11 @@ func experimentUpdateRefusal(meta *bapi.DraftMetadata, document *bdoc.Document, 
 		return nil
 	case owned:
 		return weberror.NewWebError(nil, "experiment %s changed after this draft published it", name).
-			SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishExperimentChanged))
+			SetStatus(http.StatusConflict).WithCode(weberror.Code(bdoc.CodePublishExperimentChanged))
 	}
 
 	return weberror.NewWebError(nil, "experiment %s is not the source of this draft", name).
-		SetStatus(http.StatusConflict).WithCode(string(bdoc.CodePublishExperimentNotSource))
+		SetStatus(http.StatusConflict).WithCode(weberror.Code(bdoc.CodePublishExperimentNotSource))
 }
 
 func experimentUpdateMatchesSource(
@@ -1767,7 +1776,7 @@ func experimentUpdateMatchesSource(
 
 // experimentTopology returns the topology that an experiment holds for the projection.
 // The projection only names included topologies, so it merges them as phenix does at experiment create.
-func (b *builderAPI) experimentTopology( //nolint:ireturn // returns decodeTopology's interface
+func (b *builderAPI) experimentTopology(
 	projection *bdoc.Topology,
 	topologyName string,
 ) (ifaces.TopologySpec, error) {
@@ -1830,6 +1839,11 @@ func updatedExperimentConfig(
 
 	updated := cloneBuilderConfig(existing)
 	updated.Spec = structs.MapDefaultCase(exp.Spec, structs.CASESNAKE)
+
+	// An experiment that names no deploy mode keeps none, since the schema has no "" mode.
+	if mode, ok := updated.Spec["deployMode"].(string); ok && mode == "" {
+		delete(updated.Spec, "deployMode")
+	}
 
 	if updated.Metadata.Annotations == nil {
 		updated.Metadata.Annotations = store.Annotations{}
@@ -2127,10 +2141,10 @@ func requirePublishAction(kind string, target builderPublishTarget, exists, appl
 		return nil
 	case target.Action == builderPublishActionCreate && exists:
 		return weberror.NewWebError(nil, "config %s already exists. Choose update explicitly", target.Name).
-			SetStatus(http.StatusConflict).WithCode(string(taken))
+			SetStatus(http.StatusConflict).WithCode(weberror.Code(taken))
 	case target.Action == builderPublishActionUpdate && !exists:
 		return weberror.NewWebError(nil, "config %s does not exist. Choose create explicitly", target.Name).
-			SetStatus(http.StatusConflict).WithCode(string(absent))
+			SetStatus(http.StatusConflict).WithCode(weberror.Code(absent))
 	}
 
 	return nil
@@ -2191,7 +2205,7 @@ func validatePublishTarget(kind string, target builderPublishTarget) error {
 
 func invalidPublishTarget(kind, name string) error {
 	return weberror.NewWebError(nil, "%s target %q is not a valid config name", kind, name).
-		SetStatus(http.StatusBadRequest).WithCode(string(bdoc.CodePublishTargetInvalid))
+		SetStatus(http.StatusBadRequest).WithCode(weberror.Code(bdoc.CodePublishTargetInvalid))
 }
 
 // addTopologyAnnotation appends topology to the comma-separated "topology" annotation value when it is not there yet.

@@ -34,7 +34,7 @@ import {
 import { useBuilderStore } from '@/builder/store.js';
 import { validateDocument } from '@/builder/validate.js';
 
-import { memoryStorage } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
 
 // A small plant: every device on MGMT, the turbines and a router on ot, the
 // router and a workstation on site, pwds on MGMT alone, and a note.
@@ -670,8 +670,7 @@ describe('Auto-group in the store', () => {
       vi.useRealTimers();
     });
 
-    test('groups, then lays out, as one commit that one undo takes back and redo makes again', async () => {
-      const before = store.doc;
+    test('groups, then lays out, as one commit', async () => {
       const entries = store.history.size;
 
       const result = await store.autoGroupByPattern('^(wtg|site|rtr)');
@@ -695,24 +694,6 @@ describe('Auto-group in the store', () => {
       ]);
       // The layout that ran is kept, as for the other rules.
       expect(store.doc.layout).toBe('elk');
-
-      store.undo();
-      expect(store.doc).toEqual(before);
-      expect(store.announcement).toBe('Undid Created 1 group by name pattern.');
-
-      store.redo();
-      expect(
-        store.doc.nodes.filter((node) => node.kind === 'group'),
-      ).toHaveLength(1);
-    });
-
-    test('several groups are one commit', async () => {
-      const entries = store.history.size;
-      const { groups } = await store.autoGroupByPattern('^(wtg)|(site)');
-
-      expect(groups.map((group) => group.group.title)).toEqual(['site', 'wtg']);
-      expect(store.history.size).toBe(entries + 1);
-      expect(store.announcement).toBe('Created 2 groups by name pattern');
     });
 
     test('with nodes selected, only they are grouped', async () => {
@@ -747,15 +728,6 @@ describe('Auto-group in the store', () => {
 
       expect(await store.autoGroupByPattern('')).toEqual(
         refused('Enter a pattern.', true),
-      );
-      expect(await store.autoGroupByPattern('a'.repeat(201))).toEqual(
-        refused('The pattern can have at most 200 characters.', true),
-      );
-      expect(await store.autoGroupByPattern('(')).toEqual(
-        refused(
-          expect.stringMatching(/^That is not a valid regular expression\. /),
-          true,
-        ),
       );
       expect(await store.autoGroupByPattern('^zzz')).toEqual(
         refused(

@@ -1,5 +1,7 @@
-import axiosInstance from '@/utils/axios.js';
+import * as authApi from '@/api/auth.js';
+import * as settingsApi from '@/api/settings.js';
 import { usePhenixStore } from '@/store.js';
+import { endConsole } from '@/utils/consoleSession.js';
 import { ToastProgrammatic as Toast } from 'buefy';
 
 const MINUTE = 60 * 1000;
@@ -54,8 +56,8 @@ export class TimeoutTool {
       return;
     }
 
-    axiosInstance
-      .get('settings/timeout')
+    settingsApi
+      .getTimeoutSettings()
       .then((resp) => {
         this.data = resp.data;
         this.time_set = new Date();
@@ -106,14 +108,22 @@ export class TimeoutTool {
       this.warnToast.close();
       this.warnToast = null;
     }
-    // The session ends here even if the server does not answer, because the
-    // user was idle for the full timeout.
-    return axiosInstance
-      .get('logout', { timeout: LOGOUT_REQUEST_MS })
+    // End the console first, while the token still allows it. The session
+    // ends even if the server does not answer, as the user was idle.
+    let timer;
+    const timedOut = new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error('logout request timed out')),
+        LOGOUT_REQUEST_MS,
+      );
+    });
+    return endConsole()
+      .then(() => Promise.race([authApi.logOut(), timedOut]))
       .catch((err) => {
         console.warn('failed to log out on the server', err);
       })
       .finally(() => {
+        clearTimeout(timer);
         usePhenixStore().logout();
       });
   }

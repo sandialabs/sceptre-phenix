@@ -69,7 +69,7 @@ func topologyDocumentsLeft(name string) bool {
 // together, whatever writes the config. It removes the documents of a deleted
 // or renamed topology, and checks the reference of a topology about to be
 // stored (see [checkTopologyReference]).
-func topologyConfigHook(stage string, c *store.Config) error {
+func topologyConfigHook(_ context.Context, stage string, c *store.Config) error {
 	switch stage {
 	case configStageCreate, configStageUpdate:
 		return checkTopologyReference(c)

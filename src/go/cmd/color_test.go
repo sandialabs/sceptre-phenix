@@ -1,0 +1,248 @@
+package cmd
+
+import (
+	"bytes"
+	"errors"
+	"log/slog"
+	"regexp"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/lmittmann/tint"
+	"pgregory.net/rapid"
+
+	"phenix/api/workflow"
+	"phenix/util/termcolor"
+)
+
+// ansiCodes matches the escape codes the palettes write.
+var ansiCodes = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+// stripColor removes the escape codes from s.
+func stripColor(s string) string {
+	return ansiCodes.ReplaceAllString(s, "")
+}
+
+// colorFlagInArgs finds the last --color value before "--", in both forms,
+// and nothing when the flag has no value.
+func TestColorFlagInArgs(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		args      []string
+		want      string
+		wantFound bool
+	}{
+		"none":            {args: []string{"exp", "list"}},
+		"equals":          {args: []string{"exp", "list", "--color=off"}, want: "off", wantFound: true},
+		"separate":        {args: []string{"--color", "on", "exp", "list"}, want: "on", wantFound: true},
+		"last wins":       {args: []string{"--color=off", "doctor", "--color", "on"}, want: "on", wantFound: true},
+		"after --":        {args: []string{"mm", "--", "--color=off"}},
+		"no value":        {args: []string{"doctor", "--color"}},
+		"other flag":      {args: []string{"--colors=off", "--colorx", "off"}},
+		"empty value":     {args: []string{"--color="}, want: "", wantFound: true},
+		"before and past": {args: []string{"--color=on", "--", "--color=off"}, want: "on", wantFound: true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, found := colorFlagInArgs(tc.args)
+			if got != tc.want || found != tc.wantFound {
+				t.Errorf("colorFlagInArgs(%q) = %q, %v, want %q, %v", tc.args, got, found, tc.want, tc.wantFound)
+			}
+		})
+	}
+}
+
+// A --color=<mode> argument at the end is found unless the argument before it
+// takes it as a value, and nothing after a "--" changes what is found.
+func TestColorFlagInArgsProperty(t *testing.T) {
+	t.Parallel()
+
+	token := rapid.OneOf(
+		rapid.SampledFrom([]string{"--", "--color", "--color=on", "--color=off", "on", "exp"}),
+		rapid.StringMatching(`[a-z-]{0,8}`),
+	)
+
+	rapid.Check(t, func(t *rapid.T) {
+		before := rapid.SliceOf(token).Draw(t, "before")
+		tail := rapid.SliceOf(token).Draw(t, "tail")
+		mode := rapid.SampledFrom([]string{"auto", "on", "off"}).Draw(t, "mode")
+
+		args := append(slices.Clone(before), "--color="+mode)
+		got, found := colorFlagInArgs(args)
+
+		if !slices.Contains(before, "--") && (len(before) == 0 || before[len(before)-1] != "--color") &&
+			(got != mode || !found) {
+			t.Fatalf("colorFlagInArgs(%q) = %q, %v, want %q", args, got, found, mode)
+		}
+
+		// A --color at the end of before takes "x" as its value, not the "--".
+		head := append(slices.Clone(before), "x")
+		want, wantFound := colorFlagInArgs(head)
+
+		args = append(append(slices.Clone(head), "--"), tail...)
+		if got, found := colorFlagInArgs(args); got != want || found != wantFound {
+			t.Fatalf("colorFlagInArgs(%q) = %q, %v, want %q, %v as before the --", args, got, found, want, wantFound)
+		}
+	})
+}
+
+// The command error shows "Error:" in red only on a colored output; a buffer
+// is no terminal, so auto leaves it plain. A --color in args wins over the
+// setting, because cobra does not parse the flags of an unknown command.
+func TestPrintCommandError(t *testing.T) { //nolint:paralleltest // sets PHENIX_COLOR
+	tests := map[string]struct {
+		color string
+		args  []string
+		want  string
+	}{
+		"auto, not a terminal": {color: "", want: "Error: bad flag\n"},
+		"off":                  {color: "off", want: "Error: bad flag\n"},
+		"on":                   {color: "on", want: "\x1b[31mError:\x1b[0m bad flag\n"},
+		"refused mode as auto": {color: "sometimes", want: "Error: bad flag\n"},
+		"flag on, setting off": {color: "off", args: []string{"--color", "on", "nosuchcmd"}, want: "\x1b[31mError:\x1b[0m bad flag\n"},
+		"flag off, setting on": {color: "on", args: []string{"--color=off", "nosuchcmd"}, want: "Error: bad flag\n"},
+		"refused flag":         {color: "on", args: []string{"--color=yes"}, want: "\x1b[31mError:\x1b[0m bad flag\n"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("PHENIX_COLOR", tc.color)
+
+			var out bytes.Buffer
+
+			printCommandError(&out, tc.args, errors.New("bad flag"))
+
+			if got := out.String(); got != tc.want {
+				t.Errorf("printCommandError() wrote %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// colorMode reads the three modes, and auto when the setting is empty. It refuses any other value as auto, with an
+// error that names the options.
+func TestColorMode(t *testing.T) { //nolint:paralleltest // sets PHENIX_COLOR
+	tests := map[string]struct {
+		color   string
+		want    termcolor.Mode
+		wantErr bool
+	}{
+		"empty":      {color: "", want: termcolor.Auto},
+		"auto":       {color: "auto", want: termcolor.Auto},
+		"on":         {color: "on", want: termcolor.On},
+		"off":        {color: "off", want: termcolor.Off},
+		"capitals":   {color: "ON", want: termcolor.Auto, wantErr: true},
+		"yes":        {color: "yes", want: termcolor.Auto, wantErr: true},
+		"with space": {color: " on", want: termcolor.Auto, wantErr: true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("PHENIX_COLOR", tc.color)
+
+			got, err := colorMode()
+
+			switch {
+			case got != tc.want:
+				t.Errorf("colorMode() = %q, want %q", got, tc.want)
+			case tc.wantErr && (!errors.Is(err, termcolor.ErrUnknownMode) || !strings.Contains(err.Error(), colorOptions)):
+				t.Errorf("colorMode() error = %v, want an unknown mode that lists %q", err, colorOptions)
+			case !tc.wantErr && err != nil:
+				t.Errorf("colorMode() error = %v, want none", err)
+			}
+		})
+	}
+}
+
+// outputPalette colors only with --color on, or a refused --color as auto does, which leaves a buffer plain.
+func TestOutputPalette(t *testing.T) { //nolint:paralleltest // sets PHENIX_COLOR
+	tests := map[string]string{"on": "\x1b[31mx\x1b[0m", "off": "x", "auto": "x", "sometimes": "x"}
+
+	for color, want := range tests {
+		t.Run(color, func(t *testing.T) {
+			t.Setenv("PHENIX_COLOR", color)
+
+			var out bytes.Buffer
+
+			if got := outputPalette(&out).Red("x"); got != want {
+				t.Errorf("outputPalette().Red(x) = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// A config file warning has "warning:" in yellow only on a colored output,
+// and a --color flag in the args wins over PHENIX_COLOR.
+func TestConfigWarningf(t *testing.T) { //nolint:paralleltest // sets PHENIX_COLOR
+	const (
+		plain   = "phenix: warning: ignoring config file a.yaml\n"
+		colored = "phenix: \x1b[33mwarning:\x1b[0m ignoring config file a.yaml\n"
+	)
+
+	tests := map[string]struct {
+		env  string
+		args []string
+		want string
+	}{
+		"env off":           {env: "off", want: plain},
+		"env on":            {env: "on", want: colored},
+		"flag on, env off":  {env: "off", args: []string{"--color=on"}, want: colored},
+		"flag off, env on":  {env: "on", args: []string{"--color", "off"}, want: plain},
+		"bad flag, env off": {env: "off", args: []string{"--color=yes"}, want: plain},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("PHENIX_COLOR", tc.env)
+
+			var out bytes.Buffer
+
+			configWarningf(&out, tc.args, "ignoring config file %s", "a.yaml")
+
+			if got := out.String(); got != tc.want {
+				t.Errorf("configWarningf() wrote %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A colored console shows a workflow action as a plan tool shows a change;
+// every other handler sees the plain action.
+func TestActionAttr(t *testing.T) {
+	t.Parallel()
+
+	tests := map[workflow.Action]string{
+		workflow.ActionCreate:         "\x1b[2;32maction=\x1b[22mcreate\x1b[0m",
+		workflow.ActionCreateAndStart: "\x1b[2;32maction=\x1b[22mcreateAndStart\x1b[0m",
+		workflow.ActionUpdate:         "\x1b[2;33maction=\x1b[22mupdate\x1b[0m",
+		workflow.ActionUpdateAndStart: "\x1b[2;33maction=\x1b[22mupdateAndStart\x1b[0m",
+		workflow.ActionRestart:        "\x1b[2;33maction=\x1b[22mrestart\x1b[0m",
+		workflow.ActionNone:           "\x1b[2;90maction=\x1b[22mnone\x1b[0m",
+	}
+
+	for action, want := range tests {
+		t.Run(string(action), func(t *testing.T) {
+			t.Parallel()
+
+			var colored, plain bytes.Buffer
+
+			coloredLog := slog.New(tint.NewTextHandler(&colored, &tint.Options{NoColor: false}))
+			coloredLog.Info("plan", actionAttr(action))
+			slog.New(slog.NewTextHandler(&plain, nil)).Info("plan", actionAttr(action))
+
+			if got := colored.String(); !strings.Contains(got, want) {
+				t.Errorf("colored line %q lacks %q", got, want)
+			}
+
+			if diff := cmp.Diff("action="+string(action), strings.Fields(plain.String())[3]); diff != "" {
+				t.Errorf("plain attribute mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

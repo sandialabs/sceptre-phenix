@@ -152,17 +152,6 @@ async function selectionOf(page, tab) {
   return { count: Number(count), total: Number(total) };
 }
 
-// The checkboxes of a tab's cards: how many there are, and how many are
-// checked.
-async function checkboxesOf(page, tab) {
-  return page
-    .locator(`#panel-${tab} [data-testid^="card-select-"]`)
-    .evaluateAll((boxes) => ({
-      total: boxes.length,
-      checked: boxes.filter((box) => box.checked).length,
-    }));
-}
-
 // Has the page read its lists again, as it does when its window comes back
 // to the front, and waits for the drafts.
 async function relist(page) {
@@ -400,11 +389,6 @@ test('a draft publishes from its card on the drafts page, with the change the se
     await expect
       .soft(dialog.getByRole('button'))
       .toHaveText(['', 'Open draft', 'Cancel', 'Create topology']);
-    await expectAccessible(page, {
-      include: '[data-testid="builder-dialog"]',
-      soft: true,
-      label: 'Publish dialog on the drafts page',
-    });
   });
 
   await test.step('what the server lacks is not published, and the dialog says where to settle it', async () => {
@@ -542,8 +526,6 @@ test('a draft publishes from its card on the drafts page, with the change the se
     expect
       .soft(buttons.map((button) => button.id))
       .toEqual(['draft-open', 'published-delete']);
-    expectOneSize(buttons, 'published card');
-    expectOneAlignment(buttons, 'published card');
     await page.getByTestId('drafts-tab-drafts').click();
   });
 
@@ -698,11 +680,6 @@ test('Exp opens the experiment a diagram was published with, from its card and f
     await page.getByTestId('drafts-tab-published').hover();
     await exp.hover();
     await expect.soft(tooltip).toHaveText(expTip);
-    await expectAccessible(page, {
-      include: '[data-testid="drafts-list-published"]',
-      soft: true,
-      label: 'a published card with Exp',
-    });
   });
 
   await test.step('Exp on the card opens the experiment, in the same tab', async () => {
@@ -737,11 +714,6 @@ test('Exp opens the experiment a diagram was published with, from its card and f
       .toEqual({ before: 'toolbar-publish', last: true });
     await toolbarExp.focus();
     await expect.soft(page.getByTestId('toolbar-tooltip')).toHaveText(expTip);
-    await expectAccessible(page, {
-      include: '[role="toolbar"]',
-      soft: true,
-      label: 'the toolbar with Exp',
-    });
   });
 
   await test.step('Exp asks before it leaves changes that cannot be saved; Stay keeps the editor, and focus', async () => {
@@ -805,7 +777,9 @@ test('Exp opens the experiment a diagram was published with, from its card and f
   });
 });
 
-test('cards are selected one by one or all at once, by keyboard, and the selection outlives a change of tab and a new read of the lists', async ({
+// The selection rules are in test/builder/list-selection.contract.test.js,
+// drafts-tabs.test.js and drafts-render.test.js.
+test('cards are selected one by one or all at once, in the tab order and layout of the page, and a draft deleted elsewhere leaves the selection', async ({
   page,
   builder,
   issues,
@@ -818,7 +792,6 @@ test('cards are selected one by one or all at once, by keyboard, and the selecti
   );
 
   await builder.open();
-  const bar = page.getByTestId('bulk-bar-drafts');
   const all = page.getByTestId('bulk-all-drafts');
   const count = page.getByTestId('bulk-count-drafts');
   const remove = page.getByTestId('bulk-delete-drafts');
@@ -826,21 +799,14 @@ test('cards are selected one by one or all at once, by keyboard, and the selecti
   const card = cardOf(page, first.id);
   await expect(card).toBeVisible();
 
-  await test.step('the row above the cards comes before the cards in the tab order', async () => {
-    await expect(bar).toBeVisible();
-    const { count: selected, total } = await selectionOf(page, 'drafts');
-    expect(selected).toBe(0);
-    expect(total).toBe((await checkboxesOf(page, 'drafts')).total);
-
+  await test.step('the row above the cards comes before the cards in the tab order, and a checkbox is at its card’s top right', async () => {
     // With nothing selected, Delete selected does nothing.
     await expect(remove).toHaveAttribute('aria-disabled', 'true');
     await remove.focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
     await expect(remove).toBeFocused();
-    await expect(box).toHaveAccessibleName(
-      new RegExp(`^Select ${first.title}, updated .+$`),
-    );
+
     // The checkbox is at the card's top right, after the name, also on a
     // narrow screen.
     const viewport = page.viewportSize();
@@ -890,18 +856,12 @@ test('cards are selected one by one or all at once, by keyboard, and the selecti
     ]);
   });
 
-  await test.step('Select all checks every card, frames it, and says how many', async () => {
+  await test.step('Select all checks and frames every card; with one card unchecked it is mixed', async () => {
     await all.focus();
     await page.keyboard.press('Space');
     await expect(all).toBeChecked();
     const { total } = await selectionOf(page, 'drafts');
     await expect(count).toHaveText(`${total} of ${total} selected`);
-    expect(await checkboxesOf(page, 'drafts')).toEqual({
-      total,
-      checked: total,
-    });
-    expect(await all.evaluate((element) => element.indeterminate)).toBe(false);
-    await expect(builder).toHaveAnnounced(`${total} of ${total} selected.`);
     await expect(card).toHaveClass(/is-selected/);
     // The frame is the accent color, as the checked box is.
     expect(
@@ -916,55 +876,26 @@ test('cards are selected one by one or all at once, by keyboard, and the selecti
       }),
       'the selected card has the accent frame',
     ).toBe(true);
-    await expect(remove).not.toHaveAttribute('aria-disabled', 'true');
-  });
 
-  await test.step('with one card unchecked, Select all is mixed', async () => {
     await box.focus();
     await page.keyboard.press('Space');
     await expect(box).not.toBeChecked();
-    const { total } = await selectionOf(page, 'drafts');
     await expect(count).toHaveText(`${total - 1} of ${total} selected`);
-    expect(
-      await all.evaluate((element) => ({
-        indeterminate: element.indeterminate,
-        checked: element.checked,
-      })),
-    ).toEqual({ indeterminate: true, checked: false });
-    // Browsers tell assistive technology "mixed" from that property.
+    // Browsers tell assistive technology "mixed" from the indeterminate
+    // property.
     await expect(all).toBeChecked({ indeterminate: true });
-    await expect(builder).toHaveAnnounced(`${total - 1} of ${total} selected.`);
     await expect(card).not.toHaveClass(/is-selected/);
-
-    // Pressed while mixed it selects every card. Pressed again, none.
+    // Pressed while mixed it selects every card, and pressed again none.
     await all.click();
-    await expect(count).toHaveText(`${total} of ${total} selected`);
-    await expect(all).toBeChecked();
-    await expect(box).toBeChecked();
     await all.click();
     await expect(count).toHaveText(`0 of ${total} selected`);
-    await expect(all).not.toBeChecked();
-    expect(await all.evaluate((element) => element.indeterminate)).toBe(false);
-    expect((await checkboxesOf(page, 'drafts')).checked).toBe(0);
-    await expect(builder).toHaveAnnounced(`0 of ${total} selected.`);
-    await expect(remove).toHaveAttribute('aria-disabled', 'true');
   });
 
-  await test.step('the selection is kept through another tab and a new read of the lists, without what left them', async () => {
+  await test.step('a new read of the lists keeps the selection, without a draft deleted elsewhere', async () => {
     await box.check();
     await page.getByTestId(`card-select-${second.id}`).check();
     expect((await selectionOf(page, 'drafts')).count).toBe(2);
 
-    await page.getByTestId('drafts-tab-published').click();
-    await expect(card).toBeHidden();
-    await page.getByTestId('drafts-tab-drafts').click();
-    await expect(box).toBeChecked();
-
-    await relist(page);
-    await expect(box).toBeChecked();
-    expect((await selectionOf(page, 'drafts')).count).toBe(2);
-
-    // Deleted elsewhere: its card goes, and it is not selected any more.
     const current = await builder.request.get(draftPath(second));
     const gone = await builder.request.delete(draftPath(second), {
       headers: { 'If-Match': current.headers().etag },
@@ -981,7 +912,7 @@ test('cards are selected one by one or all at once, by keyboard, and the selecti
   expectNoFatal(issues);
 });
 
-test('the arrow keys, Space and Shift select cards, Delete asks about them, and Download selected saves a Builder file for each', async ({
+test('the arrow keys, Space, Shift and Mod+A select cards, Delete asks about them, and Download selected saves a Builder file for each', async ({
   page,
   builder,
   issues,
@@ -1039,9 +970,6 @@ test('the arrow keys, Space and Shift select cards, Delete asks about them, and 
     await page.getByTestId('bulk-delete-drafts').focus();
     await page.keyboard.press('Tab');
     await expect(card(0)).toBeFocused();
-    await expect(card(0)).toHaveAccessibleName(
-      `${drafts[0].title} not selected`,
-    );
     // The focused card has a focus ring.
     await expect(card(0)).toHaveCSS('outline-style', 'solid');
 
@@ -1054,51 +982,18 @@ test('the arrow keys, Space and Shift select cards, Delete asks about them, and 
     await expect(card(2)).toBeFocused();
     await page.keyboard.press('Home');
     await expect(card(0)).toBeFocused();
-
-    // The cards are one Tab stop: the card focus was last on, or on a
-    // control of.
-    await page.keyboard.press('ArrowRight');
-    await expect(card(1)).toHaveAttribute('tabindex', '0');
-    await expect(card(0)).toHaveAttribute('tabindex', '-1');
-    await page.getByTestId(`draft-open-${drafts[2].id}`).focus();
-    await expect(card(2)).toHaveAttribute('tabindex', '0');
-    await expect(card(1)).toHaveAttribute('tabindex', '-1');
-
-    // Shift+Tab from a card goes to the last control of the card before,
-    // which makes that card the stop, as Tab from the row above then finds.
-    await card(1).focus();
-    await page.keyboard.press('Shift+Tab');
-    await expect(card(0)).toHaveAttribute('tabindex', '0');
-    await expect(card(1)).toHaveAttribute('tabindex', '-1');
-    await page.getByTestId('bulk-delete-drafts').focus();
-    await page.keyboard.press('Tab');
-    await expect(card(0)).toBeFocused();
   });
 
-  await test.step('Space selects the focused card, Shift and an arrow key a range, and each change is said', async () => {
+  await test.step('Space selects the focused card, and Shift and an arrow key a range, which is said', async () => {
     await page.keyboard.press('Space');
     await expect(count).toHaveText('1 of 3 selected');
-    await expect(builder).toHaveAnnounced('1 of 3 selected.');
     await expect(box(0)).toBeChecked();
-    await expect(card(0)).toHaveAccessibleName(`${drafts[0].title} selected`);
-    await expect(card(0)).toHaveClass(/is-selected/);
 
     await page.keyboard.press('Shift+ArrowRight');
     await expect(card(1)).toBeFocused();
-    await expect(count).toHaveText('2 of 3 selected');
     await page.keyboard.press('Shift+ArrowRight');
     await expect(count).toHaveText('3 of 3 selected');
     await expect(builder).toHaveAnnounced('3 of 3 selected.');
-    for (const index of [0, 1, 2]) {
-      await expect(box(index)).toBeChecked();
-    }
-
-    // Back the other way, the range gives up what it took.
-    await page.keyboard.press('Shift+ArrowLeft');
-    await expect(count).toHaveText('2 of 3 selected');
-    await expect(box(2)).not.toBeChecked();
-    await page.keyboard.press('Shift+ArrowRight');
-    await expect(count).toHaveText('3 of 3 selected');
   });
 
   await test.step('Delete asks once about the selection, and Cancel deletes nothing', async () => {
@@ -1122,43 +1017,12 @@ test('the arrow keys, Space and Shift select cards, Delete asks about them, and 
     expect(deletes).toEqual([]);
   });
 
-  await test.step('Escape clears the selection, Mod+A selects every card, and Shift with Space or Home a range back', async () => {
+  await test.step('Escape clears the selection, and Mod+A selects every card', async () => {
     await card(2).focus();
     await page.keyboard.press('Escape');
     await expect(count).toHaveText('0 of 3 selected');
-    await expect(builder).toHaveAnnounced('0 of 3 selected.');
     await page.keyboard.press('ControlOrMeta+A');
     await expect(count).toHaveText('3 of 3 selected');
-
-    // With nothing pressed since Select all, a checkbox cleared with Shift
-    // clears its card alone, and stays cleared.
-    await box(1).click({ modifiers: ['Shift'] });
-    await expect(box(1)).not.toBeChecked();
-    await expect(count).toHaveText('2 of 3 selected');
-    await expect(box(0)).toBeChecked();
-    await expect(box(2)).toBeChecked();
-
-    await card(2).focus();
-    await page.keyboard.press('Escape');
-    await expect(count).toHaveText('0 of 3 selected');
-
-    // With nothing pressed since, Shift+Space selects the card alone, and
-    // Shift+Home the cards from it to the first.
-    await page.keyboard.press('Shift+Space');
-    await expect(count).toHaveText('1 of 3 selected');
-    await expect(box(2)).toBeChecked();
-    await page.keyboard.press('Shift+Home');
-    await expect(card(0)).toBeFocused();
-    await expect(count).toHaveText('3 of 3 selected');
-    await page.keyboard.press('Escape');
-    await expect(count).toHaveText('0 of 3 selected');
-
-    // A checkbox checked with Shift selects the range from the last pressed.
-    await box(0).click();
-    await box(2).click({ modifiers: ['Shift'] });
-    await expect(count).toHaveText('3 of 3 selected');
-    await expect(box(1)).toBeChecked();
-    await card(0).focus();
     await page.keyboard.press('Escape');
     await expect(count).toHaveText('0 of 3 selected');
   });
@@ -1171,8 +1035,6 @@ test('the arrow keys, Space and Shift select cards, Delete asks about them, and 
     await expect(count).toHaveText('2 of 3 selected');
 
     const download = page.getByTestId('bulk-download-drafts');
-    await expect(download).toHaveAccessibleDescription('2 of 3 selected');
-
     const files = [];
     page.on('download', (file) => files.push(file));
     await download.click();
@@ -1232,16 +1094,10 @@ test('Download selected on Published Diagrams saves a Builder file of each selec
   await page.getByTestId('drafts-tab-published').click();
   const download = page.getByTestId('bulk-download-published');
   const count = page.getByTestId('bulk-count-published');
-  await expect(page.getByTestId('bulk-bar-published')).not.toContainText(
-    'several downloads',
-  );
-  await expect(download).toHaveAttribute('aria-disabled', 'true');
-
   for (const { documentId } of published) {
     await page.getByTestId(`card-select-${documentId}`).check();
   }
   await expect(count).toHaveText(/^2 of \d+ selected$/);
-  await expect(download).not.toHaveAttribute('aria-disabled', 'true');
 
   // The files come in the order of the cards.
   const order = (
@@ -1279,6 +1135,8 @@ test('Download selected on Published Diagrams saves a Builder file of each selec
   expectNoFatal(issues);
 });
 
+// The messages and the summary are in drafts-tabs.test.js, bulk.test.js and
+// bulk-render.test.js. This test checks what the server does and the layout.
 test('Delete selected deletes the selected drafts or topologies after one question, and lists what it could not delete', async ({
   page,
   request,
@@ -1332,29 +1190,19 @@ test('Delete selected deletes the selected drafts or topologies after one questi
     }
   });
 
-  await test.step('one question names the drafts and how many, and Cancel deletes nothing', async () => {
+  await test.step('at 320 pixels wide the question fits a long name, and Cancel deletes nothing', async () => {
     for (const draft of [one, two, three]) {
       await select(draft).check();
     }
     await expect(count).toHaveText(/^3 of \d+ selected$/);
-    await expect(remove).toHaveAttribute('aria-haspopup', 'dialog');
 
     const confirm = await askDeleteSelected(page, 'drafts', 'Delete 3 drafts?');
-    const message = await confirm.locator('p').textContent();
-    for (const draft of [one, two, three]) {
-      expect(message).toContain(draft.title);
-    }
-    expect(message).toMatch(
-      / and .+\. The Builder removes the drafts and their whole histories from the server\. You cannot undo this\.$/,
-    );
     await expect(confirm.getByTestId('confirm-accept')).toHaveText(
       'Delete 3 drafts',
     );
-    // Focus starts on the button that keeps everything.
-    await expect(confirm.getByTestId('confirm-cancel')).toBeFocused();
 
-    // At 320 pixels wide the long name wraps inside the question, which
-    // does not scroll sideways (WCAG 1.4.10).
+    // The long name wraps inside the question, which does not scroll
+    // sideways (WCAG 1.4.10).
     const wide = page.viewportSize();
     await page.setViewportSize({ width: 320, height: 800 });
     const fit = await confirm.evaluate((element) => ({
@@ -1425,7 +1273,7 @@ test('Delete selected deletes the selected drafts or topologies after one questi
     await expect(page.getByTestId('builder-error')).toHaveCount(0);
   });
 
-  await test.step('a draft that could not be deleted is listed with why, in a summary that takes focus, and stays selected', async () => {
+  await test.step('a draft that could not be deleted is listed with why the server gave, in a summary that takes focus, and stays selected', async () => {
     const FAILING = `**${draftPath(five)}`;
     await page.route(FAILING, (route) =>
       route.request().method() === 'DELETE'
@@ -1435,38 +1283,17 @@ test('Delete selected deletes the selected drafts or topologies after one questi
     for (const draft of [four, five, six]) {
       await select(draft).check();
     }
-    await expect(count).toHaveText(/^3 of \d+ selected$/);
 
     const confirm = await askDeleteSelected(page, 'drafts', 'Delete 3 drafts?');
     await confirm.getByTestId('confirm-accept').click();
 
     const summary = page.getByTestId('bulk-summary');
-    await expect(summary).toBeVisible();
     await expect(summary).toBeFocused();
-    await expect(summary).toHaveRole('alert');
     await expect(summary).toHaveAccessibleName(
       '1 of 3 drafts could not be deleted. The other 2 were deleted.',
     );
     await expect(summary.getByRole('listitem')).toHaveText([
       new RegExp(`^${five.title}, updated .+: Boom\\.$`),
-    ]);
-    // It is between the row and the cards of the tab, under the filter, and
-    // the page alert is not used.
-    expect(
-      await page
-        .locator('#panel-drafts > *')
-        .evaluateAll((children) =>
-          children.map(
-            (child) =>
-              child.dataset.testid ??
-              child.querySelector(':scope > input')?.dataset.testid,
-          ),
-        ),
-    ).toEqual([
-      'drafts-filter-drafts',
-      'bulk-bar-drafts',
-      'bulk-summary',
-      'drafts-list-drafts',
     ]);
     await expect(page.getByTestId('builder-error')).toHaveCount(0);
     await expect(builder).not.toHaveAnnounced('Deleted 2 drafts.');
@@ -1477,11 +1304,6 @@ test('Delete selected deletes the selected drafts or topologies after one questi
     await expect(select(five)).toBeChecked();
     await expect(count).toHaveText(/^1 of \d+ selected$/);
     expect((await request.get(draftPath(five))).status()).toBe(200);
-
-    // Dismiss removes it, and focus moves to Select all.
-    await summary.getByTestId('bulk-summary-dismiss').click();
-    await expect(summary).toHaveCount(0);
-    await expect(page.getByTestId('bulk-all-drafts')).toBeFocused();
     await page.unroute(FAILING);
   });
 
@@ -1524,14 +1346,6 @@ test('Delete selected deletes the selected drafts or topologies after one questi
       'published',
       'Delete 2 topologies?',
     );
-    const message = await confirm.locator('p').textContent();
-    for (const name of topologies) {
-      expect(message).toContain(name);
-    }
-    expect(message).toMatch(
-      / and .+\. The Builder deletes the topologies from phēnix\. It does not change the drafts and experiments made from them\.$/,
-    );
-    await expect(confirm.getByTestId('confirm-cancel')).toBeFocused();
     await expect(confirm.getByTestId('confirm-accept')).toHaveText(
       'Delete 2 topologies',
     );
@@ -1570,28 +1384,22 @@ test(
         : route.fallback(),
     );
 
-    // Reduced motion measures every surface at its final colors.
-    await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
+    // Reduced motion measures every surface at its final colors. These
+    // surfaces are structural, so the dark theme alone is scanned.
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
     await builder.open();
+    await expect(page.locator('.builder-root')).toHaveAttribute(
+      'data-builder-theme',
+      'dark',
+    );
 
-    // Scans what is on screen in the light theme, then in the dark one.
     const scan = async (label, include) => {
-      for (const scheme of ['light', 'dark']) {
-        await page.emulateMedia({
-          colorScheme: scheme,
-          reducedMotion: 'reduce',
-        });
-        await expect(page.locator('.builder-root')).toHaveAttribute(
-          'data-builder-theme',
-          scheme,
-        );
-        await expectAccessible(page, {
-          include,
-          soft: true,
-          label: `axe on ${label} (${scheme})`,
-        });
-        await expectNoInvisibleText(page, include);
-      }
+      await expectAccessible(page, {
+        include,
+        soft: true,
+        label: `axe on ${label} (dark)`,
+      });
+      await expectNoInvisibleText(page, include);
     };
 
     await test.step('the question Delete selected asks', async () => {
@@ -1614,6 +1422,62 @@ test(
       const summary = page.getByTestId('bulk-summary');
       await expect(summary).toBeFocused();
       await scan('the drafts with a failure summary');
+    });
+  },
+);
+
+// The published card with Exp and its tooltip, and the toolbar with Exp.
+// They are structural, so the dark theme alone is scanned.
+test(
+  'axe finds no serious violations on a published card with Exp and its tooltip, and on the toolbar with Exp',
+  { tag: '@axe' },
+  async ({ page, builder, tracker }, testInfo) => {
+    test.setTimeout(150000);
+
+    const topology = uniqueName(testInfo, 'exp-axe-topo');
+    const experiment = uniqueName(testInfo, 'exp-axe');
+    const draft = await builder.seedDraft(labDocument(topology));
+    tracker.config('Topology', topology);
+    tracker.config('Experiment', experiment);
+    const published = await builder.request.post(
+      `${draftPath(draft)}/publish`,
+      {
+        headers: { 'If-Match': draft.etag },
+        data: {
+          mode: 'topology-experiment',
+          topology: { name: topology, action: 'create' },
+          experiment: { name: experiment, action: 'create' },
+        },
+      },
+    );
+    expect(published.status(), await published.text()).toBe(200);
+    expect((await published.json()).status).toBe('succeeded');
+    const id = await publishedId(builder.request, topology);
+
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+    await builder.open();
+    await expect(page.locator('.builder-root')).toHaveAttribute(
+      'data-builder-theme',
+      'dark',
+    );
+    await page.getByTestId('drafts-tab-published').click();
+    await page.getByTestId(`published-experiment-${id}`).hover();
+    await expect(page.getByTestId('drafts-tooltip')).toBeVisible();
+    await expectAccessible(page, {
+      include: '[data-testid="drafts-list-published"]',
+      soft: true,
+      label: 'axe on a published card with Exp and its tooltip (dark)',
+    });
+
+    await page.getByTestId('drafts-tab-drafts').click();
+    await page.getByTestId(`draft-open-${draft.id}`).click();
+    await expect(builder.canvas).toBeVisible();
+    await builder.toolbar('experiment').focus();
+    await expect(page.getByTestId('toolbar-tooltip')).toBeVisible();
+    await expectAccessible(page, {
+      include: '[role="toolbar"]',
+      soft: true,
+      label: 'axe on the toolbar with Exp (dark)',
     });
   },
 );

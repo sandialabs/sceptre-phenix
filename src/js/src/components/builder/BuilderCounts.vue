@@ -51,7 +51,7 @@
          list, whose text is the counts alone. -->
     <template v-for="entry in counts" :key="entry.key">
       <span v-if="entry.count > 0" :id="`count-tip-${entry.key}`" hidden>
-        {{ entry.tip }}
+        {{ entry.spoken ?? entry.tip }}
       </span>
     </template>
 
@@ -88,13 +88,18 @@
   };
 
   // The connections count while the connections are hidden: its tooltip
-  // says how to show them.
+  // says how to show them. `spoken` is that text for screen readers.
   const counts = computed(() =>
     diagramCounts(store.doc).map((entry) =>
       entry.key === 'links' &&
       entry.count > 0 &&
       builderSettings.showConnections === false
-        ? { ...entry, hidden: true, tip: connectionsHiddenText() }
+        ? {
+            ...entry,
+            hidden: true,
+            tip: connectionsHiddenText(),
+            spoken: connectionsHiddenText({ spoken: true }),
+          }
         : entry,
     ),
   );
@@ -119,7 +124,7 @@
   // says why. Hidden connections are not selected. Focus stays on the count.
   function press(entry) {
     if (entry.hidden) {
-      store.announce(entry.tip);
+      store.announce(entry.spoken);
       return;
     }
 

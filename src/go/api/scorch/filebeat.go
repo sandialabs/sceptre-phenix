@@ -65,6 +65,9 @@ func (m filebeatMetrics) Done() bool {
 	return true
 }
 
+// createFilebeatConfig merges the run's Filebeat config with the Scorch
+// settings and writes it to the run directory. A run with no config starts
+// from an empty one. It returns the number of Filebeat inputs.
 func createFilebeatConfig(
 	md scorchmd.ScorchMetadata,
 	expName string,
@@ -72,9 +75,14 @@ func createFilebeatConfig(
 	runDir string,
 	start time.Time,
 ) (int, error) {
-	inputs := mergeFilebeatConfig(md, expName, runID, runDir, start)
+	c := md.FilebeatConfig(runID)
+	if c == nil {
+		c = map[string]any{}
+	}
 
-	if err := writeFilebeatConfig(md, runID, runDir); err != nil {
+	inputs := mergeFilebeatConfig(c, md, expName, runID, runDir, start)
+
+	if err := writeFilebeatConfig(c, runDir); err != nil {
 		return inputs, fmt.Errorf("writing Filebeat config: %w", err)
 	}
 
@@ -83,17 +91,19 @@ func createFilebeatConfig(
 
 //nolint:funlen // complex logic
 func mergeFilebeatConfig(
+	c map[string]any,
 	md scorchmd.ScorchMetadata,
 	expName string,
 	runID int,
 	runDir string,
 	start time.Time,
 ) int {
-	c := md.FilebeatConfig(runID)
-
 	if md.UseExpNameAsIndexName(runID) { // force index name to be experiment name
 		if v, ok := c["output.elasticsearch"]; ok {
 			o, _ := v.(map[string]any)
+			if o == nil {
+				o = map[string]any{}
+			}
 
 			o["index"] = "experiment-" + expName
 			c["output.elasticsearch"] = o
@@ -103,6 +113,9 @@ func mergeFilebeatConfig(
 
 		if v, ok := c["setup"]; ok {
 			s, _ := v.(map[string]any)
+			if s == nil {
+				s = map[string]any{}
+			}
 
 			s["ilm.enabled"] = false
 			s["template.name"] = "filebeat"
@@ -255,7 +268,7 @@ func mergeFilebeatConfig(
 	return len(inputs)
 }
 
-func writeFilebeatConfig(md scorchmd.ScorchMetadata, runID int, runDir string) error {
+func writeFilebeatConfig(c map[string]any, runDir string) error {
 	_ = os.RemoveAll(runDir + "/filebeat")
 
 	var buf bytes.Buffer
@@ -263,7 +276,7 @@ func writeFilebeatConfig(md scorchmd.ScorchMetadata, runID int, runDir string) e
 	encoder := yaml.NewEncoder(&buf)
 	encoder.SetIndent(yamlIndent)
 
-	err := encoder.Encode(md.FilebeatConfig(runID))
+	err := encoder.Encode(c)
 	if err != nil {
 		return fmt.Errorf("marshaling Filebeat config: %w", err)
 	}

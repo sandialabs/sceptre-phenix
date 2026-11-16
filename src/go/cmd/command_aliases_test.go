@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Each alias finds the command it names under its parent command.
 func TestCommandAliases(t *testing.T) {
 	tests := []struct {
 		name        string

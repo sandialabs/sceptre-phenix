@@ -20,9 +20,8 @@ below](#complete-schemas).
 ## Topology Schema
 
 The `topology` schema is largely comprised of nodes, [described
-here](#node-schemas), and `nodes` is required. The schema does not check the
-`includeTopologies` key described in [Configuration
-Files](configuration.md#topology); phēnix reads it when it loads the topology.
+here](#node-schemas). A topology needs `nodes`, the `includeTopologies` key
+described in [Configuration Files](configuration.md#topology), or both.
 
 ```yaml
 --8<-- "src/go/types/version/schemas/v1.yaml:topology"

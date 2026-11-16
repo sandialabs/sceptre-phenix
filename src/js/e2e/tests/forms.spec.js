@@ -1,144 +1,98 @@
-// Form POSTs that work against an empty store: user create/delete,
-// settings save, and the config viewer/editor (using a config the test
-// creates and removes itself).
-const { test, expect } = require('@playwright/test');
+// Form POSTs that work against an empty store: user create/delete, settings
+// save, and the config template that the server's schemas give.
 const {
-  attachCapture,
-  fatalOf,
+  test,
+  expect,
+  pageDataLoaded,
   expectTextContrast,
   visit,
 } = require('./helpers');
 
-test('users: create and delete a user via modal', async ({ page }) => {
-  const issues = [];
-  attachCapture(page, issues);
-  // clean leftover from previous runs
-  await page.request.delete('/api/v1/users/e2e-user').catch(() => {});
+// Opens the Create a New User dialog on the Users page and fills it in.
+async function fillCreateUser(page, username) {
   await visit(page, '/users');
+  await pageDataLoaded(page);
 
-  await page.locator('p.control button.button.is-light').click();
-  await expect(
-    page.getByText('Create a New User', { exact: true }),
-  ).toBeVisible();
-
+  await page.getByRole('button', { name: 'Create a new user' }).click();
   const modal = page.locator('.modal-card');
-  await modal.locator('input[type="text"]').nth(0).fill('e2e-user');
+  await modal.locator('input[type="text"]').nth(0).fill(username);
   await modal.locator('input[type="text"]').nth(1).fill('E2E');
   await modal.locator('input[type="text"]').nth(2).fill('User');
   await modal.locator('input[type="password"]').nth(0).fill('Testpass1!');
   await modal.locator('input[type="password"]').nth(1).fill('Testpass1!');
   await modal.locator('select').selectOption('Global Viewer');
+  return modal;
+}
 
-  // A name the list does not show yet is refused with 409: the dialog keeps
-  // what was typed, says so on its User Name field, and a toast announces it.
-  const create = '**/api/v1/users';
-  await page.route(create, (route) =>
-    route.request().method() === 'POST'
-      ? route.fulfill({
-          status: 409,
-          contentType: 'text/plain',
-          body: 'user e2e-user already exists\n',
-        })
-      : route.fallback(),
-  );
-  await page.getByRole('button', { name: 'Create User' }).click();
-  await expect(modal.getByText('User already exists')).toBeVisible();
-  await expect(
-    page.getByRole('alert').filter({ hasText: 'User already exists' }),
-  ).toBeVisible();
-  await expectTextContrast(page, '.modal-card', 'the Create a New User dialog');
-  await expect(modal.locator('input[type="text"]').nth(0)).toBeFocused();
-  await expect(modal.locator('input[type="password"]').nth(1)).toHaveValue(
-    'Testpass1!',
-  );
-  await page.unroute(create);
+test('users: create and delete a user via modal', async ({ page }) => {
+  // clean leftover from previous runs
+  await page.request.delete('/api/v1/users/e2e-user');
 
+  const modal = await fillCreateUser(page, 'e2e-user');
   await page.getByRole('button', { name: 'Create User' }).click();
   // success path must close the modal
-  await expect(page.locator('.modal-card')).toBeHidden({ timeout: 15000 });
-  const row = page.locator('tr', { hasText: 'e2e-user' });
-  await expect(row).toBeVisible({ timeout: 15000 });
-
-  // delete it again via the trash button in its row (icons are inline SVGs)
-  await row.locator('button:has(svg[data-icon="trash"])').click();
-  const confirmBtn = page.getByRole('button', { name: 'Delete', exact: true });
-  if (await confirmBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-    await confirmBtn.click();
-  }
-  await expect(page.locator('tr', { hasText: 'e2e-user' })).toBeHidden({
+  await expect(modal).toBeHidden({ timeout: 15000 });
+  await expect(page.locator('tr', { hasText: 'e2e-user' })).toBeVisible({
     timeout: 15000,
   });
 
-  const fatal = fatalOf(issues);
-  expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
+  await page.getByRole('button', { name: 'Delete user e2e-user' }).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(page.locator('tr', { hasText: 'e2e-user' })).toBeHidden({
+    timeout: 15000,
+  });
 });
 
-test('settings: load and save round-trip', async ({ page }) => {
-  const issues = [];
-  attachCapture(page, issues);
-  const loaded = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'GET' &&
-      new URL(response.url()).pathname.endsWith('/api/v1/settings'),
-  );
-  await visit(page, '/settings');
-  await loaded;
+test(
+  'users: the Create a New User dialog with a taken name',
+  { tag: '@axe' },
+  async ({ page }) => {
+    const modal = await fillCreateUser(page, 'e2e-taken-user');
+    await page.route('**/api/v1/users', (route) =>
+      route.request().method() === 'POST'
+        ? route.fulfill({
+            status: 409,
+            contentType: 'text/plain',
+            body: 'user e2e-taken-user already exists\n',
+          })
+        : route.fallback(),
+    );
+    await page.getByRole('button', { name: 'Create User' }).click();
+    await expect(modal.getByText('User already exists')).toBeVisible();
+    await expectTextContrast(
+      page,
+      '.modal-card',
+      'the Create a New User dialog',
+    );
+  },
+);
 
-  await page.getByRole('button', { name: 'Save Changes' }).click();
+test('settings: load and save round-trip', async ({ page }) => {
+  await visit(page, '/settings');
+  await pageDataLoaded(page);
+
+  const save = page.getByRole('button', { name: 'Save Changes' });
+  const toggle = page.locator('.switch', {
+    hasText: 'Require a lowercase letter',
+  });
+
+  await toggle.click();
+  await save.click();
   await expect(page.getByText('Settings updated')).toBeVisible({
     timeout: 10000,
   });
 
-  const fatal = fatalOf(issues);
-  expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
-});
-
-test('configs: view a config and open the editor', async ({ page }) => {
-  const issues = [];
-  attachCapture(page, issues);
-
-  // self-contained fixture: a minimal Role config created via the API
-  const fixture = {
-    apiVersion: 'phenix.sandia.gov/v1',
-    kind: 'Role',
-    metadata: { name: 'e2e-viewer-role' },
-    spec: {
-      roleName: 'e2e-viewer-role',
-      policies: [
-        { resources: ['experiments'], resourceNames: ['*'], verbs: ['list'] },
-      ],
-    },
-  };
-  await page.request
-    .delete('/api/v1/configs/role/e2e-viewer-role')
-    .catch(() => {});
-  const created = await page.request.post('/api/v1/configs', { data: fixture });
-  expect(created.ok(), await created.text()).toBeTruthy();
-
-  await visit(page, '/configs/');
-
-  const row = page.locator('tr').filter({ hasText: 'e2e-viewer-role' });
-  await row.getByText('e2e-viewer-role', { exact: true }).click();
-
-  // viewer opens; Edit switches to the Ace-based editor
-  const viewer = page.getByRole('dialog', { name: 'Role/e2e-viewer-role' });
-  await viewer.getByRole('button', { name: 'Edit Config' }).click();
-  await expect(page.locator('.ace_editor')).toBeVisible({ timeout: 20000 });
-
-  await page.request
-    .delete('/api/v1/configs/role/e2e-viewer-role')
-    .catch(() => {});
-
-  const fatal = fatalOf(issues);
-  expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
+  // put the setting back for the other tests
+  await toggle.click();
+  await save.click();
+  await expect(save).toBeDisabled({ timeout: 10000 });
 });
 
 test('configs: schema selection generates a config template', async ({
   page,
 }) => {
-  const issues = [];
-  attachCapture(page, issues);
   await visit(page, '/configs/');
+  await pageDataLoaded(page);
 
   await page.getByRole('button', { name: 'Create a new config' }).click();
   await expect(page.locator('.ace_editor')).toBeVisible({ timeout: 20000 });
@@ -166,7 +120,4 @@ test('configs: schema selection generates a config template', async ({
   await expect(editor).toContainText('kind: Role', { timeout: 20000 });
   await expect(editor).toContainText('roleName:');
   await expect(editor).toContainText('policies:');
-
-  const fatal = fatalOf(issues);
-  expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
 });

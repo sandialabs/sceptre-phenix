@@ -19,5 +19,7 @@ func GetVersion(w http.ResponseWriter, r *http.Request) {
 	body, _ := json.Marshal(
 		Version{Commit: version.Commit, Tag: version.Tag, BuildDate: version.Date, Repo: version.Repo},
 	)
+
+	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
 }

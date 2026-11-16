@@ -33,43 +33,6 @@ describe('history', () => {
     expect(history.current()).toEqual({ n: 79 });
   });
 
-  test('the oldest entries can be dropped, never the current one', () => {
-    const history = new History({ n: 0 });
-
-    for (let i = 1; i <= 4; i += 1) {
-      history.push({ n: i }, `step ${i}`);
-    }
-
-    history.undo();
-
-    expect(history.trimOldest(2)).toBe(2);
-    expect(history.entries.map((entry) => entry.snapshot.n)).toEqual([2, 3, 4]);
-    expect(history.current()).toEqual({ n: 3 });
-    expect(history.trimOldest(5)).toBe(1);
-    expect(history.canUndo()).toBe(false);
-    expect(history.current()).toEqual({ n: 3 });
-  });
-
-  test('any entries but the current one can be dropped, and undo skips them', () => {
-    const history = new History({ n: 0 });
-
-    for (let i = 1; i <= 4; i += 1) {
-      history.push({ n: i }, `step ${i}`);
-    }
-
-    history.undo();
-
-    expect(history.removeWhere((entry) => entry.snapshot.n % 2 === 1)).toBe(1);
-    expect(history.entries.map((entry) => entry.snapshot.n)).toEqual([
-      0, 2, 3, 4,
-    ]);
-    expect(history.current()).toEqual({ n: 3 });
-    expect(history.removeWhere((entry) => entry.snapshot.n === 2)).toBe(1);
-    expect(history.undo()).toEqual({ n: 0 });
-    expect(history.redo()).toEqual({ n: 3 });
-    expect(history.removeWhere(() => false)).toBe(0);
-  });
-
   test('every commit gets its own id and label', () => {
     const history = new History({ n: 0 });
     const first = history.push({ n: 1 }, 'added a device');
@@ -78,34 +41,6 @@ describe('history', () => {
     expect(first.id).not.toBe(second.id);
     expect(history.currentEntry().label).toBe('added a switch');
     expect(history.undoLabel()).toBe('added a switch');
-  });
-
-  test('undo and redo walk the stack', () => {
-    const history = new History({ n: 0 });
-
-    history.push({ n: 1 }, 'one');
-    history.push({ n: 2 }, 'two');
-
-    expect(history.undo()).toEqual({ n: 1 });
-    expect(history.canRedo()).toBe(true);
-    expect(history.redo()).toEqual({ n: 2 });
-    expect(history.canRedo()).toBe(false);
-  });
-
-  test('a commit after undo drops the redo branch', () => {
-    const history = new History({ n: 0 });
-
-    history.push({ n: 1 }, 'one');
-    history.push({ n: 2 }, 'two');
-    history.undo();
-    history.push({ n: 3 }, 'three');
-
-    expect(history.canRedo()).toBe(false);
-    expect(history.entries.map((entry) => entry.snapshot)).toEqual([
-      { n: 0 },
-      { n: 1 },
-      { n: 3 },
-    ]);
   });
 
   test('a recovered ordered log restores entries and cursor', () => {

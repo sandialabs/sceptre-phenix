@@ -189,8 +189,6 @@ describe('a pattern', () => {
   // JavaScript takes time that grows fast with the count of these repeats
   // (unboundedRepeats in layerset.go refuses the same).
   test('refuses more than 3 of *, + and {n,}', () => {
-    expect(MAX_MATCHER_REPEATS).toBe(3);
-
     for (const pattern of [
       `${'a*'.repeat(12)}b`,
       'a*a*a*a*b',
@@ -215,47 +213,24 @@ describe('a pattern', () => {
     expect(matchedLayer({ hostname: `${'a'.repeat(63)}!` }, layers)).toBeNull();
   });
 
-  // The worst text for these patterns: a hostname of the most bytes the
-  // config schema allows (63), with no match at its end.
-  test('a pattern it accepts matches a long hostname quickly', () => {
-    const slowText = `${'a'.repeat(63)}!`;
-    // V8 compiles each new source, so each run is a first run. The least
-    // time leaves out pauses that the pattern does not cause.
-    const leastTime = (pattern) =>
-      Math.min(
-        ...[pattern, `(?:${pattern})`, `(?:(?:${pattern}))`].map((source) => {
-          const regex = new RegExp(source);
-          const start = performance.now();
-
-          regex.test(slowText);
-
-          return performance.now() - start;
-        }),
-      );
-    // Four repeats, one over the cap, set the bound, so a slow machine slows both.
-    const overCap = leastTime(`${'a*'.repeat(4)}b`);
-    const part = fc.constantFrom(
-      'a*',
-      'a+',
-      '.*',
-      '\\w*',
-      '[a-z]+',
-      'a{2,}',
-      'a*?',
-      'a',
-    );
+  // Each part but "a" is a repeat with no largest count.
+  test('accepts plain repeats up to the cap, and refuses one more', () => {
+    const unbounded = ['a*', 'a+', '.*', '\\w*', '[a-z]+', 'a{2,}', 'a*?'];
 
     fc.assert(
-      fc.property(fc.array(part, { minLength: 1, maxLength: 5 }), (parts) => {
-        const pattern = `${parts.join('')}b`;
+      fc.property(
+        fc.array(fc.constantFrom(...unbounded, 'a'), {
+          minLength: 1,
+          maxLength: 6,
+        }),
+        (parts) => {
+          const count = parts.filter((part) => part !== 'a').length;
 
-        if (matcherPatternRule(pattern) !== '') {
-          return;
-        }
-
-        expect(leastTime(pattern), pattern).toBeLessThan(0.4 * overCap);
-      }),
-      { numRuns: 25, endOnFailure: true },
+          expect(matcherPatternRule(`${parts.join('')}b`)).toBe(
+            count > MAX_MATCHER_REPEATS ? 'repeats' : '',
+          );
+        },
+      ),
     );
   });
 

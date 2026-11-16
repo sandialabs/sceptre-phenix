@@ -4,13 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"phenix/api/config"
 	"phenix/api/image"
+	"phenix/types"
 	v1 "phenix/types/version/v1"
 	"phenix/util"
 	"phenix/util/notes"
@@ -32,10 +36,55 @@ func newImageCmd() *cobra.Command {
 	return cmd
 }
 
+// imageListRow is one image configuration of phenix image list -o json or -o
+// yaml, with the values of the table and its optional columns.
+type imageListRow struct {
+	Name       string   `json:"name"       yaml:"name"`
+	Size       string   `json:"size"       yaml:"size"`
+	Variant    string   `json:"variant"    yaml:"variant"`
+	Release    string   `json:"release"    yaml:"release"`
+	Format     string   `json:"format"     yaml:"format"`
+	Compressed bool     `json:"compressed" yaml:"compressed"`
+	Mirror     string   `json:"mirror"     yaml:"mirror"`
+	Overlays   []string `json:"overlays"   yaml:"overlays"`
+	Packages   []string `json:"packages"   yaml:"packages"`
+	Scripts    []string `json:"scripts"    yaml:"scripts"`
+}
+
+// imageListRows returns the rows of imgs. Scripts holds the names of the
+// scripts, sorted, as the table shows them.
+func imageListRows(imgs []types.Image) []imageListRow {
+	rows := make([]imageListRow, 0, len(imgs))
+
+	for _, img := range imgs {
+		rows = append(rows, imageListRow{
+			Name:       img.Metadata.Name,
+			Size:       img.Spec.Size,
+			Variant:    img.Spec.Variant,
+			Release:    img.Spec.Release,
+			Format:     string(img.Spec.Format),
+			Compressed: img.Spec.Compress,
+			Mirror:     img.Spec.Mirror,
+			Overlays:   nonNil(img.Spec.Overlays),
+			Packages:   nonNil(img.Spec.Packages),
+			Scripts:    nonNil(slices.Sorted(maps.Keys(img.Spec.Scripts))),
+		})
+	}
+
+	return rows
+}
+
 func newImageListCmd() *cobra.Command {
+	var out *outputFlag
+
 	cmd := &cobra.Command{
 		Use:   commandList,
 		Short: "Table of image configurations",
+		Long: `Table of image configurations
+
+  -f, -c and -m add columns to the table. The JSON and YAML output always
+  have those values.`,
+		Args: argsWithUsage(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			imgs, err := image.List()
 			if err != nil {
@@ -46,31 +95,36 @@ func newImageListCmd() *cobra.Command {
 
 			var optional []string
 
-			if MustGetBool(cmd.Flags(), "format") {
+			if mustGet(cmd.Flags().GetBool, "format") {
 				optional = append(optional, "Format")
 			}
 
-			if MustGetBool(cmd.Flags(), "compressed") {
+			if mustGet(cmd.Flags().GetBool, "compressed") {
 				optional = append(optional, "Compressed")
 			}
 
-			if MustGetBool(cmd.Flags(), "mirror") {
+			if mustGet(cmd.Flags().GetBool, "mirror") {
 				optional = append(optional, "Mirror")
 			}
 
-			if len(imgs) == 0 {
-				fmt.Fprintln(os.Stdout, "\nThere are no image configurations available")
-			} else {
-				printer.PrintTableOfImageConfigs(os.Stdout, optional, imgs...)
-			}
+			return out.print(cmd, imageListRows(imgs), outputViews{
+				formatTable: func(w io.Writer) error {
+					if len(imgs) == 0 {
+						fmt.Fprintln(w, "\nThere are no image configurations available")
+					} else {
+						printer.PrintTableOfImageConfigs(w, optional, imgs...)
+					}
 
-			return nil
+					return nil
+				},
+			})
 		},
 	}
 
 	cmd.Flags().BoolP("format", "f", false, "Include disk image format")
 	cmd.Flags().BoolP("compressed", "c", false, "Include disk compression")
 	cmd.Flags().BoolP("mirror", "m", false, "Include debootstrap mirror")
+	out = addOutputFlag(cmd, formatTable, []string{formatTable, FormatJSON, FormatYAML})
 
 	return cmd
 }
@@ -80,12 +134,12 @@ func newImageCreateCmd() *cobra.Command {
 	desc := `Create a disk image configuration
 
   Used to create a virtual disk image configuration from which to build
-	an image.
+  an image.
 
-	When specifying the --size option, the following units can be used:
+  When specifying the --size option, the following units can be used:
 
-	M - Megabytes
-	G - Gigabytes`
+  M - Megabytes
+  G - Gigabytes`
 
 	example := `
   phenix image create <image name>
@@ -110,41 +164,38 @@ func newImageCreateCmd() *cobra.Command {
 			}
 
 			img.Name = args[0]
-			img.Size = MustGetString(cmd.Flags(), "size")
-			img.Variant = MustGetString(cmd.Flags(), "variant")
-			img.Release = MustGetString(cmd.Flags(), "release")
-			img.Mirror = MustGetString(cmd.Flags(), "mirror")
-			img.Format = v1.Format(MustGetString(cmd.Flags(), "format"))
-			img.Compress = MustGetBool(cmd.Flags(), "compress")
-			img.Ramdisk = MustGetBool(cmd.Flags(), "ramdisk")
-			img.NoVirtuals = MustGetBool(cmd.Flags(), "no-virtuals")
-			img.SkipDefaultPackages = MustGetBool(cmd.Flags(), "skip-default-pkgs")
+			img.Size = mustGet(cmd.Flags().GetString, "size")
+			img.Variant = mustGet(cmd.Flags().GetString, "variant")
+			img.Release = mustGet(cmd.Flags().GetString, "release")
+			img.Mirror = mustGet(cmd.Flags().GetString, "mirror")
+			img.Format = v1.Format(mustGet(cmd.Flags().GetString, "format"))
+			img.Compress = mustGet(cmd.Flags().GetBool, "compress")
+			img.Ramdisk = mustGet(cmd.Flags().GetBool, "ramdisk")
+			img.NoVirtuals = mustGet(cmd.Flags().GetBool, "no-virtuals")
+			img.SkipDefaultPackages = mustGet(cmd.Flags().GetBool, "skip-default-pkgs")
 
-			if overlays := MustGetString(cmd.Flags(), "overlays"); overlays != "" {
-				img.Overlays = strings.Split(overlays, ",")
+			if overlays := mustGet(cmd.Flags().GetString, "overlays"); overlays != "" {
+				img.Overlays = commaList(overlays)
 			}
 
-			if packages := MustGetString(cmd.Flags(), "packages"); packages != "" {
-				img.Packages = strings.Split(packages, ",")
+			if packages := mustGet(cmd.Flags().GetString, "packages"); packages != "" {
+				img.Packages = commaList(packages)
 			}
 
-			if components := MustGetString(cmd.Flags(), "components"); components != "" {
-				img.Components = strings.Split(components, ",")
+			if components := mustGet(cmd.Flags().GetString, "components"); components != "" {
+				img.Components = commaList(components)
 			}
 
-			if scripts := MustGetString(cmd.Flags(), "scripts"); scripts != "" {
-				img.ScriptPaths = strings.Split(scripts, ",")
+			if scripts := mustGet(cmd.Flags().GetString, "scripts"); scripts != "" {
+				img.ScriptPaths = commaList(scripts)
 			}
 
-			if kernel := MustGetString(cmd.Flags(), "kernel-args"); kernel != "" {
-				img.Kernel = strings.Split(kernel, ",")
+			if kernel := mustGet(cmd.Flags().GetString, "kernel-args"); kernel != "" {
+				img.Kernel = commaList(kernel)
 			}
 
-			units := img.Size[len(img.Size)-1:]
-			if units != "M" && units != "G" {
-				return errors.New(
-					"must provide a valid unit for disk size option (e.g., '500M' or '10G')",
-				)
+			if err := image.ValidateSize(img.Size); err != nil {
+				return fmt.Errorf("invalid --size %q: %w", img.Size, err)
 			}
 
 			err := image.Create(&img)
@@ -187,10 +238,20 @@ func newImageCreateCmd() *cobra.Command {
 			"kernel-args",
 			"k",
 			"",
-			"List of parameters which grub will pass to the Linux kernel (e.g. 'net.ifnames=0','consoleblank=0'); separated by comma)",
+			"List of parameters which grub will pass to the Linux kernel (e.g. 'net.ifnames=0','consoleblank=0'); separated by comma)."+
+				" Warning: each comma starts a new parameter, so a value with a comma, such as console=ttyS0,115200n8, is split, which can make the build fail.",
 		)
 
+	_ = cmd.RegisterFlagCompletionFunc("format", completeValues(
+		string(v1.FormatQcow2), string(v1.FormatRaw), string(v1.FormatVmdk), string(v1.FormatVdi), string(v1.FormatVhdx),
+	))
+
 	return cmd
+}
+
+// commaList is the items of a comma-separated flag value, with no space at their ends and no empty items.
+func commaList(value string) []string {
+	return normalizeVMFilterValues([]string{value})
 }
 
 func newImageCreateFromCmd() *cobra.Command {
@@ -200,9 +261,10 @@ func newImageCreateFromCmd() *cobra.Command {
   if options are used they will be added to the existing configuration.`
 
 	cmd := &cobra.Command{
-		Use:   "create-from <existing configuration> <new configuration>",
-		Short: "Create image configuration from existing one",
-		Long:  desc,
+		Use:               "create-from <existing configuration> <new configuration>",
+		Short:             "Create image configuration from existing one",
+		Long:              desc,
+		ValidArgsFunction: completeArgs(completeConfigNamesOf("Image")),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < createFromArgs {
 				return errors.New("the name of a existing and/or new configuration is required")
@@ -216,16 +278,16 @@ func newImageCreateFromCmd() *cobra.Command {
 				scripts  []string
 			)
 
-			if opt := MustGetString(cmd.Flags(), "overlays"); opt != "" {
-				overlays = strings.Split(opt, ",")
+			if opt := mustGet(cmd.Flags().GetString, "overlays"); opt != "" {
+				overlays = commaList(opt)
 			}
 
-			if opt := MustGetString(cmd.Flags(), "packages"); opt != "" {
-				packages = strings.Split(opt, ",")
+			if opt := mustGet(cmd.Flags().GetString, "packages"); opt != "" {
+				packages = commaList(opt)
 			}
 
-			if opt := MustGetString(cmd.Flags(), "scripts"); opt != "" {
-				scripts = strings.Split(opt, ",")
+			if opt := mustGet(cmd.Flags().GetString, "scripts"); opt != "" {
+				scripts = commaList(opt)
 			}
 
 			err := image.CreateFromConfig(name, saveas, overlays, packages, scripts)
@@ -269,10 +331,11 @@ func newImageEditCmd() *cobra.Command {
 	`
 
 	cmd := &cobra.Command{
-		Use:   "edit <image name>",
-		Short: "Edit an image",
-		Long:  desc,
-		Args:  cobra.ExactArgs(1),
+		Use:               "edit <image name>",
+		Short:             "Edit an image",
+		Long:              desc,
+		ValidArgsFunction: completeArgs(completeConfigNamesOf("Image")),
+		Args:              cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			img := "image/" + args[0]
 
@@ -309,10 +372,11 @@ func newImageBuildCmd() *cobra.Command {
   phenix image build --very-verbose --output </path/to/dir/>`
 
 	cmd := &cobra.Command{
-		Use:     "build <configuration name>",
-		Short:   "Build a virtual disk image",
-		Long:    desc,
-		Example: example,
+		Use:               "build <configuration name>",
+		Short:             "Build a virtual disk image",
+		Long:              desc,
+		Example:           example,
+		ValidArgsFunction: completeArgs(completeConfigNamesOf("Image")),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
 				return errors.New("the name of a configuration to build the disk image is required")
@@ -320,13 +384,13 @@ func newImageBuildCmd() *cobra.Command {
 
 			var (
 				name      = args[0]
-				cache     = MustGetBool(cmd.Flags(), "cache")
-				dryrun    = MustGetBool(cmd.Flags(), "dry-run")
+				cache     = mustGet(cmd.Flags().GetBool, "cache")
+				dryrun    = mustGet(cmd.Flags().GetBool, "dry-run")
 				output    string
 				verbosity int
 			)
 
-			if MustGetString(cmd.Flags(), "output") == "" {
+			if mustGet(cmd.Flags().GetString, "output") == "" {
 				cwd, err := os.Getwd()
 				if err != nil {
 					err := util.HumanizeError(err, "Unable to get the current working directory")
@@ -336,14 +400,14 @@ func newImageBuildCmd() *cobra.Command {
 
 				output = cwd
 			} else {
-				output = MustGetString(cmd.Flags(), "output")
+				output = mustGet(cmd.Flags().GetString, "output")
 			}
 
-			if MustGetBool(cmd.Flags(), "verbose") {
+			if mustGet(cmd.Flags().GetBool, "verbose") {
 				verbosity |= image.VVerbose
 			}
 
-			if MustGetBool(cmd.Flags(), "very-verbose") {
+			if mustGet(cmd.Flags().GetBool, "very-verbose") {
 				verbosity |= image.VVVerbose
 			}
 
@@ -372,36 +436,113 @@ func newImageBuildCmd() *cobra.Command {
 	cmd.Flags().BoolP("dry-run", "", false, "Do everything but actually call out to vmdb2")
 	cmd.Flags().
 		StringP("output", "o", "", "Specify the output directory for the disk image to be saved to")
+	_ = cmd.MarkFlagDirname("output")
 
 	return cmd
 }
 
 func newImageDeleteCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "delete <configuration name>",
-		Aliases: []string{deleteAlias},
-		Short:   "Delete an existing image configuration",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
+	desc := `Delete one or more image configurations
 
-			if name == "" {
+  When phenix cannot delete an image configuration, it continues with the
+  other ones. Then it exits with an error that names each failure.
+
+  A name can contain the wildcard *, which matches zero or more characters.
+  For example, cm-* selects each image configuration whose name starts with
+  "cm-", and * selects all of them. Put quotation marks around a pattern, so
+  that your shell does not expand it. Before phenix deletes the image
+  configurations that a pattern selects, it shows their names. Another
+  pattern that selects no image configuration is an error.
+
+  With --dry-run, phenix shows the image configurations that it would
+  delete, and deletes nothing.`
+
+	example := `
+  phenix image delete ubuntu
+  phenix image delete ubuntu kali-mini
+  phenix image delete 'cm-*'
+  phenix image delete 'cm-*' --dry-run`
+
+	var dry dryRun
+
+	cmd := &cobra.Command{
+		Use:     "delete <configuration name>...",
+		Aliases: []string{deleteAlias},
+		Short:   "Delete one or more image configurations",
+		Long:    desc,
+		Example: example,
+		Args:    cobra.MinimumNArgs(1),
+		// every argument is another image name
+		ValidArgsFunction: completePositional(completeConfigNamesOf("Image")),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if slices.Contains(args, "") {
 				return errors.New("the name of the configuration to delete is required")
 			}
 
-			err := config.Delete("image/" + name)
-			if err != nil {
-				err := util.HumanizeError(err, "%s", "Unable to delete the "+name+" image")
+			plan := newDeletePlan()
 
-				return err.Humanized()
+			for _, name := range args {
+				if isDeletePattern(name) {
+					plan.addPattern(name, commandImage, name, name == deleteWildcard)
+				} else {
+					plan.addExact(name, commandImage, name)
+				}
 			}
 
-			plog.Info(plog.TypeSystem, "image configuration deleted", "image", name)
+			failed := plan.failed
+			imageName := func(key string) string { return strings.TrimPrefix(key, commandImage+"/") }
+			item := func(key string) string { return "image " + imageName(key) }
+			deleted := func(key string) {
+				plog.Info(plog.TypeSystem, "image configuration deleted", "image", imageName(key))
+			}
 
-			return nil
+			for _, step := range plan.steps {
+				if step.key == "" {
+					names := make([]string, 0, len(step.matches))
+					for _, key := range step.matches {
+						names = append(names, imageName(key))
+					}
+
+					writeDeleteMatches(cmd.OutOrStdout(), "image configuration", step.arg, names)
+					failed = append(failed, deleteStepMatches(dry, step, item, deleted)...)
+
+					continue
+				}
+
+				if err := deleteImage(dry, step.arg); err != nil {
+					failed = append(failed, err)
+				}
+			}
+
+			return deleteFailures(failed, "images")
 		},
 	}
 
+	dry = addDryRunFlag(cmd)
+
 	return cmd
+}
+
+// deleteImage deletes the image configuration name, or shows the delete in a
+// dry run.
+func deleteImage(dry dryRun, name string) *util.HumanizedError {
+	if dry.enabled() {
+		if _, err := config.Get("image/" + name); err != nil {
+			return util.HumanizeError(err, "%s", "Unable to delete the "+name+" image")
+		}
+	}
+
+	if dry.skip("delete", "image "+name) {
+		return nil
+	}
+
+	if err := config.Delete("image/" + name); err != nil {
+		return util.HumanizeError(err, "%s", "Unable to delete the "+name+" image")
+	}
+
+	plog.Info(plog.TypeSystem, "image configuration deleted", "image", name)
+
+	return nil
 }
 
 func newImageAppendCmd() *cobra.Command {
@@ -411,9 +552,10 @@ func newImageAppendCmd() *cobra.Command {
   image configuration.`
 
 	cmd := &cobra.Command{
-		Use:   "append <configuration name>",
-		Short: "Append to an image configuration",
-		Long:  desc,
+		Use:               "append <configuration name>",
+		Short:             "Append to an image configuration",
+		Long:              desc,
+		ValidArgsFunction: completeArgs(completeConfigNamesOf("Image")),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
 				return errors.New("the name of a configuration to append to is required")
@@ -426,16 +568,16 @@ func newImageAppendCmd() *cobra.Command {
 				scripts  []string
 			)
 
-			if opt := MustGetString(cmd.Flags(), "overlays"); opt != "" {
-				overlays = strings.Split(opt, ",")
+			if opt := mustGet(cmd.Flags().GetString, "overlays"); opt != "" {
+				overlays = commaList(opt)
 			}
 
-			if opt := MustGetString(cmd.Flags(), "packages"); opt != "" {
-				packages = strings.Split(opt, ",")
+			if opt := mustGet(cmd.Flags().GetString, "packages"); opt != "" {
+				packages = commaList(opt)
 			}
 
-			if opt := MustGetString(cmd.Flags(), "scripts"); opt != "" {
-				scripts = strings.Split(opt, ",")
+			if opt := mustGet(cmd.Flags().GetString, "scripts"); opt != "" {
+				scripts = commaList(opt)
 			}
 
 			err := image.Append(name, overlays, packages, scripts)
@@ -468,9 +610,10 @@ func newImageRemoveCmd() *cobra.Command {
   image configuration`
 
 	cmd := &cobra.Command{
-		Use:   "remove <configuration name>",
-		Short: "Remove from an image configuration",
-		Long:  desc,
+		Use:               "remove <configuration name>",
+		Short:             "Remove from an image configuration",
+		Long:              desc,
+		ValidArgsFunction: completeArgs(completeConfigNamesOf("Image")),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
 				return errors.New("the name of a configuration to remove from is required")
@@ -478,9 +621,9 @@ func newImageRemoveCmd() *cobra.Command {
 
 			var (
 				name     = args[0]
-				overlays = strings.Split(MustGetString(cmd.Flags(), "overlays"), ",")
-				packages = strings.Split(MustGetString(cmd.Flags(), "packages"), ",")
-				scripts  = strings.Split(MustGetString(cmd.Flags(), "scripts"), ",")
+				overlays = commaList(mustGet(cmd.Flags().GetString, "overlays"))
+				packages = commaList(mustGet(cmd.Flags().GetString, "packages"))
+				scripts  = commaList(mustGet(cmd.Flags().GetString, "scripts"))
 			)
 
 			err := image.Remove(name, overlays, packages, scripts)
@@ -507,15 +650,22 @@ func newImageRemoveCmd() *cobra.Command {
 }
 
 func newImageUpdateCmd() *cobra.Command {
-	desc := `Update a script on an image configuration
+	desc := `Reread the scripts of an image configuration
 
-  Used to update scripts, packages, and/or overlays to an existing virtual disk
-  image configuration`
+  Reads again each script of an existing virtual disk image configuration from
+  its file on disk, and stores the new contents in the configuration. A script
+  that is a URL, or whose file is not on disk, keeps its stored contents. The
+  scripts keep their order.
+
+  Note: this command does not add or remove scripts, and does not change
+  packages or overlays. Use 'phenix image append' or 'phenix image remove' for
+  those.`
 
 	cmd := &cobra.Command{
-		Use:   "update <configuration name>",
-		Short: "Update a script on an image configuration",
-		Long:  desc,
+		Use:               "update <configuration name>",
+		Short:             "Reread the scripts of an image configuration from disk",
+		Long:              desc,
+		ValidArgsFunction: completeArgs(completeConfigNamesOf("Image")),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
 				return errors.New("the name of a configuration to update is required")
@@ -546,31 +696,31 @@ func newImageUpdateCmd() *cobra.Command {
 func newImageInjectMiniExeCmd() *cobra.Command {
 	desc := `Inject a minimega executable into a disk image
 
-	Used to add a minimega executable (miniccc, protonuke, or minirouter) and
-	relevant boot scripts into an existing disk image. The disk operating system
-	is guessed based on the provided agent's extension. When specifying the path
-	to the disk to modify, the partition to inject into can optionally be included
-	at the end of the path using a colon (for example, /phenix/images/foo.qc2:2).
-	If not specified, partition 1 will be assumed.
+  Used to add a minimega executable (miniccc, protonuke, or minirouter) and
+  relevant boot scripts into an existing disk image. The disk operating system
+  is guessed based on the provided agent's extension. When specifying the path
+  to the disk to modify, the partition to inject into can optionally be included
+  at the end of the path using a colon (for example, /phenix/images/foo.qc2:2).
+  If not specified, partition 1 will be assumed.
 
-	In a Windows disk image, the minimega executable will be injected into
-	C:\minimega\[miniccc,protonuke]. A scheduler command will be placed into the
-	Windows Startup directory for miniccc if '--init-system=startup' is provided,
-	but not for protonuke, since protonuke's command line arguments are dynamic.
-	Users or apps wishing to leverage protonuke on Windows hosts need to inject
-	their own scheduler command in the Windows Startup directory or use miniccc to
-	start protonuke.
+  In a Windows disk image, the minimega executable will be injected into
+  C:\minimega\[miniccc,protonuke]. A scheduler command will be placed into the
+  Windows Startup directory for miniccc if '--init-system=startup' is provided,
+  but not for protonuke, since protonuke's command line arguments are dynamic.
+  Users or apps wishing to leverage protonuke on Windows hosts need to inject
+  their own scheduler command in the Windows Startup directory or use miniccc to
+  start protonuke.
 
-	In a Linux disk image, the minimega executable will be injected into
-	/usr/local/bin and the service file and symlinks will be injected into the
-	appropriate locations, depending on which init system is being used. For
-	systemd, they will be injected into /etc/systemd/system, and for sysinitv they
-	will be injected into /etc/init.d and /etc/rc5.d. The protonuke service will
-	only start if a file is present at /etc/default/protonuke, and that file
-	should contain a single line setting the PROTONUKE_ARGS variable to a set of
-	protonuke command line arguments. The minirouter service expects the miniccc
-	service to be injected, and injecting minirouter will automatically cause
-	miniccc to be injected as well.`
+  In a Linux disk image, the minimega executable will be injected into
+  /usr/local/bin and the service file and symlinks will be injected into the
+  appropriate locations, depending on which init system is being used. For
+  systemd, they will be injected into /etc/systemd/system, and for sysinitv they
+  will be injected into /etc/init.d and /etc/rc5.d. The protonuke service will
+  only start if a file is present at /etc/default/protonuke, and that file
+  should contain a single line setting the PROTONUKE_ARGS variable to a set of
+  protonuke command line arguments. The minirouter service expects the miniccc
+  service to be injected, and injecting minirouter will automatically cause
+  miniccc to be injected as well.`
 
 	cmd := &cobra.Command{
 		Use:   "inject-miniexe <path to exe> <path to disk>",
@@ -584,7 +734,7 @@ func newImageInjectMiniExeCmd() *cobra.Command {
 			var (
 				exe  = args[0]
 				disk = args[1]
-				init = MustGetString(cmd.Flags(), "init-system")
+				init = mustGet(cmd.Flags().GetString, "init-system")
 			)
 
 			err := image.InjectMiniExe(exe, disk, init)
@@ -604,6 +754,8 @@ func newImageInjectMiniExeCmd() *cobra.Command {
 
 	cmd.Flags().
 		String("init-system", "systemd", "Linux init system to generate boot scripts for (Linux: systemd, sysinitv; Windows: startup)")
+
+	_ = cmd.RegisterFlagCompletionFunc("init-system", completeValues("systemd", "sysinitv", "startup"))
 
 	return cmd
 }

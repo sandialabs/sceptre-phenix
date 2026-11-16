@@ -30,6 +30,11 @@ func TestSudoRanPhenix(t *testing.T) {
 			want:        false,
 		},
 		{
+			name:        "blank SUDO_COMMAND",
+			sudoCommand: "  ",
+			want:        false,
+		},
+		{
 			name:        "sudo ran phenix directly",
 			sudoCommand: "/usr/local/bin/phenix config list",
 			want:        true,

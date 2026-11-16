@@ -18,6 +18,8 @@
       <builder-icon :name="data.iconKey" :size="16" />
       <span class="builder-node__label">{{ title }}</span>
     </div>
+    <!-- Keeps the heading and the text apart as words (see DeviceNode). -->
+    {{ ' ' }}
     <p class="builder-node__text">{{ text }}</p>
     <node-issue-mark v-if="data.issue" :node-id="id" :issue="data.issue" />
     <node-resize :id="id" :node="data.node" :selected="selected" />
@@ -32,6 +34,7 @@
   import NodeResize from './NodeResize.vue';
 
   import { drawnColor } from '@/builder/colors.js';
+  import { NOTE_PLACEHOLDER, noteHeading } from '@/builder/diagramText.js';
 
   // Vue Flow also passes its node state as attributes. None of them belong
   // on the node's element.
@@ -43,14 +46,10 @@
     selected: { type: Boolean, default: false },
   });
 
-  const text = computed(
-    () =>
-      props.data.node.note?.text ||
-      'Select the note and use the Inspector to add text.',
-  );
+  const text = computed(() => props.data.node.note?.text || NOTE_PLACEHOLDER);
   // A note is named after its first line (model.nodeLabel), which the text
   // below already shows. The header thus names the kind, or the label the
   // note was given.
-  const title = computed(() => props.data.node.label || 'Note');
+  const title = computed(() => noteHeading(props.data.node));
   const accent = computed(() => drawnColor(props.data.node.note?.color));
 </script>

@@ -1,3 +1,4 @@
+// @vitest-environment node
 // BuilderIcon, a custom icon on a canvas node, and the Custom icons dialog,
 // given a library of the test's own. The dialog's requests are e2e only.
 
@@ -504,8 +505,8 @@ describe('the Custom icons dialog', () => {
       html.indexOf('data-testid="icon-library-heading"'),
     );
 
-    expect(copies).toContain('aria-label="Add aaa to the server"');
-    expect(copies).toContain('aria-label="Add plc to the server"');
+    expect(copies).toContain('aria-label="Add to server: aaa"');
+    expect(copies).toContain('aria-label="Add to server: plc"');
   });
 
   test('once the library is read, a copy it lacks can be selected, and the copies have a row of their own', async () => {
@@ -584,7 +585,7 @@ describe('the Custom icons dialog', () => {
     expect(textOf(html)).toContain(
       'HMI 1 × 1 pixels, 0.1 KiB Use On the server',
     );
-    expect(html).not.toContain('Add HMI to the server');
+    expect(html).not.toContain('Add to server: HMI');
   });
 
   test('a diagram without copies has no list of them', async () => {

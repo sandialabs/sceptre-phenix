@@ -91,7 +91,7 @@
           class="builder-command-palette__option"
           :aria-selected="String(item === activeItem)"
           :aria-disabled="item.disabled ? 'true' : undefined"
-          :aria-labelledby="`${optionId(item)}-title`"
+          :aria-label="optionName(item)"
           :aria-describedby="describedBy(item)"
           :data-key="item.key"
           @click="choose(item, { additive: $event.shiftKey })">
@@ -106,9 +106,7 @@
             data-testid="command-palette-layer" />
           <builder-icon v-else :name="item.icon" :size="16" />
           <span class="builder-command-palette__text">
-            <span
-              :id="`${optionId(item)}-title`"
-              class="builder-command-palette__title">
+            <span class="builder-command-palette__title">
               <template
                 v-for="(part, index) in highlightParts(item.title, item.ranges)"
                 :key="index">
@@ -116,9 +114,11 @@
                 <template v-else>{{ part.text }}</template>
               </template>
             </span>
+            <!-- Each {{ ' ' }} keeps two texts apart as words for screen
+                 readers and axe-core. The flex layout does not draw it. -->
+            {{ ' ' }}
             <span
               v-if="item.disabled || item.detail || item.field"
-              :id="`${optionId(item)}-detail`"
               class="builder-command-palette__detail">
               <template v-if="item.disabled">
                 <strong class="builder-command-palette__off">
@@ -136,12 +136,14 @@
               </template>
             </span>
           </span>
+          {{ ' ' }}
           <template v-if="item.keys.length">
             <builder-keycaps :spec="item.keys[0]" />
             <span :id="`${optionId(item)}-keys`" hidden>
               {{ spokenKey(item.keys[0]) }}
             </span>
           </template>
+          {{ ' ' }}
           <span
             v-if="item.next || item.hint"
             class="builder-command-palette__next"
@@ -224,7 +226,12 @@
   } from '@/builder/commandSearch.js';
   import { highlightParts } from '@/builder/fuzzy.js';
   import { iconLibrary } from '@/builder/iconLibrary.js';
-  import { matchesKey, spokenKey, typesCharacter } from '@/builder/keymap.js';
+  import {
+    keyLabel,
+    matchesKey,
+    spokenKey,
+    typesCharacter,
+  } from '@/builder/keymap.js';
   import { hasLayerLook } from '@/builder/layerLook.js';
   import { readRecent, rememberCommand } from '@/builder/recent.js';
   import { pressSelection } from '@/builder/selection.js';
@@ -296,17 +303,32 @@
     return hasLayerLook(layer, props.context.store.doc?.icons, iconLibrary);
   }
 
-  function describedBy(item) {
-    const id = optionId(item);
+  // An option's name is what it shows, in its order (WCAG 2.5.3): the title,
+  // the detail, the key caps and a hint that has letters, such as "t:".
+  function optionName(item) {
+    const detail = item.disabled
+      ? `Unavailable: ${item.disabled}`
+      : detailParts(item)
+          .map((part) => part.text)
+          .join('');
 
-    return (
-      [
-        (item.disabled || item.detail || item.field) && `${id}-detail`,
-        item.keys.length && `${id}-keys`,
-      ]
-        .filter(Boolean)
-        .join(' ') || undefined
-    );
+    return [
+      item.title,
+      detail,
+      item.keys.length ? keyLabel(item.keys[0]) : '',
+      /[\p{L}\p{N}]/u.test(item.hint) ? item.hint : '',
+    ]
+      .filter(Boolean)
+      .join(', ');
+  }
+
+  // The keys in words, where the caps are symbols or short forms.
+  function describedBy(item) {
+    const [spec] = item.keys;
+
+    return spec && spokenKey(spec) !== keyLabel(spec)
+      ? `${optionId(item)}-keys`
+      : undefined;
   }
 
   // --- what the field and the lines around it say -----------------------------

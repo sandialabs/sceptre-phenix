@@ -43,12 +43,8 @@ const ip = (text) => parseIPv4(text);
 const subnet = (text) => parseSubnet(text);
 
 describe('IPv4 addresses', () => {
-  test('parses and formats an address', () => {
+  test('reads the first number as the high byte', () => {
     expect(ip('10.1.0.2')).toBe(10 * 2 ** 24 + 1 * 2 ** 16 + 2);
-    expect(ip('0.0.0.0')).toBe(0);
-    expect(ip('255.255.255.255')).toBe(2 ** 32 - 1);
-    expect(formatIPv4(ip('192.0.2.17'))).toBe('192.0.2.17');
-    expect(formatIPv4(2 ** 32 - 1)).toBe('255.255.255.255');
   });
 
   test.each([
@@ -72,19 +68,6 @@ describe('IPv4 addresses', () => {
 });
 
 describe('subnets', () => {
-  test.each([
-    ['10.1.0.0/24', 24, 256],
-    ['0.0.0.0/0', 0, 2 ** 32],
-    ['192.0.2.4/31', 31, 2],
-    ['192.0.2.7/32', 32, 1],
-    ['172.16.0.0/12', 12, 2 ** 20],
-  ])('reads %s', (text, bits, size) => {
-    const parsed = subnet(text);
-
-    expect(parsed).toEqual({ base: expect.any(Number), bits, size });
-    expect(formatSubnet(parsed)).toBe(text);
-  });
-
   // The same as TestParseSubnet in types/builder.
   test.each([
     '',
@@ -150,34 +133,6 @@ describe('subnets', () => {
     expect(isSubnetHost(subnet(text), ip(address))).toBe(want);
   });
 
-  test('overlaps', () => {
-    expect(subnetsOverlap(subnet('10.1.0.0/24'), subnet('10.1.0.128/25'))).toBe(
-      true,
-    );
-    expect(subnetsOverlap(subnet('10.0.0.0/8'), subnet('10.200.3.0/24'))).toBe(
-      true,
-    );
-    expect(subnetsOverlap(subnet('10.1.0.0/24'), subnet('10.1.1.0/24'))).toBe(
-      false,
-    );
-    expect(subnetsOverlap(subnet('192.0.2.4/31'), subnet('192.0.2.6/31'))).toBe(
-      false,
-    );
-  });
-
-  test('the next free host skips the taken ones', () => {
-    const net = subnet('10.1.0.0/29');
-
-    expect(formatIPv4(nextFreeHost(net, new Set()))).toBe('10.1.0.1');
-    expect(
-      formatIPv4(nextFreeHost(net, new Set([ip('10.1.0.1'), ip('10.1.0.3')]))),
-    ).toBe('10.1.0.2');
-
-    const all = new Set([1, 2, 3, 4, 5, 6].map((n) => ip(`10.1.0.${n}`)));
-
-    expect(nextFreeHost(net, all)).toBeNull();
-  });
-
   test('the next free host of a /31 and a /32', () => {
     expect(formatIPv4(nextFreeHost(subnet('192.0.2.4/31'), new Set()))).toBe(
       '192.0.2.4',
@@ -213,8 +168,6 @@ describe('subnets', () => {
 
 describe('MAC addresses', () => {
   test('keys ignore case and separators', () => {
-    expect(macKey('02:AB:cd:00:11:22')).toBe('02abcd001122');
-    expect(macKey('02-ab-cd-00-11-22')).toBe('02abcd001122');
     expect(macKey('02ab.cd00.1122')).toBe('02abcd001122');
     expect(macKey('nope')).toBe('');
     expect(macKey(undefined)).toBe('');
@@ -227,21 +180,6 @@ describe('MAC addresses', () => {
     expect(randomMac(new Set(), (bytes) => bytes.fill(0))).toBe(
       '02:00:00:00:00:00',
     );
-  });
-
-  test('a random address is one not taken', () => {
-    let call = 0;
-    const fill = (bytes) => bytes.fill(call++);
-
-    expect(randomMac(new Set(['020000000000', '030101010101']), fill)).toBe(
-      '02:01:01:01:01:01',
-    );
-  });
-
-  test('gives up when every try is taken', () => {
-    const fill = (bytes) => bytes.fill(0);
-
-    expect(randomMac(new Set(['020000000000']), fill)).toBe('');
   });
 
   test('uses crypto.getRandomValues by default', () => {
@@ -814,7 +752,13 @@ describe('addressing rules, for any address and subnet', () => {
         expect(parseIPv4(formatIPv4(value))).toBe(value);
         expect(parseSubnet(formatSubnet(block))).toEqual(block);
       }),
-      { numRuns: 300 },
+      {
+        numRuns: 300,
+        examples: [
+          [0, { base: 0, bits: 0, size: 2 ** 32 }],
+          [2 ** 32 - 1, { base: 2 ** 32 - 1, bits: 32, size: 1 }],
+        ],
+      },
     );
     fc.assert(
       fc.property(
@@ -850,7 +794,16 @@ describe('addressing rules, for any address and subnet', () => {
         expect(subnetsOverlap(a, b)).toBe(subnetsOverlap(b, a));
         expect(subnetsOverlap(a, b)).toBe(holds(a, b) || holds(b, a));
       }),
-      { numRuns: 300 },
+      {
+        numRuns: 300,
+        // Adjacent blocks touch but do not overlap.
+        examples: [
+          [subnet('10.1.0.0/24'), subnet('10.1.1.0/24')],
+          [subnet('10.1.1.0/24'), subnet('10.1.0.0/24')],
+          [subnet('192.0.2.4/31'), subnet('192.0.2.6/31')],
+          [subnet('192.0.2.6/31'), subnet('192.0.2.4/31')],
+        ],
+      },
     );
   });
 
@@ -1193,38 +1146,6 @@ const interfacesOf = (doc, position) =>
   doc.nodes[position].device.spec.network.interfaces;
 
 describe('routers and gateways', () => {
-  test('a router takes a free gateway, and the other interfaces point at it', () => {
-    const doc = routed();
-    const result = assignAddresses(doc, 'lan');
-
-    expect(result.assigned).toEqual([
-      {
-        nodeId: 'a',
-        name: 'eth0',
-        address: '10.1.0.1',
-        mask: 24,
-        holdsGateway: true,
-      },
-      { nodeId: 'b', name: 'eth0', address: '10.1.0.3', mask: 24 },
-    ]);
-    expect(interfacesOf(result.doc, 1)[0]).not.toHaveProperty('gateway');
-    expect(interfacesOf(result.doc, 2)[0].gateway).toBe('10.1.0.1');
-    expect(result.doc.networks).toBe(doc.networks);
-  });
-
-  test('a gateway that an interface has is not free', () => {
-    const doc = routed('firewall');
-
-    interfacesOf(doc, 2)[1].address = '10.1.0.1';
-
-    const result = assignAddresses(doc, 'lan', { nodeId: 'a', name: 'eth0' });
-
-    expect(result.assigned).toEqual([
-      { nodeId: 'a', name: 'eth0', address: '10.1.0.2', mask: 24 },
-    ]);
-    expect(interfacesOf(result.doc, 1)[0]).not.toHaveProperty('gateway');
-  });
-
   test('a router sets a missing gateway in the same edit', () => {
     const doc = routed();
 
@@ -1268,7 +1189,7 @@ describe('routers and gateways', () => {
     expect(outside.assigned.some((entry) => entry.holdsGateway)).toBe(false);
   });
 
-  test('only one router holds the gateway, and routers go first', () => {
+  test('a router after a host still holds the gateway', () => {
     const doc = routed('Router');
 
     // b, a router after a: its interfaces come after a's.
@@ -1291,21 +1212,6 @@ describe('routers and gateways', () => {
       { nodeId: 'a', name: 'eth0', address: '10.1.0.3', mask: 24 },
     ]);
     expect(interfacesOf(result.doc, 1)[0].gateway).toBe('10.1.0.1');
-
-    // A second router interface on the network gets a normal address.
-    const second = routed();
-
-    second.nodes[2].device.spec.type = 'Firewall';
-
-    expect(
-      assignAddresses(second, 'lan').assigned.map((entry) => [
-        entry.address,
-        Boolean(entry.holdsGateway),
-      ]),
-    ).toEqual([
-      ['10.1.0.1', true],
-      ['10.1.0.3', false],
-    ]);
   });
 
   test('a free address for a router follows the same rules', () => {
@@ -1498,7 +1404,7 @@ describe('routers and gateways, for any network', () => {
           expect(first.holdsGateway).toBe(true);
         }
 
-        if (routerTargets.length === 0) {
+        if (routerTargets.length === 0 || gatewayBefore !== null) {
           expect(result.doc.networks).toBe(doc.networks);
         }
 

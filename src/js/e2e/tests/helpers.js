@@ -1,5 +1,5 @@
 // Shared helpers for the phenix UI smoke tests.
-const { test, expect } = require('@playwright/test');
+const base = require('@playwright/test');
 const AxeBuilder = require('@axe-core/playwright').default;
 
 // Attach console/network/pageerror capture to a page; findings pushed into `issues`.
@@ -57,14 +57,97 @@ function fatalOf(issues) {
   });
 }
 
-// The first page load of a fresh session redirects to home (store.login()
-// runs before store.next is set — long-standing behavior, predates Vue 3).
-// Seed the session at '/', then navigate to the real target.
+// Opens '/' first and then `path`, as a11y-seeded.spec.js expects.
 async function gotoSeeded(page, path) {
   await page.goto('/');
   await settle(page, 800);
   await page.goto(path);
 }
+
+// Playwright's `test` with the page's findings captured into `issues`; the
+// test fails on any fatal one (see fatalOf) once its body has run.
+const test = base.test.extend({
+  issues: [
+    async ({ page }, use) => {
+      const issues = [];
+      attachCapture(page, issues);
+      await use(issues);
+
+      const fatal = fatalOf(issues);
+      base.expect(fatal, JSON.stringify(fatal, null, 2)).toHaveLength(0);
+    },
+    { auto: true },
+  ],
+});
+
+// Resolves once the page on screen has loaded its data, which the name of the
+// header's refresh button reports.
+async function pageDataLoaded(page) {
+  await base
+    .expect(
+      page.getByRole('button', {
+        name: /^Refresh this page's data, updated just now/,
+      }),
+    )
+    .toBeVisible();
+}
+
+// expectNoAxeViolations, by the name that most specs use.
+const expectAccessible = (page, name) => expectNoAxeViolations(page, name);
+
+// A Role config that may list experiments, for tests that need a config of
+// their own.
+const roleConfig = (name) => ({
+  apiVersion: 'phenix.sandia.gov/v1',
+  kind: 'Role',
+  metadata: { name },
+  spec: {
+    roleName: name,
+    policies: [
+      { resources: ['experiments'], resourceNames: ['*'], verbs: ['list'] },
+    ],
+  },
+});
+
+// Deletes a config through the REST API; a config that isn't there is fine.
+const deleteConfig = (request, config) =>
+  request.delete(
+    `/api/v1/configs/${config.kind.toLowerCase()}/${config.metadata.name}`,
+  );
+
+// Creates a config through the REST API, replacing one an earlier run left.
+async function createConfig(request, config) {
+  await deleteConfig(request, config);
+  const created = await request.post('/api/v1/configs', { data: config });
+  base.expect(created.ok(), await created.text()).toBe(true);
+}
+
+// A disk as the server's disk list returns it; one with no relativePath is
+// outside the minimega files directory.
+const diskImage = (fullPath, relativePath, overrides = {}) => ({
+  kind: 'VM',
+  name: fullPath.split('/').pop(),
+  fullPath,
+  relativePath,
+  outsideFilesDir: !relativePath,
+  readOnly: !relativePath,
+  size: '1.0 MiB',
+  virtualSize: '10 GiB',
+  experiments: [],
+  backingImages: [],
+  inUse: false,
+  ...overrides,
+});
+
+// Answers the page's disk list requests (GET /api/v1/disks, any query) with `disks`.
+const standInDisks = (page, disks) =>
+  page.route(
+    (url) => url.pathname.endsWith('/api/v1/disks'),
+    (route) =>
+      route.request().method() === 'GET'
+        ? route.fulfill({ json: { disks } })
+        : route.continue(),
+  );
 
 // Opens a route once the app has mounted, loading it again if the first load
 // redirected elsewhere.
@@ -106,7 +189,7 @@ async function expectTextContrast(page, selector, label) {
         `${node.target.join(' ')}: ${node.any.map((check) => check.message).join('; ')}`,
     ),
   );
-  expect(failures, `text contrast in ${label}`).toEqual([]);
+  base.expect(failures, `text contrast in ${label}`).toEqual([]);
 }
 
 // axe-core rule tags that every scan runs. axe-core has no wcag21aaa or
@@ -133,7 +216,7 @@ async function expectNoAxeViolations(page, label) {
   } finally {
     await page.emulateMedia({ reducedMotion: null });
   }
-  await test.info().attach(`axe-${label}`, {
+  await base.test.info().attach(`axe-${label}`, {
     body: JSON.stringify(
       { violations: results.violations, incomplete: results.incomplete },
       null,
@@ -141,10 +224,12 @@ async function expectNoAxeViolations(page, label) {
     ),
     contentType: 'application/json',
   });
-  expect(
-    results.violations.map((v) => `${v.id} (${v.nodes.length})`),
-    `axe violations on ${label}; see the axe attachment for details`,
-  ).toEqual([]);
+  base
+    .expect(
+      results.violations.map((v) => `${v.id} (${v.nodes.length})`),
+      `axe violations on ${label}; see the axe attachment for details`,
+    )
+    .toEqual([]);
 }
 
 // Resolves when every animation and transition that ends has ended, so a
@@ -194,13 +279,23 @@ async function motionOffenders(page) {
 }
 
 module.exports = {
+  test,
+  expect: base.expect,
   attachCapture,
   settle,
   fatalOf,
   gotoSeeded,
-  isChromium,
-  unsignedJwt,
+  pageDataLoaded,
+  expectAccessible,
   expectTextContrast,
+  isChromium,
+  roleConfig,
+  createConfig,
+  deleteConfig,
+  diskImage,
+  standInDisks,
+  unsignedJwt,
+  AXE_TAGS,
   expectNoAxeViolations,
   animationsDone,
   motionOffenders,

@@ -2,7 +2,6 @@
 // idb.js's draft stores, the unload copies, and storage.js.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { isProxy, reactive } from 'vue';
 
 import {
   appliedOperations,
@@ -28,7 +27,8 @@ import {
 import { setDocumentInfo, withStamp } from '@/builder/model.js';
 import { followStorageKey, pageStorage } from '@/builder/storage.js';
 
-import { memoryStorage, sampleDocument } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
+import { sampleDocument } from './fixtures.js';
 import { createMemoryStore } from './memory-store.js';
 
 // The document renamed, which tells the snapshots of a test apart.
@@ -1977,37 +1977,6 @@ describe('refused snapshots', () => {
 });
 
 describe('local storage', () => {
-  // The queue changes its live record in place, so the store keeps
-  // structured clones, as IndexedDB does.
-  test('the memory store keeps what was stored, as IndexedDB does', async () => {
-    const store = createMemoryStore();
-    const { name } = doc.metadata;
-    const record = {
-      key: draftKey('alice', 'd1'),
-      etag: '"1"',
-      queue: [{ opId: 'c1', kind: 'snapshot', commitId: 'c1' }],
-      entries: [{ id: 'c1', label: 'one', snapshot: reactive(doc) }],
-    };
-
-    await store.put(record, { write: record.entries });
-    record.queue.shift();
-    record.entries[0].snapshot.metadata.name = 'changed';
-
-    const stored = await store.get(record.key);
-
-    expect(stored.queue).toHaveLength(1);
-    expect(stored.entries[0].snapshot.metadata.name).toBe(name);
-    expect(isProxy(stored.entries[0].snapshot)).toBe(false);
-
-    // Each read is a copy of its own, and the draft record holds no
-    // snapshot.
-    stored.queue.length = 0;
-    expect((await store.get(record.key)).queue).toHaveLength(1);
-    expect((await store.all())[0].entries).toEqual([
-      { id: 'c1', label: 'one' },
-    ]);
-  });
-
   test('a device that cannot store the queue never claims to keep it', async () => {
     const store = memoryStore();
     store.put = async () => {

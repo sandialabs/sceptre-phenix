@@ -1,5 +1,10 @@
 package app
 
+import (
+	"phenix/types"
+	ifaces "phenix/types/interfaces"
+)
+
 // Option is a function that configures options for a phenix app. It is used in
 // `app.Init`.
 type Option func(*Options)
@@ -11,6 +16,8 @@ type Options struct {
 	DryRun  bool
 	Filter  map[string]struct{}
 	Trigger bool
+	// OnApp, when set, is called before each app runs, with the number of apps that ran before it.
+	OnApp func(ran int, name string)
 }
 
 // NewOptions returns an Options struct initialized with the given option list.
@@ -64,4 +71,32 @@ func Trigger() Option {
 	return func(o *Options) {
 		o.Trigger = true
 	}
+}
+
+// OnApp has ApplyApps call f before each app runs, with the number of apps of the stage that ran before it and the
+// app's name. PlannedApps counts the same apps.
+func OnApp(f func(ran int, name string)) Option {
+	return func(o *Options) {
+		o.OnApp = f
+	}
+}
+
+// matches reports whether the app name passes the filter of o, which an empty filter always does.
+func (o Options) matches(name string) bool {
+	if len(o.Filter) == 0 {
+		return true
+	}
+
+	_, ok := o.Filter[name]
+
+	return ok
+}
+
+// skipsDisabled reports whether ApplyApps skips the scenario app a of exp because it is disabled. Running-stage
+// triggers historically include disabled apps. Explicit filters provide the same override for other lifecycle
+// stages, and so does a cleanup that the app still has pending.
+func (o Options) skipsDisabled(exp *types.Experiment, a ifaces.ScenarioApp) bool {
+	cleanupPending := o.Stage == ActionCleanup && exp.Status.AppCleanup()[a.Name()]
+
+	return a.Disabled() && o.Stage != ActionRunning && len(o.Filter) == 0 && !cleanupPending
 }

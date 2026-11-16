@@ -21,6 +21,10 @@ func Locked(key string) Status {
 	return DefaultWebCache.Locked(key)
 }
 
+func Renew(key string, status Status, exp time.Duration) bool {
+	return DefaultWebCache.Renew(key, status, exp)
+}
+
 func Unlock(key string) {
 	DefaultWebCache.Unlock(key)
 }

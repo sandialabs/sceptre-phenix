@@ -197,28 +197,6 @@ export function experimentNodeSpec() {
   };
 }
 
-// A Storage kept in memory, as localStorage is. `entries` holds what it
-// stores.
-export function memoryStorage(initial = {}) {
-  const entries = new Map(Object.entries(initial));
-
-  return {
-    entries,
-    get length() {
-      return entries.size;
-    },
-    key: (index) => [...entries.keys()][index] ?? null,
-    getItem: (key) => (entries.has(key) ? entries.get(key) : null),
-    setItem: (key, value) => {
-      entries.set(key, String(value));
-    },
-    removeItem: (key) => {
-      entries.delete(key);
-    },
-    clear: () => entries.clear(),
-  };
-}
-
 // Each opening tag of `name` in rendered HTML. `skipDialogs` leaves out those
 // inside a <dialog>.
 export function tags(html, name, { skipDialogs = false } = {}) {
@@ -269,4 +247,52 @@ export function tagOf(html, testId) {
 // The value of an attribute of an opening tag, or null without it.
 export function attribute(tagHtml, name) {
   return tagHtml?.match(new RegExp(`\\s${name}="([^"]*)"`))?.[1] ?? null;
+}
+
+// The text an element shows, in DOM order, as axe-core reads it for WCAG
+// 2.5.3 Label in Name: aria-hidden text counts, hidden text does not.
+export function shownText(node) {
+  if (node.nodeType === 3) {
+    return node.textContent;
+  }
+
+  if (
+    node.nodeType !== 1 ||
+    node.hidden ||
+    node.classList.contains('builder-visually-hidden') ||
+    node.classList.contains('is-off')
+  ) {
+    return '';
+  }
+
+  return node.localName === 'br'
+    ? ' '
+    : [...node.childNodes].map(shownText).join('');
+}
+
+// The words axe-core compares: lower case, without text in parentheses, and
+// split at each character that is not a letter or a digit.
+function nameWords(text) {
+  let flat = String(text).normalize('NFKD').toLowerCase();
+
+  for (let last = ''; last !== flat;) {
+    last = flat;
+    flat = flat.replace(/\([^()]*\)/g, '');
+  }
+
+  return flat.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+// Whether the words of the shown text are a run of the words of the name,
+// as axe-core's label-content-name-mismatch rule requires.
+export function holdsShownText(name, text) {
+  const words = nameWords(name);
+  const shown = nameWords(text);
+
+  return (
+    shown.length === 0 ||
+    words.some((_, start) =>
+      shown.every((word, offset) => words[start + offset] === word),
+    )
+  );
 }

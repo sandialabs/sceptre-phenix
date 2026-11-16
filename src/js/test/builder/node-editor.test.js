@@ -1,13 +1,16 @@
-// The Node Editor: its host (nodeEditorHost in nodeEditor.js), and its dialog
-// rendered on the server (dialogs/NodeEditorDialog.vue).
+// @vitest-environment happy-dom
+// The Node Editor host (nodeEditor.js) and its dialog (NodeEditorDialog.vue),
+// including the status region that records the store's announcements.
 
 import { describe, expect, test } from 'vitest';
 import { createSSRApp, h } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import { createPinia, setActivePinia } from 'pinia';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import NodeEditorDialog from '@/components/builder/dialogs/NodeEditorDialog.vue';
 import { applyFormData, inspectorTarget } from '@/builder/adapters/forms.js';
+import { unsaidPart } from '@/builder/announce.js';
 import { addNode, findNode } from '@/builder/model.js';
 import { nodeEditorHost } from '@/builder/nodeEditor.js';
 import { useBuilderStore } from '@/builder/store.js';
@@ -275,5 +278,39 @@ describe('the Node Editor dialog', () => {
     expect(html).toContain('data-testid="node-editor-gone"');
     expect(html).not.toContain('builder-inspector--editor');
     expect(html).not.toContain('data-testid="node-editor-apply"');
+  });
+});
+
+describe('the mounted Node Editor', () => {
+  test('says and records what the store announces, but not save states', async () => {
+    const { pinia, store, alpha } = sampleStore();
+
+    const wrapper = mount(NodeEditorDialog, {
+      attachTo: document.body,
+      props: { nodeId: alpha.id },
+      global: { plugins: [pinia] },
+    });
+
+    await flushPromises();
+
+    store.announce('Moved alpha');
+    const moved = { text: 'Moved alpha', seq: store.announcementSeq };
+
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="node-editor-status"]').text()).toBe(
+      'Moved alpha',
+    );
+    expect(unsaidPart(moved, store.dialogSaid)).toBe('');
+
+    store.announce('All changes saved.', { slot: 'save' });
+    const saved = { text: 'All changes saved.', seq: store.announcementSeq };
+
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="node-editor-status"]').text()).toBe(
+      'Moved alpha',
+    );
+    expect(unsaidPart(saved, store.dialogSaid)).toBe(saved.text);
   });
 });

@@ -2,17 +2,15 @@
 // Save and Done write the typed text of the layer rows first, with no wait.
 // A new node matcher with one field typed stops them and gets focus.
 
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 import LayersDialog from '@/components/builder/dialogs/LayersDialog.vue';
 import LayerRows from '@/components/builder/layers/LayerRows.vue';
 import { useBuilderStore } from '@/builder/store.js';
 
 import { sampleDocument } from './fixtures.js';
-
-enableAutoUnmount(afterEach);
 
 const PLANT = {
   id: 'plant',

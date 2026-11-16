@@ -5,7 +5,7 @@ func ClusterNodes(exp string) ([]string, error) {
 
 	spec, err := Get(exp)
 	if err != nil {
-		return nil, ErrExperimentNotFound
+		return nil, notFound(err)
 	}
 
 	if !spec.Running() {

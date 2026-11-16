@@ -11,6 +11,14 @@ the web UI/API, or from the CLI with
 `phenix experiment start --honor-run-periodically`; a bare
 `phenix experiment start` parses the value and then ignores it.
 
+After a start through `phenix ui` (web UI, REST, workflow apply), the server
+runs the scheduled apps in a background job of kind `experiments.periodic`,
+owned by the user who started it. The job ends when the experiment stops, on
+`POST /jobs/{id}/cancel`, `phenix experiment trigger <exp> --cancel`, or a
+later start. The start body `{"honorRunPeriodically": false}` starts no job,
+and `true` starts one even without a scheduled app (see
+[`jobs.md`](jobs.md)).
+
 With that flag the CLI stays in the foreground re-running each app's
 `running` stage on its interval until the process is interrupted
 (SIGINT/SIGTERM), so it is not usable as a fire-and-forget start. Default apps

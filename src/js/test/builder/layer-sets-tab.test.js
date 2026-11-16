@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 
 const save = vi.hoisted(() => vi.fn());
 const api = vi.hoisted(() => ({
@@ -41,8 +41,6 @@ const PURDUE = set('builtin:purdue', 'Purdue Model', {
 const PLANT = set('plant', 'Plant zones', { description: 'Water plant' });
 const OFFICE = set('office', 'Office', { description: 'Desks and printers' });
 const SETS = [PURDUE, PLANT, OFFICE];
-
-enableAutoUnmount(afterEach);
 
 beforeEach(() => {
   vi.resetAllMocks();

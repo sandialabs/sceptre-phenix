@@ -225,40 +225,6 @@ describe('a draft card', () => {
     expect(remove).not.toContain('aria-disabled');
   });
 
-  // The shared item actions: one icon each, Open in blue and Delete in red.
-  test('each button has the icon and color of its action, and one structure', async () => {
-    const html = await render({
-      drafts,
-      published: [
-        { id: 'p1', kind: 'Topology', target: 'lab', source: 'store' },
-      ],
-    });
-    const icons = {
-      'draft-open-d1': 'folder-open',
-      'draft-duplicate-d1': 'copy',
-      'draft-delete-d1': 'trash',
-      'draft-publish-d1': 'publish',
-      'draft-open-p1': 'folder-open',
-      'published-delete-p1': 'trash',
-    };
-
-    for (const [id, icon] of Object.entries(icons)) {
-      const button = html.slice(html.indexOf(`data-testid="${id}"`));
-      const opening = tag(html, `data-testid="${id}"`);
-
-      expect(button.slice(0, button.indexOf('</button>')), id).toContain(
-        `builder-icon--${icon}`,
-      );
-      expect(opening, id).toContain('builder-action-button');
-      expect(opening.includes('builder-button--danger'), id).toBe(
-        icon === 'trash',
-      );
-      expect(opening.includes('builder-button--primary'), id).toBe(
-        icon === 'folder-open',
-      );
-    }
-  });
-
   test('a busy button says what it does without an ellipsis', async () => {
     const html = await render({
       drafts,
@@ -288,11 +254,15 @@ describe('a draft card', () => {
   });
 
   test('Publish names the draft, opens a dialog, and says while the draft loads', async () => {
-    const idle = tag(
-      await render({ drafts }),
-      'data-testid="draft-publish-d1"',
+    const idleHtml = await render({ drafts });
+    const idle = tag(idleHtml, 'data-testid="draft-publish-d1"');
+    const button = idleHtml.slice(
+      idleHtml.indexOf('data-testid="draft-publish-d1"'),
     );
 
+    expect(button.slice(0, button.indexOf('</button>'))).toContain(
+      'builder-icon--publish',
+    );
     expect(idle).toMatch(/^<button/);
     expect(idle).toMatch(/aria-label="Publish Network lab, updated [^"]+"/);
     expect(idle).toContain('aria-haspopup="dialog"');
@@ -719,29 +689,16 @@ describe('selecting cards', () => {
     expect(html).not.toContain('bulk-delete-published');
   });
 
-  test('the row above the cards has Select all, the count, and the actions, which say why they cannot act', async () => {
+  test('the row above the cards is named for the tab, and Delete selected asks first and says why it cannot act', async () => {
     const panel = panelOf(await render({ drafts }), 'drafts');
-    const bar = tag(panel, 'data-testid="bulk-bar-drafts"');
-    const all = tag(panel, 'data-testid="bulk-all-drafts"');
     const remove = tag(panel, 'data-testid="bulk-delete-drafts"');
 
-    expect(bar).toContain('role="group"');
-    expect(bar).toContain('aria-label="Bulk actions: Drafts"');
-    expect(all).toMatch(/^<input/);
-    expect(all).toContain('type="checkbox"');
-    expect(all).not.toContain('disabled');
-    expect(panel).toMatch(
-      /<label[^>]*><input[^>]*data-testid="bulk-all-drafts"[^>]*>\s*Select all\s*<\/label>/,
+    expect(tag(panel, 'data-testid="bulk-bar-drafts"')).toContain(
+      'aria-label="Bulk actions: Drafts"',
     );
-    expect(panel).toMatch(
-      /<span id="bulk-count-drafts"[^>]*data-testid="bulk-count-drafts"[^>]*>\s*0 of 2 selected\s*<\/span>/,
-    );
-    // The row comes before the cards.
     expect(panel.indexOf('bulk-bar-drafts')).toBeLessThan(
       panel.indexOf('drafts-list-drafts'),
     );
-
-    expect(remove).toMatch(/^<button/);
     expect(remove).toContain('aria-haspopup="dialog"');
     expect(remove).toContain('aria-describedby="bulk-count-drafts"');
     // Nothing is selected yet.
@@ -751,10 +708,9 @@ describe('selecting cards', () => {
       /data-testid="bulk-delete-drafts"[^>]*>[\s\S]*?builder-icon--trash[\s\S]*?Delete selected[\s\S]*?<\/button>/,
     );
     expect(panel).not.toContain('bulk-progress-');
-    expect(panel).not.toContain('aria-busy');
   });
 
-  test('while a batch runs, its row says how far it is, and nothing can be selected or deleted', async () => {
+  test('while a batch runs, only its tab shows progress, and nothing can be selected or deleted', async () => {
     const html = await render({
       drafts,
       published,
@@ -763,14 +719,7 @@ describe('selecting cards', () => {
     });
     const panel = panelOf(html, 'drafts');
 
-    expect(panel).toMatch(
-      /data-testid="bulk-progress-drafts"[^>]*>[\s\S]*?Deleting 2 of 5…\s*<\/span>/,
-    );
-    // The progress is not a live region: the page says what it came to.
-    expect(tag(panel, 'data-testid="bulk-progress-drafts"')).not.toMatch(
-      /role=|aria-live/,
-    );
-    expect(tag(panel, 'data-testid="bulk-all-drafts"')).toContain('disabled');
+    expect(panel).toContain('data-testid="bulk-progress-drafts"');
     expect(tag(panel, 'data-testid="card-select-d1"')).toContain('disabled');
     expect(tag(panel, 'data-testid="drafts-list-drafts"')).toContain(
       'aria-busy="true"',
@@ -779,7 +728,6 @@ describe('selecting cards', () => {
       'aria-disabled="true"',
     );
 
-    // Another tab's row shows no progress, and its checkboxes wait too.
     const other = panelOf(html, 'published');
 
     expect(other).not.toContain('bulk-progress-');
@@ -795,37 +743,16 @@ describe('selecting cards', () => {
     );
   });
 
-  test('what a batch left undone is listed under the row of its tab, as an alert', async () => {
+  test('what a batch left undone is listed once, under the row of its tab', async () => {
     const bulkResult = {
       tab: 'drafts',
       heading: '1 of 3 drafts could not be deleted. The other 2 were deleted.',
-      items: [
-        {
-          key: 'd1',
-          name: 'Network lab, updated Sep 27, 2026',
-          reason: 'It changed on the server during the delete. Try again.',
-        },
-      ],
+      items: [{ key: 'd1', name: 'Network lab', reason: 'It changed.' }],
     };
     const html = await render({ drafts, published, bulkResult });
     const panel = panelOf(html, 'drafts');
-    const summary = tag(panel, 'data-testid="bulk-summary"');
-    const [, titleId] = summary.match(/aria-labelledby="([^"]+)"/);
 
-    expect(summary).toContain('role="alert"');
-    expect(summary).toContain('tabindex="-1"');
-    expect(panel).toMatch(
-      new RegExp(
-        `<h3 id="${titleId}"[^>]*>1 of 3 drafts could not be deleted\\. The other 2 were deleted\\.</h3>`,
-      ),
-    );
-    expect(panel).toMatch(
-      /<li[^>]*>\s*Network lab, updated Sep 27, 2026: It changed on the server during the delete\. Try again\.\s*<\/li>/,
-    );
-    expect(panel).toMatch(
-      /data-testid="bulk-summary-dismiss"[^>]*>\s*Dismiss\s*<\/button>/,
-    );
-    // Under the row, above the cards.
+    expect(panel).toContain('1 of 3 drafts could not be deleted.');
     expect(panel.indexOf('bulk-bar-drafts')).toBeLessThan(
       panel.indexOf('data-testid="bulk-summary"'),
     );

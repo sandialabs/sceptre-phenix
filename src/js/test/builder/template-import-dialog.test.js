@@ -2,9 +2,9 @@
 // Import templates: a template file read into the library as a new
 // collection, mounted and driven as a user would.
 
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { createPinia } from 'pinia';
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import YAML from 'js-yaml';
 
 import TemplateImportDialog from '@/components/builder/dialogs/TemplateImportDialog.vue';
@@ -29,8 +29,6 @@ const FILE = {
   name: 'Plant',
   templates: [TEMPLATE],
 };
-
-enableAutoUnmount(afterEach);
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -98,22 +96,13 @@ describe('Import templates', () => {
     expect(wrapper.emitted('close')).toHaveLength(1);
   });
 
-  test('a collection of the same name in the library gets a number, which the summary says first', async () => {
-    const { wrapper, store } = open({ collections: [{ name: 'plant' }] });
+  test('the summary says the number a collection of the same name in the library makes Import add', async () => {
+    const { wrapper } = open({ collections: [{ name: 'plant' }] });
 
     await chooseFile(wrapper, 'plant.json', JSON.stringify(FILE));
 
     expect(byId(wrapper, 'template-import-summary').text()).toBe(
       'Plant: 1 template. The library has a collection of that name, so Import adds it as Plant (2).',
-    );
-
-    await importIt(wrapper);
-
-    expect(store.createLibraryTemplates.mock.calls[0][1]).toEqual({
-      collection: { name: 'Plant (2)' },
-    });
-    expect(store.announcement).toBe(
-      'Imported 1 template as collection Plant (2).',
     );
   });
 

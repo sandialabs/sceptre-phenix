@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 )
 
@@ -78,7 +79,7 @@ func (h *scorchSohHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &scorchSohHandler{
 		name:     h.name,
 		level:    h.level,
-		attrs:    append(h.attrs, attrs...),
+		attrs:    slices.Concat(h.attrs, attrs),
 		callback: h.callback,
 	}
 }

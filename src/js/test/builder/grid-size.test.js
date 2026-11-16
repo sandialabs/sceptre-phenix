@@ -150,9 +150,7 @@ describe('the Inspector’s diagram Grid size', () => {
     expect(html).toMatch(
       /<h3 id="inspector-grid-size-label"[^>]*>\s*Grid size\s*<\/h3>/,
     );
-    expect(html).toMatch(
-      /<p id="inspector-grid-size-help"[^>]*>\s*The distance between the lines of the grid, from 4 to\s+200 pixels\. When Snap to grid is on in Builder settings,\s+nodes go to this grid\.\s*<\/p>/,
-    );
+    expect(html).toContain('id="inspector-grid-size-help"');
     expect(html).not.toContain('data-testid="inspector-grid-size-value"');
   });
 

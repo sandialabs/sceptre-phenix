@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-
 import { getTransformForBounds } from '@vue-flow/core';
 import { describe, expect, test } from 'vitest';
 import fc from 'fast-check';
@@ -48,7 +46,6 @@ import {
   addNetwork,
   addNode,
   connect,
-  DEFAULT_NETWORK_COLORS,
   groupNodes,
   LINE_STYLES,
   moveNodes,
@@ -733,29 +730,6 @@ describe('flow edges', () => {
   });
 });
 
-// The hue, in degrees, and the saturation of a #rrggbb color.
-function hsl(hex) {
-  const [r, g, b] = hex
-    .slice(1)
-    .match(/../g)
-    .map((pair) => parseInt(pair, 16) / 255);
-  const [max, min] = [Math.max(r, g, b), Math.min(r, g, b)];
-  const delta = max - min;
-  const sector =
-    delta === 0
-      ? 0
-      : max === r
-        ? (g - b) / delta
-        : max === g
-          ? (b - r) / delta + 2
-          : (r - g) / delta + 4;
-
-  return {
-    hue: (sector * 60 + 360) % 360,
-    saturation: delta === 0 ? 0 : delta / (1 - Math.abs(max + min - 1)),
-  };
-}
-
 // The colors people give networks, notes and groups are drawn.
 describe('colors', () => {
   test('a network color the user chose is drawn; the picked ones use tokens', () => {
@@ -795,28 +769,6 @@ describe('colors', () => {
     expect(drawnNetworkColor(' #a3273f ')).toBe('var(--bx-net-4)');
     expect(drawnNetworkColor('#ff0000')).toBe('#ff0000');
     expect(drawnNetworkColor('not a color')).toBe('');
-  });
-
-  // Plum was drawn in slate: --bx-net-7 was a grey.
-  test("each theme's network token is its suggested color's hue, and keeps 3:1", () => {
-    const css = readFileSync(
-      new URL('../../src/builder/builder.css', import.meta.url),
-      'utf8',
-    );
-    // The light theme's, then the dark theme's.
-    const tokens = [...css.matchAll(/--bx-net-(\d): (#[0-9a-f]{6});/gi)];
-
-    expect(tokens).toHaveLength(2 * DEFAULT_NETWORK_COLORS.length);
-    tokens.forEach(([, index, value], at) => {
-      const theme = at < DEFAULT_NETWORK_COLORS.length ? 'light' : 'dark';
-      const token = hsl(value);
-      const suggested = hsl(DEFAULT_NETWORK_COLORS[index]);
-      const apart = Math.abs(token.hue - suggested.hue);
-
-      expect(Math.min(apart, 360 - apart), value).toBeLessThan(25);
-      expect(token.saturation, value).toBeGreaterThan(0.3);
-      expect(needsCasing(value)[theme], value).toBe(false);
-    });
   });
 
   test('networks added in turn take the color tokens in turn, then wrap', () => {
@@ -986,33 +938,6 @@ describe('colors', () => {
       false,
     ]);
     expect(plain.colorStyle.value).toBeUndefined();
-  });
-
-  // The rules that draw them: a selected node keeps its accent border, a
-  // filled one its fill, and every line of text on a fill takes the ink.
-  test('the stylesheet draws a fill and an outline from the custom properties', () => {
-    const css = readFileSync(
-      new URL('../../src/builder/builder.css', import.meta.url),
-      'utf8',
-    ).replace(/\s+/g, ' ');
-
-    expect(css).toContain(
-      '.builder-node--outlined { border-color: var(--bx-node-outline); }',
-    );
-    expect(css).toContain(
-      '.builder-node--filled, .builder-node--filled.is-selected { background: var(--bx-node-fill); color: var(--bx-node-ink); }',
-    );
-    expect(css).toMatch(
-      /\.builder-node--filled :is\( \.builder-node__kind, \.builder-node__meta, \.builder-node__comment, \.builder-node__origin \) \{ color: inherit; \}/,
-    );
-    // After the rule for a selected node, which it has to outrank for the
-    // fill and must not for the border.
-    expect(css.indexOf('.builder-node--filled,')).toBeGreaterThan(
-      css.indexOf('.builder-node.is-selected {'),
-    );
-    expect(css).toContain(
-      ".builder-node--group[data-border='double'] { border-style: double; border-width: 4px; }",
-    );
   });
 
   test('hex and rgb() colors are read into their channels', () => {

@@ -11,8 +11,8 @@ how phēnix names the default OVS bridge assigned to each experiment.
 In `manual` mode, the bridge name for an experiment comes from the default
 bridge name supplied when the experiment is **created** — the `--default-bridge`
 flag on `phenix experiment create`, the `Default Bridge Name` field in the UI's
-`Options` section, or the `defaultBridge` key in a workflow file. It is a
-property of the experiment, not of the topology it uses. If no bridge name is
+`Advanced Options` section, or the `defaultBridge` key in a workflow file. It is
+a property of the experiment, not of the topology it uses. If no bridge name is
 provided, phēnix falls back to the shared default bridge named **`phenix`**.
 
 This means that unless you explicitly assign a unique bridge name when creating
@@ -91,20 +91,20 @@ phenix ui --bridge-mode auto
 phenix experiment create my-exp -t my-topology --bridge-mode auto
 ```
 
-### 2. Configuration File
+### 2. Environment Variable
+
+```bash
+export PHENIX_BRIDGE_MODE=auto
+phenix ui
+```
+
+### 3. Configuration File
 
 Add `bridge-mode` to the phēnix configuration file (see
 [Settings & Configuration](settings.md) for file locations):
 
 ```yaml
 bridge-mode: auto
-```
-
-### 3. Environment Variable
-
-```bash
-export PHENIX_BRIDGE_MODE=auto
-phenix ui
 ```
 
 ## Example Workflow

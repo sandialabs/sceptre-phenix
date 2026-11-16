@@ -7,12 +7,18 @@
     "apiVersion": {
       "const": "phenix.sandia.gov/v0",
       "description": "The config API version; a workflow config is phenix.sandia.gov/v0.",
+      "examples": [
+        "phenix.sandia.gov/v0"
+      ],
       "title": "API Version",
       "type": "string"
     },
     "kind": {
       "const": "Workflow",
       "description": "The config kind, which is always Workflow.",
+      "examples": [
+        "Workflow"
+      ],
       "title": "Kind",
       "type": "string"
     },
@@ -34,6 +40,9 @@
           "properties": {
             "create": {
               "description": "The name of the experiment to create when none is mapped to the branch; unset never creates one.",
+              "examples": [
+                "example"
+              ],
               "title": "Create",
               "type": [
                 "string",
@@ -42,6 +51,9 @@
             },
             "restart": {
               "description": "Whether an apply may start a new or updated experiment and stop and restart a running one; defaults to true when unset.",
+              "examples": [
+                false
+              ],
               "title": "Restart",
               "type": [
                 "boolean",
@@ -50,6 +62,9 @@
             },
             "update": {
               "description": "Whether an apply may update the experiment already mapped to the branch; defaults to true when unset.",
+              "examples": [
+                false
+              ],
               "title": "Update",
               "type": [
                 "boolean",
@@ -64,8 +79,12 @@
           ]
         },
         "defaultBridge": {
-          "description": "The bridge the experiment's VMs attach to by default; defaults to phenix, is at most 15 characters (the Linux interface name limit), and unless it is phenix no other experiment may use it.",
+          "description": "The bridge the experiment's VMs attach to by default; defaults to phenix. The name has 15 or fewer characters. Each character is an ASCII letter, a digit, '_', '@', '.' or '-'. The Linux limit for an interface name is 15 bytes. Unless the bridge is phenix, no other experiment can use it.",
+          "examples": [
+            "phenix"
+          ],
           "maxLength": 15,
+          "pattern": "^[a-zA-Z0-9_@.-]*$",
           "title": "Default Bridge",
           "type": [
             "string",
@@ -74,6 +93,9 @@
         },
         "deployMode": {
           "description": "Where VMs are deployed, all, no-headnode or only-headnode in any letter case; unset or empty uses the server's deploy-mode setting.",
+          "examples": [
+            "all"
+          ],
           "pattern": "^(?:[aA][lL][lL]|[nN][oO]-[hH][eE][aA][dD][nN][oO][dD][eE]|[oO][nN][lL][yY]-[hH][eE][aA][dD][nN][oO][dD][eE])?$",
           "title": "Deploy Mode",
           "type": [
@@ -83,6 +105,9 @@
         },
         "scenario": {
           "description": "The name of the scenario config; on an update defaults to the experiment's current scenario.",
+          "examples": [
+            "example-scenario"
+          ],
           "title": "Scenario",
           "type": [
             "string",
@@ -102,6 +127,9 @@
         },
         "topology": {
           "description": "The name of the topology config; required to create an experiment, and on an update defaults to the experiment's current topology.",
+          "examples": [
+            "example-topology"
+          ],
           "title": "Topology",
           "type": [
             "string",
@@ -110,6 +138,9 @@
         },
         "useGREMesh": {
           "description": "Whether the experiment uses a GRE mesh between cluster hosts; it is OR-ed with the server's use-gre-mesh setting, so either turns it on.",
+          "examples": [
+            false
+          ],
           "title": "Use GRE Mesh",
           "type": [
             "boolean",
@@ -122,6 +153,9 @@
           "properties": {
             "max": {
               "description": "The highest VLAN ID the experiment may use; 0 leaves the maximum unset.",
+              "examples": [
+                1
+              ],
               "title": "Maximum",
               "type": [
                 "integer",
@@ -130,6 +164,9 @@
             },
             "min": {
               "description": "The lowest VLAN ID the experiment may use; 0 leaves the minimum unset.",
+              "examples": [
+                1
+              ],
               "title": "Minimum",
               "type": [
                 "integer",

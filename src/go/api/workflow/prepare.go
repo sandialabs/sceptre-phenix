@@ -396,7 +396,7 @@ func resolveTopology(prep *Prepared) error {
 
 // decodeTopology decodes cfg, the stored topology named name, with its
 // includes merged in. The error wraps [ErrUnresolved].
-func decodeTopology(cfg store.Config, name string) (ifaces.TopologySpec, error) { //nolint:ireturn // interface
+func decodeTopology(cfg store.Config, name string) (ifaces.TopologySpec, error) {
 	spec, err := types.DecodeTopologyFromConfig(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("%w: decoding topology %q: %w", ErrUnresolved, name, err)
@@ -546,7 +546,7 @@ func scenarioMatchesTopology(name string, annotations store.Annotations, topoNam
 		return fmt.Errorf("%w: scenario %q has no %s annotation", ErrUnresolved, name, topologyKey)
 	}
 
-	if !strings.Contains(annotated, topoName) {
+	if !types.ScenarioHasTopology(annotated, topoName) {
 		return fmt.Errorf(
 			"%w: scenario %q is annotated for topology %q, not %q",
 			ErrUnresolved, name, annotated, topoName,

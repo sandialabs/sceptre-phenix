@@ -18,10 +18,12 @@ default_language_version.golang = "1.24"
 #   format:   language linters/formatters that modify files (go fmt, rumdl fmt)
 #   lint:     language linters that don't modify files (codespell, golangci-lint),
 #             and should rely on the already-modified files from the fixers/format hooks
+#   lint-late: linters that must not run at the same time as a lint hook
 [priorities]
 fixers = 0
 format = 1
 lint = 2
+lint-late = 3
 
 # Go linting (golangci-lint) runs as part of the nested prek projects in
 # src/go/ and examples/go/ instead of here, because the Go lint step depends
@@ -57,6 +59,51 @@ id = "actionlint"
 language_version = "1.25"
 priority = "lint"
 
+# OpenAPI: checks that the spec served at /docs/ is valid OpenAPI, with the
+# Redocly version pinned in scripts/api-docs.sh (needs Node.js, as the
+# src/js hooks do)
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "openapi-lint"
+name = "openapi lint (redocly, spec ruleset)"
+entry = "scripts/api-docs.sh lint src/go/web/public/docs/openapi.yml"
+language = "system"
+pass_filenames = false
+files = '^(src/go/web/public/docs/openapi\.yml|scripts/api-docs\.sh)$'
+priority = "lint"
+
+[[repos.hooks]]
+id = "schema-lint"
+name = "config schema lint (redocly, spec ruleset)"
+entry = "scripts/api-docs.sh lint-schemas"
+language = "system"
+pass_filenames = false
+files = '^(src/go/types/(version/)?schemas/[^/]+\.yaml|src/go/types/redocly\.yaml|scripts/api-docs\.sh)$'
+# after openapi-lint: two npx installs of redocly into an empty cache can race
+priority = "lint-late"
+
+# Regenerates docs/content/cli and its nav from the command tree; fails when a
+# file changes (commit the result). Needs Go and protoc, like go-generate.
+[[repos.hooks]]
+id = "cli-docs"
+name = "CLI reference is current (make cli-docs)"
+entry = "make cli-docs"
+language = "system"
+pass_filenames = false
+files = '^(src/go/.*\.go|src/go/go\.(mod|sum)|docs/content/cli/.*|docs/mkdocs\.yml)$'
+priority = "lint"
+
+# Docs images need alt text that describes them, not the bare word "screenshot"
+[[repos.hooks]]
+id = "docs-image-alt-text"
+name = "docs image alt text is not \"screenshot\""
+entry = '''(?i)!\[\s*screenshot\s*\]\(|\balt\s*=\s*["']\s*screenshot\s*["']'''
+language = "pygrep"
+files = '\.md$'
+priority = "lint"
+
 # Spell checking
 [[repos]]
 repo = "https://github.com/codespell-project/codespell"
@@ -67,9 +114,9 @@ id = "codespell"
 args = [
   "--ignore-words-list",
   "ue,ot,ues,fo,nd,ist,te,parm,parms,ser,iif,iam,nin,filetest",
-  # vendored UI assets and generated/binary content are noisy for codespell
+  # UI build output and generated/binary content are noisy for codespell
   "--skip",
-  "*.svg,*.lock,*.sum,docs/content/images/*,docs/content/stylesheets/*,docs/theme/*,src/js/package-lock.json,src/js/e2e/package-lock.json,src/js/dist/*,src/go/web/public/*,src/go/web/proto/*.pb.go,src/go/store/mock.go,src/go/web/rbac/known_policy.go,**/*.min.js,**/*.min.css"
+  "*.svg,*.lock,*.sum,*package-lock.json,docs/content/images/*,docs/content/stylesheets/*,docs/theme/*,src/js/dist/*,src/go/web/public/*,src/go/web/proto/*.pb.go,src/go/store/mock.go,src/go/web/rbac/known_policy.go,**/*.min.js,**/*.min.css"
 ]
 priority = "lint"
 
@@ -149,7 +196,7 @@ args = [
     "--disable",
     "MD013,MD033,MD041,MD024",  # MD013: line length, MD033: inline HTML, MD041: first line heading, MD024: multiple headers with the same content
 ]
-# vendored UI docs (novnc, xterm.js) are third-party content, not ours to fix
+# src/go/web/public/ holds the copied UI build, which is not source
 exclude = '^src/go/web/public/'
 priority = "format"
 
@@ -173,7 +220,7 @@ id = "hadolint"
 # DL3062 - go install ./... builds local source already pinned via git clone --branch; no remote version to pin
 # DL3008/DL3015 - pinning every apt/apt-get package version is impractical for base images rebuilt regularly
 args = ["--ignore", "DL3059", "--ignore", "DL3062", "--ignore", "DL3008", "--ignore", "DL3015"]
-# vendored xterm.js Dockerfile isn't ours to fix
+# src/go/web/public/ holds the copied UI build, which is not source
 exclude = '^src/go/web/public/'
 priority = "format"
 
@@ -300,7 +347,7 @@ priority = "format"
 [[repos.hooks]]
 id = "mixed-line-ending"
 args = ["--fix=no"]
-# vendored xterm.js test fixtures intentionally contain mixed line endings
+# src/go/web/public/ holds the copied UI build, which is not source
 exclude = '^src/go/web/public/'
 priority = "fixers"
 

@@ -87,7 +87,9 @@ describe('generated UI schemas', () => {
       'commands',
       'delay',
       'injections',
+      'deletions',
       'advanced',
+      'overrides',
       'labels',
       'annotations',
     ]);
@@ -105,6 +107,12 @@ describe('generated UI schemas', () => {
       'network',
     ]);
     expect(keys(external.elements.at(-1).elements)).toEqual([
+      'commands',
+      'delay',
+      'injections',
+      'deletions',
+      'advanced',
+      'overrides',
       'labels',
       'annotations',
     ]);

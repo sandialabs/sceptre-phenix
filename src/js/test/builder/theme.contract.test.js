@@ -14,7 +14,7 @@ import {
   watchSystemTheme,
 } from '@/builder/theme.js';
 
-import { memoryStorage } from './fixtures.js';
+import { memoryStorage } from '../helpers/storage.js';
 
 function fakeMatchMedia(matches = {}) {
   return (query) => ({ matches: Boolean(matches[query]) });

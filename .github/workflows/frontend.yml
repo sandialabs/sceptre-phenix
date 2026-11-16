@@ -12,6 +12,7 @@ on:
       # Files the unit tests read
       - 'schemas/**'
       - 'src/go/api/config/default/**'
+      - 'src/go/api/disk/testdata/**'
       - 'src/go/types/builder/testdata/**'
       - 'src/go/types/version/schemas/**'
       - 'src/go/web/testdata/**'

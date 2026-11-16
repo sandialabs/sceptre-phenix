@@ -2,6 +2,8 @@ package vlan
 
 import (
 	"errors"
+	"maps"
+	"slices"
 	"testing"
 
 	"github.com/activeshadow/structs"
@@ -12,7 +14,8 @@ import (
 )
 
 // useExperiments points the store at a mock that serves the given experiments
-// by name and reports any other name as missing.
+// by name and reports any other name as missing. It lists the experiments in
+// name order, and an update replaces the stored config.
 func useExperiments(t *testing.T, exps ...*types.Experiment) {
 	t.Helper()
 
@@ -41,6 +44,23 @@ func useExperiments(t *testing.T, exps ...*types.Experiment) {
 
 		return nil
 	}).AnyTimes()
+	m.EXPECT().List(gomock.Any()).DoAndReturn(func(...string) (store.Configs, error) {
+		var list store.Configs
+		for _, name := range slices.Sorted(maps.Keys(configs)) {
+			list = append(list, configs[name])
+		}
+
+		return list, nil
+	}).AnyTimes()
+	m.EXPECT().Update(gomock.Any()).DoAndReturn(func(c *store.Config) error {
+		if _, ok := configs[c.Metadata.Name]; !ok {
+			return errors.New("config does not exist")
+		}
+
+		configs[c.Metadata.Name] = *c
+
+		return nil
+	}).AnyTimes()
 
 	orig := store.DefaultStore
 	store.DefaultStore = m //nolint:reassign // monkey patching for test
@@ -56,6 +76,8 @@ func newExperiment(name string, aliases map[string]int) *types.Experiment {
 	return exp
 }
 
+// AliasID gives the VLAN ID of an alias from the spec of a stopped experiment
+// and from the status of a running one, and fails for an alias it cannot give.
 func TestAliasID(t *testing.T) {
 	stopped := newExperiment("stopped", map[string]int{"MYVLAN": 105, "AUTO": 0})
 

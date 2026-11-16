@@ -1739,4 +1739,74 @@ describe('GEXF', () => {
     expect(nodes.children).toHaveLength(55);
     expect(edges.children).toHaveLength(50);
   });
+
+  // Two devices whose same annotation key holds values of two types, routes
+  // with and without a next hop and a cost, and a connection drawn from a
+  // switch to a device.
+  test('widens mixed annotation columns, writes routes, and reads either end', () => {
+    const exp = addNetwork(createDocument({ name: 'Mixed' }), { name: 'EXP' });
+    const sw = addNode(exp.doc, { kind: 'switch', networkId: exp.network.id });
+    const device = (doc, hostname, annotations, routes = []) =>
+      addNode(doc, {
+        kind: 'device',
+        hostname,
+        interfaces: [{ name: 'eth0' }],
+        spec: {
+          general: { hostname },
+          annotations,
+          network: {
+            interfaces: [{ name: 'eth0', type: 'ethernet', proto: 'dhcp' }],
+            routes,
+          },
+        },
+      });
+    const a = device(sw.doc, 'a', { mixed: 1, text: 2, same: 3, wide: 4 }, [
+      { destination: '10.1.0.0/24', next: '10.0.0.1', cost: 5 },
+      { destination: '10.2.0.0/24', next: '10.0.0.2' },
+      { destination: '0.0.0.0/0', cost: 0 },
+    ]);
+    const b = device(a.doc, 'b', {
+      mixed: 0.5,
+      text: 'two',
+      same: 6,
+      wide: 3000000000,
+    });
+    const { doc, edge } = connect(b.doc, {
+      sourceNodeId: sw.node.id,
+      targetNodeId: b.node.id,
+      targetHandleId: b.node.device.interfaces[0].id,
+    });
+
+    expect(edge).toMatchObject({ sourceNodeId: sw.node.id });
+
+    const { graph, nodes, edges } = graphOf(toGEXF(doc, { modified }).text);
+    const byLabel = (label) =>
+      valuesOf(
+        nodes.children.find(({ attributes }) => attributes.label === label),
+      );
+
+    expect(columnsOf(graph, 'node')).toMatchObject({
+      'annotation.mixed': { type: 'double' },
+      'annotation.text': { type: 'string' },
+      'annotation.same': { type: 'integer' },
+      'annotation.wide': { type: 'long' },
+    });
+    expect(byLabel('a')).toMatchObject({
+      'annotation.mixed': '1',
+      'annotation.text': '2',
+      routes:
+        '[10.1.0.0/24 via 10.0.0.1 cost 5, 10.2.0.0/24 via 10.0.0.2, 0.0.0.0/0 cost 0]',
+      route_count: '3',
+    });
+    expect(byLabel('b')).toMatchObject({
+      'annotation.mixed': '0.5',
+      'annotation.text': 'two',
+    });
+    expect(edges.children).toHaveLength(1);
+    expect(valuesOf(edges.children[0])).toMatchObject({
+      device: 'b',
+      network: 'EXP',
+      interface: 'eth0',
+    });
+  });
 });

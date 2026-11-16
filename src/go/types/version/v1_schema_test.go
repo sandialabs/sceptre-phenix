@@ -17,14 +17,21 @@ var v1NodeComponents = []string{ //nolint:gochecknoglobals // test table
 	"static_iface", "dhcp_iface", "serial_iface",
 }
 
-// TestV1NodeFieldsDescribed proves every node and interface field in v1.yaml has
-// a description, except an object field whose own fields are all described.
+// TestV1NodeFieldsDescribed proves every node and interface component is in
+// v1.yaml, and every field of it has a description, except an object field
+// whose own fields are all described.
 func TestV1NodeFieldsDescribed(t *testing.T) {
 	t.Parallel()
 
 	components := schemaComponents(t, "v1")
 
 	for _, name := range v1NodeComponents {
+		if _, ok := components[name].(map[string]any); !ok {
+			t.Errorf("v1.yaml has no component schema %s", name)
+
+			continue
+		}
+
 		for _, path := range undescribedFields(components[name], name) {
 			t.Errorf("v1.yaml %s has no description", path)
 		}

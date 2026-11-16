@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  NOTE_PLACEHOLDER,
   connectionList,
   diagramCounts,
   labelIndex,
@@ -32,7 +33,7 @@ describe('the diagram in words', () => {
     expect(nodeAccessibleName(doc, switchNode)).toContain('network EXP');
     expect(nodeAccessibleName(doc, switchNode)).toContain('VLAN alias 100');
     expect(nodeAccessibleName(doc, device)).toBe(
-      'Device alpha, 1 connection, on EXP',
+      'Device alpha, VirtualMachine, 1 interface, 1 connection, on EXP',
     );
 
     // A device names each of its networks once, sorted by name. One with
@@ -55,10 +56,10 @@ describe('the diagram in words', () => {
     }).doc;
 
     expect(nodeAccessibleName(next, findNode(next, alpha.id))).toBe(
-      'Device alpha, 3 connections, on DMZ and EXP',
+      'Device alpha, VirtualMachine, 3 interfaces, 3 connections, on DMZ and EXP',
     );
     expect(nodeAccessibleName(next, findNode(next, bravo.id))).toBe(
-      'Device bravo, 0 connections',
+      'Device bravo, VirtualMachine, 1 interface, 0 connections',
     );
 
     // Looked up once for every node, the names are the same.
@@ -71,13 +72,15 @@ describe('the diagram in words', () => {
     }
   });
 
-  test('the comment is part of the accessible name', () => {
+  test('the comment follows the text a device shows, as the canvas draws it', () => {
     const { doc, alpha } = sampleDocument();
     const node = doc.nodes.find((entry) => entry.id === alpha.id);
 
     node.device.spec.general.description = 'jump host';
 
-    expect(nodeAccessibleName(doc, node)).toContain('comment: jump host');
+    expect(nodeAccessibleName(doc, node)).toBe(
+      'Device alpha, VirtualMachine, 1 interface, jump host, 1 connection, on EXP',
+    );
   });
 
   test('names say which group a node is in and how many members a group has', () => {
@@ -89,7 +92,7 @@ describe('the diagram in words', () => {
     // A label that only repeats the kind is not said twice.
     expect(nodeAccessibleName(grouped, group)).toBe('Group, 2 members');
     expect(nodeAccessibleName(grouped, node(alpha.id))).toBe(
-      'Device alpha, in Group, 1 connection, on EXP',
+      'Device alpha, VirtualMachine, 1 interface, in Group, 1 connection, on EXP',
     );
     expect(nodeAccessibleName(grouped, node(sw.id))).not.toContain(' in ');
 
@@ -106,9 +109,9 @@ describe('the diagram in words', () => {
     );
   });
 
-  // A group's description is its comment. Its colors and border are not
-  // said.
-  test("a group's description ends its name", () => {
+  // A group's description is its comment, which the canvas draws below its
+  // title. Its colors and border are not said.
+  test("a group's description follows its title", () => {
     const { doc, alpha } = sampleDocument();
     const grouped = groupNodes(doc, [alpha.id], { title: 'DMZ' });
     const described = updateNode(grouped.doc, grouped.group.id, {
@@ -121,7 +124,7 @@ describe('the diagram in words', () => {
     const group = findNode(described, grouped.group.id);
 
     expect(nodeAccessibleName(described, group)).toBe(
-      'Group DMZ, 1 member, comment: Public servers',
+      'Group DMZ, Public servers, 1 member',
     );
 
     // A device's or a switch's colors change no name.
@@ -134,127 +137,61 @@ describe('the diagram in words', () => {
     );
   });
 
-  test('a note is named by its text, and a device by a non-default type', () => {
+  test('a note is named by its heading and all of its text', () => {
     const { doc } = sampleDocument();
     const text = `Firewall rules pending review ${'x'.repeat(100)}`;
     const { node: note } = addNode(doc, { kind: 'note', text });
     const { node: blank } = addNode(doc, { kind: 'note' });
-    const { node: windows } = addNode(doc, {
-      kind: 'device',
-      hostname: 'dc-01',
-      iconKey: 'windows',
-    });
-    const { node: router } = addNode(doc, {
-      kind: 'device',
-      hostname: 'router',
-      iconKey: 'router',
-    });
-    const { node: server } = addNode(doc, { kind: 'device', hostname: 'web' });
-    const redHat = (hostname) =>
-      addNode(doc, { kind: 'device', hostname, iconKey: 'redhat' }).node;
 
-    const noteName = nodeAccessibleName(doc, note);
-    expect(noteName.startsWith('Note: Firewall rules pending review')).toBe(
-      true,
+    expect(nodeAccessibleName(doc, note)).toBe(`Note: ${text}`);
+    expect(nodeAccessibleName(doc, { ...note, label: 'Firewall' })).toBe(
+      `Note Firewall: ${text}`,
     );
-    expect(noteName.length).toBeLessThanOrEqual('Note: '.length + 80);
-    expect(noteName.endsWith('…')).toBe(true);
-    expect(nodeAccessibleName(doc, blank)).toBe('Note');
-    expect(nodeAccessibleName(doc, windows)).toBe(
-      'Device dc-01, Windows, 0 connections',
-    );
-    // The label already names the type, and the default icon is not a type.
-    expect(nodeAccessibleName(doc, router)).toBe(
-      'Device router, 0 connections',
-    );
-    expect(nodeAccessibleName(doc, server)).toBe('Device web, 0 connections');
-    // Only whole words name the type: "shredder" merely contains "red".
-    expect(nodeAccessibleName(doc, redHat('shredder'))).toBe(
-      'Device shredder, Red Hat, 0 connections',
-    );
-    expect(nodeAccessibleName(doc, redHat('red-team'))).toBe(
-      'Device red-team, Red Hat, 0 connections',
-    );
-    expect(nodeAccessibleName(doc, redHat('red-hat-01'))).toBe(
-      'Device red-hat-01, 0 connections',
-    );
-    expect(nodeAccessibleName(doc, redHat('rhel9'))).toBe(
-      'Device rhel9, 0 connections',
-    );
+    expect(nodeAccessibleName(doc, blank)).toBe(`Note: ${NOTE_PLACEHOLDER}`);
   });
 
-  // The name says the device's node type too, unless it is a plain
-  // device's or the name already says it.
-  test('a device is named by its node type, unless its label or its icon says it', () => {
-    const { doc } = sampleDocument();
-    const device = (hostname, iconKey, spec) =>
-      addNode(doc, {
-        kind: 'device',
-        hostname,
-        iconKey,
-        spec: { general: { hostname }, ...spec },
-      }).node;
-    const name = (...args) => nodeAccessibleName(doc, device(...args));
-
-    expect(name('edge-1', 'linux', { type: 'Router' })).toBe(
-      'Device edge-1, Router, 0 connections',
-    );
+  // The canvas shows a device's type, so its name says it. The icon's word
+  // follows the shown text, unless the label or the type says it.
+  test.each([
+    ['dc-01', 'windows', {}, 'Device, 0 interfaces, Windows'],
+    [
+      'web',
+      'linux',
+      { type: 'VirtualMachine' },
+      'VirtualMachine, 0 interfaces',
+    ],
+    ['edge-1', 'linux', { type: 'Router' }, 'Router, 0 interfaces'],
     // As stored, not as the icon's word is written.
-    expect(name('plc-1', 'server', { type: 'SCEPTRE' })).toBe(
-      'Device plc-1, SCEPTRE, 0 connections',
+    ['plc-1', 'server', { type: 'SCEPTRE' }, 'SCEPTRE, 0 interfaces'],
+    ['fw-1', 'router', { type: 'Firewall' }, 'Firewall, 0 interfaces, Router'],
+    ['edge-1', 'router', { type: 'Router' }, 'Router, 0 interfaces'],
+    [
+      'plc-1',
+      'external',
+      { external: true, type: 'HIL' },
+      'External, 0 interfaces',
+    ],
+    ['core-router', 'router', {}, 'Device, 0 interfaces'],
+    ['router2', 'router', {}, 'Device, 0 interfaces'],
+    ['unit-7', 'plc', {}, 'Device, 0 interfaces, PLC'],
+    ['ops-phone', 'smartphone', {}, 'Device, 0 interfaces'],
+    ['attacker', 'blackhat', {}, 'Device, 0 interfaces, Black Hat'],
+    ['scan', 'kali', {}, 'Device, 0 interfaces, Kali Linux'],
+    // Only whole words count: "shredder" merely contains "red".
+    ['shredder', 'redhat', {}, 'Device, 0 interfaces, Red Hat'],
+    ['rhel9', 'redhat', {}, 'Device, 0 interfaces'],
+  ])('device %s with the %s icon and %o', (hostname, iconKey, spec, shown) => {
+    const { doc } = sampleDocument();
+    const { node } = addNode(doc, {
+      kind: 'device',
+      hostname,
+      iconKey,
+      spec: { general: { hostname }, ...spec },
+    });
+
+    expect(nodeAccessibleName(doc, node)).toBe(
+      `Device ${hostname}, ${shown}, 0 connections`,
     );
-    // The icon's word comes first, then a type that says something else.
-    expect(name('fw-1', 'router', { type: 'Firewall' })).toBe(
-      'Device fw-1, Router, Firewall, 0 connections',
-    );
-    // The icon's word says the type.
-    expect(name('edge-1', 'router', { type: 'Router' })).toBe(
-      'Device edge-1, Router, 0 connections',
-    );
-    expect(name('plc-1', 'external', { external: true, type: 'HIL' })).toBe(
-      'Device plc-1, External device, 0 connections',
-    );
-    // An external device with another icon says External, not its type.
-    expect(name('plc-1', 'linux', { external: true, type: 'HIL' })).toBe(
-      'Device plc-1, External, 0 connections',
-    );
-    // The label says the type: whole words, without a trailing number.
-    expect(name('router2', 'linux', { type: 'Router' })).toBe(
-      'Device router2, 0 connections',
-    );
-    expect(name('core-router', 'linux', { type: 'Router' })).toBe(
-      'Device core-router, 0 connections',
-    );
-    expect(name('routers', 'linux', { type: 'Router' })).toBe(
-      'Device routers, Router, 0 connections',
-    );
-    // A plain device has no type worth saying.
-    expect(name('web', 'linux', { type: 'VirtualMachine' })).toBe(
-      'Device web, 0 connections',
-    );
-    // Every other built-in icon says its label.
-    expect(name('unit-7', 'plc', {})).toBe('Device unit-7, PLC, 0 connections');
-    expect(name('sub-a', 'cell-tower', {})).toBe(
-      'Device sub-a, Cell Tower, 0 connections',
-    );
-    expect(name('ops-phone', 'smartphone', {})).toBe(
-      'Device ops-phone, 0 connections',
-    );
-    expect(name('phenix-01', 'phenix', {})).toBe(
-      'Device phenix-01, 0 connections',
-    );
-    expect(name('attacker', 'blackhat', {})).toBe(
-      'Device attacker, Black Hat, 0 connections',
-    );
-    expect(name('blackhat-2', 'blackhat', {})).toBe(
-      'Device blackhat-2, 0 connections',
-    );
-    expect(name('ntp-1', 'ntp', {})).toBe('Device ntp-1, 0 connections');
-    expect(name('kali-1', 'kali', {})).toBe('Device kali-1, 0 connections');
-    expect(name('scan', 'kali', {})).toBe(
-      'Device scan, Kali Linux, 0 connections',
-    );
-    expect(name('web', 'linux', {})).toBe('Device web, 0 connections');
   });
 
   // The names of the devices the palette's templates add.
@@ -269,11 +206,11 @@ describe('the diagram in words', () => {
     });
 
     expect(names).toEqual([
-      'Device server, 0 connections',
-      'Device workstation, 0 connections',
-      'Device router, 0 connections',
-      'Device firewall, 0 connections',
-      'Device external, 0 connections',
+      'Device server, VirtualMachine, 0 interfaces, 0 connections',
+      'Device workstation, VirtualMachine, 0 interfaces, 0 connections',
+      'Device router, Router, 0 interfaces, 0 connections',
+      'Device firewall, Firewall, 0 interfaces, 0 connections',
+      'Device external, External, 0 interfaces, 0 connections',
     ]);
   });
 

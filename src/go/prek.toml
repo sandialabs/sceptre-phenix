@@ -30,6 +30,16 @@ pass_filenames = false
 always_run = true
 priority = "fixers"
 
+[[repos.hooks]]
+id = "go-deadcode"
+name = "deadcode (unreachable Go functions)"
+description = "Fails on functions nothing reaches from main or a test, unless src/go/deadcode-allow.txt lists them."
+entry = "../../scripts/go-deadcode.sh"
+language = "system"
+pass_filenames = false
+files = '(\.go|^deadcode-allow\.txt)$'
+priority = "lint"
+
 
 # Go: golangci-lint (format + lint)
 [[repos]]

@@ -19,10 +19,9 @@ func TestConfigKindsExcludeWorkflow(t *testing.T) {
 		t.Errorf("configListKinds() = %v, includes workflow", configListKinds())
 	}
 
-	// Loop variables keep unparam from seeing a constant argument.
-	for _, opts := range []struct{ multi, allowAll bool }{{false, false}, {true, false}, {true, true}} {
-		if err := configKindArgsValidator(opts.multi, opts.allowAll)(nil, []string{"workflow/wf"}); err == nil {
-			t.Errorf("configKindArgsValidator(%t, %t) accepted workflow/wf", opts.multi, opts.allowAll)
+	for _, multi := range []bool{false, true} {
+		if err := configKindArgsValidator(multi)(nil, []string{"workflow/wf"}); err == nil {
+			t.Errorf("configKindArgsValidator(%t) accepted workflow/wf", multi)
 		}
 	}
 

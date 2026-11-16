@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"phenix/util/testenv"
 )
 
 // runGit runs git in dir and returns its output, failing the test on error.
@@ -58,9 +60,7 @@ func markerScript(t *testing.T, marker string) string {
 }
 
 func TestGitCommitRef(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git is not installed")
-	}
+	testenv.RequireCommands(t, "git")
 
 	root := t.TempDir()
 	t.Setenv("GIT_CEILING_DIRECTORIES", root)
@@ -117,7 +117,7 @@ func TestGitCommitRef(t *testing.T) {
 // finds no repository leaves out the commit tag with a debug record that
 // holds git's message.
 func TestGitCommitRefSaysWhyNoRepository(t *testing.T) {
-	skipWithoutCommands(t, "git")
+	testenv.RequireCommands(t, "git")
 
 	logs := captureLogs(t)
 	root := t.TempDir()
@@ -169,7 +169,7 @@ func TestGitCommitRefDubiousOwnership(t *testing.T) {
 			repo := filepath.Join(root, "repo")
 
 			if tt.standIn {
-				skipWithoutCommands(t, "sh")
+				testenv.RequireCommands(t, "sh")
 				writeWorkflowTree(t, repo, map[string]string{"tracked.txt": "one\n"})
 
 				bin := filepath.Join(root, "bin")
@@ -179,7 +179,7 @@ func TestGitCommitRefDubiousOwnership(t *testing.T) {
 					"\"\tgit config --global --add safe.directory "+repo+"\" >&2\nexit 128\n")
 				prependPath(t, bin)
 			} else {
-				skipWithoutCommands(t, "git")
+				testenv.RequireCommands(t, "git")
 				commitGitRepository(t, repo, map[string]string{"tracked.txt": "one\n"})
 
 				globalConfig := filepath.Join(root, "gitconfig")
@@ -217,9 +217,7 @@ func TestGitCommitRefDubiousOwnership(t *testing.T) {
 // gitCommitRef relies on, resolves a linked work tree (git worktree add) to
 // that work tree's commit.
 func TestGitCommitRefLinkedWorkTree(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git is not installed")
-	}
+	testenv.RequireCommands(t, "git")
 
 	root := t.TempDir()
 	t.Setenv("GIT_CEILING_DIRECTORIES", root)
@@ -247,9 +245,7 @@ func TestGitCommitRefLinkedWorkTree(t *testing.T) {
 // invoking user during git status. gitCommitRef must return "" and run
 // nothing.
 func TestGitCommitRefEmbeddedBareRepository(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git is not installed")
-	}
+	testenv.RequireCommands(t, "git")
 
 	tests := []struct {
 		name string
@@ -387,9 +383,7 @@ func TestSameGitDir(t *testing.T) {
 // TestGitCommitRefCanceledContext checks that gitCommitRef returns "" promptly
 // when the run's context is already canceled, rather than running git.
 func TestGitCommitRefCanceledContext(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git is not installed")
-	}
+	testenv.RequireCommands(t, "git")
 
 	root := t.TempDir()
 	t.Setenv("GIT_CEILING_DIRECTORIES", root)
@@ -411,18 +405,6 @@ func TestGitCommitRefCanceledContext(t *testing.T) {
 
 	if elapsed := time.Since(start); elapsed >= gitCommandTimeout {
 		t.Errorf("gitCommitRef(canceled context) took %v, want it to return before the %v timeout", elapsed, gitCommandTimeout)
-	}
-}
-
-// skipWithoutCommands skips the test when any of the named commands is not on
-// PATH.
-func skipWithoutCommands(t *testing.T, names ...string) {
-	t.Helper()
-
-	for _, name := range names {
-		if _, err := exec.LookPath(name); err != nil {
-			t.Skipf("%s is not installed", name)
-		}
 	}
 }
 
@@ -487,7 +469,7 @@ func prependPath(t *testing.T, dir string) {
 // git before 2.36 reads core.fsmonitor as the path of a hook, so the value
 // false would run a program called false on every git status.
 func TestGitCommitRefHardeningOptions(t *testing.T) {
-	skipWithoutCommands(t, "sh")
+	testenv.RequireCommands(t, "sh")
 
 	root := t.TempDir()
 	record := filepath.Join(root, "record")
@@ -527,7 +509,7 @@ func TestGitCommitRefHardeningOptions(t *testing.T) {
 // repository's own config names, nor a program called false found through
 // PATH, which git before 2.36 runs as the hook when core.fsmonitor is false.
 func TestGitCommitRefFileSystemMonitorOff(t *testing.T) {
-	skipWithoutCommands(t, "git", "sh")
+	testenv.RequireCommands(t, "git", "sh")
 
 	root := t.TempDir()
 	t.Setenv("GIT_CEILING_DIRECTORIES", root)
@@ -564,7 +546,7 @@ func TestGitCommitRefFileSystemMonitorOff(t *testing.T) {
 // comparison, so TestGitCommitRefEmbeddedBareRepository pins it only on older
 // git.)
 func TestGitCommitRefForeignWorkTree(t *testing.T) {
-	skipWithoutCommands(t, "git", "sh")
+	testenv.RequireCommands(t, "git", "sh")
 
 	layouts := []struct {
 		name     string
@@ -643,7 +625,7 @@ func TestGitCommitRefForeignWorkTree(t *testing.T) {
 // a symlink, which git itself follows, gets no commit tag: gitCommitRef uses a
 // repository only when its .git is a directory or a gitdir file.
 func TestGitCommitRefSymlinkedGitDir(t *testing.T) {
-	skipWithoutCommands(t, "git")
+	testenv.RequireCommands(t, "git")
 
 	root := t.TempDir()
 	t.Setenv("GIT_CEILING_DIRECTORIES", root)
@@ -670,7 +652,7 @@ func TestGitCommitRefSymlinkedGitDir(t *testing.T) {
 // does not name exactly a git directory and a top level, and when the top
 // level's .git is a file that is not a gitdir file.
 func TestGitCommitRefUnusableAnswer(t *testing.T) {
-	skipWithoutCommands(t, "sh", "cat")
+	testenv.RequireCommands(t, "sh", "cat")
 
 	root := t.TempDir()
 	top := filepath.Join(root, "top")
@@ -728,7 +710,7 @@ func killRecordedProcesses(file string) {
 // canceled, gitCommitRef must return within seconds, with the commit and
 // without -dirty.
 func TestGitCommitRefBoundsTheWaitForGit(t *testing.T) {
-	skipWithoutCommands(t, "git", "sh", "sleep")
+	testenv.RequireCommands(t, "git", "sh", "sleep")
 
 	const (
 		cancelAfter = 200 * time.Millisecond
@@ -757,7 +739,10 @@ func TestGitCommitRefBoundsTheWaitForGit(t *testing.T) {
 
 	// Cancel about 200 ms after the start, but not before the filter's child
 	// holds the pipes, so that the cancel always stops a hanging git.
-	done := make(chan struct{})
+	var (
+		done     = make(chan struct{})
+		canceled = make(chan time.Time, 1)
+	)
 
 	go func() {
 		defer cancel()
@@ -779,14 +764,15 @@ func TestGitCommitRefBoundsTheWaitForGit(t *testing.T) {
 			}
 
 			if started && deadline == nil {
+				canceled <- time.Now()
+
 				return
 			}
 		}
 	}()
 
-	start := time.Now()
 	got := gitCommitRef(ctx, repo)
-	elapsed := time.Since(start)
+	returned := time.Now()
 
 	close(done)
 
@@ -798,7 +784,13 @@ func TestGitCommitRefBoundsTheWaitForGit(t *testing.T) {
 		t.Errorf("gitCommitRef(git status stopped) = %q, want %q", got, short)
 	}
 
-	if elapsed >= returnBound {
-		t.Errorf("gitCommitRef returned after %v, want less than %v", elapsed, returnBound)
+	// timed from the cancel, so a slow machine starting git does not count
+	select {
+	case at := <-canceled:
+		if elapsed := returned.Sub(at); elapsed >= returnBound {
+			t.Errorf("gitCommitRef returned %v after the cancel, want less than %v", elapsed, returnBound)
+		}
+	default:
+		t.Error("gitCommitRef returned before the cancel, so git never hung")
 	}
 }

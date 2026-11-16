@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Template files: what Download writes, what Import reads, and the store's
 // import of a file into the user's library.
 

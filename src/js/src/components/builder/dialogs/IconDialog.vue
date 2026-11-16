@@ -127,7 +127,7 @@
             <builder-busy-button
               v-else-if="library.state.status === 'ready'"
               data-testid="icon-add-to-server"
-              :aria-label="`Add ${icon.name} to the server`"
+              :aria-label="`Add to server: ${icon.name}`"
               :busy="busy === 'add' && busyIcon === icon.name"
               :disabled="Boolean(busy)"
               @click="addToServer(icon)">

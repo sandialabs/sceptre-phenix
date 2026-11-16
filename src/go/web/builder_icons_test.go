@@ -813,8 +813,8 @@ func TestBuilderResponseHeaders(t *testing.T) {
 }
 
 // TestBuilderRouterAnswerHeaders asserts the router's own answers under the
-// Builder's paths carry the Builder headers, those outside them carry none,
-// and so does what a later middleware answers in place of a route.
+// Builder's paths carry the Builder headers, those outside them carry none
+// but the nosniff of every JSON error, and so does what a later middleware answers in place of a route.
 func TestBuilderRouterAnswerHeaders(t *testing.T) {
 	harness := newBuilderHarness(t)
 
@@ -850,7 +850,7 @@ func TestBuilderRouterAnswerHeaders(t *testing.T) {
 			}
 
 			want := map[string]string{
-				"X-Content-Type-Options":  map[bool]string{true: builderNoSniff}[tt.builder],
+				"X-Content-Type-Options":  builderNoSniff,
 				"Cache-Control":           map[bool]string{true: builderNoStore}[tt.builder],
 				"Content-Security-Policy": map[bool]string{true: builderIconCSP}[tt.iconsCSP],
 			}

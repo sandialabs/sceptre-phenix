@@ -27,7 +27,7 @@ func init() { //nolint:gochecknoinits // interface assertion
 	_, _ = spec.(ifaces.ScenarioAppHost)
 }
 
-func DecodeScenarioFromConfig(c store.Config) (ifaces.ScenarioSpec, error) { //nolint:ireturn // interface
+func DecodeScenarioFromConfig(c store.Config) (ifaces.ScenarioSpec, error) {
 	if c.APIVersion() != version.StoredVersion[c.Kind] {
 		return nil, fmt.Errorf("unknown scenario version %s", c.APIVersion())
 	}
@@ -49,7 +49,7 @@ func DecodeScenarioFromConfig(c store.Config) (ifaces.ScenarioSpec, error) { //n
 	return spec, nil
 }
 
-func MakeCustomScenarioFromConfig( //nolint:ireturn // interface
+func MakeCustomScenarioFromConfig(
 	c store.Config,
 	disabledApps []string,
 ) (ifaces.ScenarioSpec, error) {
@@ -69,6 +69,18 @@ func MakeCustomScenarioFromConfig( //nolint:ireturn // interface
 	return spec, nil
 }
 
+// ScenarioHasTopology reports whether annotation, the topology annotation of a
+// scenario, names topology. The annotation is a comma list of topology names.
+func ScenarioHasTopology(annotation, topology string) bool {
+	for name := range strings.SplitSeq(annotation, ",") {
+		if strings.TrimSpace(name) == topology {
+			return true
+		}
+	}
+
+	return false
+}
+
 // CheckScenarioTopology checks that annotations, those of the scenario named
 // name, mark it for topology, as taking app settings from it requires.
 func CheckScenarioTopology(name string, annotations store.Annotations, topology string) error {
@@ -77,7 +89,7 @@ func CheckScenarioTopology(name string, annotations store.Annotations, topology 
 		return fmt.Errorf("topology annotation missing from scenario %s", name)
 	}
 
-	if !strings.Contains(topo, topology) {
+	if !ScenarioHasTopology(topo, topology) {
 		return fmt.Errorf("experiment/scenario topology mismatch for scenario %s", name)
 	}
 

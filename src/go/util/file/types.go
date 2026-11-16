@@ -18,6 +18,9 @@ type File struct {
 	Categories []string `json:"categories"`
 	PlainText  bool     `json:"plainText"`
 	IsDir      bool     `json:"isDir"`
+	// CaptureFormat is "pcap" or "pcapng" when the file's first bytes show it, else "" (see
+	// experiment.FilesObserved). The cached listing leaves it "".
+	CaptureFormat string `json:"captureFormat"`
 
 	// Internal use to aid in sorting
 	dateTime time.Time
@@ -42,6 +45,22 @@ func (f Files) SortByDate(asc bool) {
 		}
 
 		return f[i].dateTime.After(f[j].dateTime)
+	})
+}
+
+// SortByPath orders the files by path A to Z, ignoring case, ties by name.
+func (f Files) SortByPath(asc bool) {
+	sort.SliceStable(f, func(i, j int) bool {
+		a, b := strings.ToLower(f[i].Path), strings.ToLower(f[j].Path)
+		if a == b {
+			return strings.ToLower(f[i].Name) < strings.ToLower(f[j].Name)
+		}
+
+		if asc {
+			return a < b
+		}
+
+		return a > b
 	})
 }
 
@@ -71,6 +90,8 @@ func (f Files) SortBy(col string, asc bool) {
 	switch col {
 	case "name":
 		f.SortByName(asc)
+	case "path":
+		f.SortByPath(asc)
 	case "date":
 		f.SortByDate(asc)
 	case "size":
@@ -99,7 +120,7 @@ func (f Files) Paginate(page, size int) Files {
 
 // MakeFile creates an instance of our file object using a FileInfo and path.
 func MakeFile(file fs.FileInfo, basePath string) File {
-	f := File{} //nolint:exhaustruct // partial initialization
+	f := File{Categories: []string{}} //nolint:exhaustruct // partial initialization
 	f.Name = file.Name()
 	f.Path = filepath.Join(basePath, file.Name())
 	f.dateTime = file.ModTime()

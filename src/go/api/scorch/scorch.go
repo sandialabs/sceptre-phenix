@@ -74,7 +74,7 @@ func handleBackgrounded(stage Action, options Options) bool {
 }
 
 func init() { //nolint:gochecknoinits // config hook
-	config.RegisterConfigHook("Experiment", func(stage string, c *store.Config) error {
+	config.RegisterConfigHook("Experiment", func(_ context.Context, stage string, c *store.Config) error {
 		switch stage {
 		case "update", "delete":
 			scorch.DeletePipeline(c.Metadata.Name, -1, -1, false)
