@@ -37,3 +37,12 @@ func TestConnectVMInterfaceCommand(t *testing.T) {
 		})
 	}
 }
+
+func TestDiskDeleteCommand(t *testing.T) {
+	got := diskDeleteCommand("vm_snapshot", 1, "/etc/old-config", "/var/tmp/stale dir")
+	want := `disk inject vm_snapshot:1 delete files "/etc/old-config","/var/tmp/stale dir"`
+
+	if got != want {
+		t.Fatalf("diskDeleteCommand returned %q, want %q", got, want)
+	}
+}

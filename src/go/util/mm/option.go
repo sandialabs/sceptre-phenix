@@ -23,6 +23,7 @@ type options struct {
 
 	injectPart int
 	injects    []string
+	deletions  []string
 
 	connectIface int
 	connectVLAN  string
@@ -100,6 +101,12 @@ func InjectPartition(p int) Option {
 func Injects(i ...string) Option {
 	return func(o *options) {
 		o.injects = i
+	}
+}
+
+func Deletions(d ...string) Option {
+	return func(o *options) {
+		o.deletions = d
 	}
 }
 

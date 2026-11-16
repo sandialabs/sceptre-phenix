@@ -452,7 +452,7 @@ func (Minimega) RedeployVM(opts ...Option) error { //nolint:funlen // complex lo
 	if o.disk != "" {
 		var disk string
 
-		if len(o.injects) == 0 {
+		if len(o.injects) == 0 && len(o.deletions) == 0 {
 			disk = o.disk
 		} else {
 			// Should only be one row of data since we filtered by VM name.
@@ -481,9 +481,19 @@ func (Minimega) RedeployVM(opts ...Option) error { //nolint:funlen // complex lo
 					)
 				}
 
-				err = inject(old.base, o.injectPart, o.injects...)
-				if err != nil {
-					return err
+				// Partition 0 disables injection, as in the deploy script.
+				if o.injectPart != 0 && len(o.injects) > 0 {
+					err = inject(old.base, o.injectPart, o.injects...)
+					if err != nil {
+						return err
+					}
+				}
+
+				if o.injectPart != 0 && len(o.deletions) > 0 {
+					err = deleteFromDisk(old.base, o.injectPart, o.deletions...)
+					if err != nil {
+						return err
+					}
 				}
 
 				// Use disk cache mode if provided by user. Otherwise, use original disk
@@ -1693,6 +1703,28 @@ func inject(disk string, part int, injects ...string) error {
 	}
 
 	return nil
+}
+
+func deleteFromDisk(disk string, part int, paths ...string) error {
+	cmd := mmcli.NewCommand()
+	cmd.Command = diskDeleteCommand(disk, part, paths...)
+
+	err := mmcli.ErrorResponse(mmcli.Run(cmd))
+	if err != nil {
+		return fmt.Errorf("deleting files from disk %s: %w", disk, err)
+	}
+
+	return nil
+}
+
+func diskDeleteCommand(disk string, part int, paths ...string) string {
+	files := make([]string, len(paths))
+
+	for i, path := range paths {
+		files[i] = fmt.Sprintf("%q", path)
+	}
+
+	return fmt.Sprintf("disk inject %s:%d delete files %s", disk, part, strings.Join(files, ","))
 }
 
 // Ugh... replicating `file.DeleteFile` here to avoid cyclical dependency
