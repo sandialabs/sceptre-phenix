@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,6 +19,7 @@ import (
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 
+	"phenix/api/config"
 	"phenix/api/experiment"
 	"phenix/app"
 	"phenix/scheduler"
@@ -768,6 +770,8 @@ func TestExpCmdCreate(t *testing.T) { //nolint:paralleltest // replaces the phen
 		notConfig    = writeFile(t, "not: a config\n")
 		topologyFile = writeFile(t, topology("file-topo"))
 		scenarioFile = writeFile(t, scenario)
+		varTopology  = writeFile(t, topology("${SITE}-topo"))
+		envFile      = writeFile(t, "SITE=file\n")
 	)
 
 	type created struct {
@@ -792,6 +796,16 @@ func TestExpCmdCreate(t *testing.T) { //nolint:paralleltest // replaces the phen
 			name: "topology and scenario files",
 			args: []string{"-t", topologyFile, "-s", scenarioFile, "--disabled-apps", " soh "},
 			want: created{Topology: "file-topo", Scenario: "scn", Bridge: "phenix", Apps: map[string]bool{"tap": false, "soh": true}},
+		},
+		{
+			name: "topology file with a variable from -e",
+			args: []string{"-t", varTopology, "-e", "SITE=flag"},
+			want: created{Topology: "flag-topo", Bridge: "phenix"},
+		},
+		{
+			name: "topology file with a variable from an env file",
+			args: []string{"-t", varTopology, "--env-file", envFile},
+			want: created{Topology: "file-topo", Bridge: "phenix"},
 		},
 		{name: "no topology", args: nil, wantErr: `required flag(s) "topology" not set`},
 		{
@@ -878,6 +892,179 @@ func TestExpCmdCreate(t *testing.T) { //nolint:paralleltest // replaces the phen
 				t.Errorf("experiment create new %q mismatch (-want +got):\n%s", args, diff)
 			}
 		})
+	}
+}
+
+// expCmdIncludeTopology returns a topology with one node. The node keeps
+// description as written, and the topology includes each of includes.
+func expCmdIncludeTopology(name, hostname, description string, includes ...string) string {
+	text := "apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: " + name + "\nspec:\n"
+	if len(includes) > 0 {
+		text += "  includeTopologies: ['" + strings.Join(includes, "', '") + "']\n"
+	}
+
+	return text + "  nodes:\n  - type: VirtualMachine\n    general:\n      hostname: " + hostname +
+		"\n      description: '" + description + "'\n    hardware:\n      os_type: linux\n" +
+		"      drives:\n      - image: u.qc2\n    network:\n      interfaces: []\n"
+}
+
+// TestExpCmdCreateIncludedFiles checks that experiment create fills in the
+// variables of each topology file that the topology includes by a path, with
+// the rules of the -t file, and uses a stored include as stored.
+func TestExpCmdCreateIncludedFiles(t *testing.T) { //nolint:paralleltest // replaces the phenix store and sets a variable
+	t.Setenv("PHENIX_INCTEST", "hidden")
+
+	dir := t.TempDir()
+	write := func(name, text string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatalf("os.WriteFile(%s) error = %v", path, err)
+		}
+
+		return path
+	}
+
+	var (
+		net       = write("net.yml", expCmdIncludeTopology("net", "gw", "${SITE}-gw"))
+		top       = write("top.yml", expCmdIncludeTopology("top", "vm", "top", net))
+		envFile   = write("site.env", "SITE=file\n")
+		hidden    = write("hidden.yml", expCmdIncludeTopology("hidden", "gw", "${PHENIX_INCTEST}"))
+		topHidden = write("top-hidden.yml", expCmdIncludeTopology("top", "vm", "top", hidden))
+		mid       = write("mid.yml", expCmdIncludeTopology("mid", "mid", "${SITE}-mid", net))
+		outer     = write("outer.yml", expCmdIncludeTopology("top", "vm", "top", mid))
+		pathVar   = write("path-var.yml", expCmdIncludeTopology("top", "vm", "top", "${DIR}/net.yml"))
+		cycleA    = filepath.Join(dir, "cycle-a.yml")
+		cycleB    = write("cycle-b.yml", expCmdIncludeTopology("b", "b", "${SITE}-b", cycleA))
+		topStored = write("top-stored.yml", expCmdIncludeTopology("top", "vm", "${SITE}", "lit"))
+	)
+
+	write("cycle-a.yml", expCmdIncludeTopology("top", "vm", "top", cycleB))
+
+	stored := func(text string) store.Config {
+		var c store.Config
+		if err := yaml.Unmarshal([]byte(text), &c); err != nil {
+			t.Fatalf("yaml.Unmarshal(topology) error = %v", err)
+		}
+
+		return c
+	}
+
+	tests := []struct {
+		name string
+		args []string
+		// want holds hostname=description for each node of the experiment.
+		want []string
+		// wantLog is the file of the one record of an undefined variable.
+		wantLog   string
+		humanized string
+	}{
+		{name: "-e that only an included file uses", args: []string{"-t", top, "-e", "SITE=lab"}, want: []string{"vm=top", "gw=lab-gw"}},
+		{name: "an env file", args: []string{"-t", top, "--env-file", envFile}, want: []string{"vm=top", "gw=file-gw"}},
+		{name: "an undefined variable", args: []string{"-t", top}, wantLog: net},
+		{name: "a PHENIX_ variable without -e", args: []string{"-t", topHidden}, wantLog: hidden},
+		{
+			name: "a PHENIX_ variable with -e",
+			args: []string{"-t", topHidden, "-e", "PHENIX_INCTEST"},
+			want: []string{"vm=top", "gw=hidden"},
+		},
+		{
+			name: "a nested include",
+			args: []string{"-t", outer, "-e", "SITE=lab"},
+			want: []string{"vm=top", "mid=lab-mid", "gw=lab-gw"},
+		},
+		{
+			name: "a variable in an include path",
+			args: []string{"-t", pathVar, "-e", "DIR=" + dir, "-e", "SITE=lab"},
+			want: []string{"vm=top", "gw=lab-gw"},
+		},
+		{name: "an undefined variable in an include path", args: []string{"-t", pathVar, "-e", "SITE=lab"}, wantLog: pathVar},
+		{
+			name:      "a cyclic include",
+			args:      []string{"-t", cycleA, "-e", "SITE=lab"},
+			humanized: "Unable to create the new experiment",
+		},
+		{
+			name: "a stored topology for -t",
+			args: []string{"-t", "stored-inc", "-e", "SITE=lab"},
+			want: []string{"vm=${SITE}-stored", "gw=lab-gw"},
+		},
+		{
+			name: "an include of a stored topology",
+			args: []string{"-t", topStored, "-e", "SITE=lab"},
+			want: []string{"vm=lab", "lit=${SITE}-lit"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expCmdUseStore(t,
+				stored(expCmdIncludeTopology("stored-inc", "vm", "${SITE}-stored", net)),
+				stored(expCmdIncludeTopology("lit", "lit", "${SITE}-lit")),
+			)
+
+			logs := plogtest.Capture(t)
+			err := expCmdRun(append([]string{"create", "new"}, tt.args...)...)
+
+			if tt.wantLog != "" || tt.humanized != "" {
+				expCmdCheckIncludeRefusal(t, logs, err, tt.wantLog, tt.humanized)
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("experiment create new %q error = %v, want nil", tt.args, err)
+			}
+
+			exp, err := experiment.Get("new")
+			if err != nil {
+				t.Fatalf("experiment.Get(new) error = %v", err)
+			}
+
+			var got []string
+			for _, node := range exp.Spec.Topology().Nodes() {
+				got = append(got, node.General().Hostname()+"="+node.General().Description())
+			}
+
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("experiment create new %q nodes mismatch (-want +got):\n%s", tt.args, diff)
+			}
+		})
+	}
+}
+
+// expCmdCheckIncludeRefusal checks that experiment create stored no
+// experiment, and stored no topology when a variable has a problem. For a
+// problem, the only record of an undefined variable names file.
+func expCmdCheckIncludeRefusal(t *testing.T, logs *plogtest.Logs, err error, file, humanized string) {
+	t.Helper()
+
+	if state := expCmdState(t, "new"); state != "deleted" {
+		t.Errorf("experiment create stored the experiment, want none")
+	}
+
+	if humanized != "" {
+		if !vmCmdHumanized(err, humanized) || !strings.Contains(logs.String(), "cyclic import detected") {
+			t.Errorf("experiment create error = %v, want %q and a log of the cyclic import", err, humanized)
+		}
+
+		return
+	}
+
+	if !errors.Is(err, errVariables) {
+		t.Errorf("experiment create error = %v, want errVariables", err)
+	}
+
+	if _, err := config.Get("topology/top"); !errors.Is(err, store.ErrNotExist) {
+		t.Errorf("after experiment create, config.Get(topology/top) error = %v, want %v", err, store.ErrNotExist)
+	}
+
+	var files []string
+	for _, record := range logs.Records(t, plogtest.Message("variable is not set and has no default")) {
+		files = append(files, fmt.Sprint(record["file"]))
+	}
+
+	if diff := cmp.Diff([]string{file}, files); diff != "" {
+		t.Errorf("the files of the undefined variable records mismatch (-want +got):\n%s", diff)
 	}
 }
 

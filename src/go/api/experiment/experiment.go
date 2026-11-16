@@ -22,6 +22,7 @@ import (
 	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
 	"phenix/util/common"
+	"phenix/util/envsubst"
 	"phenix/util/file"
 	"phenix/util/freshness"
 	"phenix/util/mm"
@@ -454,9 +455,9 @@ func validateName(name string) error {
 	return CheckReservedName(name)
 }
 
-// createTopology reads the topology name for a new experiment. A store that cannot read it gives an error that
-// matches config.ErrStoreFailed.
-func createTopology(name string) (ifaces.TopologySpec, error) {
+// createTopology reads the topology name for a new experiment, with lookup for the variables of an included topology
+// file. A store that cannot read it gives an error that matches config.ErrStoreFailed.
+func createTopology(name string, lookup envsubst.Lookup) (ifaces.TopologySpec, error) {
 	topoC, _ := store.NewConfig("topology/" + name)
 
 	err := store.Get(topoC)
@@ -468,7 +469,7 @@ func createTopology(name string) (ifaces.TopologySpec, error) {
 		return nil, fmt.Errorf("getting topology %s: %w: %w", name, config.ErrStoreFailed, err)
 	}
 
-	topo, err := types.DecodeTopologyFromConfig(*topoC)
+	topo, err := types.DecodeTopologyFromConfigWith(*topoC, lookup)
 	if err != nil {
 		return nil, fmt.Errorf("decoding topology from config: %w", err)
 	}
@@ -507,7 +508,7 @@ func Create(ctx context.Context, opts ...CreateOption) error {
 		apiVersion = version.StoredVersion[kind]
 	)
 
-	topo, err := createTopology(o.topology)
+	topo, err := createTopology(o.topology, o.lookup)
 	if err != nil {
 		return err
 	}

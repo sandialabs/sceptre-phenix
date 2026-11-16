@@ -49,9 +49,10 @@ Create or update configurations from files
 
   This subcommand creates each configuration in the given JSON or YAML files
   that is not stored, updates each stored configuration that is different,
-  and does not change a configuration that is the same. A -f value can be a
-  file or a directory. The command reads all JSON and YAML files in a
-  directory and its subdirectories, as config create does.
+  and does not change a configuration that is the same. Give the files as
+  arguments, with -f, or both. Each one is the path of a file with the
+  extension .json, .yaml or .yml. A directory is an error. To read the files
+  of a directory, let the shell give them: "phenix config apply DIR/*".
 
   The command applies Topology configurations first, then Scenario, then
   Experiment, then Image and Role configurations, because a scenario and an
@@ -74,24 +75,36 @@ Create or update configurations from files
   With --dry-run, the command checks each configuration as for an apply,
   shows the configurations that it would create or update, and changes
   nothing.
+
+  The command fills in the ${NAME} and ${NAME:default} placeholders of each
+  file before it reads the file. A value comes from -e, else from an env
+  file of --env-file, else from the shell. The shell gives no PHENIX_
+  variable unless -e NAME names it. A placeholder with no value and no
+  default is an error, and so is a -e variable that no file uses: the
+  command then changes nothing. Write ${NAME:} for an optional variable and
+  $${NAME} for the literal text ${NAME}.
 ```
 
 ```text
-phenix config apply -f <file|dir> [-f <file|dir>]... [flags]
+phenix config apply <file>... [-f <file>]... [flags]
 ```
 
 ### Examples
 
 ```text
+phenix config apply topology.yml scenario.yml
 phenix config apply -f topology.yml -f scenario.yml
-phenix config apply -f ./configs --dry-run
+phenix config apply ./configs/* --dry-run
+phenix config apply topology.yml -e NODES=3 --env-file site.env
 ```
 
 ### Options
 
 ```text
       --dry-run                Show what the command would change, and change nothing
-  -f, --filename stringArray   Configuration file or directory to apply (repeatable)
+  -e, --env stringArray        set a variable for the ${NAME} placeholders: NAME=value, or NAME to copy the value from the shell (repeatable)
+      --env-file stringArray   read variables from an env file of NAME=value lines; a relative path starts at the working directory (repeatable)
+  -f, --filename stringArray   Configuration file to apply (repeatable); the same as an argument
   -h, --help                   help for apply
       --skip-validation        Skip schema validation of new configurations (updates are always validated)
 ```
@@ -110,28 +123,49 @@ Create a configuration(s)
 Create a configuration(s)
 
   This subcommand is used to create one or more configurations from JSON or
-  YAML file(s). A directory path can also be given, and all JSON and YAML
-  files in the given directory will be parsed.
+  YAML file(s). Each argument is the path of a file with the extension
+  .json, .yaml or .yml. A directory is an error. To read the files of a
+  directory, let the shell give them: "phenix config create DIR/*".
 
   A Builder document (the Builder's JSON or YAML export), a Builder
   template file, a Builder package and a Builder layer set file are not
-  configurations. The command skips such a file in a directory. It refuses
-  such a file that you name on the command line. Use the Builder in the web
+  configurations. The command refuses such a file. Use the Builder in the web
   UI, or the Builder REST API below /api/v1/builder/, for these files. Upload
   a document and publish it to create its topology. Use Import templates to
   add the templates of a template file. Use Upload to open a package. Use
   Upload layer set on the Layers tab to add a layer set file.
+
+  The command fills in the ${NAME} and ${NAME:default} placeholders of each
+  file before it reads the file. A value comes from -e, else from an env
+  file of --env-file, else from the shell. The shell gives no PHENIX_
+  variable unless -e NAME names it. A placeholder with no value and no
+  default is an error, and so is a -e variable that no file uses: the
+  command then changes nothing. Write ${NAME:} for an optional variable and
+  $${NAME} for the literal text ${NAME}.
+
+  The command reads every file and checks every variable before it stores a
+  configuration.
 ```
 
 ```text
 phenix config create </path/to/filename> ... [flags]
 ```
 
+### Examples
+
+```text
+phenix config create topology.yml scenario.yml
+phenix config create ./configs/*.yml
+phenix config create topology.yml -e NODES=3 --env-file site.env
+```
+
 ### Options
 
 ```text
-  -h, --help              help for create
-      --skip-validation   Skip configuration spec validation against schema
+  -e, --env stringArray        set a variable for the ${NAME} placeholders: NAME=value, or NAME to copy the value from the shell (repeatable)
+      --env-file stringArray   read variables from an env file of NAME=value lines; a relative path starts at the working directory (repeatable)
+  -h, --help                   help for create
+      --skip-validation        Skip configuration spec validation against schema
 ```
 
 ### SEE ALSO
@@ -240,8 +274,9 @@ Show how configuration files differ from the stored configurations
   This subcommand prints a unified diff from each stored configuration to the
   configuration of the same kind and name in the given JSON or YAML files. It
   prints "new" for a configuration that is not stored. It prints nothing for a
-  configuration that is the same. An argument can be a file or a directory,
-  as for config apply.
+  configuration that is the same. Each argument is the path of a file with
+  the extension .json, .yaml or .yml. A directory is an error. To read the
+  files of a directory, let the shell give them: "phenix config diff DIR/*".
 
   The diff shows the apiVersion, kind, name, annotations and spec, as YAML
   with sorted keys. It ignores the fields that phenix sets: created, updated,
@@ -250,23 +285,34 @@ Show how configuration files differ from the stored configurations
 
   The command exits with 0 when no configuration differs, 1 when one or more
   differ, and 2 when it cannot read or compare a configuration.
+
+  The command fills in the ${NAME} and ${NAME:default} placeholders of each
+  file before it reads the file. A value comes from -e, else from an env
+  file of --env-file, else from the shell. The shell gives no PHENIX_
+  variable unless -e NAME names it. A placeholder with no value and no
+  default is an error, and so is a -e variable that no file uses: the
+  command then changes nothing. Write ${NAME:} for an optional variable and
+  $${NAME} for the literal text ${NAME}.
 ```
 
 ```text
-phenix config diff <file|dir>... [flags]
+phenix config diff <file>... [flags]
 ```
 
 ### Examples
 
 ```text
 phenix config diff topology.yml
-phenix config diff ./configs
+phenix config diff ./configs/*
+phenix config diff topology.yml -e NODES=3 --env-file site.env
 ```
 
 ### Options
 
 ```text
-  -h, --help   help for diff
+  -e, --env stringArray        set a variable for the ${NAME} placeholders: NAME=value, or NAME to copy the value from the shell (repeatable)
+      --env-file stringArray   read variables from an env file of NAME=value lines; a relative path starts at the working directory (repeatable)
+  -h, --help                   help for diff
 ```
 
 ### SEE ALSO

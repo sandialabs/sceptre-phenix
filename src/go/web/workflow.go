@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -23,6 +22,7 @@ import (
 	"phenix/types/version"
 	v1 "phenix/types/version/v1"
 	"phenix/util/common"
+	"phenix/util/envsubst"
 	"phenix/util/plog"
 	"phenix/web/audit"
 	"phenix/web/broker"
@@ -152,7 +152,7 @@ func applyWorkflow(r *http.Request, branch string) (workflow.Result, error) {
 
 	result.Plan = plan
 
-	prep, err := workflow.Prepare(spec, plan, target, pending...)
+	prep, err := workflow.Prepare(spec, plan, target, store.BranchNameLookup(branch), pending...)
 	if err != nil {
 		return result, workflowWebError(err, "unable to prepare phenix workflow config")
 	}
@@ -260,7 +260,7 @@ func readWorkflowConfig(r *http.Request, branch string) (map[string]any, []byte,
 	)
 
 	// Only ${BRANCH_NAME} expands, to the branch, as in the configs.
-	_ = os.Setenv("BRANCH_NAME", branch)
+	lookup := envsubst.Fixed(branch)
 
 	switch typ {
 	case mimeJSON: // default to JSON if not set
@@ -271,7 +271,7 @@ func readWorkflowConfig(r *http.Request, branch string) (map[string]any, []byte,
 			return nil, nil, err.SetStatus(http.StatusInternalServerError)
 		}
 
-		err = json.Unmarshal(store.ExpandBranchName(src), &doc)
+		err = json.Unmarshal(store.ExpandBranchName(src, lookup), &doc)
 	case mimeYAML:
 		src, err = io.ReadAll(r.Body)
 		if err != nil {
@@ -280,7 +280,7 @@ func readWorkflowConfig(r *http.Request, branch string) (map[string]any, []byte,
 			return nil, nil, err.SetStatus(http.StatusInternalServerError)
 		}
 
-		err = yaml.Unmarshal(store.ExpandBranchName(src), &doc)
+		err = yaml.Unmarshal(store.ExpandBranchName(src, lookup), &doc)
 	default:
 		return nil, nil, weberror.NewWebError(
 			nil,
@@ -440,6 +440,7 @@ func createFromWorkflow(
 		experiment.CreateWithDefaultBridge(spec.DefaultBridgeName()),
 		experiment.CreateWithGREMesh(spec.UseGREMesh),
 		experiment.CreateWithBaseDirInside(experiment.BaseDirRoot()),
+		experiment.CreateWithLookup(store.BranchNameLookup(branch)),
 	}
 
 	err = experiment.Create(context.Background(), opts...)
@@ -708,11 +709,7 @@ func configStoreError(err error, format string, args ...any) *weberror.WebError 
 // expanded to u.scope, and creates or updates it, or with u.dryRun only checks
 // it; it returns the config as stored or checked.
 func upsertWorkflowConfig(src []byte, u configUpsert) (*store.Config, error) {
-	// ExpandBranchName reads the branch name from the environment. It keeps
-	// every other placeholder as it is written.
-	_ = os.Setenv("BRANCH_NAME", u.scope)
-
-	cfg, err := u.parse(store.ExpandBranchName(src))
+	cfg, err := u.parse(store.ExpandBranchName(src, envsubst.Fixed(u.scope)))
 	if err != nil {
 		return nil, weberror.NewWebError(err, "unable to parse %s config", u.format)
 	}

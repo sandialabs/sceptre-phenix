@@ -12,6 +12,7 @@ import (
 	"github.com/lmittmann/tint"
 
 	"phenix/api/workflow"
+	"phenix/util/envsubst"
 	"phenix/util/plog"
 )
 
@@ -27,7 +28,8 @@ const (
 // applyOptions is what runWorkflowApply needs. The apply command fills it
 // from its flags and the global settings; tests fill it directly. An empty
 // Name means the base name of the topology directory, and Config is relative
-// to that directory unless absolute.
+// to that directory unless absolute. Env, EnvFiles and Environ are the
+// sources of the variables: the -e values, the env files and the shell.
 type applyOptions struct {
 	Name                 string
 	Config               string
@@ -39,11 +41,15 @@ type applyOptions struct {
 	TopologiesBase       string
 	InjectsBaseExplicit  bool
 	FollowInjectSymlinks bool
+	Env                  []string
+	EnvFiles             []string
+	Environ              []string
 	Now                  func() time.Time
 }
 
-// configFile is a config file as read. Body goes to the server unchanged, so
-// the line numbers in its explained validation errors match the file.
+// configFile is a config file with its variables filled in. A value holds no
+// line break, so the line numbers in the explained validation errors of Body
+// match the file.
 type configFile struct {
 	Path        string
 	Kind        string
@@ -63,6 +69,7 @@ type applyRun struct {
 	injects  string
 	configs  string
 	wfConfig string
+	vars     *envsubst.Set
 	staged   bool
 	upserted int
 }
@@ -452,7 +459,12 @@ func (r *applyRun) requestError(what string, err error) error {
 
 // rel returns path relative to the topology directory, for logs.
 func (r *applyRun) rel(path string) string {
-	relative, _ := filepath.Rel(r.dir, path)
+	return relTo(r.dir, path)
+}
+
+// relTo returns path relative to dir, for logs.
+func relTo(dir, path string) string {
+	relative, _ := filepath.Rel(dir, path)
 
 	return relative
 }

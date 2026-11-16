@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/go-cmp/cmp"
 	"pgregory.net/rapid"
 
 	"phenix/api/experiment"
@@ -216,7 +217,7 @@ func runPrepareCases(t *testing.T, cases []prepareCase) {
 
 			plan := workflow.Plan{Action: tc.action, Experiment: "exp1", Reason: ""}
 
-			got, err := workflow.Prepare(tc.spec, plan, tc.exp, tc.pending...)
+			got, err := workflow.Prepare(tc.spec, plan, tc.exp, os.LookupEnv, tc.pending...)
 
 			if tc.wantErr != nil {
 				if !errors.Is(err, tc.wantErr) {
@@ -256,7 +257,7 @@ func TestPrepareNone(t *testing.T) {
 	)
 
 	for _, exp := range []*types.Experiment{nil, prepareExperiment(store.Annotations{"topology": "foo"})} {
-		got, err := workflow.Prepare(spec, plan, exp)
+		got, err := workflow.Prepare(spec, plan, exp, os.LookupEnv)
 		if err != nil {
 			t.Fatalf("Prepare() unexpected error: %v", err)
 		}
@@ -272,7 +273,7 @@ func TestPrepareNone(t *testing.T) {
 func TestPrepareRejectsUnknownAction(t *testing.T) {
 	installPrepareStore(t)
 
-	_, err := workflow.Prepare(workflow.Spec{Topology: "foo"}, workflow.Plan{Action: "rebuild"}, nil)
+	_, err := workflow.Prepare(workflow.Spec{Topology: "foo"}, workflow.Plan{Action: "rebuild"}, nil, os.LookupEnv)
 	if !errors.Is(err, workflow.ErrInvalidSpec) || !strings.Contains(err.Error(), `"rebuild"`) {
 		t.Fatalf("Prepare() error = %v, want an %v naming the action", err, workflow.ErrInvalidSpec)
 	}
@@ -791,7 +792,12 @@ func TestPrepareLeavesTopologyUntouched(t *testing.T) {
 		t.Run(plan.name, func(t *testing.T) {
 			expectPrepareRead(installPrepareStore(t), "topology/foo", prepareTopology())
 
-			got, err := workflow.Prepare(plan.spec, workflow.Plan{Action: plan.action, Experiment: "exp1", Reason: ""}, plan.exp)
+			got, err := workflow.Prepare(
+				plan.spec,
+				workflow.Plan{Action: plan.action, Experiment: "exp1", Reason: ""},
+				plan.exp,
+				os.LookupEnv,
+			)
 			if err != nil {
 				t.Fatalf("Prepare() unexpected error: %v", err)
 			}
@@ -844,6 +850,69 @@ func TestPrepareUpdateChecksAnnotatedTopology(t *testing.T) {
 			wantMsg: `topology "foo" cannot be used in an experiment: validating node all: hostname 'all' is reserved`,
 		},
 	})
+}
+
+// TestPrepareIncludedFileGetsBranch checks that a topology file that the
+// topology includes gets the branch of the lookup for ${BRANCH_NAME}, over the
+// environment, and the environment value for every other variable.
+func TestPrepareIncludedFileGetsBranch(t *testing.T) {
+	t.Setenv("BRANCH_NAME", "env-branch")
+	t.Setenv("PREPARE_TEST_SITE", "env-site")
+
+	file := filepath.Join(t.TempDir(), "include.yml")
+	text := `apiVersion: phenix.sandia.gov/v1
+kind: Topology
+metadata:
+  name: inc
+spec:
+  nodes:
+  - type: VirtualMachine
+    general:
+      hostname: "${BRANCH_NAME}-fw"
+    hardware:
+      os_type: linux
+  - type: VirtualMachine
+    general:
+      hostname: "${PREPARE_TEST_SITE}-gw"
+    hardware:
+      os_type: linux
+`
+
+	if err := os.WriteFile(file, []byte(text), 0o600); err != nil {
+		t.Fatalf("writing %s: %v", file, err)
+	}
+
+	topo := prepareTopologyWithNodes("foo", vmNode("host-a"))
+	topo.Spec["includeTopologies"] = []any{file}
+
+	plans := []struct {
+		name   string
+		action workflow.Action
+		spec   workflow.Spec
+		exp    *types.Experiment
+	}{
+		{name: "create", action: workflow.ActionCreate, spec: workflow.Spec{Auto: &workflow.Auto{Create: "exp1"}, Topology: "foo"}},
+		{name: "update", action: workflow.ActionUpdate, spec: workflow.Spec{Topology: "foo"}, exp: prepareExperiment(nil)},
+	}
+
+	for _, plan := range plans {
+		t.Run(plan.name, func(t *testing.T) {
+			expectPrepareRead(installPrepareStore(t), "topology/foo", topo)
+
+			got, err := workflow.Prepare(
+				plan.spec, workflow.Plan{Action: plan.action, Experiment: "exp1", Reason: ""}, plan.exp,
+				store.BranchNameLookup("lab-2"),
+			)
+			if err != nil {
+				t.Fatalf("Prepare() unexpected error: %v", err)
+			}
+
+			want := []string{"host-a", "lab-2-fw", "env-site-gw"}
+			if diff := cmp.Diff(want, summarizePrepared(got).Hostnames); diff != "" {
+				t.Errorf("Prepare() hostnames mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
 
 // TestCheckConfig checks the node checks a config dry run and the upsert make
@@ -1537,7 +1606,7 @@ func TestPreparePendingMatchesStored(t *testing.T) {
 				expectPrepareReadFails(m, name)
 			}
 
-			_, stored := workflow.Prepare(tc.spec, plan, nil)
+			_, stored := workflow.Prepare(tc.spec, plan, nil, os.LookupEnv)
 
 			// The dry run, before the upsert: the directory's configs are
 			// pending.
@@ -1551,7 +1620,7 @@ func TestPreparePendingMatchesStored(t *testing.T) {
 				refs = append(refs, workflow.PendingRef(cfg))
 			}
 
-			_, dryRun := workflow.Prepare(tc.spec, plan, nil, refs...)
+			_, dryRun := workflow.Prepare(tc.spec, plan, nil, os.LookupEnv, refs...)
 
 			if !errors.Is(stored, workflow.ErrUnresolved) || !strings.Contains(stored.Error(), tc.wantMsg) {
 				t.Fatalf("real apply: Prepare() error = %v, want an %v containing %q", stored, workflow.ErrUnresolved, tc.wantMsg)
@@ -1627,13 +1696,13 @@ func TestPreparePendingMatchesStoredProperties(t *testing.T) {
 
 		prepareMockStore(t, topology, scenario)
 
-		_, stored := workflow.Prepare(create, plan, nil)
+		_, stored := workflow.Prepare(create, plan, nil, os.LookupEnv)
 
 		prepareMockStore(t)
 
 		refs := []string{workflow.PendingRef(topology), workflow.PendingRef(scenario)}
 
-		if _, dryRun := workflow.Prepare(create, plan, nil, refs...); fmt.Sprint(dryRun) != fmt.Sprint(stored) {
+		if _, dryRun := workflow.Prepare(create, plan, nil, os.LookupEnv, refs...); fmt.Sprint(dryRun) != fmt.Sprint(stored) {
 			t.Fatalf("dry run: Prepare(pending %q) error = %v, want the real apply's %v", refs, dryRun, stored)
 		}
 	})

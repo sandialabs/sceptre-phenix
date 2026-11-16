@@ -31,7 +31,7 @@ var (
 	ErrInvalidSpec = errors.New("invalid workflow config")
 
 	// ErrInvalidName is wrapped by every error that [ValidateName] returns.
-	ErrInvalidName = errors.New("invalid workflow name")
+	ErrInvalidName = errors.New("invalid branch name")
 )
 
 // validName matches a workflow branch name that is also safe to use as a

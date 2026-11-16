@@ -141,7 +141,10 @@ func TestRunWorkflowApplyForwardsPendingRefs(t *testing.T) {
 		},
 	})
 
-	if err := runWorkflowApply(t.Context(), testApplyOptions(fake.socket, t.TempDir()), dir); err != nil {
+	opts := testApplyOptions(fake.socket, t.TempDir())
+	opts.Env = []string{"SITE=lab"}
+
+	if err := runWorkflowApply(t.Context(), opts, dir); err != nil {
 		t.Fatalf("runWorkflowApply() error = %v", err)
 	}
 

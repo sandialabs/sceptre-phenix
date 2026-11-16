@@ -2,6 +2,8 @@ package experiment_test
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -202,6 +204,76 @@ func TestCreateAnnotatesEveryVMAndTheExperiment(t *testing.T) { //nolint:paralle
 	wantTopo := map[string]nodeAnnotations{"server": {}, "client": {DefaultApps: true}}
 	if diff := cmp.Diff(wantTopo, annotationsByNode(topo.Nodes())); diff != "" {
 		t.Errorf("topology/annotated node annotations after Create() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// With CreateWithLookup, a topology file that the topology includes gets the
+// branch of the lookup for ${BRANCH_NAME}, over the environment, and the
+// environment value for every other variable.
+func TestCreateWithLookupExpandsAnIncludedFile(t *testing.T) { //nolint:paralleltest // replaces package state and the environment
+	t.Setenv("BRANCH_NAME", "env-branch")
+	t.Setenv("CREATE_TEST_SITE", "env-site")
+	useTestStore(t)
+
+	file := filepath.Join(t.TempDir(), "include.yml")
+	text := `apiVersion: phenix.sandia.gov/v1
+kind: Topology
+metadata:
+  name: inc
+spec:
+  nodes:
+  - type: VirtualMachine
+    general:
+      hostname: "${BRANCH_NAME}-fw"
+    hardware:
+      os_type: linux
+      drives:
+      - image: ubuntu.qc2
+  - type: VirtualMachine
+    general:
+      hostname: "${CREATE_TEST_SITE}-gw"
+    hardware:
+      os_type: linux
+      drives:
+      - image: ubuntu.qc2
+`
+
+	if err := os.WriteFile(file, []byte(text), 0o600); err != nil {
+		t.Fatalf("writing %s: %v", file, err)
+	}
+
+	topo := annotationTestTopology()
+	topo.Spec["includeTopologies"] = []any{file}
+
+	if err := store.Create(topo); err != nil {
+		t.Fatalf("storing topology annotated: %v", err)
+	}
+
+	err := experiment.Create(
+		t.Context(),
+		experiment.CreateWithName("annotated"),
+		experiment.CreateWithTopology("annotated"),
+		experiment.CreateWithLookup(store.BranchNameLookup("lab-2")),
+	)
+	if err != nil {
+		t.Fatalf("Create(annotated) error = %v", err)
+	}
+
+	exp, err := experiment.Get("annotated")
+	if err != nil {
+		t.Fatalf("Get(annotated) error = %v", err)
+	}
+
+	nodes := exp.Spec.Topology().Nodes()
+	got := make([]string, 0, len(nodes))
+
+	for _, node := range nodes {
+		got = append(got, node.General().Hostname())
+	}
+
+	want := []string{"server", "client", "lab-2-fw", "env-site-gw"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Get(annotated) hostnames mismatch (-want +got):\n%s", diff)
 	}
 }
 

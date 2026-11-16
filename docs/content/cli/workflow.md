@@ -14,7 +14,8 @@ Workflow management
 Workflow management
 
   Deploy topology directories through the running phenix server over its
-  unix socket (--unix-socket).
+  unix socket (--unix-socket), and print their configs with the variables
+  filled in.
 ```
 
 ```text
@@ -31,6 +32,7 @@ phenix workflow [flags]
 
 * [phenix](index.md) - A cli application for phēnix
 * [phenix workflow apply](workflow.md#phenix-workflow-apply) - Deploy a topology directory through the phenix server
+* [phenix workflow render](workflow.md#phenix-workflow-render) - Print the configs of a topology directory with their variables filled in
 
 ## phenix workflow apply
 
@@ -49,23 +51,42 @@ Deploy a topology directory through the running phenix server
                       files are skipped
     phenix.yml        the workflow config (any other name, such as
                       phenix.yaml, needs -c)
+    .env              variables for the configs, as NAME=value lines
 
   DIR|NAME is required. An existing path is used as is. Otherwise a NAME
   with no path separator is looked up under --base-dir.topologies. The
-  workflow name defaults to the base name of the directory; -b sets
+  branch name defaults to the base name of the directory; -b sets
   another. -b, --branch-name and --name are the same flag. Give only one of
   them, or give them the same value.
 
+  The branch name is not the experiment name. The experiment name is
+  auto.create in the workflow config. With "auto.create: ${BRANCH_NAME}",
+  -b also names the experiment, and each branch name is a separate
+  deployment. A fixed auto.create ignores -b. phenix reads auto.create
+  only when no experiment is mapped to the branch.
+
+  apply fills in the ${NAME} and ${NAME:default} placeholders of each
+  config and of the workflow config before it sends them. A value comes
+  from -e, else from an env file, else from the shell. --env-file names
+  the env files; without it, apply reads .env in the topology directory.
+  The shell gives no PHENIX_ variable unless -e NAME names it. A
+  placeholder with no value and no default is an error, and so is a -e
+  variable that no file uses. Write ${NAME:} for an optional variable and
+  $${NAME} for the literal text ${NAME}. Only -b sets BRANCH_NAME, and the
+  server fills in ${BRANCH_NAME}. Files in phenix-injects/ are not
+  changed.
+
   The names phenix.yml, phenix-configs and phenix-injects are
-  reserved, in any letter case: they cannot be the workflow's name,
+  reserved, in any letter case: they cannot be the branch name,
   and no entry of phenix-injects/ may have one of them at its top level
   or directly inside one of its top-level directories.
 
   apply talks to the server over --unix-socket and changes nothing until
   step 3. Each log record names its step in the step field:
 
-    1. preflight: check the server, and check that every file is one
-       YAML or JSON document and that every config has a kind
+    1. preflight: check the server, fill in the variables, and check that
+       every file is one YAML or JSON document and that every config has
+       a kind
     2. plan: the server dry-runs every config, then the workflow config
        with those configs as pending, and checks what they refer to;
        every rejection is logged, any rejection, or two files that
@@ -90,7 +111,7 @@ phenix workflow apply <DIR|NAME> [flags]
 ### Examples
 
 ```text
-# Deploy by path; the workflow name is the directory name, helloworld
+# Deploy by path; the branch name is the directory name, helloworld
 phenix workflow apply /phenix/topologies/helloworld
 
 # Look helloworld up under --base-dir.topologies; works from any directory
@@ -105,11 +126,20 @@ phenix workflow apply helloworld -n
 # Allow restarting the running experiment
 phenix workflow apply helloworld -f
 
-# Deploy under another name; injects go to <base-dir.injects>/helloworld-2
+# Deploy under another branch name; injects go to <base-dir.injects>/helloworld-2
 phenix workflow apply helloworld -b helloworld-2
 
 # The same; --branch-name and --name are the same as -b
 phenix workflow apply helloworld --name helloworld-2
+
+# Set variables for the ${NAME} placeholders; -e overrides an env file
+phenix workflow apply helloworld -e MEMORY=4096 -e SITE=lab
+
+# Copy MEMORY from the shell; it then overrides helloworld/.env
+phenix workflow apply helloworld -e MEMORY
+
+# Read the env files, and not helloworld/.env; site.env overrides base.env
+phenix workflow apply helloworld --env-file base.env --env-file site.env
 
 # Follow symlinks in phenix-injects/ and copy targets as regular files and directories
 phenix workflow apply helloworld --follow-inject-symlinks
@@ -117,7 +147,7 @@ phenix workflow apply helloworld --follow-inject-symlinks
 # Use another workflow config
 phenix workflow apply helloworld -c alt.yml
 
-# Dry run of an alternate config under another name
+# Dry run of an alternate config under another branch name
 phenix workflow apply helloworld -b hw-test -c alt.yml -n
 
 # A directory with only phenix-configs/: upsert the configs; injects and apply are skipped
@@ -145,13 +175,72 @@ docker exec phenix phenix workflow apply /phenix/topologies/helloworld -f
 ### Options
 
 ```text
-  -b, --branch-name string       workflow branch name (default: base name of the topology directory)
+  -b, --branch-name string       workflow branch name (default: base name of the topology directory); it does not rename an experiment
   -c, --config string            workflow config, relative to the topology directory unless absolute (default "phenix.yml")
   -n, --dry-run                  check every config and the workflow config, log the server's plan, and change nothing
+  -e, --env stringArray          set a variable for the ${NAME} placeholders: NAME=value, or NAME to copy the value from the shell (repeatable)
+      --env-file stringArray     read variables from an env file of NAME=value lines; a relative path starts at the working directory (repeatable)
       --follow-inject-symlinks   follow symlinks in phenix-injects/ and copy targets as regular files and directories
   -f, --force                    allow apply to stop, reconfigure and restart a running experiment
   -h, --help                     help for apply
       --name string              same as -b/--branch-name
+```
+
+### SEE ALSO
+
+* [phenix workflow](workflow.md) - Workflow management
+
+## phenix workflow render
+
+Print the configs of a topology directory with their variables filled in
+
+### Synopsis
+
+```text
+Print the configs of a topology directory with their variables filled in
+
+  render reads a topology directory as apply does: the configs in
+  phenix-configs/, the workflow config, and the variables from -e, the env
+  files and the shell. It fills in each ${NAME} and ${NAME:default}
+  placeholder, ${BRANCH_NAME} included, and prints the text of each file as
+  the server gets it and then stores or applies it. It does not contact the
+  server, and it changes nothing.
+
+  The output holds each config in upsert order, Topology configs first, and
+  then the workflow config. A comment line with the path of the file comes
+  before each file, and a line with --- comes between two files. render
+  does not format the text of a file again.
+
+  A problem with a variable is an error, as it is in apply. The output can
+  hold secrets: render prints the value of each variable that a file uses.
+```
+
+```text
+phenix workflow render <DIR|NAME> [flags]
+```
+
+### Examples
+
+```text
+# Print the configs of helloworld with their variables filled in
+phenix workflow render helloworld
+
+# Show what another branch name and a variable give
+phenix workflow render helloworld -b helloworld-2 -e MEMORY=4096
+
+# Use an env file and another workflow config
+phenix workflow render ./topo --env-file site.env -c alt.yml
+```
+
+### Options
+
+```text
+  -b, --branch-name string     workflow branch name (default: base name of the topology directory); it does not rename an experiment
+  -c, --config string          workflow config, relative to the topology directory unless absolute (default "phenix.yml")
+  -e, --env stringArray        set a variable for the ${NAME} placeholders: NAME=value, or NAME to copy the value from the shell (repeatable)
+      --env-file stringArray   read variables from an env file of NAME=value lines; a relative path starts at the working directory (repeatable)
+  -h, --help                   help for render
+      --name string            same as -b/--branch-name
 ```
 
 ### SEE ALSO

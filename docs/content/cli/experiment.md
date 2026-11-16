@@ -245,6 +245,14 @@ Create an experiment
   topology, or topology and scenario, or paths to topology/scenario
   configuration files (YAML or JSON). (Optional are the arguments for
   scenario or base directory.)
+
+  The command fills in the ${NAME} and ${NAME:default} placeholders of each
+  file before it reads the file. A value comes from -e, else from an env
+  file of --env-file, else from the shell. The shell gives no PHENIX_
+  variable unless -e NAME names it. A placeholder with no value and no
+  default is an error, and so is a -e variable that no file uses: the
+  command then changes nothing. Write ${NAME:} for an optional variable and
+  $${NAME} for the literal text ${NAME}.
 ```
 
 ```text
@@ -259,6 +267,7 @@ phenix experiment create <experiment name> -t <topology name or /path/to/filenam
 phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> -d </path/to/dir/>
 phenix experiment create <experiment name> -t <topology name or /path/to/filename> -s <scenario name or /path/to/filename> --disabled-apps "app1,app2"
 phenix experiment create <experiment name> -t <topology name> --node-annotation phenix/default-apps=false --annotation phenix.workflow/tags=nightly
+phenix experiment create <experiment name> -t </path/to/filename> -e NODES=3 --env-file site.env
 ```
 
 ### Options
@@ -268,6 +277,8 @@ phenix experiment create <experiment name> -t <topology name> --node-annotation 
   -d, --base-dir string               Base directory to use for experiment (optional)
   -b, --default-bridge string         Default bridge name to use for experiment (optional) (default "phenix")
       --disabled-apps strings         Comma separated list of apps to disable
+  -e, --env stringArray               set a variable for the ${NAME} placeholders: NAME=value, or NAME to copy the value from the shell (repeatable)
+      --env-file stringArray          read variables from an env file of NAME=value lines; a relative path starts at the working directory (repeatable)
   -h, --help                          help for create
       --node-annotation stringArray   Annotation for every VM as key=value; true, false and JSON lists or objects keep their type; may be repeated
   -s, --scenario string               Name of an existing scenario to use (optional)

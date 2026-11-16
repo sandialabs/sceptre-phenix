@@ -17,6 +17,7 @@ import (
 	ifaces "phenix/types/interfaces"
 	v1 "phenix/types/version/v1"
 	"phenix/util/common"
+	"phenix/util/envsubst"
 )
 
 const (
@@ -77,6 +78,7 @@ type pendingConfig struct {
 // the experiment mapped to the branch, if any; an update falls back to its
 // topology and scenario annotations. A create also requires the scenario's
 // topology annotation to name the topology, as creating an experiment does.
+// lookup gives the variables of a topology file that a topology includes.
 //
 // pending names configs the caller upserts before the real apply, so only a
 // dry run may pass any. Each is a ref from [PendingRef] or a bare
@@ -88,7 +90,7 @@ type pendingConfig struct {
 // or merge, or whose nodes an experiment could not use, and [ErrInvalidSpec]
 // for a malformed pending ref, an unknown action or a create without a
 // topology.
-func Prepare(spec Spec, plan Plan, exp *types.Experiment, pending ...string) (Prepared, error) {
+func Prepare(spec Spec, plan Plan, exp *types.Experiment, lookup envsubst.Lookup, pending ...string) (Prepared, error) {
 	skip, err := pendingConfigs(pending)
 	if err != nil {
 		return Prepared{}, err
@@ -98,9 +100,9 @@ func Prepare(spec Spec, plan Plan, exp *types.Experiment, pending ...string) (Pr
 	case ActionNone:
 		return Prepared{}, nil
 	case ActionCreate, ActionCreateAndStart:
-		return prepareCreate(spec, skip)
+		return prepareCreate(spec, lookup, skip)
 	case ActionUpdate, ActionUpdateAndStart, ActionRestart:
-		return prepareUpdate(spec, exp, skip)
+		return prepareUpdate(spec, exp, lookup, skip)
 	}
 
 	return Prepared{}, fmt.Errorf("%w: unknown action %q", ErrInvalidSpec, plan.Action)
@@ -228,17 +230,19 @@ func pendingConfigs(refs []string) (map[string]pendingConfig, error) {
 
 // prepareCreate resolves the topology and scenario a new experiment is
 // created from.
-func prepareCreate(spec Spec, pending map[string]pendingConfig) (Prepared, error) {
+func prepareCreate(spec Spec, lookup envsubst.Lookup, pending map[string]pendingConfig) (Prepared, error) {
 	if spec.ExperimentTopology() == "" {
 		return Prepared{}, fmt.Errorf("%w: auto.create is set but topology is not", ErrInvalidSpec)
 	}
 
-	return resolveConfigs(spec.ExperimentTopology(), spec.ExperimentScenario(), true, pending)
+	return resolveConfigs(spec.ExperimentTopology(), spec.ExperimentScenario(), true, lookup, pending)
 }
 
 // prepareUpdate resolves the topology and scenario an update applies to exp,
 // and builds the VLAN aliases and schedules it sets.
-func prepareUpdate(spec Spec, exp *types.Experiment, pending map[string]pendingConfig) (Prepared, error) {
+func prepareUpdate(
+	spec Spec, exp *types.Experiment, lookup envsubst.Lookup, pending map[string]pendingConfig,
+) (Prepared, error) {
 	topoName := cmp.Or(spec.ExperimentTopology(), experimentAnnotation(exp, topologyKey))
 	if topoName == "" {
 		return Prepared{}, fmt.Errorf(
@@ -249,7 +253,7 @@ func prepareUpdate(spec Spec, exp *types.Experiment, pending map[string]pendingC
 
 	scenarioName := cmp.Or(spec.ExperimentScenario(), experimentAnnotation(exp, scenarioKey))
 
-	prep, err := resolveConfigs(topoName, scenarioName, false, pending)
+	prep, err := resolveConfigs(topoName, scenarioName, false, lookup, pending)
 	if err != nil {
 		return Prepared{}, err
 	}
@@ -270,6 +274,7 @@ func prepareUpdate(spec Spec, exp *types.Experiment, pending map[string]pendingC
 func resolveConfigs(
 	topoName, scenarioName string,
 	checkScenarioTopology bool,
+	lookup envsubst.Lookup,
 	pending map[string]pendingConfig,
 ) (Prepared, error) {
 	prep := Prepared{
@@ -282,10 +287,10 @@ func resolveConfigs(
 	}
 
 	if topo, ok := pending[store.ConfigFullName(topologyKey, topoName)]; ok {
-		if err := checkPendingIncludes(topoName, topo.includes, pending); err != nil {
+		if err := checkPendingIncludes(topoName, topo.includes, lookup, pending); err != nil {
 			return Prepared{}, err
 		}
-	} else if err := resolveTopology(&prep); err != nil {
+	} else if err := resolveTopology(&prep, lookup); err != nil {
 		return Prepared{}, err
 	}
 
@@ -308,13 +313,15 @@ func resolveConfigs(
 // topoName includes can be found where decoding it looks: among the pending
 // configs, in the store or as a file. None is decoded, so their own includes
 // are not checked.
-func checkPendingIncludes(topoName string, includes []string, pending map[string]pendingConfig) error {
+func checkPendingIncludes(
+	topoName string, includes []string, lookup envsubst.Lookup, pending map[string]pendingConfig,
+) error {
 	for _, include := range includes {
 		if _, ok := pending[store.ConfigFullName(topologyKey, include)]; ok {
 			continue
 		}
 
-		if _, err := types.LoadTopology(include); err != nil {
+		if _, err := types.LoadTopology(include, lookup); err != nil {
 			return fmt.Errorf(
 				"%w: decoding topology %q: loading included topology %s: %w",
 				ErrUnresolved, topoName, include, err,
@@ -374,13 +381,13 @@ func checkFromScenario(name, from, topoName string, pending map[string]pendingCo
 // resolveTopology reads the topology prep names, checks its nodes and decodes
 // it, untouched, into prep. The check fills in node defaults, so it runs on a
 // decode of its own; a violation returns before the second decode.
-func resolveTopology(prep *Prepared) error {
+func resolveTopology(prep *Prepared, lookup envsubst.Lookup) error {
 	cfg, err := readConfig(topologyKey, prep.TopologyName)
 	if err != nil {
 		return err
 	}
 
-	checked, err := decodeTopology(*cfg, prep.TopologyName)
+	checked, err := decodeTopology(*cfg, prep.TopologyName, lookup)
 	if err != nil {
 		return err
 	}
@@ -389,15 +396,15 @@ func resolveTopology(prep *Prepared) error {
 		return fmt.Errorf("%w: %w", ErrUnresolved, err)
 	}
 
-	prep.Topology, err = decodeTopology(*cfg, prep.TopologyName)
+	prep.Topology, err = decodeTopology(*cfg, prep.TopologyName, lookup)
 
 	return err
 }
 
 // decodeTopology decodes cfg, the stored topology named name, with its
 // includes merged in. The error wraps [ErrUnresolved].
-func decodeTopology(cfg store.Config, name string) (ifaces.TopologySpec, error) {
-	spec, err := types.DecodeTopologyFromConfig(cfg)
+func decodeTopology(cfg store.Config, name string, lookup envsubst.Lookup) (ifaces.TopologySpec, error) {
+	spec, err := types.DecodeTopologyFromConfigWith(cfg, lookup)
 	if err != nil {
 		return nil, fmt.Errorf("%w: decoding topology %q: %w", ErrUnresolved, name, err)
 	}

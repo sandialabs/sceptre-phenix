@@ -11,6 +11,7 @@ import (
 	"phenix/store/storetest"
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
+	"phenix/util/envsubst"
 )
 
 func topologyNode(hostname string) map[string]any {
@@ -190,7 +191,7 @@ func TestLoadTopology(t *testing.T) { //nolint:paralleltest // replaces the phen
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := types.LoadTopology(tt.source)
+			got, err := types.LoadTopology(tt.source, os.LookupEnv)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("LoadTopology(%s) = %+v, want an error", tt.source, got)
@@ -205,6 +206,64 @@ func TestLoadTopology(t *testing.T) { //nolint:paralleltest // replaces the phen
 
 			if got.Kind != "Topology" || got.Metadata.Name != tt.wantName {
 				t.Errorf("LoadTopology(%s) = %s/%s, want Topology/%s", tt.source, got.Kind, got.Metadata.Name, tt.wantName)
+			}
+		})
+	}
+}
+
+// TestIncludedTopologyFiles checks that the walk finds each included file once,
+// as read, through files and stored topologies, and stops at a cycle.
+func TestIncludedTopologyFiles(t *testing.T) { //nolint:paralleltest // replaces the phenix store
+	storetest.UseBolt(t)
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	file := func(name, includes string) envsubst.File {
+		path := filepath.Join(dir, name)
+		text := "apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: " + name +
+			"\nspec:\n  includeTopologies: [" + includes + "]\n  nodes: []\n"
+
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		return envsubst.File{Path: path, Text: []byte(text)}
+	}
+
+	var (
+		c     = file("c.yaml", "")
+		r     = file("r.yaml", filepath.Join(dir, "a.yaml"))
+		b     = file("b.yaml", filepath.Join(dir, "a.yaml")+", "+r.Path)
+		a     = file("a.yaml", "'${DIR}/b.yaml', base, missing")
+		fromA = envsubst.File{Path: dir + "/b.yaml", Text: b.Text}
+	)
+
+	storeTopology(t, topoConfig("base", []string{c.Path}, "router"))
+
+	lookup := func(name string) (string, bool) { return dir, name == "DIR" }
+
+	root, err := store.DecodeConfigYAML(r.Text)
+	if err != nil {
+		t.Fatalf("DecodeConfigYAML(%s) error = %v", r.Path, err)
+	}
+
+	tests := []struct {
+		name   string
+		config store.Config
+		path   string
+		want   []envsubst.File
+	}{
+		{name: "stored", config: topoConfig("top", []string{a.Path, a.Path}, "web"), want: []envsubst.File{a, fromA, r, c}},
+		{name: "file", config: *root, path: r.Path, want: []envsubst.File{a, fromA, c}},
+		{name: "file by a relative path", config: *root, path: "r.yaml", want: []envsubst.File{a, fromA, c}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := types.IncludedTopologyFiles(tt.config, tt.path, lookup)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("IncludedTopologyFiles(%s, %q) mismatch (-want +got):\n%s", tt.config.Metadata.Name, tt.path, diff)
 			}
 		})
 	}

@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"maps"
-	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -16,6 +14,7 @@ import (
 	"pgregory.net/rapid"
 
 	"phenix/types/version"
+	"phenix/util/envsubst"
 )
 
 func TestNewConfigKindCaseInsensitive(t *testing.T) {
@@ -914,19 +913,19 @@ func TestConfigNameProperties(t *testing.T) {
 	})
 }
 
-// NewConfigFromFile parses a config by its file's extension, expanding
-// environment placeholders, and clears the fields only the store sets.
-func TestNewConfigFromFile(t *testing.T) {
+// DecodeConfigFile decodes a config by the extension of its file, keeps each
+// placeholder as written, and clears the fields only the store sets.
+func TestDecodeConfigFile(t *testing.T) {
 	t.Parallel()
 
 	const (
 		jsonBody = `{"apiVersion":"phenix.sandia.gov/v1","kind":"Topology",` +
-			`"metadata":{"name":"${PHENIX_TYPES_TEST_UNSET:a}","created":"x","updated":"y","revision":7}}`
+			`"metadata":{"name":"${NAME:a}","created":"x","updated":"y","revision":7}}`
 		yamlBody = "apiVersion: phenix.sandia.gov/v1\nkind: Topology\n" +
-			"metadata:\n  name: ${PHENIX_TYPES_TEST_UNSET:a}\n  created: x\n  updated: y\n  revision: 7\n"
+			"metadata:\n  name: ${NAME:a}\n  created: x\n  updated: y\n  revision: 7\n"
 	)
 
-	want := &Config{Version: "phenix.sandia.gov/v1", Kind: "Topology", Metadata: ConfigMetadata{Name: "a"}}
+	want := &Config{Version: "phenix.sandia.gov/v1", Kind: "Topology", Metadata: ConfigMetadata{Name: "${NAME:a}"}}
 
 	for name, tc := range map[string]struct {
 		file, body string
@@ -936,53 +935,39 @@ func TestNewConfigFromFile(t *testing.T) {
 	}{
 		"json":         {file: "a.json", body: jsonBody, want: want},
 		"yaml":         {file: "a.yaml", body: yamlBody, want: want},
-		"yml":          {file: "a.yml", body: yamlBody, want: want},
+		"yml":          {file: "dir/a.yml", body: yamlBody, want: want},
 		"bad json":     {file: "a.json", body: "{", wantErr: ErrInvalidFormat},
 		"bad yaml":     {file: "a.yaml", body: "kind: [", wantErr: ErrInvalidFormat},
 		"no extension": {file: "a", body: jsonBody, wantMsg: "invalid config extension"},
 		"other":        {file: "a.txt", body: jsonBody, wantMsg: "invalid config extension"},
-		"missing":      {file: "missing.json", wantErr: os.ErrNotExist, wantMsg: "cannot read config"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			path := filepath.Join(t.TempDir(), tc.file)
-
-			if tc.body != "" {
-				if err := os.WriteFile(path, []byte(tc.body), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-
-			got, err := NewConfigFromFile(path)
+			got, err := DecodeConfigFile(tc.file, []byte(tc.body))
 			if (err != nil) != (tc.want == nil) || (tc.wantErr != nil && !errors.Is(err, tc.wantErr)) {
-				t.Fatalf("NewConfigFromFile(%s) error = %v, want error %t (%v)", tc.file, err, tc.want == nil, tc.wantErr)
+				t.Fatalf("DecodeConfigFile(%s) error = %v, want error %t (%v)", tc.file, err, tc.want == nil, tc.wantErr)
 			}
 
 			if tc.wantMsg != "" && (err == nil || !strings.Contains(err.Error(), tc.wantMsg)) {
-				t.Fatalf("NewConfigFromFile(%s) error = %v, want it to contain %q", tc.file, err, tc.wantMsg)
+				t.Fatalf("DecodeConfigFile(%s) error = %v, want it to contain %q", tc.file, err, tc.wantMsg)
 			}
 
 			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("NewConfigFromFile(%s) mismatch (-want +got):\n%s", tc.file, diff)
+				t.Errorf("DecodeConfigFile(%s) mismatch (-want +got):\n%s", tc.file, diff)
 			}
 		})
 	}
 }
 
-// TestDecodeConfigKeepsPlaceholders checks that DecodeConfigJSON and
-// DecodeConfigYAML keep each ${NAME} placeholder, and that NewConfigFromYAML
-// and NewConfigFromFile, which the CLI uses, still expand them.
+// TestDecodeConfigKeepsPlaceholders checks that DecodeConfigJSON,
+// DecodeConfigYAML and DecodeConfigFile keep each ${NAME} placeholder, and
+// that NewConfigFromYAML fills them in from the environment.
 func TestDecodeConfigKeepsPlaceholders(t *testing.T) {
 	t.Setenv("PHENIX_STORE_TEST_SECRET", "server-secret")
 
 	fromFile := func(body []byte) (*Config, error) {
-		path := filepath.Join(t.TempDir(), "topology.yml")
-		if err := os.WriteFile(path, body, 0o600); err != nil {
-			t.Fatalf("os.WriteFile(%q) returned error: %v", path, err)
-		}
-
-		return NewConfigFromFile(path)
+		return DecodeConfigFile("topology.yml", body)
 	}
 
 	const (
@@ -1006,7 +991,7 @@ func TestDecodeConfigKeepsPlaceholders(t *testing.T) {
 		{name: "DecodeConfigJSON", decode: DecodeConfigJSON, input: jsonDoc, want: verbatim},
 		{name: "DecodeConfigYAML", decode: DecodeConfigYAML, input: yamlDoc, want: verbatim},
 		{name: "NewConfigFromYAML", decode: NewConfigFromYAML, input: yamlDoc, want: expanded},
-		{name: "NewConfigFromFile", decode: fromFile, input: yamlDoc, want: expanded},
+		{name: "DecodeConfigFile", decode: fromFile, input: yamlDoc, want: verbatim},
 	}
 
 	for _, tt := range tests {
@@ -1095,52 +1080,42 @@ func TestConfigFullNames(t *testing.T) {
 }
 
 // TestExpandBranchName checks that ExpandBranchName fills in only the
-// ${BRANCH_NAME} placeholders and keeps every other one as it is written.
+// ${BRANCH_NAME} placeholders, from the lookup and not from the environment,
+// and keeps every other placeholder as it is written.
 func TestExpandBranchName(t *testing.T) {
-	t.Setenv("BRANCH_NAME", "lab")
+	t.Setenv("BRANCH_NAME", "from-the-environment")
 	t.Setenv("PHENIX_STORE_TEST_SECRET", "server-secret")
 
+	const secret = "${PHENIX_STORE_TEST_SECRET}"
+
+	set := envsubst.Fixed("lab")
+	unset := func(string) (string, bool) { return "", false }
+
 	tests := []struct {
-		input string
-		want  string
+		name   string
+		lookup envsubst.Lookup
+		input  string
+		want   string
 	}{
-		{input: "${BRANCH_NAME}", want: "lab"},
-		{input: "/phenix/injects/${BRANCH_NAME}/motd", want: "/phenix/injects/lab/motd"},
-		{input: "${BRANCH_NAME:other}", want: "lab"},
-		{input: "${PHENIX_STORE_TEST_SECRET}", want: "${PHENIX_STORE_TEST_SECRET}"},
-		{input: "${PHENIX_STORE_TEST_SECRET:x}", want: "${PHENIX_STORE_TEST_SECRET:x}"},
-		{input: "$PHENIX_STORE_TEST_SECRET", want: "$PHENIX_STORE_TEST_SECRET"},
-		{input: "$BRANCH_NAME", want: "$BRANCH_NAME"},
-		{input: "${BRANCH_NAME}-${PHENIX_STORE_TEST_SECRET}", want: "lab-${PHENIX_STORE_TEST_SECRET}"},
+		{name: "the name", lookup: set, input: "${BRANCH_NAME}", want: "lab"},
+		{name: "in a path", lookup: set, input: "/phenix/injects/${BRANCH_NAME}/motd", want: "/phenix/injects/lab/motd"},
+		{name: "with a default", lookup: set, input: "${BRANCH_NAME:other}", want: "lab"},
+		{name: "another name", lookup: set, input: secret, want: secret},
+		{name: "another name with a default", lookup: set, input: "${PHENIX_STORE_TEST_SECRET:x}", want: "${PHENIX_STORE_TEST_SECRET:x}"},
+		{name: "another name without braces", lookup: set, input: "$PHENIX_STORE_TEST_SECRET", want: "$PHENIX_STORE_TEST_SECRET"},
+		{name: "the name without braces", lookup: set, input: "$BRANCH_NAME", want: "$BRANCH_NAME"},
+		{name: "both names", lookup: set, input: "${BRANCH_NAME}-" + secret, want: "lab-" + secret},
+		{name: "the escaped name", lookup: set, input: "$${BRANCH_NAME}", want: "${BRANCH_NAME}"},
+		{name: "another escaped name", lookup: set, input: "$" + secret, want: "$" + secret},
+		{name: "not set, with a default", lookup: unset, input: "${BRANCH_NAME:main}", want: "main"},
+		{name: "not set", lookup: unset, input: "[${BRANCH_NAME}]", want: "[]"},
 	}
 
 	for _, tt := range tests {
-		if got := string(ExpandBranchName([]byte(tt.input))); got != tt.want {
-			t.Errorf("ExpandBranchName(%q) = %q, want %q", tt.input, got, tt.want)
-		}
-	}
-}
-
-// TestExpandBranchNameUnset checks that ExpandBranchName uses the default of
-// a ${BRANCH_NAME:default} placeholder when BRANCH_NAME is not set.
-func TestExpandBranchNameUnset(t *testing.T) {
-	t.Setenv("BRANCH_NAME", "")
-
-	if err := os.Unsetenv("BRANCH_NAME"); err != nil {
-		t.Fatalf("os.Unsetenv(BRANCH_NAME) returned error: %v", err)
-	}
-
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{input: "${BRANCH_NAME:main}", want: "main"},
-		{input: "${BRANCH_NAME}", want: ""},
-	}
-
-	for _, tt := range tests {
-		if got := string(ExpandBranchName([]byte(tt.input))); got != tt.want {
-			t.Errorf("ExpandBranchName(%q) = %q, want %q", tt.input, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			if got := string(ExpandBranchName([]byte(tt.input), tt.lookup)); got != tt.want {
+				t.Errorf("ExpandBranchName(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
 	}
 }
