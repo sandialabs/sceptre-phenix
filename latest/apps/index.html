@@ -1635,6 +1635,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#skipping-hostname-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skipping Hostname Changes
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2491,6 +2502,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#skipping-hostname-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skipping Hostname Changes
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2888,6 +2910,10 @@ Windows guests must provide PowerShell.</p>
 </div>
 <p>The <code>startup</code> app does not generate scripts for router nodes or nodes with
 <a href="#disable-default-apps-for-a-vm"><code>phenix/default-apps: false</code></a>.</p>
+<h4 id="skipping-hostname-changes">Skipping Hostname Changes<a class="headerlink" href="#skipping-hostname-changes" title="Permanent link">&para;</a></h4>
+<p>Set the node annotation <code>phenix/startup-set-hostname: false</code> on a Topology node
+to keep the guest's existing hostname while still applying timezone, network
+interface, and domain configuration.</p>
 <h3 id="ntp-app">ntp App<a class="headerlink" href="#ntp-app" title="Permanent link">&para;</a></h3>
 <p>The <code>ntp</code> app configures experiment VMs to use a NTP server in the experiment.</p>
 <p>There are two ways to configure the NTP app:</p>
