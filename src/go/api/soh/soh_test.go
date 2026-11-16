@@ -222,3 +222,14 @@ func TestContainerCheckCommand(t *testing.T) {
 		})
 	}
 }
+
+func TestPowerShellEncodedCommand(t *testing.T) {
+	t.Parallel()
+
+	got := powerShellEncodedCommand("$_")
+
+	// "$_" as UTF-16LE is 24 00 5F 00.
+	if want := "powershell -NoProfile -EncodedCommand JABfAA=="; got != want {
+		t.Fatalf("powerShellEncodedCommand() = %q, want %q", got, want)
+	}
+}

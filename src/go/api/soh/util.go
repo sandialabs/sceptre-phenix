@@ -2,6 +2,8 @@ package soh
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -12,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/mitchellh/mapstructure"
 
@@ -1841,11 +1844,13 @@ func (s SOH) portTest(
 			return
 		}
 
-		exec = fmt.Sprintf(
-			`powershell -command "$tcp=Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { %s }; $udp=Get-NetUDPEndpoint -ErrorAction SilentlyContinue | Where-Object { %s }; @($tcp+$udp) | Select-Object -First 1"`,
+		exec = powerShellEncodedCommand(fmt.Sprintf(
+			`$tcp=Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { %s }; `+
+				`$udp=Get-NetUDPEndpoint -ErrorAction SilentlyContinue | Where-Object { %s }; `+
+				`if ($tcp -or $udp) { 'listening' }`,
 			filter,
 			filter,
-		)
+		))
 	} else {
 		switch len(target) {
 		case 1:
@@ -1868,15 +1873,15 @@ func (s SOH) portTest(
 
 	retries := 5
 	expected := func(resp string) error {
-		lineCount := 1
+		var listening bool
 
 		if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
-			lineCount = 0
+			listening = strings.TrimSpace(resp) == "listening"
+		} else {
+			listening = len(trim(resp)) > 1 // more than the ss header line
 		}
 
-		lines := trim(resp)
-
-		if len(lines) <= lineCount {
+		if !listening {
 			if retries > 0 {
 				retries--
 
@@ -1897,6 +1902,20 @@ func (s SOH) portTest(
 	cmd.Expected = expected
 
 	mm.ScheduleC2ParallelCommand(ctx, cmd)
+}
+
+// powerShellEncodedCommand wraps script in `powershell -EncodedCommand` so
+// minimega, which runs [os.ExpandEnv] on every command, cannot expand its
+// PowerShell variables ($_, $tcp, ...).
+func powerShellEncodedCommand(script string) string {
+	encoded := utf16.Encode([]rune(script))
+	buf := make([]byte, 0, len(encoded)*2) //nolint:mnd // UTF-16 code units are two bytes
+
+	for _, u := range encoded {
+		buf = binary.LittleEndian.AppendUint16(buf, u)
+	}
+
+	return "powershell -NoProfile -EncodedCommand " + base64.StdEncoding.EncodeToString(buf)
 }
 
 func (s SOH) newParallelCommand(ns, host, exec string) *mm.C2ParallelCommand {
