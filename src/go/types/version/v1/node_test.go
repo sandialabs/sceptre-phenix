@@ -7,6 +7,26 @@ import (
 
 func boolPtr(b bool) *bool { return &b }
 
+func TestNodeExternal(t *testing.T) {
+	tests := []struct {
+		name string
+		node Node
+		want bool
+	}{
+		{name: "unset external is internal", node: Node{}, want: false},
+		{name: "external true is external", node: Node{ExternalF: boolPtr(true)}, want: true},
+		{name: "external false is internal", node: Node{ExternalF: boolPtr(false)}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.node.External(); got != tt.want {
+				t.Errorf("Node.External() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 func nodeWithGateways(external *bool, gateways ...string) Node {
 	ifaces := make([]*Interface, len(gateways))
 	for i, gw := range gateways {
@@ -67,10 +87,8 @@ func TestNodeValidate(t *testing.T) {
 			node: nodeWithGateways(boolPtr(true), "10.0.0.1", "10.0.1.1"),
 		},
 		{
-			name:    "external key explicitly false is rejected",
-			node:    nodeWithGateways(boolPtr(false), "10.0.0.1"),
-			wantErr: true,
-			substr:  "external key should not be included",
+			name: "external key explicitly false is internal",
+			node: nodeWithGateways(boolPtr(false), "10.0.0.1"),
 		},
 		{
 			name: "internal node, duplicate interface names",

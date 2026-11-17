@@ -94,15 +94,7 @@ func (n Node) Commands() []string {
 }
 
 func (n Node) External() bool {
-	// The topology schema uses the `external` key as a way to determine which of
-	// the two node schemas to apply to a configuration. The value is ignored, but
-	// the key must be provided in order to use the less stringent node schema.
-	// Here, if the key is provided, even if the value is false, we consider it to
-	// be an external node.
-	//
-	// NOTE: the `Node.validate` function should error out if external was
-	// intentionally set to false by a user.
-	return n.ExternalF != nil
+	return n.ExternalF != nil && *n.ExternalF
 }
 
 // ManagedByPhenix reports whether Phenix owns this node as a managed minimega
@@ -611,13 +603,7 @@ func (del Deletion) Description() string {
 }
 
 func (n Node) validate() error {
-	if n.ExternalF != nil {
-		if external := *n.ExternalF; !external {
-			return errors.New(
-				"the external key should not be included for internal nodes (even if set to false)",
-			)
-		}
-
+	if n.External() {
 		return nil
 	}
 
@@ -689,6 +675,10 @@ func (n Node) validate() error {
 
 func (n *Node) setDefaults(bridge string) {
 	if n.External() {
+		return
+	}
+
+	if n.GeneralF == nil || n.HardwareF == nil {
 		return
 	}
 
