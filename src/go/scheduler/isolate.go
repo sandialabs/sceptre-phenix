@@ -43,7 +43,7 @@ func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 	// get VM totals
 
 	for _, node := range spec.Topology().Nodes() {
-		if !node.External() {
+		if node.Schedulable() {
 			totalCPU += node.Hardware().VCPU()
 			totalMEM += node.Hardware().Memory()
 
@@ -66,7 +66,7 @@ func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 				}
 
 				for _, node := range spec.Topology().Nodes() {
-					if !node.External() {
+					if node.Schedulable() {
 						spec.Schedules()[node.General().Hostname()] = host.Name
 					}
 				}
@@ -90,7 +90,7 @@ func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 
 			if cpuUsage < maxUsageRatio && memUsage < maxUsageRatio {
 				for _, node := range spec.Topology().Nodes() {
-					if !node.External() {
+					if node.Schedulable() {
 						spec.Schedules()[node.General().Hostname()] = host.Name
 					}
 				}
@@ -105,7 +105,7 @@ func (isolateExperiment) Schedule(spec ifaces.ExperimentSpec) error {
 	for _, host := range cluster {
 		if host.VMs == 0 {
 			for _, node := range spec.Topology().Nodes() {
-				if !node.External() {
+				if node.Schedulable() {
 					spec.Schedules()[node.General().Hostname()] = host.Name
 				}
 			}

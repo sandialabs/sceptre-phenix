@@ -602,10 +602,6 @@ func Start(ctx context.Context, opts ...StartOption) error {
 		)
 
 		for _, node := range bootable {
-			if node.External() {
-				continue
-			}
-
 			hostname := node.General().Hostname()
 
 			if node.Delay().User() {

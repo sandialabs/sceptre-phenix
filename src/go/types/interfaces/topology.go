@@ -36,6 +36,9 @@ type NodeSpec interface { //nolint:interfacebloat // legacy interface
 	Overrides() map[string]string
 	Commands() []string
 	External() bool
+	ManagedByPhenix() bool
+	Launchable() bool
+	Schedulable() bool
 
 	SetInjections([]NodeInjection)
 	SetDeletions([]NodeDeletion)
