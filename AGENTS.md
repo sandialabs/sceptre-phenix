@@ -67,6 +67,9 @@ leave a one-line pointer to it from `SKILL.md`.
 - Runtime precedence is CLI flags, config file, environment, then defaults.
 - Never delete a live `config.yaml`; use `phenix settings unset` so its watcher
   remains active.
+- For topology node lifecycle decisions, prefer the semantic helpers
+  `ManagedByPhenix()`, `Launchable()`, and `Schedulable()` over directly
+  combining `External()` and `general.do_not_boot` checks.
 
 ## Setup and Common Commands
 

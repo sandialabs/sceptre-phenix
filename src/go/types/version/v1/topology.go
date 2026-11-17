@@ -44,17 +44,9 @@ func (t *TopologySpec) BootableNodes() []ifaces.NodeSpec {
 	var bootable []ifaces.NodeSpec
 
 	for _, n := range t.NodesF {
-		var dnb bool
-
-		if n.GeneralF.DoNotBootF != nil {
-			dnb = *n.GeneralF.DoNotBootF
+		if n.Launchable() {
+			bootable = append(bootable, n)
 		}
-
-		if dnb {
-			continue
-		}
-
-		bootable = append(bootable, n)
 	}
 
 	return bootable
@@ -68,7 +60,7 @@ func (t *TopologySpec) SchedulableNodes(platform string) []ifaces.NodeSpec {
 	var schedulable []ifaces.NodeSpec
 
 	for _, n := range t.NodesF {
-		if !n.External() {
+		if n.Schedulable() {
 			schedulable = append(schedulable, n)
 		}
 	}
