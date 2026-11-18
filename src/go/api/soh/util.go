@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -1475,12 +1476,12 @@ func (s SOH) portTest(
 	retries := 5
 	expected := func(resp string) error {
 		lineCount := 1
+		lines := trim(resp)
 
 		if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
 			lineCount = 0
+			lines = slices.DeleteFunc(lines, isCLIXML)
 		}
-
-		lines := trim(resp)
 
 		if len(lines) <= lineCount {
 			if retries > 0 {
@@ -1532,7 +1533,11 @@ func portCheckCommand(osType, port string) (string, error) {
 	}
 
 	if strings.EqualFold(osType, osTypeWindows) {
-		script := "@(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue; " +
+		// Windows PowerShell 5.1 writes a progress record the first time it loads
+		// a module. `$ProgressPreference` cannot be set directly: minimega
+		// expands the `$`.
+		script := "Set-Variable ProgressPreference SilentlyContinue; " +
+			"@(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue; " +
 			"Get-NetUDPEndpoint -ErrorAction SilentlyContinue)"
 
 		if addr != "" {
@@ -1829,6 +1834,12 @@ func skip(node ifaces.NodeSpec, toSkip []string) bool {
 	}
 
 	return false
+}
+
+// isCLIXML tells whether line is part of a CLIXML record that PowerShell
+// writes for a stream other than output, such as progress.
+func isCLIXML(line string) bool {
+	return strings.HasPrefix(line, "#< CLIXML") || strings.HasPrefix(line, "<Objs ")
 }
 
 func trim(str string) []string {

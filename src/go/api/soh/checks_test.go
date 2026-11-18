@@ -687,7 +687,8 @@ func TestChecksReportEachOutcome(t *testing.T) { //nolint:paralleltest // replac
 	)
 
 	winPort := func(port string) string {
-		return "exp/win: powershell -NoProfile -Command '@(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue; " +
+		return "exp/win: powershell -NoProfile -Command 'Set-Variable ProgressPreference SilentlyContinue; " +
+			"@(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue; " +
 			"Get-NetUDPEndpoint -ErrorAction SilentlyContinue) | Where-Object LocalPort -eq " + port + " | Select-Object -First 1' (uuid)"
 	}
 
@@ -695,8 +696,9 @@ func TestChecksReportEachOutcome(t *testing.T) { //nolint:paralleltest // replac
 		"exp/web: stat -c present -- /etc/passwd":              "present",
 		"exp/web: docker inspect " + dockerFormat + " -- boot": "starting",
 		"exp/web: docker inspect " + dockerFormat + " -- old":  "exited",
-		winPort("3389"): "",
-		winPort("445"):  "\nTCP 0.0.0.0:445 Listen\n",
+		winPort("3389"): "#< CLIXML\r\n<Objs Version=\"1.1.0.1\" xmlns=\"http://schemas.microsoft.com/powershell/2004/04\">" +
+			"<Obj S=\"progress\" RefId=\"0\"><TN RefId=\"0\"><T>System.Management.Automation.PSCustomObject</T></TN></Obj></Objs>\r\n",
+		winPort("445"): "\nTCP 0.0.0.0:445 Listen\n",
 		"exp/web: send exp/web-stderr; bash /tmp/miniccc/files/exp/web-stderr":                                                     "warn",
 		"exp/web: send exp/web-stdout-miss; bash /tmp/miniccc/files/exp/web-stdout-miss":                                           "warn",
 		"exp/web: send exp/web-stderr-miss; bash /tmp/miniccc/files/exp/web-stderr-miss":                                           "warn",
