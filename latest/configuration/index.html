@@ -3007,6 +3007,13 @@ other files configured for injection are still skipped. See
 <a href="../apps/#c2-startup-script-delivery">C2 Startup Script Delivery</a> for the
 requirements and configuration options.</p>
 </div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>On Windows nodes, injection and deletion paths match existing files
+regardless of case. The inject partition must be NTFS, and the minimega
+host needs <code>lowntfs-3g</code>; without it, minimega silently falls back to a
+case-sensitive mount.</p>
+</div>
 <h4 id="delay-start">Delay Start<a class="headerlink" href="#delay-start" title="Permanent link">&para;</a></h4>
 <p>It is possible to delay the start of a VM with the <code>delay</code> value. There are
 three options available to set, but on only one option can be set:</p>
