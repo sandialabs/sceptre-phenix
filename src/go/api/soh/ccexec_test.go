@@ -165,7 +165,7 @@ func TestCheckCommands(t *testing.T) {
 	const (
 		dockerTmpl = `{{if .State.Health}}{{.State.Health.Status}}` +
 			`{{else}}{{if .State.Running}}running{{else}}{{.State.Status}}{{end}}{{end}}`
-		netPrefix = `@(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue; ` +
+		netPrefix = `Set-Variable ProgressPreference SilentlyContinue; @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue; ` +
 			`Get-NetUDPEndpoint -ErrorAction SilentlyContinue)`
 	)
 
