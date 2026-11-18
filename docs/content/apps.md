@@ -284,9 +284,8 @@ the `ntp` app metadata.
 
 For a Vyatta or VyOS router, the [`vrouter` app](#vrouter-app) also writes the
 NTP server into the router configuration. With the label method, it uses the
-address of the labeled node's interface on the `MGMT` VLAN (in any letter case),
-not the interface that the label names. If the labeled node has no interface on
-that VLAN, the router uses the app metadata. With app metadata, a router listed in
+address of the interface that the label names. If that interface does not exist
+or has no IP address, the experiment does not start. With app metadata, a router listed in
 `hosts` must set `client: ntp`; another value causes an error.
 
 #### NTP Scenario Options
