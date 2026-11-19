@@ -8525,6 +8525,49 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  "/topologies/{topo}/launchable-vm-names":
+    get:
+      tags:
+        - Topologies
+      summary: Get VM names Phenix will launch for a topology
+      description: >-
+        Returns the minimega VM names of the topology nodes that Phenix will
+        launch, in topology order. External and hardware-in-the-loop nodes are
+        excluded, as are nodes marked `general.do_not_boot`. Needs the
+        `topologies` `get` permission on the named topology.
+      operationId: getTopologyLaunchableVMNames
+      parameters:
+        - name: topo
+          in: path
+          description: topology name
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LaunchableVMNames"
+        "403":
+          description: the role may not get the topology
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: the topology does not exist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: the topology could not be read or decoded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/topologies/{topo}/scenarios":
     get:
       tags:
@@ -17341,6 +17384,21 @@ components:
           title: "Applications"
           example: [scorch, ntp]
           description: "Application names available to experiments."
+          type: array
+          items:
+            type: string
+    LaunchableVMNames:
+      title: "Launchable VM Names"
+      description: "The minimega VM names Phenix will launch for a topology, in topology order."
+      type: object
+      properties:
+        vm_names:
+          title: "VM Names"
+          example: [vm1, router1]
+          description: >-
+            The `general.hostname` values of the topology nodes that Phenix will
+            launch. External and hardware-in-the-loop nodes are excluded, as are
+            nodes marked `general.do_not_boot`.
           type: array
           items:
             type: string
