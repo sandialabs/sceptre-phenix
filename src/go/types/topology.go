@@ -16,20 +16,33 @@ import (
 	"phenix/util/envsubst"
 )
 
-func DecodeTopologyFromConfig(c store.Config) (ifaces.TopologySpec, error) {
-	return DecodeTopologyFromConfigWith(c, os.LookupEnv)
+// IncludeReader returns the text of the topology file at path, which a
+// topology includes, with its variables filled in. text is the file as read.
+// An error stops the load of the topology.
+type IncludeReader func(path string, text []byte) ([]byte, error)
+
+// ExpandIncludes returns an [IncludeReader] that replaces each placeholder
+// with the value from lookup, as [envsubst.Expand] does. It never fails.
+func ExpandIncludes(lookup envsubst.Lookup) IncludeReader {
+	return func(_ string, text []byte) ([]byte, error) {
+		return envsubst.Expand(text, lookup), nil
+	}
 }
 
-// DecodeTopologyFromConfigWith is [DecodeTopologyFromConfig] with lookup for
+func DecodeTopologyFromConfig(c store.Config) (ifaces.TopologySpec, error) {
+	return DecodeTopologyFromConfigWith(c, ExpandIncludes(os.LookupEnv))
+}
+
+// DecodeTopologyFromConfigWith is [DecodeTopologyFromConfig] with read for
 // the variables of an included topology file.
-func DecodeTopologyFromConfigWith(c store.Config, lookup envsubst.Lookup) (ifaces.TopologySpec, error) {
-	return decodeTopologyRecursive(c, map[string]bool{}, lookup)
+func DecodeTopologyFromConfigWith(c store.Config, read IncludeReader) (ifaces.TopologySpec, error) {
+	return decodeTopologyRecursive(c, map[string]bool{}, read)
 }
 
 func decodeTopologyRecursive(
 	c store.Config,
 	visited map[string]bool,
-	lookup envsubst.Lookup,
+	read IncludeReader,
 ) (ifaces.TopologySpec, error) {
 	if visited[c.Metadata.Name] {
 		return nil, fmt.Errorf("cyclic import detected: %s", c.Metadata.Name)
@@ -47,12 +60,12 @@ func decodeTopologyRecursive(
 
 	if v1Spec, ok := spec.(*v1.TopologySpec); ok {
 		for _, include := range v1Spec.IncludeTopologiesF {
-			childConfig, err := LoadTopology(include, lookup)
+			childConfig, err := LoadTopology(include, read)
 			if err != nil {
 				return nil, fmt.Errorf("loading included topology %s: %w", include, err)
 			}
 
-			childSpec, err := decodeTopologyRecursive(*childConfig, newVisited, lookup)
+			childSpec, err := decodeTopologyRecursive(*childConfig, newVisited, read)
 			if err != nil {
 				return nil, fmt.Errorf("decoding included topology %s: %w", include, err)
 			}
@@ -109,15 +122,20 @@ func decodeTopologySpec(c store.Config) (ifaces.TopologySpec, error) {
 }
 
 // LoadTopology returns the topology config named source: the stored one, else
-// the YAML file at that path, with each ${NAME} placeholder replaced by the
-// value from lookup. Including a topology loads it this way.
-func LoadTopology(source string, lookup envsubst.Lookup) (*store.Config, error) {
+// the YAML file at that path, with its ${NAME} placeholders filled in by read.
+// Including a topology loads it this way.
+func LoadTopology(source string, read IncludeReader) (*store.Config, error) {
 	stored, text, err := findTopology(source)
 	if err != nil || stored != nil {
 		return stored, err
 	}
 
-	return store.DecodeConfigYAML(envsubst.Expand(text, lookup))
+	text, err = read(source, text)
+	if err != nil {
+		return nil, err
+	}
+
+	return store.DecodeConfigYAML(text)
 }
 
 // findTopology returns the stored topology config named source. When the

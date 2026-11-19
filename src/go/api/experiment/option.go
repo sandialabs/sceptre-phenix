@@ -3,6 +3,7 @@ package experiment
 import (
 	"os"
 
+	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/util/common"
 	"phenix/util/envsubst"
@@ -28,14 +29,14 @@ type createOptions struct {
 	useGREMesh      bool
 	defaultBridge   string
 	baseDirRoot     string
-	lookup          envsubst.Lookup
+	includes        types.IncludeReader
 }
 
 func newCreateOptions(opts ...CreateOption) createOptions {
 	o := createOptions{ //nolint:exhaustruct // functional options pattern
 		deployMode: common.DeployMode,
 		useGREMesh: common.UseGREMesh,
-		lookup:     os.LookupEnv,
+		includes:   types.ExpandIncludes(os.LookupEnv),
 	}
 
 	for _, opt := range opts {
@@ -152,8 +153,15 @@ func CreateWithBaseDirInside(root string) CreateOption {
 // CreateWithLookup sets the lookup for the variables of a topology file that
 // the topology includes. The default is the environment.
 func CreateWithLookup(lookup envsubst.Lookup) CreateOption {
+	return CreateWithIncludes(types.ExpandIncludes(lookup))
+}
+
+// CreateWithIncludes sets the reader that fills in the variables of a topology
+// file that the topology includes. Of it and [CreateWithLookup], the last
+// option given wins.
+func CreateWithIncludes(read types.IncludeReader) CreateOption {
 	return func(o *createOptions) {
-		o.lookup = lookup
+		o.includes = read
 	}
 }
 

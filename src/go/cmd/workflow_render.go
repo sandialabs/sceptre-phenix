@@ -20,8 +20,10 @@ const (
   phenix-configs/, the workflow config, and the variables from -e, the env
   files and the shell. It fills in each ${NAME} and ${NAME:default}
   placeholder, ${BRANCH_NAME} included, and prints the text of each file as
-  the server gets it and then stores or applies it. It does not contact the
-  server, and it changes nothing.
+  the server fills it in and then stores or applies it. It does not contact the
+  server, and it changes nothing. It does not read the topology files that
+  includeTopologies names, so a -e variable that only such a file uses is
+  an error in render.
 
   The output holds each config in upsert order, Topology configs first, and
   then the workflow config. A comment line with the path of the file comes

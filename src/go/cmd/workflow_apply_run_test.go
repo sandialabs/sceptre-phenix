@@ -12,7 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"phenix/api/workflow"
+	"phenix/web"
 )
 
 func TestWorkflowTags(t *testing.T) {
@@ -125,10 +128,14 @@ func TestRunWorkflowApplySucceeds(t *testing.T) {
 	})
 }
 
-// TestRunWorkflowApplySendsFilesWithVariables checks that every file reaches
-// the server with its variables filled in, from -e, the .env file of the
-// directory and the shell, and with ${BRANCH_NAME} left for the server.
+// TestRunWorkflowApplySendsFilesWithVariables checks that every request sends
+// its file as written, with the variables of the command: -e, the .env file of
+// the directory, and the shell without PHENIX_ variables that -e does not
+// name. The server fill-in then gives the text that the local check gave, with
+// ${BRANCH_NAME} left for the server. No value is logged above debug level.
 func TestRunWorkflowApplySendsFilesWithVariables(t *testing.T) {
+	logs := captureLogs(t)
+
 	const (
 		imageJSON = `{"apiVersion": "phenix.sandia.gov/v1", "kind": "Image", "metadata": {"name": "img"}, "spec": {"size": %s}}`
 		vlans     = "  vlans: {mgmt: %s}\n"
@@ -150,7 +157,10 @@ func TestRunWorkflowApplySendsFilesWithVariables(t *testing.T) {
 
 	opts := testApplyOptions(fake.socket, t.TempDir())
 	opts.Env = []string{"VLAN=101", "PHENIX_WORKFLOW_TEST"}
-	opts.Environ = []string{"VLAN=shell", "SIZE=shell", "IMG=shell.qc2", "PHENIX_WORKFLOW_TEST=named", "BRANCH_NAME=shell"}
+	opts.Environ = []string{
+		"VLAN=shell", "SIZE=shell", "IMG=shell.qc2", "PHENIX_WORKFLOW_TEST=named", "BRANCH_NAME=shell",
+		"PHENIX_HIDDEN=hidden", "UNUSED_SHELL=shell-only", "BASH_FUNC_f%%=() {}",
+	}
 
 	if err := runWorkflowApply(t.Context(), opts, dir); err != nil {
 		t.Fatalf("runWorkflowApply() error = %v", err)
@@ -166,15 +176,49 @@ func TestRunWorkflowApplySendsFilesWithVariables(t *testing.T) {
 		reqDryRun("foo", "Topology/foo", "Image/img", "Scenario/foo"),
 		reqConfig("foo"), reqConfig("foo"), reqConfig("foo"), reqApply("foo", workflow.ActionCreate))
 
+	rawImage := fmt.Sprintf(imageJSON, "${SIZE}")
+	rawScenario := wfScenarioYAML + "  # ${PHENIX_WORKFLOW_TEST}\n"
+	rawWorkflow := wfWorkflowYAML + fmt.Sprintf(vlans, "${VLAN}")
+	vars := map[string]string{
+		"VLAN": "101", "SIZE": "4", "IMG": "shell.qc2", "PHENIX_WORKFLOW_TEST": "named", "UNUSED_SHELL": "shell-only",
+	}
+
 	reqs := fake.recorded()
-	for i, want := range []string{"", topology, image, scenario, wfConfig, topology, image, scenario, wfConfig} {
-		if reqs[i].body != want {
-			t.Errorf("request %d body = %q, want the file with its variables filled in, %q", i, reqs[i].body, want)
+	for i, want := range []struct{ raw, filled string }{
+		{}, {rawTopology, topology}, {rawImage, image}, {rawScenario, scenario}, {rawWorkflow, wfConfig},
+		{rawTopology, topology}, {rawImage, image}, {rawScenario, scenario}, {rawWorkflow, wfConfig},
+	} {
+		if i == 0 {
+			continue
+		}
+
+		if !reqs[i].multipart || reqs[i].body != want.raw {
+			t.Errorf("request %d body = %q, multipart %t, want the file as written, %q", i, reqs[i].body, reqs[i].multipart, want.raw)
+		}
+
+		if diff := cmp.Diff(vars, reqs[i].variables); diff != "" {
+			t.Errorf("request %d variables mismatch (-want +got):\n%s", i, diff)
+		}
+
+		filled, err := web.FillVariables([]byte(reqs[i].body), "the config", "foo", reqs[i].variables, nil)
+		if err != nil || string(filled.Text) != want.filled || len(filled.Warnings) != 0 {
+			t.Errorf("request %d filled in by the server = %q, %v, %v, want %q", i, filled.Text, filled.Warnings, err, want.filled)
 		}
 	}
 
 	if reqs[2].contentType != mimeJSON {
 		t.Errorf("image.json Content-Type = %q, want %q", reqs[2].contentType, mimeJSON)
+	}
+
+	for _, record := range logs.records(t) {
+		if record["level"] == "DEBUG" {
+			continue
+		}
+
+		if text := fmt.Sprint(record); strings.Contains(text, "shell.qc2") || strings.Contains(text, "named") ||
+			strings.Contains(text, "shell-only") {
+			t.Errorf("a log record above debug level holds a value: %s", text)
+		}
 	}
 }
 

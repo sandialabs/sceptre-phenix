@@ -113,6 +113,26 @@ func TestExpandOnly(t *testing.T) {
 	}
 }
 
+// TestExpandOnlySize checks that ExpandOnlySize gives the length of the text
+// that ExpandOnly builds.
+func TestExpandOnlySize(t *testing.T) {
+	t.Parallel()
+
+	pieces := []string{
+		"${BRANCH_NAME}", "$${BRANCH_NAME}", "${BRANCH_NAME:long default}", "${A}", "$${A:d}", "$", "$$", "{", "}", ":", "a",
+	}
+
+	rapid.Check(t, func(t *rapid.T) {
+		text := []byte(strings.Join(rapid.SliceOfN(rapid.SampledFrom(pieces), 0, 12).Draw(t, "pieces"), ""))
+		value := rapid.SampledFrom([]string{"", "lab", strings.Repeat("b", 40), "${BRANCH_NAME}"}).Draw(t, "value")
+
+		want := len(envsubst.ExpandOnly(text, "BRANCH_NAME", envsubst.Fixed(value)))
+		if got := envsubst.ExpandOnlySize(text, "BRANCH_NAME", value); got != want {
+			t.Fatalf("ExpandOnlySize(%q, %q) = %d, want %d", text, value, got, want)
+		}
+	})
+}
+
 func TestReplace(t *testing.T) {
 	t.Parallel()
 

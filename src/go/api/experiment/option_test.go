@@ -2,13 +2,12 @@ package experiment
 
 import (
 	"os"
-	"reflect"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 
+	"phenix/types"
 	"phenix/util/common"
-	"phenix/util/envsubst"
 )
 
 func TestStopOptions(t *testing.T) {
@@ -31,9 +30,13 @@ func TestStopOptions(t *testing.T) {
 
 // newCreateOptions takes the deploy mode and GRE mesh from the global settings,
 // puts the experiment under PhenixBase and on the phenix bridge by default, and
-// keeps the GRE mesh on when it is on globally. The default lookup is the
-// environment.
+// keeps the GRE mesh on when it is on globally. The default reader of the
+// included files fills them in from the environment.
 func TestCreateOptions(t *testing.T) { //nolint:paralleltest // replaces the global settings
+	t.Setenv("PHENIX_CREATE_OPTIONS_TEST", "from the environment")
+
+	fromEnv := types.ExpandIncludes(os.LookupEnv)
+
 	tests := []struct {
 		name       string
 		globalMode common.DeploymentMode
@@ -48,7 +51,7 @@ func TestCreateOptions(t *testing.T) { //nolint:paralleltest // replaces the glo
 			opts:       []CreateOption{CreateWithName("exp")},
 			want: createOptions{
 				name: "exp", baseDir: "/base/experiments/exp", deployMode: common.DeployModeAll, useGREMesh: true, defaultBridge: "phenix",
-				lookup: os.LookupEnv,
+				includes: fromEnv,
 			},
 		},
 		{
@@ -63,7 +66,7 @@ func TestCreateOptions(t *testing.T) { //nolint:paralleltest // replaces the glo
 			},
 			want: createOptions{
 				name: "exp", baseDir: "/elsewhere", deployMode: common.DeployModeOnlyHeadnode, useGREMesh: true, defaultBridge: "br0",
-				lookup: os.LookupEnv,
+				includes: fromEnv,
 			},
 		},
 		{
@@ -73,7 +76,7 @@ func TestCreateOptions(t *testing.T) { //nolint:paralleltest // replaces the glo
 			opts:       []CreateOption{CreateWithName("exp"), CreateWithGREMesh(false)},
 			want: createOptions{
 				name: "exp", baseDir: "/base/experiments/exp", deployMode: common.DeployModeNoHeadnode, useGREMesh: true,
-				defaultBridge: "phenix", lookup: os.LookupEnv,
+				defaultBridge: "phenix", includes: fromEnv,
 			},
 		},
 		{
@@ -82,7 +85,7 @@ func TestCreateOptions(t *testing.T) { //nolint:paralleltest // replaces the glo
 			opts:       []CreateOption{CreateWithName("exp"), CreateWithGREMesh(false)},
 			want: createOptions{
 				name: "exp", baseDir: "/base/experiments/exp", deployMode: common.DeployModeNoHeadnode, defaultBridge: "phenix",
-				lookup: os.LookupEnv,
+				includes: fromEnv,
 			},
 		},
 	}
@@ -94,9 +97,13 @@ func TestCreateOptions(t *testing.T) { //nolint:paralleltest // replaces the glo
 
 			t.Cleanup(func() { common.PhenixBase, common.DeployMode, common.UseGREMesh = base, mode, gre }) //nolint:reassign // restore
 
-			// cmp finds two funcs equal only when both are nil, so compare their code.
-			sameFunc := cmp.Comparer(func(a, b envsubst.Lookup) bool {
-				return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
+			// cmp finds two funcs equal only when both are nil, so compare what they read.
+			sameFunc := cmp.Comparer(func(a, b types.IncludeReader) bool {
+				text := []byte("${PHENIX_CREATE_OPTIONS_TEST}")
+				gotA, errA := a("a.yml", text)
+				gotB, errB := b("a.yml", text)
+
+				return string(gotA) == string(gotB) && errA == nil && errB == nil
 			})
 
 			got := newCreateOptions(tc.opts...)

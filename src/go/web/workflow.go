@@ -76,6 +76,10 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 		applied.Extra = append(applied.Extra, "phenix.workflow.action", string(result.Plan.Action))
 	}
 
+	if len(result.Variables) > 0 {
+		applied.Extra = append(applied.Extra, "phenix.workflow.variables", strings.Join(result.Variables, ","))
+	}
+
 	if err != nil {
 		audit.Failure(r, audit.WorkflowApply, "applying phenix workflow failed", applied, err)
 
@@ -89,7 +93,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 
 	audit.Success(r, audit.WorkflowApply, done, applied)
 
-	// A Result holds only strings, a bool and a list of strings, so marshaling it cannot fail.
+	// A Result holds only strings, a bool and lists of strings, so marshaling it cannot fail.
 	body, _ := json.Marshal(result)
 
 	w.Header().Set("Content-Type", mimeJSON)
@@ -106,24 +110,46 @@ var workflowActions = []string{ //nolint:gochecknoglobals // constant list
 
 // applyWorkflow plans applying the request's workflow config to branch and,
 // unless it is a dry run, carries the plan out. The result holds as much of
-// the plan as was made, and whether it is a dry run, also on an error.
+// the plan as was made, and whether it is a dry run, also on an error. For a
+// request with variables, it also holds the used names and the warnings.
 func applyWorkflow(r *http.Request, branch string) (workflow.Result, error) {
-	var (
-		result workflow.Result
-		q      = r.URL.Query()
-	)
+	var result workflow.Result
 
 	// known early so that a failed dry run is audited as one
-	dryRun, dryRunErr := parseDryRun(q)
+	dryRun, dryRunErr := parseDryRun(r.URL.Query())
 	result.DryRun = dryRun && dryRunErr == nil
+
+	doc, src, vars, err := readWorkflowRequest(r, branch)
+	if err == nil {
+		result, err = applyWorkflowConfig(r, branch, result, doc, src, vars, dryRunErr)
+	}
+
+	vars.logWarnings()
+
+	result.Variables = vars.usedNames()
+	if texts := vars.warningTexts(); len(texts) > 0 {
+		result.Warnings = append(texts, result.Warnings...)
+	}
+
+	return result, err
+}
+
+// applyWorkflowConfig is [applyWorkflow] once the workflow config doc, parsed
+// from src, is read. vars fills in the included topology files.
+func applyWorkflowConfig(
+	r *http.Request,
+	branch string,
+	result workflow.Result,
+	doc map[string]any,
+	src []byte,
+	vars *workflowVars,
+	dryRunErr error,
+) (workflow.Result, error) {
+	q := r.URL.Query()
+	dryRun := result.DryRun
 
 	// Repeated tag query parameters become the experiment's workflow tags.
 	tags := strings.Join(q["tag"], ",")
-
-	doc, src, err := readWorkflowConfig(r, branch)
-	if err != nil {
-		return result, err
-	}
 
 	spec, err := decodeWorkflowConfig(doc, src)
 	if err != nil {
@@ -152,9 +178,17 @@ func applyWorkflow(r *http.Request, branch string) (workflow.Result, error) {
 
 	result.Plan = plan
 
-	prep, err := workflow.Prepare(spec, plan, target, store.BranchNameLookup(branch), pending...)
+	prep, err := workflow.Prepare(spec, plan, target, vars.includeReader(), pending...)
 	if err != nil {
 		return result, workflowWebError(err, "unable to prepare phenix workflow config")
+	}
+
+	// Prepare read every file of a stored topology it decoded. A plan that
+	// changes nothing, or a pending topology, leaves files unread.
+	if dryRun && vars.values != nil && prep.Topology == nil {
+		if err := workflow.ReadIncludes(spec, target, vars.includeReader(), pending...); err != nil {
+			return result, workflowWebError(err, "unable to prepare phenix workflow config")
+		}
 	}
 
 	if err := workflow.CheckExpected(plan, expect); err != nil {
@@ -167,7 +201,7 @@ func applyWorkflow(r *http.Request, branch string) (workflow.Result, error) {
 		return result, nil
 	}
 
-	if err := executeWorkflowPlan(r.Context(), plan, spec, branch, tags, prep, target); err != nil {
+	if err := executeWorkflowPlan(r.Context(), plan, spec, branch, tags, prep, target, vars.includeReader()); err != nil {
 		return result, err
 	}
 
@@ -247,6 +281,37 @@ func workflowDiskWarnings(
 	return out
 }
 
+// readWorkflowRequest reads the workflow config of an apply request: a plain
+// JSON or YAML body as [readWorkflowConfig] reads it, or a multipart request
+// whose variables it fills in first. It also returns the text that explains
+// schema errors and the variables of the request, never nil.
+func readWorkflowRequest(r *http.Request, branch string) (map[string]any, []byte, *workflowVars, error) {
+	if !isMultipartRequest(r.Header.Get("Content-Type")) {
+		doc, src, err := readWorkflowConfig(r, branch)
+
+		return doc, src, newWorkflowVars(branch, nil), err
+	}
+
+	req, err := readMultipartConfig(r)
+	if err != nil {
+		return nil, nil, newWorkflowVars(branch, nil), err
+	}
+
+	vars := newWorkflowVars(branch, req.vars)
+
+	src, err := vars.fill(req.text, workflowConfigFile, nil)
+	if err != nil {
+		return nil, nil, vars, fillError(err, workflowConfigFile)
+	}
+
+	doc, err := parseWorkflowConfig(src, req.contentType, branch)
+	if err != nil {
+		return nil, nil, vars, err
+	}
+
+	return doc, src, vars, nil
+}
+
 // readWorkflowConfig returns the request body parsed with its ${BRANCH_NAME}
 // references expanded, and the body itself, which explains schema errors. It
 // parses into a map rather than a store config so the schema sees every
@@ -254,13 +319,9 @@ func workflowDiskWarnings(
 func readWorkflowConfig(r *http.Request, branch string) (map[string]any, []byte, error) {
 	var (
 		typ = r.Header.Get("Content-Type")
-		doc map[string]any
 		src []byte
 		err error
 	)
-
-	// Only ${BRANCH_NAME} expands, to the branch, as in the configs.
-	lookup := envsubst.Fixed(branch)
 
 	switch typ {
 	case mimeJSON: // default to JSON if not set
@@ -270,8 +331,6 @@ func readWorkflowConfig(r *http.Request, branch string) (map[string]any, []byte,
 
 			return nil, nil, err.SetStatus(http.StatusInternalServerError)
 		}
-
-		err = json.Unmarshal(store.ExpandBranchName(src, lookup), &doc)
 	case mimeYAML:
 		src, err = io.ReadAll(r.Body)
 		if err != nil {
@@ -279,8 +338,6 @@ func readWorkflowConfig(r *http.Request, branch string) (map[string]any, []byte,
 
 			return nil, nil, err.SetStatus(http.StatusInternalServerError)
 		}
-
-		err = yaml.Unmarshal(store.ExpandBranchName(src, lookup), &doc)
 	default:
 		return nil, nil, weberror.NewWebError(
 			nil,
@@ -288,13 +345,38 @@ func readWorkflowConfig(r *http.Request, branch string) (map[string]any, []byte,
 		)
 	}
 
+	doc, err := parseWorkflowConfig(src, typ, branch)
 	if err != nil {
-		cause := fmt.Errorf("%w: %w", store.ErrInvalidFormat, err)
-
-		return nil, nil, weberror.NewWebError(cause, "unable to parse phenix workflow config")
+		return nil, nil, err
 	}
 
 	return doc, src, nil
+}
+
+// parseWorkflowConfig parses src, a workflow config of the Content-Type typ,
+// with its ${BRANCH_NAME} references expanded to branch.
+func parseWorkflowConfig(src []byte, typ, branch string) (map[string]any, error) {
+	var (
+		doc map[string]any
+		err error
+	)
+
+	// Only ${BRANCH_NAME} expands, to the branch, as in the configs.
+	lookup := envsubst.Fixed(branch)
+
+	if typ == mimeJSON {
+		err = json.Unmarshal(store.ExpandBranchName(src, lookup), &doc)
+	} else {
+		err = yaml.Unmarshal(store.ExpandBranchName(src, lookup), &doc)
+	}
+
+	if err != nil {
+		cause := fmt.Errorf("%w: %w", store.ErrInvalidFormat, err)
+
+		return nil, weberror.NewWebError(cause, "unable to parse phenix workflow config")
+	}
+
+	return doc, nil
 }
 
 // decodeWorkflowConfig checks doc against the Workflow schema, then decodes
@@ -378,7 +460,8 @@ func workflowWebError(err error, message string) *weberror.WebError {
 }
 
 // executeWorkflowPlan carries out plan with what prep resolved. exp is the
-// experiment mapped to branch, which the update actions act on.
+// experiment mapped to branch, which the update actions act on. A create
+// reads the included topology files again with read.
 func executeWorkflowPlan(
 	ctx context.Context,
 	plan workflow.Plan,
@@ -386,13 +469,14 @@ func executeWorkflowPlan(
 	branch, tags string,
 	prep workflow.Prepared,
 	exp *types.Experiment,
+	read types.IncludeReader,
 ) error {
 	switch plan.Action {
 	case workflow.ActionNone:
 		// Nothing to carry out; the response gives the reason.
 	case workflow.ActionCreate, workflow.ActionCreateAndStart:
 		return createFromWorkflow(
-			spec, branch, tags, prep, plan.Action == workflow.ActionCreateAndStart, middleware.UserFromContext(ctx),
+			spec, branch, tags, prep, plan.Action == workflow.ActionCreateAndStart, middleware.UserFromContext(ctx), read,
 		)
 	case workflow.ActionUpdate, workflow.ActionUpdateAndStart, workflow.ActionRestart:
 		return updateFromWorkflow(ctx, exp, spec, tags, prep, plan.Action)
@@ -402,13 +486,15 @@ func executeWorkflowPlan(
 }
 
 // createFromWorkflow creates the experiment auto.create names from what prep
-// resolved, maps it to branch, tags it and starts it when start is true.
+// resolved, maps it to branch, tags it and starts it when start is true. read
+// fills in the topology files that the topology includes.
 func createFromWorkflow(
 	spec workflow.Spec,
 	branch, tags string,
 	prep workflow.Prepared,
 	start bool,
 	owner string,
+	read types.IncludeReader,
 ) error {
 	expName := spec.ExperimentName()
 
@@ -440,7 +526,7 @@ func createFromWorkflow(
 		experiment.CreateWithDefaultBridge(spec.DefaultBridgeName()),
 		experiment.CreateWithGREMesh(spec.UseGREMesh),
 		experiment.CreateWithBaseDirInside(experiment.BaseDirRoot()),
-		experiment.CreateWithLookup(store.BranchNameLookup(branch)),
+		experiment.CreateWithIncludes(read),
 	}
 
 	err = experiment.Create(context.Background(), opts...)
@@ -600,7 +686,16 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		typ    = r.Header.Get("Content-Type")
 		format string
 		parse  func([]byte) (*store.Config, error)
+		src    []byte
+		filled = newWorkflowVars(scope, nil)
 	)
+
+	// The variables are filled in before the kind and name are read.
+	if isMultipartRequest(typ) {
+		if typ, src, filled, err = readConfigRequest(r, scope); err != nil {
+			return err
+		}
+	}
 
 	switch typ {
 	case mimeJSON:
@@ -614,28 +709,36 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 		)
 	}
 
-	src, err := io.ReadAll(r.Body)
-	if err != nil {
-		err := weberror.NewWebError(err, "unable to read request data")
+	if src == nil {
+		if src, err = io.ReadAll(r.Body); err != nil {
+			err := weberror.NewWebError(err, "unable to read request data")
 
-		return err.SetStatus(http.StatusInternalServerError)
+			return err.SetStatus(http.StatusInternalServerError)
+		}
 	}
 
 	// The checks for the named config run before the body is parsed, so only
 	// a caller who may write this config sees a parse error.
 	name, err := configName(src, typ, scope)
 	if err != nil {
+		filled.logWarnings()
+
 		return weberror.NewWebError(err, "unable to parse %s config", format)
 	}
 
-	exists, err := authorizeConfigWrite(r, role, name, scope)
+	filled.nameConfig(name)
+	filled.logWarnings()
+
+	extra := filled.auditVariables([]any{"phenix.workflow.branch", scope})
+
+	exists, err := authorizeConfigWrite(r, role, name, extra)
 	if err != nil {
 		return err
 	}
 
 	var (
 		action, verb, done = audit.ConfigCreate, "creating", "created"
-		upserted           = audit.Fields{Config: name, DryRun: dryRun, Extra: []any{"phenix.workflow.branch", scope}}
+		upserted           = audit.Fields{Config: name, DryRun: dryRun, Extra: extra}
 	)
 
 	if exists {
@@ -658,7 +761,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 	audit.Success(r, action, done+" config from workflow", upserted)
 
 	if dryRun {
-		writeConfigDryRun(w, exists, cfg)
+		writeConfigDryRun(w, exists, cfg, filled)
 
 		return nil
 	}

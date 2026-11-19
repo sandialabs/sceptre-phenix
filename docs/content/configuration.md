@@ -848,11 +848,16 @@ text `${VAR}` in the config.
 
 !!! note
     For a config sent to the REST API or the web UI (`POST /configs`,
-    `PUT /configs/{kind}/{name}` and the workflow endpoints), the server fills
-    in only `${BRANCH_NAME}`. It stores every other placeholder as written, so
-    a client cannot read the server environment through a config. The REST API
-    does not take variables: a client fills in the other placeholders before
-    it sends a config. The Builder fills in no placeholders. A
+    `PUT /configs/{kind}/{name}` and the workflow endpoints), with a JSON or
+    YAML body the server fills in only `${BRANCH_NAME}`. It stores every other
+    placeholder as written, so a client cannot read the server environment
+    through a config. Of these, only the workflow endpoints take variables, in
+    the `variables` part of a `multipart/form-data` request; the server then
+    also fills in the placeholders from the variables and their defaults (see
+    [REST API](workflow.md#rest-api)).
+    `POST /configs` and `PUT /configs/{kind}/{name}` do not: a client fills in
+    the other placeholders before it sends a config. The Builder fills in no
+    placeholders. A
     `${BRANCH_NAME}` in these requests is filled in also when the stored config
     holds it as text. For `POST /configs` and `PUT /configs/{kind}/{name}`,
     the value is the `BRANCH_NAME` variable of the server, or empty text when
@@ -891,14 +896,15 @@ These commands read config files and fill in their placeholders:
 `phenix config create`, `phenix config apply`, `phenix config diff`,
 `phenix experiment create` with a file for `-t` or `-s`, and
 `phenix workflow apply`. `phenix experiment create` also fills in a topology
-file that `includeTopologies` names by a path. A command gets the value of a
+file that `includeTopologies` names by a path, and so does the server for
+`phenix workflow apply`. A command gets the value of a
 variable from the first of these sources that has it:
 
 | Source | Description |
 | :--- | :--- |
 | `-e`, `--env` | `-e NAME=value` sets a variable. `-e NAME` copies the value of `NAME` from the shell. Repeat the flag for more variables. If a name is given more than once, the last value is used. |
 | `--env-file` | An [env file](#env-files) of `NAME=value` lines. Repeat the flag for more files. A later file overrides an earlier file. A relative path starts at the working directory. `phenix workflow apply` reads `.env` in the topology directory when no `--env-file` is given. |
-| The shell | The environment of the command, without the variables whose names start with `PHENIX_`. Those variables hold the settings of phēnix. Name one with `-e NAME` to use it. |
+| The shell | The environment of the command, without the variables whose names start with `PHENIX_`. Those variables hold the settings of phēnix. Name one with `-e NAME` to use it. A variable whose name is not a valid variable name, for example `1A`, is not used. |
 
 ```bash
 phenix config create topology.yml -e HOST=172.1.3.37
@@ -977,8 +983,9 @@ docker exec -it -e BRANCH_NAME=foobar phenix phenix exp create foobar -t topo -s
     `/workflow/configs/{branch}` and `/workflow/apply/{branch}` API endpoints,
     don't need `-e BRANCH_NAME`: phēnix sets `BRANCH_NAME` to the workflow
     branch name itself. The API endpoints keep their other placeholders as
-    written, and `phenix workflow apply` fills them in before it sends a
-    config (see [Variables](workflow.md#variables)). The
+    written unless the request sends variables, and `phenix workflow apply`
+    sends its variables with each config (see
+    [Variables](workflow.md#variables)). The
     command also copies the topology directory's
     `phenix-injects/` to `<base-dir.injects>/<name>` (by default
     `/phenix/injects/<name>`), so configs can reference injected files as

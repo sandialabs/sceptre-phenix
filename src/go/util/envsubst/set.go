@@ -16,6 +16,12 @@ const ShellFilterPrefix = "PHENIX_"
 // LS and PS.
 const lineBreaks = "\r\n\u0085\u2028\u2029"
 
+// HasLineBreak reports whether s holds a character that YAML reads as a line
+// break: CR, LF, NEL, LS or PS.
+func HasLineBreak(s string) bool {
+	return strings.ContainsAny(s, lineBreaks)
+}
+
 var (
 	// ErrReserved is wrapped by the error for a flag or an env file entry
 	// that sets the reserved variable.
@@ -95,9 +101,11 @@ type Set struct {
 	reserved string
 }
 
-// NewSet reads the sources of o. The error wraps [ErrBadFlag], [ErrReserved]
-// or [ErrNotInShell] for a flag, is a [*ParseError] or wraps [ErrReserved] for
-// an env file line, and wraps the file system error for a file it cannot read.
+// NewSet reads the sources of o. It skips a shell variable whose name is not
+// [ValidName], as a flag or an env file cannot set one. The error wraps
+// [ErrBadFlag], [ErrReserved] or [ErrNotInShell] for a flag, is a
+// [*ParseError] or wraps [ErrReserved] for an env file line, and wraps the
+// file system error for a file it cannot read.
 func NewSet(o Options) (*Set, error) {
 	set := &Set{
 		vars:     map[string]Var{},
@@ -114,7 +122,7 @@ func NewSet(o Options) (*Set, error) {
 		shell[name] = value
 
 		switch {
-		case name == o.Reserved:
+		case name == o.Reserved, !ValidName(name):
 		case strings.HasPrefix(name, ShellFilterPrefix):
 			set.filtered[name] = true
 		default:
@@ -149,6 +157,21 @@ func (s *Set) Lookup() Lookup {
 
 		return v.Value, ok
 	}
+}
+
+// Values returns the value of each variable of the set, by name: the values
+// that [Set.Lookup] gives. A shell variable whose name is not [ValidName] is
+// left out.
+func (s *Set) Values() map[string]string {
+	values := make(map[string]string, len(s.vars))
+
+	for name, v := range s.vars {
+		if ValidName(name) {
+			values[name] = v.Value
+		}
+	}
+
+	return values
 }
 
 func (s *Set) readEnvFiles(o Options) error {
@@ -311,6 +334,18 @@ func (e *Error) Error() string {
 // Substitute fills in the variables of every file in one pass. It changes no
 // file when any file has a problem: the error is then an [*Error].
 func (s *Set) Substitute(files []File) (Result, error) {
+	res, unused, err := s.SubstituteDeferUnused(files)
+	if err == nil && len(unused) > 0 {
+		return Result{}, &Error{Problems: unused}
+	}
+
+	return res, err
+}
+
+// SubstituteDeferUnused is [Set.Substitute], but when the only problems are
+// flags that no file uses, it returns the result and those [UnusedFlag]
+// problems with no error. The caller decides about them later.
+func (s *Set) SubstituteDeferUnused(files []File) (Result, []Problem, error) {
 	pass := substitution{set: s, used: map[string]bool{}, problems: nil, warnings: nil}
 	out := make([]File, 0, len(files))
 
@@ -318,16 +353,18 @@ func (s *Set) Substitute(files []File) (Result, error) {
 		out = append(out, File{Path: file.Path, Text: pass.file(file)})
 	}
 
+	var unused []Problem
+
 	for _, name := range s.flags {
 		if !pass.used[name] {
-			pass.problems = append(pass.problems, Problem{
+			unused = append(unused, Problem{
 				Kind: UnusedFlag, Name: name, Path: "", Line: 0, Source: s.vars[name].Source, Filtered: false,
 			})
 		}
 	}
 
 	if len(pass.problems) > 0 {
-		return Result{}, &Error{Problems: pass.problems}
+		return Result{}, nil, &Error{Problems: append(pass.problems, unused...)}
 	}
 
 	names := make([]string, 0, len(pass.used))
@@ -342,7 +379,7 @@ func (s *Set) Substitute(files []File) (Result, error) {
 		used = append(used, s.vars[name])
 	}
 
-	return Result{Files: out, Used: used, Warnings: pass.warnings}, nil
+	return Result{Files: out, Used: used, Warnings: pass.warnings}, unused, nil
 }
 
 // substitution is the state of one [Set.Substitute] call.
@@ -379,7 +416,7 @@ func (p *substitution) token(path string, tok Token) []byte {
 	}
 
 	if tok.HasDefault {
-		if strings.ContainsAny(tok.Default, lineBreaks) {
+		if HasLineBreak(tok.Default) {
 			problem(DefaultLineBreak, none)
 		}
 
@@ -391,7 +428,7 @@ func (p *substitution) token(path string, tok Token) []byte {
 	found, ok := p.set.vars[tok.Name]
 
 	switch {
-	case ok && strings.ContainsAny(found.Value, lineBreaks):
+	case ok && HasLineBreak(found.Value):
 		p.used[tok.Name] = true
 
 		problem(ValueLineBreak, found.Source)

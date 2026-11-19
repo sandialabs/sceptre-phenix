@@ -49,12 +49,13 @@ type applyOptions struct {
 
 // configFile is a config file with its variables filled in. A value holds no
 // line break, so the line numbers in the explained validation errors of Body
-// match the file.
+// match the file. Raw is the file as written, which the requests send.
 type configFile struct {
 	Path        string
 	Kind        string
 	ContentType string
 	Body        []byte
+	Raw         []byte
 }
 
 // applyRun is one workflow apply of a resolved topology directory. injects,
@@ -75,11 +76,13 @@ type applyRun struct {
 }
 
 // preflightResult is what the preflight found. wfConfig is nil when the
-// directory has no workflow config.
+// directory has no workflow config. unused holds the -e variables that no
+// local file uses, which the apply dry run can still use.
 type preflightResult struct {
 	injectsBase string
 	configs     []configFile
 	wfConfig    *configFile
+	unused      []envsubst.Problem
 }
 
 // runWorkflowApply deploys the topology directory named by arg through the
@@ -103,7 +106,7 @@ func runWorkflowApply(ctx context.Context, opts applyOptions, arg string) error 
 		return err
 	}
 
-	plan, err := run.dryRunWorkflow(ctx, pre.wfConfig, pending)
+	plan, err := run.dryRunWorkflow(ctx, pre.wfConfig, pending, pre.unused)
 	if err != nil {
 		return err
 	}
@@ -159,7 +162,7 @@ func (r *applyRun) dryRunConfigs(ctx context.Context, configs []configFile) ([]s
 	definedBy := map[string]string{}
 
 	rejected, err := r.forEachConfig(ctx, stepPlan, "dry run of", configs, func(cfg configFile, file string) error {
-		result, err := r.client.configDryRun(ctx, r.name, cfg.Body, cfg.ContentType)
+		result, err := r.client.configDryRun(ctx, r.name, cfg.Raw, cfg.ContentType)
 		if err != nil {
 			return err
 		}
@@ -170,6 +173,10 @@ func (r *applyRun) dryRunConfigs(ctx context.Context, configs []configFile) ([]s
 			plog.TypeSystem, "config checked",
 			"step", stepPlan, "file", file, "kind", result.Kind, "name", result.Name, actionAttr(result.Action),
 		)
+
+		for _, warning := range result.Warnings {
+			plog.Warn(plog.TypeSystem, warning, "step", stepPlan, "file", file)
+		}
 
 		if first, ok := definedBy[ref]; ok {
 			clashes = append(clashes, fmt.Sprintf("%s and %s both define %s", first, file, ref))
@@ -202,8 +209,12 @@ func (r *applyRun) dryRunConfigs(ctx context.Context, configs []configFile) ([]s
 }
 
 // dryRunWorkflow dry-runs the workflow config with pending as its pending
-// configs and logs the plan. Outside a dry run, a restart needs opts.Force.
-func (r *applyRun) dryRunWorkflow(ctx context.Context, wfConfig *configFile, pending []string) (workflow.Plan, error) {
+// configs and logs the plan. A variable of unused that the server did not use
+// either, in the workflow config or an included topology file, is an error.
+// Outside a dry run, a restart needs opts.Force.
+func (r *applyRun) dryRunWorkflow(
+	ctx context.Context, wfConfig *configFile, pending []string, unused []envsubst.Problem,
+) (workflow.Plan, error) {
 	if wfConfig == nil {
 		plog.Warn(plog.TypeSystem, "no workflow config; skipping the dry run", "step", stepPlan, "dir", r.dir)
 
@@ -212,7 +223,7 @@ func (r *applyRun) dryRunWorkflow(ctx context.Context, wfConfig *configFile, pen
 
 	file := r.rel(wfConfig.Path)
 
-	result, err := r.client.apply(ctx, r.name, wfConfig.Body, wfConfig.ContentType, nil, true, pending, "")
+	result, err := r.client.apply(ctx, r.name, wfConfig.Raw, wfConfig.ContentType, nil, true, pending, "")
 	if err != nil {
 		logValidation(stepPlan, file, wfConfig.Kind, err)
 
@@ -224,14 +235,11 @@ func (r *applyRun) dryRunWorkflow(ctx context.Context, wfConfig *configFile, pen
 		"step", stepPlan, "file", file, actionAttr(result.Action), "experiment", result.Experiment, "reason", result.Reason,
 	)
 
-	// what the disk check of the start the plan makes finds
-	for _, warning := range result.Warnings {
-		warn := plog.Warn
-		if strings.HasPrefix(warning, workflow.StartFailPrefix) {
-			warn = plog.WarnAlarm
-		}
+	// the variable warnings, then what the disk check of the start the plan makes finds
+	logResultWarnings(stepPlan, file, result)
 
-		warn(plog.TypeSystem, warning, "step", stepPlan, "file", file, "experiment", result.Experiment)
+	if err := unusedFlagsError(unused, result.Variables); err != nil {
+		return workflow.Plan{}, err
 	}
 
 	if !r.opts.DryRun && !r.opts.Force && result.Action == workflow.ActionRestart {
@@ -299,7 +307,7 @@ func (r *applyRun) upsert(ctx context.Context, configs []configFile) error {
 			return err
 		}
 
-		if err := r.client.upsertConfig(ctx, r.name, cfg.Body, cfg.ContentType); err != nil {
+		if err := r.client.upsertConfig(ctx, r.name, cfg.Raw, cfg.ContentType); err != nil {
 			return mayStillFinish(ctx, err)
 		}
 
@@ -344,10 +352,12 @@ func (r *applyRun) apply(ctx context.Context, wfConfig *configFile, plan workflo
 	)
 	plog.Debug(plog.TypeSystem, "workflow tags", "step", stepApply, "tags", strings.Join(tags, ","))
 
-	result, err := r.client.apply(ctx, r.name, wfConfig.Body, wfConfig.ContentType, tags, false, nil, plan.Action)
+	result, err := r.client.apply(ctx, r.name, wfConfig.Raw, wfConfig.ContentType, tags, false, nil, plan.Action)
 	if err != nil {
 		return mayStillFinish(ctx, r.requestError("applying "+file, err))
 	}
+
+	logResultWarnings(stepApply, file, result)
 
 	if result.Action == workflow.ActionNone {
 		plog.Warn(
@@ -364,6 +374,19 @@ func (r *applyRun) apply(ctx context.Context, wfConfig *configFile, plan workflo
 	)
 
 	return nil
+}
+
+// logResultWarnings logs each warning of an apply result at step as a warning
+// record. A warning that the start would fail is an alarm.
+func logResultWarnings(step, file string, result workflow.Result) {
+	for _, warning := range result.Warnings {
+		warn := plog.Warn
+		if strings.HasPrefix(warning, workflow.StartFailPrefix) {
+			warn = plog.WarnAlarm
+		}
+
+		warn(plog.TypeSystem, warning, "step", step, "file", file, "experiment", result.Experiment)
+	}
 }
 
 // actionAttr is the action attribute of a log record. A colored console

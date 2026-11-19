@@ -7,16 +7,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
 	"maps"
+	"mime"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -29,6 +33,7 @@ import (
 	"phenix/api/workflow"
 	"phenix/store"
 	"phenix/util/plog"
+	"phenix/web"
 )
 
 // Minimal valid configs and a workflow config. The fake phenix server reads
@@ -211,13 +216,56 @@ func assertEmptyDir(t *testing.T, dir string) {
 	}
 }
 
-// recordedRequest is one request received by a fakeServer.
+// recordedRequest is one request received by a fakeServer. For a multipart
+// workflow request, contentType and body are those of its config part, and
+// variables its variables part.
 type recordedRequest struct {
 	method      string
 	path        string
 	query       url.Values
 	contentType string
 	body        string
+	multipart   bool
+	variables   map[string]string
+}
+
+// variablesRequest is a multipart workflow request: the config part, its
+// Content-Type, and the variables.
+type variablesRequest struct {
+	config     []byte
+	configType string
+	vars       map[string]string
+}
+
+// decodeVariablesBody decodes body, a multipart workflow request whose
+// Content-Type is typ. It is false for any other body.
+func decodeVariablesBody(typ string, body []byte) (variablesRequest, bool) {
+	var req variablesRequest
+
+	mediaType, params, err := mime.ParseMediaType(typ)
+	if err != nil || mediaType != "multipart/form-data" {
+		return req, false
+	}
+
+	reader := multipart.NewReader(bytes.NewReader(body), params["boundary"])
+
+	for {
+		part, err := reader.NextPart()
+		if err != nil {
+			return req, errors.Is(err, io.EOF)
+		}
+
+		text, _ := io.ReadAll(part)
+
+		switch part.FormName() {
+		case configPartName:
+			req.config, req.configType = text, part.Header.Get("Content-Type")
+		case variablesPartName:
+			if json.Unmarshal(text, &req.vars) != nil {
+				return req, false
+			}
+		}
+	}
 }
 
 // fakeServer stands in for the phenix web server on a unix socket. It records
@@ -244,14 +292,23 @@ func newFakeServer(t *testing.T, handler http.HandlerFunc) *fakeServer {
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 
-		fake.mu.Lock()
-		fake.requests = append(fake.requests, recordedRequest{
+		recorded := recordedRequest{
 			method:      r.Method,
 			path:        r.URL.EscapedPath(),
 			query:       r.URL.Query(),
 			contentType: r.Header.Get("Content-Type"),
 			body:        string(body),
-		})
+			multipart:   false,
+			variables:   nil,
+		}
+
+		if req, ok := decodeVariablesBody(recorded.contentType, body); ok {
+			recorded.contentType, recorded.body = req.configType, string(req.config)
+			recorded.multipart, recorded.variables = true, req.vars
+		}
+
+		fake.mu.Lock()
+		fake.requests = append(fake.requests, recorded)
 		fake.mu.Unlock()
 
 		r.Body = io.NopCloser(bytes.NewReader(body))
@@ -325,7 +382,9 @@ func dropConnection(t *testing.T, w http.ResponseWriter) {
 
 // fakePhenix describes how a fake phenix server answers. Every answer is
 // canned: the fake models nothing of the server. options is the body of
-// GET /api/v1/options, and plan the plan of every workflow apply.
+// GET /api/v1/options, and plan the plan of every workflow apply. The
+// workflow dry run answers with warnings and variables, and the real apply
+// with applyWarnings.
 //
 // A config dry run is answered with the next of results or, once they are
 // used up, with create and a Kind/name pending ref read from the config. A
@@ -344,6 +403,8 @@ type fakePhenix struct {
 	options        map[string]any
 	plan           workflow.Plan
 	warnings       []string // of a dry run
+	variables      []string // of a dry run
+	applyWarnings  []string
 	results        []workflow.ConfigResult
 	reject         string
 	fail           string
@@ -371,7 +432,7 @@ func newFakePhenix(t *testing.T, p fakePhenix) *fakeServer {
 		query := r.URL.Query()
 		line := requestLine(r.Method, r.URL.EscapedPath(), query)
 		dryRun := query.Get("dryRun") == boolStringTrue
-		body, _ := io.ReadAll(r.Body)
+		body := fakeFilledBody(t, r)
 
 		switch {
 		case line == p.hangOn:
@@ -397,9 +458,9 @@ func newFakePhenix(t *testing.T, p fakePhenix) *fakeServer {
 		case !dryRun && p.applyStatus != 0:
 			fakeFailure(t, w, p.applyStatus, "")
 		default:
-			result := workflow.Result{Plan: p.plan, DryRun: dryRun && !p.planNotDryRun}
+			result := workflow.Result{Plan: p.plan, DryRun: dryRun && !p.planNotDryRun, Warnings: p.applyWarnings}
 			if dryRun {
-				result.Warnings = p.warnings
+				result.Warnings, result.Variables = p.warnings, p.variables
 			}
 
 			writeJSON(t, w, http.StatusOK, result)
@@ -445,6 +506,26 @@ func (p fakePhenix) config(
 	}
 
 	return results
+}
+
+// fakeFilledBody returns the config of a multipart workflow request with its
+// variables filled in as the server fills them in, or any other body as it is.
+func fakeFilledBody(t *testing.T, r *http.Request) []byte {
+	t.Helper()
+
+	body, _ := io.ReadAll(r.Body)
+
+	req, ok := decodeVariablesBody(r.Header.Get("Content-Type"), body)
+	if !ok {
+		return body
+	}
+
+	filled, err := web.FillVariables(req.config, "the config", path.Base(r.URL.Path), req.vars, nil)
+	if err != nil {
+		t.Errorf("the fake phenix server cannot fill in a config: %v", err)
+	}
+
+	return filled.Text
 }
 
 // fakeConfigResult answers the dry run of a config the fake accepts: create,
@@ -501,7 +582,7 @@ func writeJSON(t *testing.T, w http.ResponseWriter, status int, v any) {
 
 // serverOptions returns the options a current phenix server reports.
 func serverOptions(injectsBase string) map[string]any {
-	return map[string]any{optionWorkflowDryRun: true, optionInjectsBase: injectsBase}
+	return map[string]any{optionWorkflowDryRun: true, optionWorkflowVariables: true, optionInjectsBase: injectsBase}
 }
 
 // requestLine describes a request as "METHOD path", followed by " dryRun"

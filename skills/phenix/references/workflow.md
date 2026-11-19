@@ -45,7 +45,7 @@ skipped. A directory with none of them is an error. Every file in
 it. It must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`. The server expands
 `${BRANCH_NAME}` placeholders (for example
 `/phenix/injects/${BRANCH_NAME}/motd`) to it, and only `-b` sets it. The CLI
-fills in every other `${VAR}` placeholder before it sends a file (see
+checks every other `${VAR}` placeholder, and the server fills it in (see
 [Variables](#variables)). Configs
 that hard-code the injects directory need `-b` set to the name they use.
 
@@ -60,8 +60,10 @@ deployment. A fixed `auto.create` ignores `-b`. The server reads
 
 `phenix workflow apply` and `phenix workflow render` fill in the `${NAME}`
 and `${NAME:default}` placeholders of each file in `phenix-configs/` and of
-the workflow config. They do not change `phenix-injects/`. The value comes
-from the first source that has the variable:
+the workflow config. They do not change `phenix-injects/`. apply only checks
+the result: it sends each file as written with the variables, and the server
+fills them in, also in each topology file that `includeTopologies` names by a
+path. The value comes from the first source that has the variable:
 
 1. `-e NAME=value`, or `-e NAME` to copy the value from the shell. The last
    value of a repeated name is used.
@@ -71,11 +73,17 @@ from the first source that has the variable:
 3. The shell, without the variables whose names start with `PHENIX_`. Name
    one with `-e NAME` to use it.
 
+apply sends only the shell variables whose names are valid variable names,
+and stops when the variables are larger than 1 MiB as JSON.
+
 The `preflight` step checks every variable before anything changes:
 
 - A placeholder with no value and no default is an error. `${NAME:}` is the
   optional form.
-- A `-e` variable that no file uses is an error.
+- A `-e` variable that no file uses is an error. With a workflow config, a
+  variable that only an included topology file uses counts: apply checks
+  this in `plan`, against the `variables` of the apply dry run. `render`
+  reads no included file, so there the variable is an error.
 - A value or a default with a line break is an error.
 - `BRANCH_NAME` in `-e` or in an env file is an error: use `-b`.
 - A default that starts with `-` or `?` gives a warning. phenix does not have
@@ -90,13 +98,23 @@ and its source, and shows values only at `--log.level debug`.
 `phenix config create`, `config apply`, `config diff` and
 `experiment create` (for a `-t` or `-s` file) take `-e` and `--env-file`
 with the same rules, but they read no default `.env`, and `BRANCH_NAME` is an
-ordinary variable for them. The REST API takes no variables.
+ordinary variable for them. Of the REST API, only the two workflow endpoints
+take variables (see [REST endpoints](#rest-endpoints)).
+
+The server fills in an included topology file leniently: a placeholder that no
+variable sets gets the server environment value (with a warning), else its
+default, else an empty string (with a warning). Each warning names the file,
+the line and the variable; the server logs it and the CLI logs it in `plan`.
+A warning is for one file, variable and kind, with the first line and the
+count of the other lines (`line 3 (and 2 other lines)`); a request gets at
+most 50 warnings, then one that says how many the server left out.
 
 `phenix workflow render <DIR|NAME>` takes `-b`, `-c`, `-e` and `--env-file`.
 It prints each config in upsert order and then the workflow config, each
 after a `# <path>` line, with `---` between files. The text has the
 variables and `${BRANCH_NAME}` filled in, as the server has it after an
-apply. It does not contact the server. Its output can hold secrets.
+apply. It does not contact the server or read included topology files. Its
+output can hold secrets.
 
 The names `phenix.yml`, `phenix-configs` and `phenix-injects` are reserved, in
 any letter case. The branch name cannot be one of them, and no entry of
@@ -191,9 +209,23 @@ the auth modes and points to the full route reference.
 
 | Route | Notes |
 |---|---|
-| `POST /workflow/configs/{branch}[?dryRun=true]` | Create or update a config; `${BRANCH_NAME}` expands to `{branch}`, and every other placeholder is kept as written. A config's `kind` and `metadata.name` can use no placeholder but `${BRANCH_NAME}`. The dry run stores nothing and returns JSON `{action, kind, name, dryRun, pending}`. |
-| `POST /workflow/apply/{branch}[?dryRun=true][&pending=<ref>][&expect=<action>][&tag=key=value]` | Returns JSON `{action, experiment, reason, dryRun, warnings?}`; a dry run of a plan that starts the experiment lists the disk check problems of that start in `warnings` (`the start would fail: ...` for those that would refuse it), and the CLI logs each as a warning. `pending`, only on a dry run, is a config dry run's `pending` value, url-encoded, and names a config the caller stores before the real apply. A plan other than `expect` is a 409 that changes nothing. |
-| `GET /options` | Server-side CLI defaults, plus `base-dir.injects` and `workflow-dry-run`. |
+| `POST /workflow/configs/{branch}[?dryRun=true]` | Create or update a config; `${BRANCH_NAME}` expands to `{branch}`, and with a plain JSON or YAML body every other placeholder is kept as written. A config's `kind` and `metadata.name` can use no placeholder but `${BRANCH_NAME}` and the request variables. The dry run stores nothing and returns JSON `{action, kind, name, dryRun, pending, variables?, warnings?}`. |
+| `POST /workflow/apply/{branch}[?dryRun=true][&pending=<ref>][&expect=<action>][&tag=key=value]` | Returns JSON `{action, experiment, reason, dryRun, warnings?, variables?}`; `warnings` holds the variable warnings, then, for a dry run of a plan that starts the experiment, the disk check problems of that start (`the start would fail: ...` for those that would refuse it), and the CLI logs each as a warning. `pending`, only on a dry run, is a config dry run's `pending` value, url-encoded, and names a config the caller stores before the real apply. A plan other than `expect` is a 409 that changes nothing. |
+| `GET /options` | Server-side CLI defaults, plus `base-dir.injects`, `workflow-dry-run` and `workflow-variables`. |
+
+Both workflow routes also take `multipart/form-data` with exactly one `config`
+part (`Content-Type` `application/json` or `application/x-yaml`) and exactly
+one `variables` part (a JSON object of strings, at most 1 MiB, no
+`BRANCH_NAME`). The server fills in the variables before it reads the config;
+a placeholder with no variable gets its default or stays as written with a
+warning. `variables` in the answer lists the used names. An unused variable is
+not an error; a used value or a default with a line break is a 400. A config
+or an included topology file can be at most 5 MiB after the server fills in
+the variables and the branch name, else the answer is a 400. An apply dry run
+reads each topology file that the
+workflow's topology includes, at any depth and for every plan, so it reports a
+line break in an included file. The audit
+records name the used variables in `phenix.workflow.variables`, never values.
 
 ## Gotchas
 
@@ -234,7 +266,7 @@ the auth modes and points to the full route reference.
 
 | Symptom | Likely cause / fix |
 |---|---|
-| `phenix workflow apply` refuses the server | The server doesn't report `workflow-dry-run` in `GET /options`, or answered with an action the command doesn't know; use the same release for `phenix ui` and the CLI. |
+| `phenix workflow apply` refuses the server | The server doesn't report `workflow-dry-run` or `workflow-variables` in `GET /options`, or answered with an action the command doesn't know; use the same release for `phenix ui` and the CLI. |
 | `unable to restart experiment <exp>, which is still running` (code `broken_disks`) | The restart's start would fail on a missing disk image or backing file, or an image qemu cannot open, so the server refused before it stopped anything. Fix the file the error names, or set `experiment.disk-check: warn`. |
 | `re-run with -f` | The plan would restart a running experiment. Nothing has changed; re-run with `-f` to allow it. |
 | `variable problems; nothing was changed` | A placeholder has no value and no default, a value has a line break, or no file uses a `-e` variable. The error records before it name the variable, the file and the line. Set the variable with `-e` or an env file, write `${NAME:default}`, or write `$${NAME}` to keep the text. `phenix workflow render` shows the result without the server. |

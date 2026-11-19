@@ -116,8 +116,8 @@ sets another. It must start with a letter or digit and hold only letters,
 digits, `.`, `_` and `-`.
 
 `${BRANCH_NAME}` in a config or in the workflow config expands to the branch
-name. The server fills it in, and only `-b` sets it. The command fills in
-every other `${VAR}` placeholder before it sends a file (see
+name. The server fills it in, and only `-b` sets it. The command checks
+every other `${VAR}` placeholder, and the server fills it in (see
 [Variables](#variables)). Configs reference injected files as
 `/phenix/injects/${BRANCH_NAME}/<file>`. Thus you can deploy one directory
 under several names side by side. An experiment that a workflow creates is
@@ -227,9 +227,12 @@ done
 ## Variables
 
 `phenix workflow apply` fills in the `${NAME}` and `${NAME:default}`
-placeholders of each file in `phenix-configs/` and of the workflow config
-before it sends the file to the server. It does not change the files in
-`phenix-injects/`.
+placeholders of each file in `phenix-configs/` and of the workflow config to
+check them. Then it sends each file as written, with the variables, and the
+server fills them in. The server does the same for each topology file that
+`includeTopologies` names by a path (see
+[Included Topology Files](#included-topology-files)). It does not change the
+files in `phenix-injects/`.
 
 The command gets the value of a variable from the first of these sources that
 has it:
@@ -241,6 +244,9 @@ has it:
    overrides an earlier file.
 3. The shell environment, without the variables whose names start with
    `PHENIX_`. Name such a variable with `-e NAME` to use it.
+
+The command sends only the shell variables whose names are valid variable
+names, and stops when the variables are larger than 1 MiB as JSON.
 
 For example, a topology directory can hold its defaults in `.env`:
 
@@ -274,7 +280,9 @@ anything:
 * A placeholder with no value and no default is an error. Write `${NAME:}`
   for a variable that can be empty.
 * A `-e` variable that no file uses is an error. This finds a variable name
-  with a typing mistake.
+  with a typing mistake. With a workflow config, a variable that only an
+  included topology file uses counts as used: the command does this check in
+  the `plan` step, after the server dry-runs the workflow config.
 * A value or a default that contains a line break is an error.
 * `BRANCH_NAME` can't be set as a variable. Use `-b`.
 
@@ -289,12 +297,43 @@ syntax, the `$${NAME}` escape and the env file format.
     of the container. Use `-e`, an env file, or `docker exec -e NAME=value` in
     these cases.
 
+### Included Topology Files
+
+The server reads a topology file that `includeTopologies` names by a path, so
+the command can't check its placeholders. The server fills them in with the
+variables of the command. It gives a placeholder that no variable sets the
+first of these values:
+
+1. The environment variable of the same name on the server, with a warning.
+2. The default of the placeholder.
+3. An empty string, with a warning.
+
+The server logs each warning with the file, the line and the variable, and the
+command logs it in the `plan` step:
+
+```text
+/phenix/topologies/common/net.yml line 3: no variable SITE in the request or in the server environment, and the placeholder has no default; phenix used an empty string
+```
+
+A warning is for one file, variable and kind. It gives the first line and the
+count of the other lines, for example `line 3 (and 2 other lines)`. The server
+reports at most 50 warnings for each request, and then says how many it left
+out.
+
+As for a config, an included topology file can be at most 5 MiB after the
+server fills in the variables and the branch name. A larger text is an error.
+
+The dry run reads each topology file that the topology of the workflow config
+includes, for every plan. So the `plan` step reports a line break in an
+included file.
+
 ### Show the Result
 
 `phenix workflow render` prints each config, and then the workflow config,
 with the variables and the branch name filled in. The text is what the server
 has after an apply. The command does not contact the server and changes
-nothing.
+nothing. It does not read the topology files that `includeTopologies` names,
+so a `-e` variable that only such a file uses is an error in `render`.
 
 ```bash
 phenix workflow render helloworld -b helloworld-2 -e MEMORY=4096
@@ -315,7 +354,8 @@ kind: Workflow
 ```
 
 The command takes `-b`, `-c`, `-e` and `--env-file`, and gives the same
-variable errors as `phenix workflow apply`. Its output can hold secrets: it
+variable errors as `phenix workflow apply`, except that a `-e` variable that
+only an included topology file uses is an error. Its output can hold secrets: it
 shows the value of each variable that a file uses.
 
 ## Workflow Config
@@ -479,11 +519,38 @@ Send the file as the body, with `Content-Type: application/x-yaml` or
 `X-phenix-auth-token: Bearer <token>` header (see
 [API](api.md#authentication)).
 
-The endpoints do not take [variables](#variables). The server fills in
-`${BRANCH_NAME}` with the branch of the URL and keeps every other placeholder
-as written. A client fills in the other placeholders before it sends a file.
+The server fills in `${BRANCH_NAME}` with the branch of the URL and keeps
+every other placeholder as written. A client fills in the other placeholders
+before it sends a file, or sends [variables](#variables) with it.
+
+To send variables, send a `multipart/form-data` body with two parts: a
+`config` part with the file and its `Content-Type`, and a `variables` part with
+a JSON object of strings. This is what `phenix workflow apply` sends. The
+server fills in each placeholder of the file from the variables, and of each
+[included topology file](#included-topology-files) on the apply endpoint. In
+the file, a placeholder that no variable sets gets its default, or stays as
+written with a warning. A variable that no file uses is not an error. A value
+or a default with a line break is an error. A config or an included topology
+file can be at most 5 MiB after the server fills in the variables and the
+branch name. For a larger file, the answer is a 400. The
+answer of a config dry run and of an apply lists the used variables in
+`variables` and the warnings in `warnings`. A warning is for one file,
+variable and kind, with the first line and the count of the other lines. The
+answer holds at most 50 variable warnings, and then one that says how many it left out.
+The server logs each warning. The audit records name the used variables, but
+never their values. An apply dry run reads each topology file that the
+topology of the workflow config includes, for every plan, so it reports a line
+break in an included file.
+
+```bash
+API=http://localhost:3000/api/v1/workflow
+echo '{"SITE": "lab"}' > vars.json
+curl -sS --fail-with-body -X POST -F 'config=@phenix.yml;type=application/x-yaml' \
+  -F 'variables=<vars.json;type=application/json' "$API/apply/helloworld?dryRun=true"
+```
+
 A config's `kind` and `metadata.name` can use no placeholder but
-`${BRANCH_NAME}`.
+`${BRANCH_NAME}` and the variables that the request sends.
 
 | Query parameter | Endpoint | Description |
 | :--- | :--- | :--- |
@@ -558,11 +625,9 @@ Use absolute paths for both. See the
   job on another machine can call the REST API, but has to get the injects
   onto the phēnix host itself.
 * There is no web UI for workflow apply.
-* The REST API does not take [variables](#variables). Only the CLI fills in
-  placeholders other than `${BRANCH_NAME}`.
-* The server reads a topology file that `includeTopologies` names by a path,
-  so `-e` and `--env-file` do not reach that file. The server fills in only
-  `${BRANCH_NAME}` and its own environment variables there.
+* Of the REST API, only the two workflow endpoints take
+  [variables](#rest-api). `POST /api/v1/configs`,
+  `PUT /api/v1/configs/{kind}/{name}` and the web UI do not.
 * A dry run can't find every error. It doesn't merge the topologies that a
   not yet stored topology includes, and it checks only the schema of an
   `Experiment` config. The real apply can then fail after the injects are
@@ -615,8 +680,10 @@ Use absolute paths for both. See the
 
 * **Server check.** In `preflight` the command reads `GET /api/v1/options`
   from the unix socket. The server must report `"workflow-dry-run": true`: an
-  older server would store configs during a dry run. The answer also carries
-  the server's `base-dir.injects`.
+  older server would store configs during a dry run. It must also report
+  `"workflow-variables": true`: an older server does not read the variables
+  that the command sends. The answer also carries the server's
+  `base-dir.injects`.
 * **Pending configs.** In `plan`, each config's dry run returns a `pending`
   ref such as `Topology/helloworld`. The workflow config's dry run sends these
   refs, so the server plans as if the configs were stored and checks the

@@ -539,3 +539,127 @@ func TestSetSubstituteProperties(t *testing.T) {
 		}
 	})
 }
+
+// TestSetSubstituteDeferUnused checks that a flag that no file uses is given
+// back beside the result, and that any other problem still refuses the files.
+func TestSetSubstituteDeferUnused(t *testing.T) {
+	t.Parallel()
+
+	set, err := envsubst.NewSet(envsubst.Options{
+		Flags: []string{"USED=a", "UNUSED=b"}, EnvFiles: nil, DefaultEnvFile: "", Environ: nil, Reserved: "",
+	})
+	if err != nil {
+		t.Fatalf("NewSet error = %v, want nil", err)
+	}
+
+	flag := envsubst.Source{Kind: envsubst.SourceFlag, Path: ""}
+	unused := envsubst.Problem{Kind: envsubst.UnusedFlag, Name: "UNUSED", Path: "", Line: 0, Source: flag, Filtered: false}
+
+	res, gotUnused, err := set.SubstituteDeferUnused([]envsubst.File{{Path: "a.yml", Text: []byte("x: ${USED}\n")}})
+	if err != nil {
+		t.Fatalf("SubstituteDeferUnused error = %v, want nil", err)
+	}
+
+	if diff := cmp.Diff([]envsubst.Problem{unused}, gotUnused); diff != "" {
+		t.Errorf("SubstituteDeferUnused unused mismatch (-want +got):\n%s", diff)
+	}
+
+	if got, want := string(res.Files[0].Text), "x: a\n"; got != want {
+		t.Errorf("SubstituteDeferUnused text = %q, want %q", got, want)
+	}
+
+	// Substitute keeps the strict rule for the same files.
+	var subErr *envsubst.Error
+	if _, err := set.Substitute([]envsubst.File{{Path: "a.yml", Text: []byte("x: ${USED}\n")}}); !errors.As(err, &subErr) {
+		t.Errorf("Substitute error = %v, want an *Error", err)
+	} else if diff := cmp.Diff([]envsubst.Problem{unused}, subErr.Problems); diff != "" {
+		t.Errorf("Substitute problems mismatch (-want +got):\n%s", diff)
+	}
+
+	// Another problem refuses the files, and the error holds the unused flag too.
+	res, gotUnused, err = set.SubstituteDeferUnused([]envsubst.File{{Path: "a.yml", Text: []byte("x: ${USED} ${UNSET}\n")}})
+	if !errors.As(err, &subErr) {
+		t.Fatalf("SubstituteDeferUnused with an undefined variable error = %v, want an *Error", err)
+	}
+
+	want := []envsubst.Problem{
+		{Kind: envsubst.Undefined, Name: "UNSET", Path: "a.yml", Line: 1, Source: envsubst.Source{Kind: 0, Path: ""}, Filtered: false},
+		unused,
+	}
+
+	if diff := cmp.Diff(want, subErr.Problems); diff != "" {
+		t.Errorf("SubstituteDeferUnused problems mismatch (-want +got):\n%s", diff)
+	}
+
+	if len(res.Files) != 0 || len(gotUnused) != 0 {
+		t.Errorf("SubstituteDeferUnused with a problem = %d files and %d unused, want none", len(res.Files), len(gotUnused))
+	}
+}
+
+// TestSetValues checks that Values gives what Lookup gives, without the
+// filtered, the reserved and the invalid shell names.
+func TestSetValues(t *testing.T) {
+	t.Parallel()
+
+	file := setEnvFile(t, "vars.env", "B=file\nC=file\n")
+
+	set, err := envsubst.NewSet(envsubst.Options{
+		Flags:          []string{"C=flag", "PHENIX_SHOWN"},
+		EnvFiles:       []string{file},
+		DefaultEnvFile: "",
+		Environ: []string{
+			"A=shell", "B=shell", "PHENIX_HIDDEN=x", "PHENIX_SHOWN=y", "BRANCH_NAME=z", "BASH_FUNC_f%%=() {}", "=C:",
+		},
+		Reserved: "BRANCH_NAME",
+	})
+	if err != nil {
+		t.Fatalf("NewSet error = %v, want nil", err)
+	}
+
+	want := map[string]string{"A": "shell", "B": "file", "C": "flag", "PHENIX_SHOWN": "y"}
+
+	if diff := cmp.Diff(want, set.Values()); diff != "" {
+		t.Errorf("Values() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestSetShellNameThatStartsWithDigit checks that a shell variable such as
+// 1A, which a flag or an env file cannot set, is no variable: Substitute,
+// Lookup and Values agree, so a server that gets Values sees what the CLI used.
+func TestSetShellNameThatStartsWithDigit(t *testing.T) {
+	t.Parallel()
+
+	set, err := envsubst.NewSet(envsubst.Options{
+		Flags: nil, EnvFiles: nil, DefaultEnvFile: "", Environ: []string{"1A=x", "A1=y"}, Reserved: "",
+	})
+	if err != nil {
+		t.Fatalf("NewSet error = %v, want nil", err)
+	}
+
+	if got, ok := set.Lookup()("1A"); ok {
+		t.Errorf("Lookup(1A) = %q, true, want not set", got)
+	}
+
+	if diff := cmp.Diff(map[string]string{"A1": "y"}, set.Values()); diff != "" {
+		t.Errorf("Values() mismatch (-want +got):\n%s", diff)
+	}
+
+	_, err = set.Substitute([]envsubst.File{{Path: "a.yml", Text: []byte("a=${1A}")}})
+
+	var subErr *envsubst.Error
+	if !errors.As(err, &subErr) || len(subErr.Problems) != 1 || subErr.Problems[0].Kind != envsubst.Undefined {
+		t.Errorf("Substitute(${1A}) error = %v, want one Undefined problem", err)
+	}
+}
+
+func TestHasLineBreak(t *testing.T) {
+	t.Parallel()
+
+	for text, want := range map[string]bool{
+		"": false, "a b\t": false, "a\rb": true, "a\nb": true, "a\u0085b": true, "a\u2028b": true, "a\u2029b": true,
+	} {
+		if got := envsubst.HasLineBreak(text); got != want {
+			t.Errorf("HasLineBreak(%q) = %t, want %t", text, got, want)
+		}
+	}
+}
