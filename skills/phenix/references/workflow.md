@@ -20,6 +20,7 @@ phenix workflow apply ./site -b lab-a -c alt.yml # -b, --branch-name or --name: 
 phenix workflow apply helloworld -e MEMORY=4096 -e SITE # -e, --env: set a variable. NAME alone copies it from the shell
 phenix workflow apply helloworld --env-file a.env --env-file b.env # read these env files, not helloworld/.env. b.env overrides a.env
 phenix workflow render helloworld -b lab-a -e MEMORY=4096 # print the configs with the variables and the branch name filled in, with no server
+phenix workflow delete helloworld [-n] [-f]      # delete the experiment mapped to branch name helloworld and <base-dir.injects>/helloworld; -n shows "would ..." lines, -f stops a running experiment
 ```
 
 `phenix workflow apply --help` lists more examples. The argument is required;
@@ -144,6 +145,14 @@ nothing changes before `injects`:
 Output goes through the phenix logger; there are no prompts. The exit status
 is 0 on success or after a dry run, and non-zero otherwise.
 
+`phenix workflow delete <NAME>` takes a branch name, not a directory. It
+deletes the mapped experiment through the server, then removes
+`<base-dir.injects>/<NAME>` and its `.<NAME>.tmp-*` and `.<NAME>.old-*`
+leftovers. It does not delete stored configs. A server refusal (409: a running
+experiment without `-f`, or more than one mapped experiment) removes nothing.
+No mapped experiment and no files is exit 0. See
+[The `phenix workflow delete` Command](https://phenix.sceptre.dev/latest/workflow/#the-phenix-workflow-delete-command).
+
 Workflow config (`phenix.yml`) reference. It is validated against the
 `Workflow` schema in `src/go/types/version/schemas/v0.yaml`, served at
 `GET /schemas/workflow/v0`: an unknown or misspelled key (keys are
@@ -211,7 +220,8 @@ the auth modes and points to the full route reference.
 |---|---|
 | `POST /workflow/configs/{branch}[?dryRun=true]` | Create or update a config; `${BRANCH_NAME}` expands to `{branch}`, and with a plain JSON or YAML body every other placeholder is kept as written. A config's `kind` and `metadata.name` can use no placeholder but `${BRANCH_NAME}` and the request variables. The dry run stores nothing and returns JSON `{action, kind, name, dryRun, pending, variables?, warnings?}`. |
 | `POST /workflow/apply/{branch}[?dryRun=true][&pending=<ref>][&expect=<action>][&tag=key=value]` | Returns JSON `{action, experiment, reason, dryRun, warnings?, variables?}`; `warnings` holds the variable warnings, then, for a dry run of a plan that starts the experiment, the disk check problems of that start (`the start would fail: ...` for those that would refuse it), and the CLI logs each as a warning. `pending`, only on a dry run, is a config dry run's `pending` value, url-encoded, and names a config the caller stores before the real apply. A plan other than `expect` is a 409 that changes nothing. |
-| `GET /options` | Server-side CLI defaults, plus `base-dir.injects`, `workflow-dry-run` and `workflow-variables`. |
+| `DELETE /workflow/apply/{branch}[?dryRun=true][&force=true][&injects=<abs dir>]` | Deletes the mapped experiment (stops it first with `force`), and returns JSON `{branch, dryRun, experiment, stopped, injectsDir, injectsUsedBy}`. The server does not touch the injects; the client removes `injectsDir` unless `injectsUsedBy` (other experiments with an absolute inject `src` in it) is not empty. 409 for a running experiment without `force` (dry run too) or more than one mapped experiment. Needs `workflow` `delete`. |
+| `GET /options` | Server-side CLI defaults, plus `base-dir.injects`, `workflow-dry-run`, `workflow-variables` and `workflow-delete`. |
 
 Both workflow routes also take `multipart/form-data` with exactly one `config`
 part (`Content-Type` `application/json` or `application/x-yaml`) and exactly
@@ -252,9 +262,17 @@ records name the used variables in `phenix.workflow.variables`, never values.
 - **`workflow:create` lets a caller probe the server's files.** An apply dry
   run can show whether a path exists on the server. Grant the permission only
   to trusted roles; the default policies give it to Global Admin only.
-- **Output is log lines, not stdout.** With `log.level` above `info` or
-  `log.console` set to a file, the plan and result aren't on the console; use
-  the exit status.
+- **`phenix workflow delete` keeps an injects directory that another
+  experiment injects from.** It warns and names the experiments. Only absolute
+  `src` paths in topologies count; an app or a script that reads the
+  directory is not found.
+- **Output of `workflow apply` is log lines, not stdout.** With `log.level`
+  above `info` or `log.console` set to a file, the plan and result aren't on
+  the console; use the exit status. The "would ..." lines of
+  `workflow delete -n` go to stdout, and `log.level` does not change them.
+- **Do not run `phenix workflow apply` and `phenix workflow delete` for the
+  same branch name at the same time.** The delete removes the injects
+  directory and the staging copies that the apply is writing.
 - **How the dry run sees configs that aren't stored yet.** Each config's dry
   run returns a `pending` ref (`<Kind>/<name>`, plus the references the config
   makes). The apply dry run sends those refs, and the server plans as if the
@@ -267,6 +285,9 @@ records name the used variables in `phenix.workflow.variables`, never values.
 | Symptom | Likely cause / fix |
 |---|---|
 | `phenix workflow apply` refuses the server | The server doesn't report `workflow-dry-run` or `workflow-variables` in `GET /options`, or answered with an action the command doesn't know; use the same release for `phenix ui` and the CLI. |
+| `does not support workflow delete; upgrade the phenix server` | The server doesn't report `workflow-delete` in `GET /options`. Use the same release for `phenix ui` and the CLI. |
+| `409 Conflict ... use force (the -f flag)` from `phenix workflow delete` | The mapped experiment runs. Nothing was deleted; run it again with `-f`. |
+| `injects directory kept: other experiments inject files from it` | Delete or change the experiments the warning names, then run `phenix workflow delete <NAME>` again. |
 | `unable to restart experiment <exp>, which is still running` (code `broken_disks`) | The restart's start would fail on a missing disk image or backing file, or an image qemu cannot open, so the server refused before it stopped anything. Fix the file the error names, or set `experiment.disk-check: warn`. |
 | `re-run with -f` | The plan would restart a running experiment. Nothing has changed; re-run with `-f` to allow it. |
 | `variable problems; nothing was changed` | A placeholder has no value and no default, a value has a line break, or no file uses a `-e` variable. The error records before it name the variable, the file and the line. Set the variable with `-e` or an env file, write `${NAME:default}`, or write `$${NAME}` to keep the text. `phenix workflow render` shows the result without the server. |

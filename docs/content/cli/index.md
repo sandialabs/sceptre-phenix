@@ -16,7 +16,7 @@ phenix [flags]
 
 ```text
       --base-dir.builder-templates string   directory of the Builder template files phenix ui reads at start (default: <base-dir.phenix>/builder/templates)
-      --base-dir.injects string             base directory for staged workflow injects (default: <base-dir.phenix>/injects; workflow apply uses the server's value unless this flag is given)
+      --base-dir.injects string             base directory for staged workflow injects (default: <base-dir.phenix>/injects; workflow apply and workflow delete use the server's value unless this flag is given)
       --base-dir.minimega string            base minimega directory (default "/tmp/minimega")
       --base-dir.phenix string              base phenix directory (default "/phenix")
       --base-dir.topologies string          base directory for topology directories (default: <base-dir.phenix>/topologies)

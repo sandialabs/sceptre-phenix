@@ -20,6 +20,7 @@ const (
 	configsDirName             = "phenix-configs"
 	optionWorkflowDryRun       = "workflow-dry-run"
 	optionWorkflowVariables    = "workflow-variables"
+	optionWorkflowDelete       = "workflow-delete"
 	optionInjectsBase          = "base-dir.injects"
 	optionFollowInjectSymlinks = "follow-inject-symlinks"
 	workflowDateLayout         = "20060102150405MST"
@@ -172,8 +173,8 @@ func newWorkflowCmd() *cobra.Command {
 	desc := `Workflow management
 
   Deploy topology directories through the running phenix server over its
-  unix socket (--unix-socket), and print their configs with the variables
-  filled in.`
+  unix socket (--unix-socket), print their configs with the variables
+  filled in, and delete what a deploy made.`
 
 	cmd := &cobra.Command{
 		Use:   "workflow",
@@ -309,9 +310,10 @@ func init() { //nolint:gochecknoinits // cobra command
 	workflowCmd := newWorkflowCmd()
 
 	workflowCmd.AddCommand(newWorkflowApplyCmd())
+	workflowCmd.AddCommand(newWorkflowDeleteCmd())
 	workflowCmd.AddCommand(newWorkflowRenderCmd())
 
 	// Global flags are hidden in help, as they are for every command but ui.
-	// The long help and the examples name the ones apply reads.
+	// The long help and the examples name the ones apply and delete read.
 	addCommandToRoot(workflowCmd, true)
 }

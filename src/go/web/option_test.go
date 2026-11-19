@@ -69,6 +69,7 @@ func TestGetOptionsReportsWorkflowSettings(t *testing.T) {
 		"base-dir.injects":   "/srv/phenix/injects",
 		"workflow-dry-run":   true,
 		"workflow-variables": true,
+		"workflow-delete":    true,
 	}
 
 	if !reflect.DeepEqual(got, want) {

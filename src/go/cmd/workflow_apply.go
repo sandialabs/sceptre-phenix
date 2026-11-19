@@ -473,11 +473,7 @@ func (r *applyRun) changedError(err error) error {
 // requestError describes a failed request made while doing what, naming the
 // socket when the server did not answer.
 func (r *applyRun) requestError(what string, err error) error {
-	if errors.Is(err, errServerUnreachable) {
-		return fmt.Errorf("%s via %s: %w", what, r.opts.Socket, err)
-	}
-
-	return fmt.Errorf("%s: %w", what, err)
+	return socketRequestError(what, r.opts.Socket, err)
 }
 
 // rel returns path relative to the topology directory, for logs.
