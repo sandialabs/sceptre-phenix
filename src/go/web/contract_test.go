@@ -1731,7 +1731,7 @@ func TestContractSocket(t *testing.T) {
 
 	o = newServerOptions()
 
-	server := httptest.NewServer(newSocketRouter())
+	server := httptest.NewServer(socketRouter(t))
 	t.Cleanup(server.Close)
 
 	covered := map[string]bool{}
@@ -1849,14 +1849,16 @@ func TestContractSocket(t *testing.T) {
 			if tc.route != "" && resp.Header.Get("X-Phenix-Seq") == "" {
 				t.Errorf("socket %s %s: X-Phenix-Seq is missing", tc.method, tc.path)
 			}
+
+			if tc.route != "" && resp.Header.Get("X-Phenix-Version") == "" {
+				t.Errorf("socket %s %s: X-Phenix-Version is missing", tc.method, tc.path)
+			}
 		})
 	}
 
 	for _, r := range socketRoutes() {
-		for _, method := range r.methods {
-			if !covered[method+" "+r.path] {
-				t.Errorf("socket route %s %s has no case", method, r.path)
-			}
+		if !covered[r.Method+" "+r.Path] {
+			t.Errorf("socket route %s %s has no case", r.Method, r.Path)
 		}
 	}
 }

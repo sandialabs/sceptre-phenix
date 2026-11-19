@@ -9,8 +9,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gorilla/mux"
-
 	"phenix/util/common"
 	"phenix/util/plog"
 	"phenix/web/audit"
@@ -19,15 +17,10 @@ import (
 	"phenix/web/idempotency"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/routing"
 	"phenix/web/scorch"
 	"phenix/web/weberror"
 )
-
-type route struct {
-	path    string
-	handler http.Handler
-	methods []string
-}
 
 const (
 	resourceUsers = "users"
@@ -294,6 +287,11 @@ func (s *uiServer) listen(ctx context.Context, fileServerEndpoint string, router
 	s.servers = append(s.servers, primary)
 
 	if common.UnixSocket != "" {
+		socketRouter, err := newSocketRouter()
+		if err != nil {
+			return err
+		}
+
 		_ = os.Remove(common.UnixSocket)
 
 		plog.Info(plog.TypeSystem, "starting Unix socket server", "path", common.UnixSocket)
@@ -306,7 +304,7 @@ func (s *uiServer) listen(ctx context.Context, fileServerEndpoint string, router
 		s.socket = common.UnixSocket
 		s.servers = append(s.servers, servedHTTP{
 			name:  "Unix socket server",
-			srv:   newHTTPServer("", newSocketRouter()),
+			srv:   newHTTPServer("", socketRouter),
 			ln:    ln,
 			serve: (*http.Server).Serve,
 		})
@@ -329,15 +327,89 @@ func (s *uiServer) listen(ctx context.Context, fileServerEndpoint string, router
 
 // newRouter routes the UI's pages and assets, and the REST API behind its
 // middleware, as the server options say. builderOpts configure the Builder API.
-//
-//nolint:funlen,maintidx // the route table
-func newRouter(assets http.FileSystem, builderOpts ...builderOption) (*mux.Router, error) {
-	router := mux.NewRouter().StrictSlash(true)
+func newRouter(assets http.FileSystem, builderOpts ...builderOption) (*routing.Mux, error) {
+	pages := pageHandler(assets)
+
+	root := routing.Group{
+		Prefix: "", Routes: rootRoutes(assets), Middleware: nil, Options: nil,
+		NotFound: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			plog.Warn(
+				plog.TypeSystem,
+				"Unknown route requested",
+				"route",
+				middleware.RedactURI(r.RequestURI),
+				"method",
+				r.Method,
+			)
+
+			// index.html names the current build's hashed chunks, so browsers must
+			// revalidate it rather than reuse a stale copy
+			w.Header().Set("Cache-Control", "no-cache")
+
+			pages.ServeHTTP(w, r)
+		}),
+		// a method a route does not take gets the JSON Error and Allow, as under /api/v1
+		MethodNotAllowed: http.HandlerFunc(methodNotAllowed),
+	}
+
+	api := routing.Group{
+		Prefix: "/api/v1", Routes: nil, Middleware: nil,
+		// API routes take OPTIONS: the router sets Allow, and AnswerOptions answers 204
+		Options: http.HandlerFunc(optionsAnswered),
+		// The router's NotFoundHandler serves the SPA index, so an API client would get 200 HTML.
+		// A route behind a disabled feature flag would then also look enabled.
+		NotFound:         apiNotFoundHandler(),
+		MethodNotAllowed: http.HandlerFunc(methodNotAllowed),
+	}
+
+	// The Builder routes are registered before the generic schema routes
+	// so /schemas/builder/v1 is matched by the builder schema handler rather
+	// than by /schemas/{kind}/{version}.
+	if err := registerBuilderRoutes(&api, builderOpts...); err != nil {
+		return nil, fmt.Errorf("configuring Builder API: %w", err)
+	}
+
+	api.Routes = append(api.Routes, apiRoutes()...)
+	api.Routes = append(api.Routes, socketRoutes()...)
+
+	api.Middleware = append(api.Middleware,
+		// outermost, so the other middleware (full logging in particular) sees the
+		// uncompressed response
+		CompressResponses,
+		middleware.AnswerOptions,
+		middleware.Auth(o.jwtKey, o.proxyAuthHeader, middleware.OnRefusal(audit.TokenRefused)),
+		// after Auth, so a refused request takes no sequence number
+		middleware.Freshness,
+		middleware.Version,
+	)
+
+	switch o.logMiddleware {
+	case "full":
+		plog.Info(plog.TypeSystem, "full HTTP logging is enabled")
+
+		api.Middleware = append(api.Middleware, middleware.LogFull)
+	case "requests":
+		plog.Info(plog.TypeSystem, "requests-only HTTP logging is enabled")
+
+		api.Middleware = append(api.Middleware, middleware.LogRequests)
+	}
+
+	return routing.NewMux(root, api)
+}
+
+// rootRoutes are the routes outside /api/v1: downloads, WebShark, features,
+// version, health probes, and the UI's assets, as the server options say.
+func rootRoutes(assets http.FileSystem) []routing.Route {
+	var routes []routing.Route
 
 	if o.featured(FeatureTunnelerDownload) {
 		plog.Info(plog.TypeSystem, "Serving phēnix tunneler downloads")
-		router.Handle("/downloads/tunneler", weberror.ErrorHandler(forward.ListTunnelers)).Methods("GET")
-		router.Handle("/downloads/tunneler/{name}", weberror.ErrorHandler(forward.GetTunneler)).Methods("GET", "HEAD")
+
+		routes = append(routes,
+			routing.Row(http.MethodGet, "/downloads/tunneler", weberror.ErrorHandler(forward.ListTunnelers)),
+			routing.Row(http.MethodGet, "/downloads/tunneler/{name}", weberror.ErrorHandler(forward.GetTunneler)),
+			routing.Row(http.MethodHead, "/downloads/tunneler/{name}", weberror.ErrorHandler(forward.GetTunneler)),
+		)
 	}
 
 	// capture grants are the credentials of these routes (see capability.go)
@@ -345,339 +417,257 @@ func newRouter(assets http.FileSystem, builderOpts ...builderOption) (*mux.Route
 
 	// streams a capture into a command outside the browser, with or without
 	// WebShark, under the /webshark/ that proxies already pass on
-	router.Handle("/webshark/streams/{token}", weberror.ErrorHandler(grants.GetCaptureStreamByToken)).Methods("GET")
+	routes = append(routes, routing.Row(http.MethodGet, "/webshark/streams/{token}", weberror.ErrorHandler(grants.GetCaptureStreamByToken)))
 
 	if o.featured(FeatureWebShark) {
 		plog.Info(plog.TypeSystem, "Serving WebShark", "dir", o.websharkDir)
-		router.HandleFunc("/webshark/json", grants.GetWebSharkJSON).Methods("GET")
-		router.HandleFunc("/webshark/captures/{name}", grants.GetWebSharkCaptureFile).Methods("GET", "HEAD")
-		router.HandleFunc("/webshark/watch", grants.GetWebSharkWatch).Methods("GET")
-		router.PathPrefix("/webshark/").Handler(WebSharkHandler(o.websharkDir, o.basePath))
+
+		routes = append(routes,
+			routing.Row(http.MethodGet, "/webshark/json", http.HandlerFunc(grants.GetWebSharkJSON)),
+			routing.Row(http.MethodGet, "/webshark/captures/{name}", http.HandlerFunc(grants.GetWebSharkCaptureFile)),
+			routing.Row(http.MethodHead, "/webshark/captures/{name}", http.HandlerFunc(grants.GetWebSharkCaptureFile)),
+			routing.Row(http.MethodGet, "/webshark/watch", http.HandlerFunc(grants.GetWebSharkWatch)),
+			routing.Row("", "/webshark/", WebSharkHandler(o.websharkDir, o.basePath)),
+		)
 	} else {
 		// rather than the phēnix UI, which would load itself in its own frame
-		router.PathPrefix("/webshark/").Handler(
+		routes = append(routes, routing.Row("", "/webshark/",
 			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				weberror.Error(w, "WebShark is not installed on this phēnix server", http.StatusNotFound)
 			}),
-		)
+		))
 	}
-
-	// a method a route does not take gets the JSON Error and Allow, as under /api/v1
-	router.MethodNotAllowedHandler = methodNotAllowedFor(router)
-
-	router.HandleFunc("/features", GetFeatures).Methods("GET")
-	router.HandleFunc("/version", GetVersion).Methods("GET")
 
 	// Health endpoints sit outside /api/v1, and so outside its auth,
 	// compression and request logging: probes need no credentials, and only
 	// their output fields depend on the request's.
 	probes := newHealthHandlers()
-	router.Handle("/healthz", probes.live).Methods("GET", "HEAD")
-	router.Handle("/readyz", probes.ready).Methods("GET", "HEAD")
+
+	routes = append(routes,
+		routing.Row(http.MethodGet, "/features", http.HandlerFunc(GetFeatures)),
+		routing.Row(http.MethodGet, "/version", http.HandlerFunc(GetVersion)),
+		routing.Row(http.MethodGet, "/healthz", probes.live),
+		routing.Row(http.MethodHead, "/healthz", probes.live),
+		routing.Row(http.MethodGet, "/readyz", probes.ready),
+		routing.Row(http.MethodHead, "/readyz", probes.ready),
+	)
 
 	plog.Info(plog.TypeSystem, "setting up assets")
 
-	router.Handle(openAPIPath, OpenAPISpecHandler(assets)).Methods("GET", "HEAD")
-	router.PathPrefix("/docs/").Handler(
-		StaticHandler(assets, false),
+	spec := OpenAPISpecHandler(assets)
+
+	return append(routes,
+		routing.Row(http.MethodGet, openAPIPath, spec),
+		routing.Row(http.MethodHead, openAPIPath, spec),
+		routing.Row("", "/docs/", StaticHandler(assets, false)),
+		routing.Row("", "/assets/", builderAssetHandler(assets, StaticHandler(assets, true))),
+		routing.Row("", "/favicon.ico", StaticHandler(assets, false)),
 	)
+}
 
-	router.PathPrefix("/assets/").Handler(
-		builderAssetHandler(assets, StaticHandler(assets, true)),
-	)
-
-	router.Handle("/favicon.ico", StaticHandler(assets, false))
-
-	pages := pageHandler(assets)
-
-	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		plog.Warn(
-			plog.TypeSystem,
-			"Unknown route requested",
-			"route",
-			middleware.RedactURI(r.RequestURI),
-			"method",
-			r.Method,
-		)
-
-		// index.html names the current build's hashed chunks, so browsers must
-		// revalidate it rather than reuse a stale copy
-		w.Header().Set("Cache-Control", "no-cache")
-
-		pages.ServeHTTP(w, r)
-	})
-
-	api := router.PathPrefix("/api/v1").Subrouter()
-
+// apiRoutes are the routes below /api/v1, after the Builder routes and
+// before the socket routes, as the server options say.
+//
+//nolint:funlen // the route table
+func apiRoutes() []routing.Route {
 	// the routes that start a background job honor Idempotency-Key
 	idempotent := idempotency.New(idempotency.DefaultTTL, idempotency.DefaultMaxEntries, idempotency.DefaultMaxBytes)
 
-	// The router's NotFoundHandler serves the SPA index, so an API client would get 200 HTML.
-	// A route behind a disabled feature flag would then also look enabled.
-	api.NotFoundHandler = apiNotFoundHandler()
-	api.MethodNotAllowedHandler = methodNotAllowedFor(api)
+	webSettings := newSettingsRoutes(o.runtimeSettings)
+	settings := newRuntimeSettingsRoutes(o.runtimeSettings)
 
-	// The Builder routes are registered before the generic schema routes
-	// so /schemas/builder/v1 is matched by the builder schema handler rather
-	// than by /schemas/{kind}/{version}.
-	if err := registerBuilderRoutes(api, builderOpts...); err != nil {
-		return nil, fmt.Errorf("configuring Builder API: %w", err)
+	routes := []routing.Route{
+		routing.Row(http.MethodGet, "/configs", weberror.ErrorHandler(GetConfigs)),
+		routing.Row(http.MethodPost, "/configs", weberror.ErrorHandler(CreateConfig)),
+		routing.Row(http.MethodGet, "/configs/{kind}/{name}", weberror.ErrorHandler(GetConfig)),
+		routing.Row(http.MethodPut, "/configs/{kind}/{name}", weberror.ErrorHandler(UpdateConfig)),
+		routing.Row(http.MethodDelete, "/configs/{kind}/{name}", weberror.ErrorHandler(DeleteConfig)),
+		routing.Row(http.MethodPost, "/configs/download", weberror.ErrorHandler(DownloadConfigs)),
+		routing.Row(http.MethodGet, "/schemas/{version}", weberror.ErrorHandler(GetSchemaSpec)),
+		routing.Row(http.MethodGet, "/schemas/{kind}/{version}", weberror.ErrorHandler(GetSchema)),
+
+		routing.Row(http.MethodGet, "/experiments", weberror.ErrorHandler(GetExperiments)),
+		routing.Row(http.MethodPost, "/experiments", weberror.ErrorHandler(CreateExperiment)),
+		routing.Row(http.MethodGet, "/experiments/{name}", weberror.ErrorHandler(GetExperiment)),
+		routing.Row(http.MethodPatch, "/experiments/{name}", weberror.ErrorHandler(UpdateExperiment)),
+		routing.Row(http.MethodDelete, "/experiments/{name}", weberror.ErrorHandler(DeleteExperiment)),
+		routing.Row(http.MethodGet, "/experiments/{name}/apps", weberror.ErrorHandler(GetExperimentApps)),
+		routing.Row(http.MethodGet, "/experiments/{name}/apps/input", weberror.ErrorHandler(GetExperimentAppsInput)),
+		routing.Row(http.MethodGet, "/experiments/{name}/schedule/input", weberror.ErrorHandler(GetExperimentSchedulerInput)),
+		routing.Row(
+			http.MethodGet,
+			"/experiments/{name}/scorch/components/{cmp}/input",
+			weberror.ErrorHandler(GetExperimentScorchComponentInput),
+		),
+		routing.Row(http.MethodPost, "/experiments/{name}/start", weberror.ErrorHandler(StartExperiment)),
+		routing.Row(http.MethodPost, "/experiments/{name}/stop", weberror.ErrorHandler(StopExperiment)),
+		routing.Row(http.MethodPost, "/experiments/{name}/restart", weberror.ErrorHandler(RestartExperiment)),
+		routing.Row(http.MethodGet, "/experiments/{exp}/netflow/ws", weberror.ErrorHandler(GetNetflowWebSocket)),
+		routing.Row(http.MethodGet, "/experiments/{name}/topology", weberror.ErrorHandler(GetExperimentTopology)),
+		routing.Row(http.MethodGet, "/experiments/{name}/topology/search", weberror.ErrorHandler(SearchExperimentTopology)),
+		// canceling triggered apps is a socket route
+		routing.Row(http.MethodPost, "/experiments/{name}/trigger", weberror.ErrorHandler(TriggerExperimentApps)),
+		routing.Row(http.MethodGet, "/experiments/{name}/schedule", weberror.ErrorHandler(GetExperimentSchedule)),
+		routing.Row(http.MethodPost, "/experiments/{name}/schedule", weberror.ErrorHandler(ScheduleExperiment)),
+		routing.Row(http.MethodGet, "/schedulers", weberror.ErrorHandler(GetSchedulers)),
+		routing.Row(http.MethodGet, "/experiments/{name}/captures", weberror.ErrorHandler(GetExperimentCaptures)),
+		routing.Row(http.MethodPost, "/experiments/{name}/captures", weberror.ErrorHandler(StartExperimentCapture)),
+		routing.Row(http.MethodGet, "/experiments/{name}/captures/{id}", weberror.ErrorHandler(GetExperimentCapture)),
+		routing.Row(http.MethodDelete, "/experiments/{name}/captures/{id}", weberror.ErrorHandler(StopExperimentCapture)),
+		routing.Row(http.MethodGet, "/experiments/{name}/captures/{id}/stream", weberror.ErrorHandler(GetExperimentCaptureStream)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/captureSubnet", weberror.ErrorHandler(StartCaptureSubnet)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/stopCaptureSubnet", weberror.ErrorHandler(StopCaptureSubnet)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/captureVlan", weberror.ErrorHandler(StartCaptureVLAN)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/stopCaptureVlan", weberror.ErrorHandler(StopCaptureVLAN)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/webshark", weberror.ErrorHandler(CreateWebSharkCapture)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/captureTokens", weberror.ErrorHandler(CreateCaptureToken)),
+		routing.Row(http.MethodGet, "/experiments/{exp}/captureTokens", http.HandlerFunc(ListCaptureTokens)),
+		routing.Row(http.MethodDelete, "/experiments/{exp}/captureTokens/{id}", weberror.ErrorHandler(DeleteCaptureToken)),
+
+		routing.Row(http.MethodGet, "/experiments/{name}/files", weberror.ErrorHandler(GetExperimentFiles)),
+		routing.Row(http.MethodPost, "/experiments/{name}/files/download", weberror.ErrorHandler(DownloadExperimentFiles)),
+		routing.Row(http.MethodPost, "/experiments/{name}/files/archive", idempotent.Wrap(weberror.ErrorHandler(ArchiveExperimentFiles))),
+		routing.Row(http.MethodPost, "/experiments/{name}/files/delete", weberror.ErrorHandler(DeleteExperimentFiles)),
+		routing.Row(http.MethodGet, "/experiments/{name}/files/{filename}", weberror.ErrorHandler(GetExperimentFile)),
+		routing.Row(http.MethodHead, "/experiments/{name}/files/{filename}", weberror.ErrorHandler(GetExperimentFile)),
+		routing.Row(http.MethodGet, "/experiments/{name}/files/{filename}/checksum", weberror.ErrorHandler(GetExperimentFileChecksum)),
+		routing.Row(http.MethodDelete, "/experiments/{name}/files/{filename}", weberror.ErrorHandler(DeleteExperimentFile)),
 	}
 
-	// API routes take OPTIONS, which AnswerOptions answers with 204 and Allow
-	api.Handle("/configs", weberror.ErrorHandler(GetConfigs)).Methods("GET", "OPTIONS")
-	api.Handle("/configs", weberror.ErrorHandler(CreateConfig)).Methods("POST", "OPTIONS")
-	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(GetConfig)).Methods("GET", "OPTIONS")
-	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(UpdateConfig)).
-		Methods("PUT", "OPTIONS")
-	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(DeleteConfig)).
-		Methods("DELETE", "OPTIONS")
-	api.Handle("/configs/download", weberror.ErrorHandler(DownloadConfigs)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/schemas/{version}", weberror.ErrorHandler(GetSchemaSpec)).Methods("GET", "OPTIONS")
-	api.Handle("/schemas/{kind}/{version}", weberror.ErrorHandler(GetSchema)).
-		Methods("GET", "OPTIONS")
-
-	api.Handle("/experiments", weberror.ErrorHandler(GetExperiments)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments", weberror.ErrorHandler(CreateExperiment)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{name}", weberror.ErrorHandler(GetExperiment)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}", weberror.ErrorHandler(UpdateExperiment)).
-		Methods("PATCH", "OPTIONS")
-	api.Handle("/experiments/{name}", weberror.ErrorHandler(DeleteExperiment)).Methods("DELETE", "OPTIONS")
-	api.Handle("/experiments/{name}/apps", weberror.ErrorHandler(GetExperimentApps)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/apps/input", weberror.ErrorHandler(GetExperimentAppsInput)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/schedule/input", weberror.ErrorHandler(GetExperimentSchedulerInput)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/scorch/components/{cmp}/input", weberror.ErrorHandler(GetExperimentScorchComponentInput)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/start", weberror.ErrorHandler(StartExperiment)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{name}/stop", weberror.ErrorHandler(StopExperiment)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{name}/restart", weberror.ErrorHandler(RestartExperiment)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/netflow/ws", weberror.ErrorHandler(GetNetflowWebSocket)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/topology", weberror.ErrorHandler(GetExperimentTopology)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/topology/search", weberror.ErrorHandler(SearchExperimentTopology)).
-		Methods("GET", "OPTIONS")
-	// canceling triggered apps is a socket route
-	api.Handle("/experiments/{name}/trigger", weberror.ErrorHandler(TriggerExperimentApps)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{name}/schedule", weberror.ErrorHandler(GetExperimentSchedule)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/schedule", weberror.ErrorHandler(ScheduleExperiment)).Methods("POST", "OPTIONS")
-	api.Handle("/schedulers", weberror.ErrorHandler(GetSchedulers)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/captures", weberror.ErrorHandler(GetExperimentCaptures)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/captures", weberror.ErrorHandler(StartExperimentCapture)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{name}/captures/{id}", weberror.ErrorHandler(GetExperimentCapture)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/captures/{id}", weberror.ErrorHandler(StopExperimentCapture)).
-		Methods("DELETE", "OPTIONS")
-	api.Handle("/experiments/{name}/captures/{id}/stream", weberror.ErrorHandler(GetExperimentCaptureStream)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{exp}/captureSubnet", weberror.ErrorHandler(StartCaptureSubnet)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/stopCaptureSubnet", weberror.ErrorHandler(StopCaptureSubnet)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/captureVlan", weberror.ErrorHandler(StartCaptureVLAN)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/stopCaptureVlan", weberror.ErrorHandler(StopCaptureVLAN)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/webshark", weberror.ErrorHandler(CreateWebSharkCapture)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/captureTokens", weberror.ErrorHandler(CreateCaptureToken)).Methods("POST", "OPTIONS")
-	api.HandleFunc("/experiments/{exp}/captureTokens", ListCaptureTokens).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{exp}/captureTokens/{id}", weberror.ErrorHandler(DeleteCaptureToken)).Methods("DELETE", "OPTIONS")
-
-	api.Handle("/experiments/{name}/files", weberror.ErrorHandler(GetExperimentFiles)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/files/download", weberror.ErrorHandler(DownloadExperimentFiles)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{name}/files/archive", idempotent.Wrap(weberror.ErrorHandler(ArchiveExperimentFiles))).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{name}/files/delete", weberror.ErrorHandler(DeleteExperimentFiles)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{name}/files/{filename}", weberror.ErrorHandler(GetExperimentFile)).
-		Methods("GET", "HEAD", "OPTIONS")
-	api.Handle("/experiments/{name}/files/{filename}/checksum", weberror.ErrorHandler(GetExperimentFileChecksum)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/files/{filename}", weberror.ErrorHandler(DeleteExperimentFile)).
-		Methods("DELETE", "OPTIONS")
-	scorch.RegisterRoutes(api)
-	api.Handle("/experiments/{name}/soh", weberror.ErrorHandler(GetExperimentSoH)).Methods("GET", "OPTIONS")
-	api.Handle("/soh", weberror.ErrorHandler(GetSoHSummary)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms", weberror.ErrorHandler(GetVMs)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms", weberror.ErrorHandler(UpdateVMs)).Methods("PATCH", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/actions", idempotent.Wrap(weberror.ErrorHandler(RunVMActions))).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/resetSettings", weberror.ErrorHandler(ResetVMSettings)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}", weberror.ErrorHandler(GetVM)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}", weberror.ErrorHandler(UpdateVM)).Methods("PATCH", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}", weberror.ErrorHandler(DeleteVM)).Methods("DELETE", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/reset", weberror.ErrorHandler(ResetVM)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/restart", weberror.ErrorHandler(RestartVM)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/start", weberror.ErrorHandler(StartVM)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/stop", weberror.ErrorHandler(StopVM)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/shutdown", weberror.ErrorHandler(ShutdownVM)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/redeploy", weberror.ErrorHandler(RedeployVM)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/qos", weberror.ErrorHandler(GetVMQoS)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/interfaces/{iface}/qos", weberror.ErrorHandler(SetVMInterfaceQoS)).
-		Methods("PUT", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/interfaces/{iface}/qos", weberror.ErrorHandler(ClearVMInterfaceQoS)).
-		Methods("DELETE", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/cdrom", weberror.ErrorHandler(ChangeOpticalDisc)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/cdrom", weberror.ErrorHandler(EjectOpticalDisc)).
-		Methods("DELETE", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/screenshot.png", weberror.ErrorHandler(GetScreenshot)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/screenshots", weberror.ErrorHandler(SaveScreenshot)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/vnc", weberror.ErrorHandler(GetVNC)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/vnc/ws", weberror.ErrorHandler(GetVNCWebSocket)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/captures", weberror.ErrorHandler(GetVMCaptures)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/captures", weberror.ErrorHandler(StartVMCapture)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/captures", weberror.ErrorHandler(StopVMCaptures)).
-		Methods("DELETE", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/captures/{iface}/stream", weberror.ErrorHandler(GetVMCaptureStream)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/snapshots", weberror.ErrorHandler(GetVMSnapshots)).
-		Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/snapshots", weberror.ErrorHandler(SnapshotVM)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/snapshots/{snapshot}", weberror.ErrorHandler(RestoreVM)).
-		Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/snapshots/{snapshot}", weberror.ErrorHandler(DeleteVMSnapshot)).
-		Methods("DELETE", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/commit", weberror.ErrorHandler(CommitVM)).Methods("POST", "OPTIONS")
-	api.Handle("/experiments/{exp}/vms/{name}/memorySnapshot", weberror.ErrorHandler(CreateVMMemorySnapshot)).
-		Methods("POST", "OPTIONS")
-
-	// listing, creating and deleting port forwards are socket routes
-	api.Handle("/experiments/{exp}/vms/{name}/forwards/{host}/{port}/ws", weberror.ErrorHandler(forward.GetPortForwardWebSocket)).
-		Methods("GET", "OPTIONS")
+	routes = append(routes, scorch.Routes()...)
+	routes = append(
+		routes,
+		routing.Row(http.MethodGet, "/experiments/{name}/soh", weberror.ErrorHandler(GetExperimentSoH)),
+		routing.Row(http.MethodGet, "/soh", weberror.ErrorHandler(GetSoHSummary)),
+		routing.Row(http.MethodGet, "/experiments/{exp}/vms", weberror.ErrorHandler(GetVMs)),
+		routing.Row(http.MethodPatch, "/experiments/{exp}/vms", weberror.ErrorHandler(UpdateVMs)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/vms/actions", idempotent.Wrap(weberror.ErrorHandler(RunVMActions))),
+		routing.Row(http.MethodPost, "/experiments/{exp}/vms/resetSettings", weberror.ErrorHandler(ResetVMSettings)),
+		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}", weberror.ErrorHandler(GetVM)),
+		routing.Row(http.MethodPatch, "/experiments/{exp}/vms/{name}", weberror.ErrorHandler(UpdateVM)),
+		routing.Row(http.MethodDelete, "/experiments/{exp}/vms/{name}", weberror.ErrorHandler(DeleteVM)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/reset", weberror.ErrorHandler(ResetVM)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/restart", weberror.ErrorHandler(RestartVM)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/start", weberror.ErrorHandler(StartVM)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/stop", weberror.ErrorHandler(StopVM)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/shutdown", weberror.ErrorHandler(ShutdownVM)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/redeploy", weberror.ErrorHandler(RedeployVM)),
+		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/qos", weberror.ErrorHandler(GetVMQoS)),
+		routing.Row(http.MethodPut, "/experiments/{exp}/vms/{name}/interfaces/{iface}/qos", weberror.ErrorHandler(SetVMInterfaceQoS)),
+		routing.Row(http.MethodDelete, "/experiments/{exp}/vms/{name}/interfaces/{iface}/qos", weberror.ErrorHandler(ClearVMInterfaceQoS)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/cdrom", weberror.ErrorHandler(ChangeOpticalDisc)),
+		routing.Row(http.MethodDelete, "/experiments/{exp}/vms/{name}/cdrom", weberror.ErrorHandler(EjectOpticalDisc)),
+		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/screenshot.png", weberror.ErrorHandler(GetScreenshot)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/screenshots", weberror.ErrorHandler(SaveScreenshot)),
+		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/vnc", weberror.ErrorHandler(GetVNC)),
+		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/vnc/ws", weberror.ErrorHandler(GetVNCWebSocket)),
+		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/captures", weberror.ErrorHandler(GetVMCaptures)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/captures", weberror.ErrorHandler(StartVMCapture)),
+		routing.Row(http.MethodDelete, "/experiments/{exp}/vms/{name}/captures", weberror.ErrorHandler(StopVMCaptures)),
+		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/captures/{iface}/stream", weberror.ErrorHandler(GetVMCaptureStream)),
+		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/snapshots", weberror.ErrorHandler(GetVMSnapshots)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/snapshots", weberror.ErrorHandler(SnapshotVM)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/snapshots/{snapshot}", weberror.ErrorHandler(RestoreVM)),
+		routing.Row(http.MethodDelete, "/experiments/{exp}/vms/{name}/snapshots/{snapshot}", weberror.ErrorHandler(DeleteVMSnapshot)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/commit", weberror.ErrorHandler(CommitVM)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/memorySnapshot", weberror.ErrorHandler(CreateVMMemorySnapshot)),
+		// listing, creating and deleting port forwards are socket routes
+		routing.Row(
+			http.MethodGet,
+			"/experiments/{exp}/vms/{name}/forwards/{host}/{port}/ws",
+			weberror.ErrorHandler(forward.GetPortForwardWebSocket),
+		),
+	)
 
 	if o.featured(FeatureVMMount) {
-		api.Handle("/experiments/{exp}/vms/{name}/mount", weberror.ErrorHandler(MountVM)).Methods("POST", "OPTIONS")
-		api.Handle("/experiments/{exp}/vms/{name}/unmount", weberror.ErrorHandler(UnmountVM)).
-			Methods("DELETE", "OPTIONS")
-		api.Handle("/experiments/{exp}/vms/{name}/files", weberror.ErrorHandler(GetMountFiles)).
-			Methods("GET", "OPTIONS").
-			Queries("path", "{path}")
-		api.Handle("/experiments/{exp}/vms/{name}/files/download", weberror.ErrorHandler(DownloadMountFile)).
-			Methods("GET", "HEAD", "OPTIONS").
-			Queries("path", "{path}")
-		api.Handle("/experiments/{exp}/vms/{name}/files/upload", weberror.ErrorHandler(UploadMountFile)).
-			Methods("PUT", "OPTIONS").
-			Queries("path", "{path}")
-		api.Handle("/experiments/{exp}/vms/{name}/files/copy", weberror.ErrorHandler(CopyExperimentFileToMount)).
-			Methods("POST", "OPTIONS")
+		routes = append(
+			routes,
+			routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/mount", weberror.ErrorHandler(MountVM)),
+			routing.Row(http.MethodDelete, "/experiments/{exp}/vms/{name}/unmount", weberror.ErrorHandler(UnmountVM)),
+			routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/files", weberror.ErrorHandler(GetMountFiles)).
+				WithQueries("path", "{path}"),
+			routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/files/download", weberror.ErrorHandler(DownloadMountFile)).
+				WithQueries("path", "{path}"),
+			routing.Row(http.MethodHead, "/experiments/{exp}/vms/{name}/files/download", weberror.ErrorHandler(DownloadMountFile)).
+				WithQueries("path", "{path}"),
+			routing.Row(http.MethodPut, "/experiments/{exp}/vms/{name}/files/upload", weberror.ErrorHandler(UploadMountFile)).
+				WithQueries("path", "{path}"),
+			routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/files/copy", weberror.ErrorHandler(CopyExperimentFileToMount)),
+		)
 	}
 
-	api.Handle("/disks", weberror.ErrorHandler(GetDisks)).Methods("GET", "OPTIONS")
-	// the disk handlers read their query parameters and answer 400 for a missing one
-	api.Handle("/disks/snapshot", weberror.ErrorHandler(SnapshotDisk)).Methods("POST", "OPTIONS")
-	api.Handle("/disks/rebase", weberror.ErrorHandler(RebaseDisk)).Methods("POST", "OPTIONS")
-	api.Handle("/disks/resize", weberror.ErrorHandler(ResizeDisk)).Methods("POST", "OPTIONS")
-	api.Handle("/disks/commit", weberror.ErrorHandler(CommitDisk)).Methods("POST", "OPTIONS")
-	api.Handle("/disks/clone", weberror.ErrorHandler(CloneDisk)).Methods("POST", "OPTIONS")
-	api.Handle("/disks/clone/jobs", idempotent.Wrap(weberror.ErrorHandler(CloneDiskJob))).Methods("POST", "OPTIONS")
-	api.Handle("/disks", weberror.ErrorHandler(DeleteDisk)).Methods("DELETE", "OPTIONS")
-	api.Handle("/disks/rename", weberror.ErrorHandler(RenameDisk)).Methods("POST", "OPTIONS")
-	api.Handle("/disks", weberror.ErrorHandler(UploadDisk)).Methods("POST", "OPTIONS")
-	api.Handle("/disks/download", weberror.ErrorHandler(DownloadDisk)).Methods("GET", "HEAD", "OPTIONS")
-	api.Handle("/disks/checksum", weberror.ErrorHandler(GetDiskChecksum)).Methods("GET", "OPTIONS")
-	api.Handle("/disks/details", weberror.ErrorHandler(GetDiskDetails)).Methods("GET", "OPTIONS")
+	routes = append(
+		routes,
+		routing.Row(http.MethodGet, "/disks", weberror.ErrorHandler(GetDisks)),
+		// the disk handlers read their query parameters and answer 400 for a missing one
+		routing.Row(http.MethodPost, "/disks/snapshot", weberror.ErrorHandler(SnapshotDisk)),
+		routing.Row(http.MethodPost, "/disks/rebase", weberror.ErrorHandler(RebaseDisk)),
+		routing.Row(http.MethodPost, "/disks/resize", weberror.ErrorHandler(ResizeDisk)),
+		routing.Row(http.MethodPost, "/disks/commit", weberror.ErrorHandler(CommitDisk)),
+		routing.Row(http.MethodPost, "/disks/clone", weberror.ErrorHandler(CloneDisk)),
+		routing.Row(http.MethodPost, "/disks/clone/jobs", idempotent.Wrap(weberror.ErrorHandler(CloneDiskJob))),
+		routing.Row(http.MethodDelete, "/disks", weberror.ErrorHandler(DeleteDisk)),
+		routing.Row(http.MethodPost, "/disks/rename", weberror.ErrorHandler(RenameDisk)),
+		routing.Row(http.MethodPost, "/disks", weberror.ErrorHandler(UploadDisk)),
+		routing.Row(http.MethodGet, "/disks/download", weberror.ErrorHandler(DownloadDisk)),
+		routing.Row(http.MethodHead, "/disks/download", weberror.ErrorHandler(DownloadDisk)),
+		routing.Row(http.MethodGet, "/disks/checksum", weberror.ErrorHandler(GetDiskChecksum)),
+		routing.Row(http.MethodGet, "/disks/details", weberror.ErrorHandler(GetDiskDetails)),
+		routing.Row(http.MethodGet, "/vms", weberror.ErrorHandler(GetAllVMs)),
+		routing.Row(http.MethodGet, "/applications", weberror.ErrorHandler(GetApplications)),
+		routing.Row(http.MethodGet, "/topologies", weberror.ErrorHandler(GetTopologies)),
+		routing.Row(http.MethodGet, "/topologies/{topo}/scenarios", weberror.ErrorHandler(GetScenarios)),
+		routing.Row(http.MethodGet, "/hosts", weberror.ErrorHandler(GetClusterHosts)),
+		// the literal VLAN paths come before /vlans/{id}, which would match them too
+		routing.Row(http.MethodGet, "/vlans", weberror.ErrorHandler(GetVLANs)),
+		routing.Row(http.MethodGet, "/vlans/free", weberror.ErrorHandler(FindFreeVLANs)),
+		routing.Row(http.MethodPost, "/vlans/check", weberror.ErrorHandler(CheckVLANs)),
+		routing.Row(http.MethodGet, "/vlans/blacklist", weberror.ErrorHandler(GetVLANBlacklist)),
+		routing.Row(http.MethodPut, "/vlans/blacklist/{id}", weberror.ErrorHandler(AddVLANBlacklist)),
+		routing.Row(http.MethodDelete, "/vlans/blacklist/{id}", weberror.ErrorHandler(RemoveVLANBlacklist)),
+		routing.Row(http.MethodDelete, "/vlans/allocations/{namespace}", weberror.ErrorHandler(ReleaseVLANAllocations)),
+		routing.Row(http.MethodGet, "/vlans/{id}", weberror.ErrorHandler(GetVLAN)),
+		routing.Row(http.MethodGet, "/experiments/{name}/vlans", weberror.ErrorHandler(GetExperimentVLANs)),
+		routing.Row(http.MethodPut, "/experiments/{name}/vlans/aliases/{alias}", weberror.ErrorHandler(PinExperimentVLANAlias)),
+		routing.Row(http.MethodDelete, "/experiments/{name}/vlans/aliases/{alias}", weberror.ErrorHandler(UnpinExperimentVLANAlias)),
+		routing.Row(http.MethodPut, "/experiments/{name}/vlans/range", weberror.ErrorHandler(SetExperimentVLANRange)),
+		routing.Row(http.MethodDelete, "/experiments/{name}/vlans/range", weberror.ErrorHandler(ClearExperimentVLANRange)),
+		routing.Row(http.MethodPost, "/experiments/{name}/vlans/pin-live", weberror.ErrorHandler(PinExperimentLiveVLANs)),
+		// changing users and roles and creating tokens are socket routes
+		routing.Row(http.MethodGet, "/users", weberror.ErrorHandler(GetUsers)),
+		routing.Row(http.MethodGet, "/users/{username}", weberror.ErrorHandler(GetUser)),
+		routing.Row(http.MethodGet, "/roles", weberror.ErrorHandler(GetRoles)),
+		routing.Row(http.MethodGet, "/roles/{name}", weberror.ErrorHandler(GetRole)),
+		routing.Row(http.MethodPost, "/signup", weberror.ErrorHandler(Signup)),
+		routing.Row(http.MethodGet, "/login", weberror.ErrorHandler(Login)),
+		routing.Row(http.MethodPost, "/login", weberror.ErrorHandler(Login)),
+		routing.Row(http.MethodPost, "/logout", weberror.ErrorHandler(Logout)),
+		routing.Row(http.MethodGet, "/ws", http.HandlerFunc(broker.ServeWS)).WithoutOptions(),
+		routing.Row(http.MethodPost, "/console", weberror.ErrorHandler(CreateConsole)),
+		routing.Row(http.MethodGet, "/console/{pid}", weberror.ErrorHandler(GetConsole)),
+		routing.Row(http.MethodDelete, "/console/{pid}", weberror.ErrorHandler(DeleteConsole)),
+		routing.Row(http.MethodGet, "/console/{pid}/ws", weberror.ErrorHandler(WsConsole)),
+		routing.Row(http.MethodPost, "/console/{pid}/size", weberror.ErrorHandler(ResizeConsole)).
+			WithQueries("cols", "{cols:[0-9]+}", "rows", "{rows:[0-9]+}"),
+		// background jobs; listing, reading and canceling them are socket routes
+		routing.Row(http.MethodDelete, "/jobs/{id}", weberror.ErrorHandler(DeleteJob)),
+		routing.Row(http.MethodGet, "/jobs/{id}/artifact", weberror.ErrorHandler(GetJobArtifact)),
+		routing.Row(http.MethodHead, "/jobs/{id}/artifact", weberror.ErrorHandler(GetJobArtifact)),
+		routing.Row(http.MethodGet, "/settings", weberror.ErrorHandler(webSettings.GetSettings)),
+		routing.Row(http.MethodPost, "/settings", weberror.ErrorHandler(webSettings.SetSettings)),
+		routing.Row(http.MethodGet, "/settings/password", weberror.ErrorHandler(GetPasswordRequirements)),
+		routing.Row(http.MethodGet, "/settings/timeout", weberror.ErrorHandler(GetTimeoutSettings)),
+		// bulk config deletes, RBAC permissions, minimega commands and runtime settings, as the CLI has them
+		routing.Row(http.MethodPost, "/configs/delete", weberror.ErrorHandler(DeleteConfigs)),
+		routing.Row(http.MethodGet, "/permissions", weberror.ErrorHandler(GetPermissions)),
+		routing.Row(http.MethodPost, "/minimega/commands", weberror.ErrorHandler(RunMinimegaCommand)),
+		routing.Row(http.MethodGet, "/runtimeSettings", weberror.ErrorHandler(settings.GetRuntimeSettings)),
+		routing.Row(http.MethodGet, "/runtimeSettings/{key}", weberror.ErrorHandler(settings.GetRuntimeSetting)),
+		routing.Row(http.MethodPut, "/runtimeSettings/{key}", weberror.ErrorHandler(settings.SetRuntimeSetting)),
+		routing.Row(http.MethodDelete, "/runtimeSettings/{key}", weberror.ErrorHandler(settings.UnsetRuntimeSetting)),
+	)
 
-	api.Handle("/vms", weberror.ErrorHandler(GetAllVMs)).Methods("GET", "OPTIONS")
-	api.Handle("/applications", weberror.ErrorHandler(GetApplications)).Methods("GET", "OPTIONS")
-	api.Handle("/topologies", weberror.ErrorHandler(GetTopologies)).Methods("GET", "OPTIONS")
-	api.Handle("/topologies/{topo}/scenarios", weberror.ErrorHandler(GetScenarios)).Methods("GET", "OPTIONS")
-	api.Handle("/hosts", weberror.ErrorHandler(GetClusterHosts)).Methods("GET", "OPTIONS")
-	// the literal VLAN paths come before /vlans/{id}, which would match them too
-	api.Handle("/vlans", weberror.ErrorHandler(GetVLANs)).Methods("GET", "OPTIONS")
-	api.Handle("/vlans/free", weberror.ErrorHandler(FindFreeVLANs)).Methods("GET", "OPTIONS")
-	api.Handle("/vlans/check", weberror.ErrorHandler(CheckVLANs)).Methods("POST", "OPTIONS")
-	api.Handle("/vlans/blacklist", weberror.ErrorHandler(GetVLANBlacklist)).Methods("GET", "OPTIONS")
-	api.Handle("/vlans/blacklist/{id}", weberror.ErrorHandler(AddVLANBlacklist)).Methods("PUT", "OPTIONS")
-	api.Handle("/vlans/blacklist/{id}", weberror.ErrorHandler(RemoveVLANBlacklist)).Methods("DELETE", "OPTIONS")
-	api.Handle("/vlans/allocations/{namespace}", weberror.ErrorHandler(ReleaseVLANAllocations)).
-		Methods("DELETE", "OPTIONS")
-	api.Handle("/vlans/{id}", weberror.ErrorHandler(GetVLAN)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/vlans", weberror.ErrorHandler(GetExperimentVLANs)).Methods("GET", "OPTIONS")
-	api.Handle("/experiments/{name}/vlans/aliases/{alias}", weberror.ErrorHandler(PinExperimentVLANAlias)).
-		Methods("PUT", "OPTIONS")
-	api.Handle("/experiments/{name}/vlans/aliases/{alias}", weberror.ErrorHandler(UnpinExperimentVLANAlias)).
-		Methods("DELETE", "OPTIONS")
-	api.Handle("/experiments/{name}/vlans/range", weberror.ErrorHandler(SetExperimentVLANRange)).
-		Methods("PUT", "OPTIONS")
-	api.Handle("/experiments/{name}/vlans/range", weberror.ErrorHandler(ClearExperimentVLANRange)).
-		Methods("DELETE", "OPTIONS")
-	api.Handle("/experiments/{name}/vlans/pin-live", weberror.ErrorHandler(PinExperimentLiveVLANs)).
-		Methods("POST", "OPTIONS")
-	// changing users and roles and creating tokens are socket routes
-	api.Handle("/users", weberror.ErrorHandler(GetUsers)).Methods("GET", "OPTIONS")
-	api.Handle("/users/{username}", weberror.ErrorHandler(GetUser)).Methods("GET", "OPTIONS")
-	api.Handle("/roles", weberror.ErrorHandler(GetRoles)).Methods("GET", "OPTIONS")
-	api.Handle("/roles/{name}", weberror.ErrorHandler(GetRole)).Methods("GET", "OPTIONS")
-	api.Handle("/signup", weberror.ErrorHandler(Signup)).Methods("POST", "OPTIONS")
-	api.Handle("/login", weberror.ErrorHandler(Login)).Methods("GET", "POST", "OPTIONS")
-	api.Handle("/logout", weberror.ErrorHandler(Logout)).Methods("POST", "OPTIONS")
-	api.HandleFunc("/ws", broker.ServeWS).Methods("GET")
-	api.Handle("/console", weberror.ErrorHandler(CreateConsole)).Methods("POST", "OPTIONS")
-	api.Handle("/console/{pid}", weberror.ErrorHandler(GetConsole)).Methods("GET", "OPTIONS")
-	api.Handle("/console/{pid}", weberror.ErrorHandler(DeleteConsole)).Methods("DELETE", "OPTIONS")
-	api.Handle("/console/{pid}/ws", weberror.ErrorHandler(WsConsole)).Methods("GET", "OPTIONS")
-	api.Handle("/console/{pid}/size", weberror.ErrorHandler(ResizeConsole)).
-		Methods("POST", "OPTIONS").
-		Queries("cols", "{cols:[0-9]+}", "rows", "{rows:[0-9]+}")
-
-	// background jobs; listing, reading and canceling them are socket routes
-	api.Handle("/jobs/{id}", weberror.ErrorHandler(DeleteJob)).Methods("DELETE", "OPTIONS")
-	api.Handle("/jobs/{id}/artifact", weberror.ErrorHandler(GetJobArtifact)).Methods("GET", "HEAD", "OPTIONS")
-
-	webSettings := newSettingsRoutes(o.runtimeSettings)
-	api.Handle("/settings", weberror.ErrorHandler(webSettings.GetSettings)).Methods("GET", "OPTIONS")
-	api.Handle("/settings", weberror.ErrorHandler(webSettings.SetSettings)).Methods("POST", "OPTIONS")
-	api.Handle("/settings/password", weberror.ErrorHandler(GetPasswordRequirements)).Methods("GET", "OPTIONS")
-	api.Handle("/settings/timeout", weberror.ErrorHandler(GetTimeoutSettings)).Methods("GET", "OPTIONS")
-
-	// bulk config deletes, RBAC permissions, minimega commands and runtime settings, as the CLI has them
-	api.Handle("/configs/delete", weberror.ErrorHandler(DeleteConfigs)).Methods("POST", "OPTIONS")
-	api.Handle("/permissions", weberror.ErrorHandler(GetPermissions)).Methods("GET", "OPTIONS")
-	api.Handle("/minimega/commands", weberror.ErrorHandler(RunMinimegaCommand)).Methods("POST", "OPTIONS")
-
-	settings := newRuntimeSettingsRoutes(o.runtimeSettings)
-	api.Handle("/runtimeSettings", weberror.ErrorHandler(settings.GetRuntimeSettings)).Methods("GET", "OPTIONS")
-	api.Handle("/runtimeSettings/{key}", weberror.ErrorHandler(settings.GetRuntimeSetting)).Methods("GET", "OPTIONS")
-	api.Handle("/runtimeSettings/{key}", weberror.ErrorHandler(settings.SetRuntimeSetting)).Methods("PUT", "OPTIONS")
-	api.Handle("/runtimeSettings/{key}", weberror.ErrorHandler(settings.UnsetRuntimeSetting)).
-		Methods("DELETE", "OPTIONS")
-
-	// with OPTIONS, as every API route takes it
-	for _, r := range socketRoutes() {
-		api.Handle(r.path, r.handler).Methods(append(r.methods, "OPTIONS")...)
-	}
-
-	// outermost, so the other middleware (full logging in particular) sees the
-	// uncompressed response
-	api.Use(CompressResponses)
-
-	api.Use(middleware.AnswerOptions(func(r *http.Request) []string { return allowedMethods(api, r) }))
-
-	api.Use(middleware.Auth(o.jwtKey, o.proxyAuthHeader, middleware.OnRefusal(audit.TokenRefused)))
-	// after Auth, so a refused request takes no sequence number
-	api.Use(middleware.Freshness)
-	api.Use(middleware.Version)
-
-	switch o.logMiddleware {
-	case "full":
-		plog.Info(plog.TypeSystem, "full HTTP logging is enabled")
-		api.Use(middleware.LogFull)
-	case "requests":
-		plog.Info(plog.TypeSystem, "requests-only HTTP logging is enabled")
-		api.Use(middleware.LogRequests)
-	}
-
-	return router, nil
+	return routes
 }
 
 // apiLocation returns the absolute path of the API resource at p, relative to
@@ -700,126 +690,69 @@ func apiLocation(p string) string {
 // newSocketRouter routes the API routes the Unix socket serves, to every
 // local client as global-admin, since the socket's file permissions are its
 // access control.
-func newSocketRouter() *mux.Router {
-	var (
-		router = mux.NewRouter().StrictSlash(true)
-		api    = router.PathPrefix("/api/v1").Subrouter()
-	)
-
-	addRoutesToRouter(api, socketRoutes()...)
-
-	api.MethodNotAllowedHandler = methodNotAllowedFor(api)
-
-	api.Use(middleware.UnixSocket)
-	api.Use(middleware.NoAuth)
-	api.Use(middleware.Freshness)
-	api.Use(middleware.Version)
-
-	return router
+func newSocketRouter() (*routing.Mux, error) {
+	return routing.NewMux(routing.Group{
+		Prefix: "/api/v1", Routes: socketRoutes(),
+		Middleware: []func(http.Handler) http.Handler{
+			middleware.UnixSocket,
+			middleware.NoAuth,
+			middleware.Freshness,
+			middleware.Version,
+		},
+		Options: nil, NotFound: nil, MethodNotAllowed: http.HandlerFunc(methodNotAllowed),
+	})
 }
 
 // socketRoutes are the API routes the Unix socket serves as well.
-func socketRoutes() []route {
-	routes := []route{
-		{"/workflow/apply/{branch}", weberror.ErrorHandler(ApplyWorkflow), []string{"POST"}},
-		{
-			"/workflow/configs/{branch}",
-			weberror.ErrorHandler(WorkflowUpsertConfig),
-			[]string{"POST"},
-		},
-		{"/options", weberror.ErrorHandler(GetOptions), []string{"GET"}},
-		{"/jobs", weberror.ErrorHandler(GetJobs), []string{"GET"}},
-		{"/jobs/{id}", weberror.ErrorHandler(GetJob), []string{"GET"}},
-		{"/jobs/{id}/cancel", weberror.ErrorHandler(CancelJob), []string{"POST"}},
+func socketRoutes() []routing.Route {
+	routes := []routing.Route{
+		routing.Row(http.MethodPost, "/workflow/apply/{branch}", weberror.ErrorHandler(ApplyWorkflow)),
+		routing.Row(http.MethodPost, "/workflow/configs/{branch}", weberror.ErrorHandler(WorkflowUpsertConfig)),
+		routing.Row(http.MethodGet, "/options", weberror.ErrorHandler(GetOptions)),
+		routing.Row(http.MethodGet, "/jobs", weberror.ErrorHandler(GetJobs)),
+		routing.Row(http.MethodGet, "/jobs/{id}", weberror.ErrorHandler(GetJob)),
+		routing.Row(http.MethodPost, "/jobs/{id}/cancel", weberror.ErrorHandler(CancelJob)),
 		// for phenix experiment trigger --cancel
-		{"/experiments/{name}/trigger", weberror.ErrorHandler(CancelTriggeredExperimentApps), []string{"DELETE"}},
-		{"/experiments/{exp}/netflow", weberror.ErrorHandler(GetNetflow), []string{"GET"}},
-		{"/experiments/{exp}/netflow", weberror.ErrorHandler(StartNetflow), []string{"POST"}},
-		{"/experiments/{exp}/netflow", weberror.ErrorHandler(StopNetflow), []string{"DELETE"}},
-		{"/experiments/{exp}/netflow/captures", weberror.ErrorHandler(GetNetflowCaptures), []string{"GET"}},
-		{
-			"/experiments/{exp}/netflow/captures/{id}",
-			weberror.ErrorHandler(DownloadNetflowCapture),
-			[]string{"GET", "HEAD"},
-		},
-		{"/logs", weberror.ErrorHandler(GetLogs), []string{"GET"}},
-		{"/logs/files", weberror.ErrorHandler(GetLogFiles), []string{"GET"}},
-		{"/logs/files/{name}", weberror.ErrorHandler(DownloadLogFile), []string{"GET", "HEAD"}},
+		routing.Row(http.MethodDelete, "/experiments/{name}/trigger", weberror.ErrorHandler(CancelTriggeredExperimentApps)),
+		routing.Row(http.MethodGet, "/experiments/{exp}/netflow", weberror.ErrorHandler(GetNetflow)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/netflow", weberror.ErrorHandler(StartNetflow)),
+		routing.Row(http.MethodDelete, "/experiments/{exp}/netflow", weberror.ErrorHandler(StopNetflow)),
+		routing.Row(http.MethodGet, "/experiments/{exp}/netflow/captures", weberror.ErrorHandler(GetNetflowCaptures)),
+		routing.Row(http.MethodGet, "/experiments/{exp}/netflow/captures/{id}", weberror.ErrorHandler(DownloadNetflowCapture)),
+		routing.Row(http.MethodHead, "/experiments/{exp}/netflow/captures/{id}", weberror.ErrorHandler(DownloadNetflowCapture)),
+		routing.Row(http.MethodGet, "/logs", weberror.ErrorHandler(GetLogs)),
+		routing.Row(http.MethodGet, "/logs/files", weberror.ErrorHandler(GetLogFiles)),
+		routing.Row(http.MethodGet, "/logs/files/{name}", weberror.ErrorHandler(DownloadLogFile)),
+		routing.Row(http.MethodHead, "/logs/files/{name}", weberror.ErrorHandler(DownloadLogFile)),
 		// the server holds the port forwards, and its websockets and capture
 		// grants follow the changes of users and roles
-		{"/experiments/{exp}/vms/{name}/forwards", weberror.ErrorHandler(forward.GetPortForwards), []string{"GET"}},
-		{"/experiments/{exp}/vms/{name}/forwards", weberror.ErrorHandler(forward.CreatePortForward), []string{"POST"}},
-		{"/experiments/{exp}/vms/{name}/forwards", weberror.ErrorHandler(forward.DeletePortForward), []string{"DELETE"}},
-		{"/users", weberror.ErrorHandler(CreateUser), []string{"POST"}},
-		{"/users/{username}", weberror.ErrorHandler(UpdateUser), []string{"PATCH"}},
-		{"/users/{username}", weberror.ErrorHandler(DeleteUser), []string{"DELETE"}},
-		{"/users/{username}/tokens", weberror.ErrorHandler(CreateUserToken), []string{"POST"}},
-		{"/roles", weberror.ErrorHandler(CreateRole), []string{"POST"}},
-		{"/roles/{name}", weberror.ErrorHandler(UpdateRole), []string{"PATCH"}},
-		{"/roles/{name}", weberror.ErrorHandler(DeleteRole), []string{"DELETE"}},
+		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/forwards", weberror.ErrorHandler(forward.GetPortForwards)),
+		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/forwards", weberror.ErrorHandler(forward.CreatePortForward)),
+		routing.Row(http.MethodDelete, "/experiments/{exp}/vms/{name}/forwards", weberror.ErrorHandler(forward.DeletePortForward)),
+		routing.Row(http.MethodPost, "/users", weberror.ErrorHandler(CreateUser)),
+		routing.Row(http.MethodPatch, "/users/{username}", weberror.ErrorHandler(UpdateUser)),
+		routing.Row(http.MethodDelete, "/users/{username}", weberror.ErrorHandler(DeleteUser)),
+		routing.Row(http.MethodPost, "/users/{username}/tokens", weberror.ErrorHandler(CreateUserToken)),
+		routing.Row(http.MethodPost, "/roles", weberror.ErrorHandler(CreateRole)),
+		routing.Row(http.MethodPatch, "/roles/{name}", weberror.ErrorHandler(UpdateRole)),
+		routing.Row(http.MethodDelete, "/roles/{name}", weberror.ErrorHandler(DeleteRole)),
 	}
 
 	// for phenix experiment scorch
-	return append(routes, scorchSocketRoutes()...)
+	return append(routes, scorch.SocketRoutes()...)
 }
 
-// scorchSocketRoutes are the SCORCH routes the Unix socket serves as well.
-func scorchSocketRoutes() []route {
-	scorchRoutes := scorch.SocketRoutes()
-	routes := make([]route, 0, len(scorchRoutes))
-
-	for _, r := range scorchRoutes {
-		routes = append(routes, route{r.Path, r.Handler, r.Methods})
-	}
-
-	return routes
-}
-
-// methodNotAllowed answers a request for an API path that does not take its
-// method, with the JSON Error rather than gorilla's empty 405.
+// methodNotAllowed answers a request for a path that does not take its
+// method, with the JSON Error rather than the router's empty 405. The router
+// has set the Allow header.
 func methodNotAllowed(w http.ResponseWriter, _ *http.Request) {
 	weberror.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
-// methodNotAllowedFor answers as methodNotAllowed does, with an Allow header
-// that names the methods router has a route for at the request's path.
-func methodNotAllowedFor(router *mux.Router) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if allowed := allowedMethods(router, r); len(allowed) > 0 {
-			w.Header().Set("Allow", strings.Join(allowed, ", "))
-		}
-
-		methodNotAllowed(w, r)
-	}
-}
-
-// allowedMethods returns the methods router has a route for at the path of r,
-// in the order Allow names them.
-func allowedMethods(router *mux.Router, r *http.Request) []string {
-	methods := []string{
-		http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
-		http.MethodPatch, http.MethodDelete, http.MethodOptions,
-	}
-	allowed := make([]string, 0, len(methods))
-
-	for _, method := range methods {
-		probe := r.Clone(r.Context())
-		probe.Method = method
-
-		var match mux.RouteMatch
-
-		if router.Match(probe, &match) && match.MatchErr == nil {
-			allowed = append(allowed, method)
-		}
-	}
-
-	return allowed
-}
-
-func addRoutesToRouter(router *mux.Router, routes ...route) {
-	for _, r := range routes {
-		router.Handle(r.path, r.handler).Methods(r.methods...)
-	}
+// optionsAnswered answers an OPTIONS request with 204 and no body. The router
+// has set the Allow header.
+func optionsAnswered(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // apiNotFoundHandler answers 404 to an API request that matches no route, and never serves the SPA index.

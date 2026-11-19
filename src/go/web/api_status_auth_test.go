@@ -375,7 +375,7 @@ func TestMethodsAllowed(t *testing.T) {
 
 	var (
 		server = serveRouter(t, testPublic(), testJWTKey)
-		socket = httptest.NewServer(newSocketRouter())
+		socket = httptest.NewServer(socketRouter(t))
 	)
 
 	t.Cleanup(socket.Close)
@@ -400,12 +400,17 @@ func TestMethodsAllowed(t *testing.T) {
 		"OPTIONS /configs":       {server.URL, http.MethodOptions, "/api/v1/configs", options("GET, POST, OPTIONS")},
 		"OPTIONS /users/x":       {server.URL, http.MethodOptions, "/api/v1/users/x", options("GET, PATCH, DELETE, OPTIONS")},
 		"OPTIONS builder drafts": {server.URL, http.MethodOptions, "/api/v1/builder/drafts", options("GET, POST, OPTIONS")},
+		"OPTIONS /ws":            {server.URL, http.MethodOptions, "/api/v1/ws", refused("GET")},
 		"POST /version":          {server.URL, http.MethodPost, "/version", refused("GET")},
 		"POST /features":         {server.URL, http.MethodPost, "/features", refused("GET")},
 		"DELETE /healthz":        {server.URL, http.MethodDelete, "/healthz", refused("GET, HEAD")},
 		"PUT /readyz":            {server.URL, http.MethodPut, "/readyz", refused("GET, HEAD")},
 		"socket DELETE /jobs/x":  {socket.URL, http.MethodDelete, "/api/v1/jobs/x", refused("GET")},
 		"socket OPTIONS /jobs":   {socket.URL, http.MethodOptions, "/api/v1/jobs", refused("GET")},
+		// the middleware answers OPTIONS in place of the redirect to the path without "/"
+		"OPTIONS layer set schema/": {
+			server.URL, http.MethodOptions, "/api/v1/schemas/builder/layersets/v1/", options("GET, OPTIONS"),
+		},
 	}
 
 	for name, tc := range tests {

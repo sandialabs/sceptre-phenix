@@ -19,7 +19,6 @@ import (
 	"github.com/creack/pty"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/gorilla/mux"
 	"golang.org/x/net/websocket"
 
 	"phenix/api/scorch/scorchexe"
@@ -33,6 +32,7 @@ import (
 	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/routing"
 )
 
 var startOnce sync.Once //nolint:gochecknoglobals // the processors run for the whole test binary
@@ -81,12 +81,13 @@ func roleFor(resourceVerbs ...string) *rbac.Role {
 }
 
 // scorchRouter serves every SCORCH route, as phenix ui does.
-func scorchRouter() *mux.Router {
-	router := mux.NewRouter()
-	RegisterRoutes(router)
-
-	for _, r := range SocketRoutes() {
-		router.Handle(r.Path, r.Handler).Methods(r.Methods...)
+func scorchRouter() *routing.Mux {
+	router, err := routing.NewMux(routing.Group{
+		Prefix: "", Routes: append(Routes(), SocketRoutes()...), Middleware: nil,
+		Options: nil, NotFound: nil, MethodNotAllowed: nil,
+	})
+	if err != nil {
+		panic(err) // the SCORCH routes are constant
 	}
 
 	return router

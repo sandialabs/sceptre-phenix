@@ -29,6 +29,7 @@ import (
 	"phenix/web/capability"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/routing"
 	"phenix/web/weberror"
 )
 
@@ -969,10 +970,18 @@ func TestCaptureGrantAuditFields(t *testing.T) {
 
 		var got audit.Fields
 
-		router := mux.NewRouter()
-		router.HandleFunc("/webshark/captures/{capture}", func(_ http.ResponseWriter, r *http.Request) {
-			got = grantAuditFields(r, g, capability.OpView)
+		router, err := routing.NewMux(routing.Group{
+			Prefix: "", Middleware: nil, Options: nil, NotFound: nil, MethodNotAllowed: nil,
+			Routes: []routing.Route{
+				routing.Row("", "/webshark/captures/{capture}", http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+					got = grantAuditFields(r, g, capability.OpView)
+				})),
+			},
 		})
+		if err != nil {
+			t.Fatalf("routing.NewMux() error = %v", err)
+		}
+
 		router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/webshark/captures/secret", nil))
 
 		if diff := cmp.Diff(want, got); diff != "" {

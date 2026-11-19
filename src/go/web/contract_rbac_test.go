@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gorilla/mux"
+	"phenix/web/routing"
 )
 
 // servedRoute is one method of a route the router serves: its path template
@@ -25,41 +25,32 @@ func servedRoutes(t *testing.T) []servedRoute {
 
 	server := serveContract(t, nil)
 
-	router, ok := server.Config.Handler.(*mux.Router)
+	router, ok := server.Config.Handler.(*routing.Mux)
 	if !ok {
-		t.Fatalf("contract server handler = %T, want *mux.Router", server.Config.Handler)
+		t.Fatalf("contract server handler = %T, want *routing.Mux", server.Config.Handler)
 	}
 
 	var routes []servedRoute
 
-	err := router.Walk(func(route *mux.Route, _ *mux.Router, _ []*mux.Route) error {
-		path, err := route.GetPathTemplate()
-		if err != nil {
-			return nil //nolint:nilerr // a route of no path
+	for _, route := range router.Routes() {
+		// a route of any method, which TestRouterMatchesOpenAPI checks
+		if route.Method == "" {
+			continue
 		}
 
-		methods, err := route.GetMethods()
-		if err != nil {
-			return nil //nolint:nilerr // a route of any method, which TestRouterMatchesOpenAPI checks
+		// the query pairs as name=template, as the router writes them
+		pairs := route.Queries()
+		queries := make([]string, 0, len(pairs)/2)
+
+		for i := 0; i+1 < len(pairs); i += 2 {
+			queries = append(queries, pairs[i]+"="+pairs[i+1])
 		}
 
-		templates, _ := route.GetQueriesTemplates()
-
-		for _, method := range methods {
-			queries := templates
-			if len(queries) == 0 {
-				queries = handlerQueries[method+" "+path]
-			}
-
-			if method != http.MethodOptions {
-				routes = append(routes, servedRoute{method: method, path: path, queries: queries})
-			}
+		if len(queries) == 0 {
+			queries = handlerQueries[route.Method+" "+route.Path]
 		}
 
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("Router.Walk() error = %v", err)
+		routes = append(routes, servedRoute{method: route.Method, path: route.Path, queries: queries})
 	}
 
 	return routes

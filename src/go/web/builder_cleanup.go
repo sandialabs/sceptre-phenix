@@ -7,10 +7,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	bapi "phenix/api/builder"
 	"phenix/util/plog"
+	"phenix/web/routing"
 )
 
 // builderSweepEvery is how often the server removes orphaned Builder storage
@@ -50,10 +49,11 @@ func withBuilderSweep(ctx context.Context, every time.Duration) builderOption {
 	return func(api *builderAPI) { api.sweep = builderSweep{ctx: ctx, every: every} }
 }
 
-// storageRoutes registers the route that cleans up Builder storage.
-func (b *builderAPI) storageRoutes(router *mux.Router) {
-	router.Handle("/builder/cleanup", builderHandler(b.cleanupStorage)).
-		Methods("POST")
+// storageRoutes are the route that cleans up Builder storage.
+func (b *builderAPI) storageRoutes() []routing.Route {
+	return []routing.Route{
+		routing.Row(http.MethodPost, "/builder/cleanup", builderHandler(b.cleanupStorage)),
+	}
 }
 
 // sweepEvery runs [builderAPI.sweepStorage] once every `every`, until ctx
