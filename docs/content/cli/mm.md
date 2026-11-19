@@ -45,6 +45,6 @@ phenix minimega -a -n <experiment name>
   -n, --namespace string   Default minimega namespace to use
 ```
 
-### SEE ALSO
+## See Also
 
-* [phenix](index.md) - A cli application for phēnix
+* [minimega](../minimega.md): how phēnix uses minimega.

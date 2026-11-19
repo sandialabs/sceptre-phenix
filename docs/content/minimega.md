@@ -60,6 +60,8 @@ phēnix quotes each argument for minimega as needed, so empty arguments and argu
 
 If minimega errors or the minimega daemon is unreachable, `phenix mm` will exit with a non-zero status and record the error in the phēnix log.
 
+You can also send a minimega command through the REST API with `POST /api/v1/minimega/commands`, just like `phenix mm`. Of the built-in roles, only `Global Admin` can do this, and each command is audited as `minimega-command`.
+
 ### Namespace Scoping
 
 When working with experiment-specific VMs or VLANs, use the `--namespace` (`-n`) flag to target a specific minimega namespace. Each running experiment has a minimega namespace with the same name as the experiment.
@@ -94,9 +96,20 @@ To exit the attached console session, type `disconnect` or press `Ctrl+D`.
 !!! warning
     Typing `quit` in the console stops the minimega daemon itself, not just the console session. minimega asks you to enter `quit` a second time to confirm.
 
-### The Console Page
+### Web UI
 
-When `phenix ui` runs with `--minimega-console`, the **Console** page of the web UI shows the same console. The toolbar above the terminal has these controls:
+If the phēnix server is started with `phenix ui --minimega-console` (or
+`PHENIX_UI_MINIMEGA_CONSOLE=true`), `Console` in the `Admin` menu opens a
+minimega console in the browser.
+
+Your console keeps running while you visit other pages or reload. It ends when
+you press `Ctrl+D` or type `disconnect`, when you log out, or shortly after
+you close the last tab that has it open. Click `Start a new console` to get a
+new one, or `Reconnect` if the connection was lost.
+
+![Console page with its toolbar (Connected, the bennu namespace, Commands, Search, text size, Clear, Copy all and Download, with End console at the right) above a minimega session in the bennu namespace that shows the output of vm info with each VM's host, name, state and IP addresses.](images/console_tab.png){: width=800 .center}
+
+The toolbar above the terminal has these controls:
 
 * **State**: The connection state: Connecting, Connected, Ended, or Connection lost.
 * **Namespace**: The experiment whose minimega namespace the console uses. "All (no namespace)" uses no namespace. Running experiments are first in the list. A change starts a new console in the namespace that you select, and then ends the old console. The page asks you to confirm first. If the new console does not start, the old console stays.
@@ -166,3 +179,10 @@ In multi-node minimega deployments, use `phenix mm` to verify cluster connectivi
 # Verify health of all minimega headnodes and compute nodes
 phenix mm host
 ```
+
+## See Also
+
+* [phenix mm](cli/mm.md): send commands to minimega through phēnix.
+* [Hosts](hosts.md): the cluster hosts in the web UI.
+* [Doctor](doctor.md): checks that phēnix can reach minimega.
+* [Troubleshooting](troubleshooting.md#minimega-issues): fixes for minimega problems.

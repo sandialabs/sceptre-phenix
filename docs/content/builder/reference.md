@@ -1,44 +1,44 @@
 # Reference
 
-This page holds the tables that the other pages point to, from the save
-states to the error codes. For the rules behind them, see the details
-page of each feature.
+These are the tables that the other Builder pages link to, from save states
+to error codes. The details page of each feature explains the rules behind
+them.
 
-## Save states
+## Save States
 
-The save state follows **Draft History** in the editor toolbar (see
+The save state sits next to `Draft History` in the editor toolbar (see
 [How drafts save](details/drafts.md#how-drafts-save)).
 
 | Save state | What it means | What to do |
 |---|---|---|
-| All changes saved | The server has all changes. | Nothing. |
-| Saving changes, Saving 2 changes | Builder sends changes. | Wait. |
-| 2 unsaved changes | Changes wait. | Wait, or press <kbd>Ctrl</kbd>+<kbd>S</kbd> (<kbd>⌘</kbd>+<kbd>S</kbd> on macOS) to run **Save now**. |
-| Offline: 1 change kept on this device. Saving retries automatically. | The server cannot be reached, or did not answer in time. This browser keeps the changes. | Continue to work. See [Working offline](details/drafts.md#working-offline). |
-| Offline: 2 changes not stored anywhere yet. Keep this tab open. Saving retries automatically. | The server cannot be reached, and the browser cannot store the changes. | Keep the tab open until the save state says All changes saved. |
-| Offline: no unsaved changes | The server cannot be reached, and no changes wait. | Nothing. |
+| All changes saved | The server has all your changes. | Nothing. |
+| Saving changes, Saving 2 changes | Builder is sending changes. | Wait. |
+| 2 unsaved changes | Changes are waiting to be sent. | Wait, or press <kbd>Ctrl</kbd>+<kbd>S</kbd> (<kbd>⌘</kbd>+<kbd>S</kbd> on macOS) to `Save now`. |
+| Offline: 1 change kept on this device. Saving retries automatically. | The server can't be reached or didn't answer in time. This browser keeps your changes. | Keep working. See [Working offline](details/drafts.md#working-offline). |
+| Offline: 2 changes not stored anywhere yet. Keep this tab open. Saving retries automatically. | The server can't be reached, and the browser can't store the changes. | Keep the tab open until it says All changes saved. |
+| Offline: no unsaved changes | The server can't be reached, and nothing is waiting. | Nothing. |
 | 1 change not saved yet. Choose which changes to save. | Another tab of this browser has changes to this draft. | See [Same draft in multiple tabs](details/drafts.md#same-draft-in-multiple-tabs). |
-| Merging your changes with the server version… | Someone saved a newer version first. Builder merges it with your changes. | Wait. See [Draft merging](details/drafts.md#draft-merging). |
-| This draft changed on the server | Someone saved a newer version first. Some changes clash, or merging is not available. | See [Draft merging](details/drafts.md#draft-merging). |
-| Not saved: you chose another tab's changes | In another tab of this browser, you chose to save the changes of that tab. This tab does not save its changes. | Nothing. Builder keeps the changes of this tab as a new draft. |
-| Could not save: someone deleted this draft from the server. Select Download to keep a copy of the diagram. | Another user deleted the draft. | Click **Download** (see [Downloading](details/import-upload-download.md#downloading)). Upload the file to make a new draft. |
-| You cannot save changes to this draft | Your role no longer includes Builder. | Ask an administrator for the Builder permission (see [Permissions](details/administration.md#permissions)). Click **Download** to keep a copy. |
+| Merging your changes with the server version… | Someone saved a newer version first, and Builder is merging it with yours. | Wait. See [Draft merging](details/drafts.md#draft-merging). |
+| This draft changed on the server | Someone saved a newer version first, and some changes clash or merging isn't available. | See [Draft merging](details/drafts.md#draft-merging). |
+| Not saved: you chose another tab's changes | In another tab of this browser, you chose to save that tab's changes. | Nothing. Builder keeps this tab's changes as a new draft. |
+| Could not save: someone deleted this draft from the server. Select Download to keep a copy of the diagram. | Another user deleted the draft. | Click `Download` (see [Downloading](details/import-upload-download.md#downloading)), then upload the file as a new draft. |
+| You cannot save changes to this draft | Your role no longer includes Builder. | Ask an administrator for Builder access (see [Permissions](details/administration.md#permissions)). Click `Download` to keep a copy. |
 | Could not save your last change. … When you fix the diagram, the Builder saves it again. | The server refused the diagram, for example for two devices with one hostname. The message names the error. | Fix it (see [Checks and warnings](details/checks.md#checks-and-warnings)). The next change saves the diagram. |
-| Could not save your last undo or redo: the server no longer keeps that step. … | You went with **Undo** or **Redo** to a snapshot that the server deleted, such as an old snapshot past the limit of 50. | Nothing. Your next edit saves the diagram as it shows. |
-| Could not save. … Remove part of the diagram, or select Download to keep a copy. | The diagram is too large for the server to save. The message names the reason. | Remove part of the diagram. Or click **Download** to keep a copy. |
-| Could not save your changes. … Saving retries automatically. | The server refused the save for a different reason, which the message names. | Wait, or click **Retry saving**. |
+| Could not save your last undo or redo: the server no longer keeps that step. … | You undid or redid to a snapshot that the server deleted, such as one past the limit of 50. | Nothing. Your next edit saves the diagram as shown. |
+| Could not save. … Remove part of the diagram, or select Download to keep a copy. | The diagram is too large for the server to save. The message says why. | Remove part of the diagram, or click `Download` to keep a copy. |
+| Could not save your changes. … Saving retries automatically. | The server refused the save for another reason, which the message names. | Wait, or click `Retry saving`. |
 
-**Retry saving** shows when the browser is offline, or when a new try can
-fix a failed save. It sends the waiting changes immediately.
+`Retry saving` shows up when you're offline, or when another try can fix a
+failed save. It sends the waiting changes right away.
 
 ![The toolbar with the save state Offline: 1 change kept on this device. Saving retries automatically., and the Retry saving button.](../images/builder/save-state-offline.png)
 
-## Keyboard shortcuts
+## Keyboard Shortcuts
 
-To see the shortcuts of your platform, click **Shortcuts** in the header,
-or press <kbd>?</kbd> outside a text field. "Not in text fields" means
-that the keys do nothing while focus is in a text field, or in a field of
-the Inspector. You can give any command other keys (see
+To see the shortcuts for your platform, press <kbd>?</kbd> outside a text field,
+or click `Shortcuts` in the editor header. "Not in text fields" means the keys
+do nothing while you're typing in a text field or an Inspector field. You
+can give any command other keys (see
 [Customizing shortcuts](details/palette-and-shortcuts.md#customizing-shortcuts)).
 
 | Action | Where it works | Windows and Linux | macOS |
@@ -75,54 +75,48 @@ the Inspector. You can give any command other keys (see
 | Focus mode | Editor and Drafts page, text fields too | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> | <kbd>⇧</kbd>+<kbd>⌘</kbd>+<kbd>F</kbd> |
 | Save now | Editor, text fields too | <kbd>Ctrl</kbd>+<kbd>S</kbd> | <kbd>⌘</kbd>+<kbd>S</kbd> |
 
-The canvas keys of the table work on the canvas, its nodes and its
-connections, but not on the zoom buttons. These details are not in the
-table:
+"Canvas" means the canvas, its nodes and its connections (not the zoom
+buttons). A few things the table doesn't show:
 
 - From the canvas itself, the arrow keys go to the node nearest the middle of
-  the view.
-- When the focused node shows its [info tooltip](details/editor.md#info-tooltips), the first
-  <kbd>Esc</kbd> closes the tooltip, and the second clears the selection.
-- <kbd>Delete</kbd> deletes the focused item, or the full selection when the
-  focused item is in it.
+  the view. While connections are hidden, they go only to nodes.
+- <kbd>Delete</kbd> deletes the focused item, or the whole selection when the
+  focused item is part of it.
 - With <kbd>Alt</kbd>+<kbd>Shift</kbd> (<kbd>⌥</kbd>+<kbd>⇧</kbd> on macOS),
   <kbd>→</kbd> and <kbd>↓</kbd> make the item larger, and <kbd>←</kbd> and
   <kbd>↑</kbd> make it smaller.
-- A second <kbd>Shift</kbd>+<kbd>1</kbd> (<kbd>⇧</kbd>+<kbd>1</kbd> on macOS)
-  restores the view from before the fit.
-- While the connections are hidden, the arrow keys go only to nodes.
-  <kbd>PgDn</kbd> and <kbd>PgUp</kbd> say "Connections are hidden." with the
-  keys that show them.
+- Pressing <kbd>Shift</kbd>+<kbd>1</kbd> a second time restores the view from
+  before the fit.
+- When the focused node shows its
+  [info tooltip](details/editor.md#info-tooltips), the first <kbd>Esc</kbd>
+  closes the tooltip and the second clears the selection.
 
 <kbd>?</kbd>, <kbd>N</kbd>, <kbd>=</kbd>, <kbd>+</kbd>, <kbd>−</kbd> and
-<kbd>Shift</kbd>+<kbd>1</kbd> work without <kbd>Ctrl</kbd> (<kbd>⌘</kbd> on
-macOS). If speech input or your screen reader can press them by mistake,
-disable **Single-key shortcuts** in the sheet or in **Builder settings**.
+<kbd>Shift</kbd>+<kbd>1</kbd> work without <kbd>Ctrl</kbd> or <kbd>⌘</kbd>
+until you turn off `Single-key shortcuts` (see
+[Single-key shortcuts](details/palette-and-shortcuts.md#single-key-shortcuts)).
 
-On a Mac keyboard without these keys, <kbd>⇟</kbd> and <kbd>⇞</kbd> are
-<kbd>Fn</kbd> with <kbd>↓</kbd> and <kbd>↑</kbd>. <kbd>↖</kbd> and
-<kbd>↘</kbd> (Home and End) are <kbd>Fn</kbd> with <kbd>←</kbd> and
-<kbd>→</kbd>. <kbd>⌫</kbd> is Delete and <kbd>⌦</kbd> is Forward Delete.
-
-For the keys that select cards on the drafts page, see
+On a Mac keyboard without <kbd>⇟</kbd> and <kbd>⇞</kbd>, use <kbd>Fn</kbd>
+with <kbd>↓</kbd> and <kbd>↑</kbd>. For the keys that select cards on the
+drafts page, see
 [Selecting with the keyboard](details/drafts.md#selecting-with-the-keyboard).
 
-## Publish hints and buttons
+## Publish Hints and Buttons
 
-The hint under **Topology name** in the **Publish diagram** dialog says
-what publishing does with that name, and the button names the action. The
-hint under **Experiment name** works the same way (see
+In the `Publish diagram` dialog, the hint under `Topology name` says what
+publishing will do with that name, and the button names the action. The hint
+under `Experiment name` works the same way (see
 [Create or update](details/publishing.md#create-or-update)).
 
 | Hint | Button |
 |---|---|
-| "Publishing creates a new topology." | **Create topology** |
-| "A topology with this name exists. Publishing updates it." | **Update topology** |
-| "A topology with this name already exists. This diagram cannot update it. …" | Builder refuses to publish. Enter another name. |
-| "A topology with this name changed after this diagram published it. Publishing would overwrite that change. …" | Builder refuses to publish. See [Publishing again](details/publishing.md#publishing-again). |
-| "… This diagram replaces its legacy Builder diagram." or "… Builder could not read its legacy Builder diagram. Publishing removes it." | **Update topology**. See [Replacing a legacy Builder diagram](details/publishing.md#replacing-a-legacy-builder-diagram). |
+| "Publishing creates a new topology." | `Create topology` |
+| "A topology with this name exists. Publishing updates it." | `Update topology` |
+| "A topology with this name already exists. This diagram cannot update it. …" | None: Builder won't publish. Enter another name. |
+| "A topology with this name changed after this diagram published it. Publishing would overwrite that change. …" | None: Builder won't publish. See [Publishing again](details/publishing.md#publishing-again). |
+| "… This diagram replaces its legacy Builder diagram." or "… Builder could not read its legacy Builder diagram. Publishing removes it." | `Update topology`. See [Replacing a legacy Builder diagram](details/publishing.md#replacing-a-legacy-builder-diagram). |
 
-## Publish results
+## Publish Results
 
 After a publish, the dialog lists each stage and its result (see
 [The result](details/publishing.md#the-result)).
@@ -131,10 +125,10 @@ After a publish, the dialog lists each stage and its result (see
 
 | Stage | What it is | Results |
 |---|---|---|
-| `document` | The published copy of the diagram, on the **Published Diagrams** tab | `created`, or `skipped` when you publish again and the publication was already complete |
+| `document` | The published copy of the diagram, on the `Published Diagrams` tab | `created`, or `skipped` when you publish again and the publication was already complete |
 | `topology` | The Topology config | `created`, `updated`, or `skipped` when the config already holds this snapshot |
 | `scenario` | The `topology` annotation of each listed scenario | `updated`, with the changed scenarios, or `skipped` |
-| `experiment` | The Experiment config, with **Topology and an experiment** | `created`, `updated` or `skipped` |
+| `experiment` | The Experiment config, with `Topology and an experiment` | `created`, `updated` or `skipped` |
 | `draft` | The draft records what it published | `ok`, or `skipped` when you publish again and the publication was already complete |
 
 The headline is one of these:
@@ -142,58 +136,57 @@ The headline is one of these:
 | Headline | What it means |
 |---|---|
 | "Published. Every stage succeeded." | Every stage succeeded. |
-| "Published with failures. …" | A stage failed after the server wrote earlier stages. Fix the cause. Click **Back**. Publish again with the same names. The stages that succeeded show `skipped`. |
-| "Publish failed. It wrote no configs." | A stage failed before the server wrote any config. The list shows the failed stage. Fix the cause. Click **Back**. Publish again. |
+| "Published with failures. …" | A stage failed after the server wrote earlier ones. Fix the cause, click `Back`, and publish again with the same names. The stages that already succeeded show `skipped`. |
+| "Publish failed. It wrote no configs." | A stage failed before the server wrote any config, and the list shows which. Fix the cause, click `Back`, and publish again. |
 
 When the server refuses the publish before it writes anything, the form
-stays open, and **Checks** gives the reason after "Could not publish the
+stays open, and `Checks` gives the reason after "Could not publish the
 diagram."
 
-## Built-in templates
+## Built-in Templates
 
-**Device** under **Nodes & Objects** adds a device with default settings.
-The table lists it with the five built-in templates, which are read only
-(see [Adding devices](details/diagrams.md#adding-devices)).
+`Device` under `Nodes & Objects` adds a device with default settings. Here
+it is next to the five built-in templates, which are read only (see
+[Adding devices](details/diagrams.md#adding-devices)).
 
 | Item | Hostname | Type | OS type | Image |
 |---|---|---|---|---|
-| **Device** | node | VirtualMachine | linux | `ubuntu.qc2` |
-| **Server** | server | VirtualMachine | linux | `ubuntu.qc2` |
-| **Workstation** | workstation | VirtualMachine | windows | `windows10.qc2` |
-| **Router** | router | Router | minirouter | `minirouter.qc2` |
-| **Firewall** | firewall | Firewall | vyos | `vyos.qc2` |
-| **External device** | external | HIL (external) | None | None |
+| `Device` | node | VirtualMachine | linux | `ubuntu.qc2` |
+| `Server` | server | VirtualMachine | linux | `ubuntu.qc2` |
+| `Workstation` | workstation | VirtualMachine | windows | `windows10.qc2` |
+| `Router` | router | Router | minirouter | `minirouter.qc2` |
+| `Firewall` | firewall | Firewall | vyos | `vyos.qc2` |
+| `External device` | external | HIL (external) | None | None |
 
-## Built-in icons
+## Built-in Icons
 
-Devices, groups and icon drawings show a built-in icon, which you select
-under **Icon** in the Inspector. The icon is only a picture: it does not
-change the phēnix settings of a device (see
-[Built-in icons](details/icons.md#built-in-icons)).
+Devices, groups and icon drawings show a built-in icon, which you pick under
+`Icon` in the Inspector. The icon is only a picture: it doesn't change the
+device's phēnix settings (see [Built-in icons](details/icons.md#built-in-icons)).
 
 | Kind | Icons |
 |---|---|
-| Computers | **Server** (any virtual machine, and the default for a device), **Desktop**, **Laptop**, **Smartphone**, **Printer**, **NTP Server** |
-| Networks | **Router**, **Switch**, **Firewall**, **VLAN**, **Container** (the default for a group), **External device** (hardware in the loop) |
-| Industrial control | **PLC**, **RTU**, **RTAC** (an automation controller or a data gateway), **Relay**, **Transmission**, **Distribution**, **Cell Tower** |
-| Operating systems | **Linux**, **CentOS**, **Red Hat**, **Ubuntu**, **Fedora**, **openSUSE**, **Alpine**, **Kali Linux**, **BSD**, **Windows**, **Apple**, **Android** |
-| Tools | **Terminal**, **pfSense**, **Wireshark**, **Zeek** (a network sensor) |
-| People and roles | **Hacker** (an attacker), **Black Hat** (a threat actor), **Human**, **Robot** (a bot or a script) |
-| Other roles | **Lizard** and **Fox**, for a role with no other icon, such as a team mascot |
-| Servers | **phēnix**, **minimega** |
+| Computers | `Server` (any virtual machine, and the default for a device), `Desktop`, `Laptop`, `Smartphone`, `Printer`, `NTP Server` |
+| Networks | `Router`, `Switch`, `Firewall`, `VLAN`, `Container` (the default for a group), `External device` (hardware in the loop) |
+| Industrial control | `PLC`, `RTU`, `RTAC` (an automation controller or a data gateway), `Relay`, `Transmission`, `Distribution`, `Cell Tower` |
+| Operating systems | `Linux`, `CentOS`, `Red Hat`, `Ubuntu`, `Fedora`, `openSUSE`, `Alpine`, `Kali Linux`, `BSD`, `Windows`, `Apple`, `Android` |
+| Tools | `Terminal`, `pfSense`, `Wireshark`, `Zeek` (a network sensor) |
+| People and roles | `Hacker` (an attacker), `Black Hat` (a threat actor), `Human`, `Robot` (a bot or a script) |
+| Other roles | `Lizard` and `Fox`, for a role with no other icon, such as a team mascot |
+| Servers | `phēnix`, `minimega` |
 
 Names and logos of products are trademarks of their owners. phēnix is not
 affiliated with or endorsed by them. The
 [icon notices](https://github.com/sandialabs/sceptre-phenix/blob/main/src/js/src/components/builder/ICON_NOTICES.md)
-give the source and the license of each icon that comes from another work.
+give the source and license of each icon that comes from another work.
 
-## Purdue Model layer set
+## Purdue Model Layer Set
 
-The built-in layer set **Purdue Model** gives each level of the Purdue
-model a layer (see
+The built-in layer set `Purdue Model` gives each level of the Purdue model a
+layer (see
 [Example: map layers to the Purdue model](details/layers.md#example-map-layers-to-the-purdue-model)).
-Level 3.5 gets ID 4, because a layer ID is an integer. The set has no
-node matchers.
+Level 3.5 gets ID 4, because a layer ID is an integer. The set has no node
+matchers.
 
 | Layer ID | Label | Icon | Color | Typical devices |
 |---|---|---|---|---|
@@ -205,38 +198,37 @@ node matchers.
 | 1 | L1 Basic control | PLC | `#db2777` | PLCs, RTUs and IEDs |
 | 0 | L0 Process | Transmission | `#dc2626` | Pumps, valves and sensors |
 
-## Download formats
+## Download Formats
 
-**Download** in the editor toolbar saves the open diagram as one file
-(see [Downloading](details/import-upload-download.md#downloading)).
+`Download` in the editor toolbar saves the open diagram as one file (see
+[Downloading](details/import-upload-download.md#downloading)). The file name
+is the diagram name in lower case, with each run of characters other than
+letters, digits, `.`, `_` and `-` turned into one hyphen.
 
 | Button | File for Riverside Water | What it holds | Open it with |
 |---|---|---|---|
-| **Builder JSON** | `riverside-water.json` | The whole Builder document | **Upload** |
-| **Builder YAML** | `riverside-water.yaml` | The same, as YAML | **Upload** |
-| **Topology YAML** | `riverside-water.topology.yaml` | The Topology config that **Publish** would write | `phenix config create`, or **Import** as a config file |
-| **PNG** | `riverside-water.png` | A picture of the whole diagram | An image viewer |
-| **SVG** | `riverside-water.svg` | The same picture, as SVG | A web browser |
-| **draw.io** | `riverside-water.drawio` | The diagram, as a draw.io file | draw.io (diagrams.net) |
-| **Gephi (GEXF)** | `riverside-water.gexf` | The devices, networks and connections, as a GEXF file | Gephi |
-| **Builder package** | `riverside-water.package.json` or `.package.yaml` | The Builder document, the configs and icons that you tick, and the list of what the diagram needs | **Upload** |
+| `Builder JSON` | `riverside-water.json` | The whole Builder document | `Upload` |
+| `Builder YAML` | `riverside-water.yaml` | The same, as YAML | `Upload` |
+| `Topology YAML` | `riverside-water.topology.yaml` | The Topology config that `Publish` would write | `phenix config create`, or `Import` as a config file |
+| `PNG` | `riverside-water.png` | A picture of the whole diagram | An image viewer |
+| `SVG` | `riverside-water.svg` | The same picture, as SVG | A web browser |
+| `draw.io` | `riverside-water.drawio` | The diagram, as a draw.io file | draw.io (diagrams.net) |
+| `Gephi (GEXF)` | `riverside-water.gexf` | The devices, networks and connections, as a GEXF file | Gephi |
+| `Builder package` | `riverside-water.package.json` or `.package.yaml` | The Builder document, the configs and icons that you tick, and the list of what the diagram needs | `Upload` |
 
-The file name is the diagram name in lower case. Each run of characters
-other than letters, digits, `.`, `_` and `-` becomes one hyphen.
-
-## File formats
+## File Formats
 
 | File | Starts with | Size limit | Where to use it | JSON Schema |
 |---|---|---|---|---|
-| Builder document (JSON or YAML) | `$schema: https://phenix.sandia.gov/schemas/builder/v1` and `revision: 1` | 5 MiB | **Upload** on the drafts page or in the editor, or the REST API (see [REST API](details/administration.md#rest-api)) | `/api/v1/schemas/builder/v1` |
-| Builder package (`.package.json` or `.package.yaml`) | The package `$schema` | 5 MiB | **Upload** | `/api/v1/schemas/builder/package/v1` |
-| Template file (`.templates.yaml`) | `$schema: https://phenix.sandia.gov/schemas/builder/templates/v1` | 8 MiB, 1 to 200 templates, 50 custom icons | **Import templates** on the **Node Templates** tab, or the template directory of the server | `/api/v1/schemas/builder/templates/v1` |
-| Layer set file (`.layers.yaml`) | `$schema: https://phenix.sandia.gov/schemas/builder/layersets/v1` | 4 MiB | **Upload layer set…** on the **Layers** tab | `/api/v1/schemas/builder/layersets/v1` |
-| Legacy Builder diagram (XML) | The root element `mxGraphModel` (or a bare `root`), or a Topology config with the `builder-xml` annotation | 5 MiB | **Upload** with the source **Legacy Builder diagram or Topology** | None |
-| Topology or Experiment config (JSON or YAML) | `apiVersion` and `kind` | 5 MiB | **Import** with the source **Config file** | See [Schema](../schema.md) |
+| Builder document (JSON or YAML) | `$schema: https://phenix.sandia.gov/schemas/builder/v1` and `revision: 1` | 5 MiB | `Upload` on the drafts page or in the editor, or the [REST API](details/administration.md#api) | `/api/v1/schemas/builder/v1` |
+| Builder package (`.package.json` or `.package.yaml`) | The package `$schema` | 5 MiB | `Upload` | `/api/v1/schemas/builder/package/v1` |
+| Template file (`.templates.yaml`) | `$schema: https://phenix.sandia.gov/schemas/builder/templates/v1` | 8 MiB, 1 to 200 templates, 50 custom icons | `Import templates` on the `Node Templates` tab, or the template directory of the server | `/api/v1/schemas/builder/templates/v1` |
+| Layer set file (`.layers.yaml`) | `$schema: https://phenix.sandia.gov/schemas/builder/layersets/v1` | 4 MiB | `Upload layer set…` on the `Layers` tab | `/api/v1/schemas/builder/layersets/v1` |
+| Legacy Builder diagram (XML) | The root element `mxGraphModel` (or a bare `root`), or a Topology config with the `builder-xml` annotation | 5 MiB | `Upload` with the source `Legacy Builder diagram or Topology` | None |
+| Topology or Experiment config (JSON or YAML) | `apiVersion` and `kind` | 5 MiB | `Import` with the source `Config file` | See [Schema](../schema.md) |
 
 `phenix config create`, `phenix config apply` and `phenix config diff`
-refuse the first four files (see
+refuse the first four kinds of file (see
 [Builder documents and phenix config create](details/import-upload-download.md#builder-documents-and-phenix-config-create)).
 For the fields of each file, see
 [Builder JSON and YAML](details/import-upload-download.md#builder-json-and-yaml),
@@ -248,10 +240,11 @@ and [Layer set files](details/import-upload-download.md#layer-set-files).
 | What | Limit | More |
 |---|---|---|
 | Drafts on the server, damaged drafts included | 2,000 | [Limits](details/drafts.md#limits) |
-| Snapshots of a draft | 50, and 50 MiB of them. Past either limit, phēnix deletes the oldest. | [Limits](details/drafts.md#limits) |
-| A diagram (a Builder document) | 5 MiB | [Storage](details/administration.md#storage) |
+| Snapshots of a draft | 50, and 50 MiB in total. Past either limit, phēnix deletes the oldest. | [Limits](details/drafts.md#limits) |
+| A diagram (a Builder document) | 5 MiB | |
+| A Builder file, a config file, an uploaded document or package | 5 MiB | [Which files phenix reads](details/administration.md#which-files-phenix-reads) |
 | Custom icons that a diagram holds | 50 | [The diagram and its icons](details/icons.md#the-diagram-and-its-icons) |
-| Templates in a diagram | 50 | [Limits](details/templates.md#limits) |
+| Templates in a diagram | 50 | [Diagram templates](details/templates.md#diagram-templates) |
 | Notes of a diagram | 100, each at most 4096 bytes | [With nothing selected](details/editor.md#with-nothing-selected) |
 | Annotations that a draft keeps from an imported config | 100, at most 256 KiB in total | [What an import keeps](details/import-upload-download.md#what-an-import-keeps) |
 | Scenarios that a diagram lists | 20 | [Scenarios](details/scenarios.md#scenarios) |
@@ -265,39 +258,38 @@ and [Layer set files](details/import-upload-download.md#layer-set-files).
 | Icons on the server | 2,000. An icon is a PNG of at most 96 × 96 pixels and 40,960 bytes, from a file of at most 5 MiB. An icon keeps at most 16 old names | [Custom icons](details/icons.md#custom-icons) |
 | Custom icon name | 1 to 64 letters, digits, `_`, `@`, `.` or `-` | [Uploading an icon](details/icons.md#uploading-an-icon) |
 | Icons from template files | 1,000 of the 2,000 | [Template files on the server](details/administration.md#template-files-on-the-server) |
-| Templates in the library | 200 | [Limits](details/templates.md#limits) |
-| Collections in the library | 50 | [Limits](details/templates.md#limits) |
-| Templates in a collection | 200 | [Limits](details/templates.md#limits) |
-| Whole template library | 512 KiB | [Limits](details/templates.md#limits) |
-| Template name, collection name | 1 to 128 bytes, one line | [Limits](details/templates.md#limits) |
-| Template description, collection description | 1024 bytes, one line | [Limits](details/templates.md#limits) |
-| A template's device, as JSON | 16 KiB | [Limits](details/templates.md#limits) |
-| Template file | 8 MiB, 1 to 200 templates, 50 custom icons | [Limits](details/templates.md#limits) |
+| Templates in the library | 200 | [The template library](details/templates.md#the-template-library) |
+| Collections in the library | 50 | [Collections](details/templates.md#collections) |
+| Templates in a collection | 200 | [Collections](details/templates.md#collections) |
+| Whole template library | 512 KiB | [The template library](details/templates.md#the-template-library) |
+| Template name, collection name | 1 to 128 bytes, one line | [The template editor](details/templates.md#the-template-editor) |
+| Template description, collection description | 1024 bytes, one line | [The template editor](details/templates.md#the-template-editor) |
+| A template's device, as JSON | 16 KiB | [The template editor](details/templates.md#the-template-editor) |
+| Template file | 8 MiB, 1 to 200 templates, 50 custom icons | [Downloading and importing templates](details/templates.md#downloading-and-importing-templates) |
 | Template files the server reads | 50, each at most 8 MiB | [Template files on the server](details/administration.md#template-files-on-the-server) |
 | Layer sets in the library | 200, plus the built-in set. A set has 1 to 32 layers | [The Layers tab](details/drafts.md#the-layers-tab) |
-| A layer set file | 4 MiB. A request that adds or replaces a set, 1 MiB | [Storage](details/administration.md#storage) |
+| A layer set file | 4 MiB. A request that adds or replaces a set, 1 MiB | [Layer set files](details/import-upload-download.md#layer-set-files) |
 | Package requirements | 1000 entries of each kind, each at most 4096 bytes | [Downloading a package](details/import-upload-download.md#downloading-a-package) |
-| A Builder file, a config file, an uploaded document or package | 5 MiB | [Which files phenix reads](details/administration.md#which-files-phenix-reads) |
 | PNG and SVG downloads | The longer side at most 4096 pixels | [PNG and SVG](details/import-upload-download.md#png-and-svg) |
 | Diagram name | 512 bytes | [The metadata of a diagram](details/import-upload-download.md#the-metadata-of-a-diagram) |
-| Experiment name | 15 characters, when the server names the bridge of each experiment after the experiment | [Experiment names](details/publishing.md#experiment-names) |
+| Experiment name | 15 characters, when the server names each experiment's bridge after the experiment | [Experiment names](details/publishing.md#experiment-names) |
 | Time Builder waits for the server | 60 seconds for a save, 30 for a read, 15 for the version that a merge starts from, and 20 for each preflight check. 10 minutes for publishing, preflight, imports, downloads, packages and cleanup | [Working offline](details/drafts.md#working-offline) |
 
-## Error codes
+## Error Codes
 
-Each issue that Builder reports has a code: a stable, machine-readable
-name of the rule that it breaks, such as `node.hostname.duplicate`. The
-editor checks and the Builder REST API use the same code for the same rule.
-Thus a script can act on the code and ignore the message.
+Each issue that Builder reports has a code, a stable name for the rule it
+breaks, such as `node.hostname.duplicate`. The editor checks and the Builder
+REST API use the same code for the same rule, so a script can act on the
+code and ignore the message.
 
-A code is lowercase words joined by dots. A word can contain hyphens, such
-as `not-found`. The first word names the subject
-of the rule, such as `node`, `edge` (a connection) or `layerset` (a layer
-set). A released code keeps its meaning. A new rule gets a new code.
+A code is lowercase words joined by dots, and a word can contain hyphens
+(`not-found`). The first word names what the rule is about, such as `node`,
+`edge` (a connection) or `layerset` (a layer set). A released code keeps its
+meaning, and a new rule gets a new code.
 
 ### Issues
 
-Builder reports each warning and error as an issue:
+Each warning and error is an issue with these fields:
 
 | Field | Value |
 |---|---|
@@ -308,13 +300,13 @@ Builder reports each warning and error as an issue:
 | `nodeId`, `edgeId`, `networkId` | The ID of the node, connection or network, when the issue is about one |
 | `field` | The device field, such as `spec.network.interfaces.0.vlan`, when the issue is about one |
 
-The table in [Codes](#codes) gives the default severity of each code. Some
-issues block only publishing, such as an interface without a VLAN. The
-editor shows them as warnings on the canvas, because a draft may keep them.
-The **Publish diagram** dialog shows them as errors.
+[Codes](#codes) gives the default severity of each code. Some issues block
+only publishing, such as an interface without a VLAN. A draft may keep them,
+so the editor shows them as warnings on the canvas, and the
+`Publish diagram` dialog shows them as errors.
 
-An unknown key in an object of the document (`document.field.unknown`) is
-an issue at its path. A value of the wrong type is an issue only where the
+An unknown key in an object of the document (`document.field.unknown`) is an
+issue at its path. A value of the wrong type is an issue only where the
 editor also checks the type, such as a number in `createdBy`
 (`metadata.user.not-text`). The server refuses other values of the wrong
 type, such as a node position that is text, with a message of its own.
@@ -322,8 +314,8 @@ type, such as a node position that is text, with a message of its own.
 ### Errors of the REST API
 
 When a Builder route refuses a request, the JSON body gives the code in
-`code`, with `message` and `cause`. For a document that does not pass the
-checks (`document.invalid`), or a draft that only publishing refuses
+`code`, with `message` and `cause`. For a document that fails the checks
+(`document.invalid`), or a draft that only publishing refuses
 (`publish.blocked`), `issues` lists each warning and error:
 
 ```json
@@ -344,10 +336,10 @@ checks (`document.invalid`), or a draft that only publishing refuses
 }
 ```
 
-A refusal about a scenario that a draft lists (`publish.scenario.*`) names
+A refusal about a scenario that the draft lists (`publish.scenario.*`) names
 that scenario in `metadata.scenario`.
 
-These codes have these HTTP statuses. A refusal without a code of its own
+These are the HTTP statuses of the codes. A refusal without a code of its own
 gets the `request.*` or `server.*` code of its status.
 
 | Status | Codes |
@@ -356,20 +348,20 @@ gets the `request.*` or `server.*` code of its status.
 | 403 | `request.forbidden`, `layerset.read-only` |
 | 404 | `request.not-found` |
 | 405 | `request.method-not-allowed` |
-| 409 | `request.conflict`, `draft.conflict`, `draft.snapshot.current`, `template.item.read-only`, `publish.topology.exists`, `publish.topology.missing`, `publish.topology.not-source`, `publish.topology.changed`, `publish.topology.file-mismatch`, `publish.experiment.exists`, `publish.experiment.missing`, `publish.experiment.not-source`, `publish.experiment.changed` |
+| 409 | `request.conflict`, `draft.conflict`, `draft.snapshot.current`, `template.item.read-only`, `publish.topology.exists`, `publish.topology.missing`, `publish.topology.not-source`, `publish.topology.changed`, `publish.topology.file-mismatch`, `publish.topology.file-changed`, `publish.experiment.exists`, `publish.experiment.missing`, `publish.experiment.not-source`, `publish.experiment.changed`, `publish.experiment.running`, `publish.source.changed`, `publish.include.clash` |
 | 412 | `request.stale`, `draft.stale`, `template.item.stale`, `layerset.stale` |
 | 413 | `request.too-large`, `draft.limit`, `layerset.library.full`, `package.too-large` |
-| 422 | `request.unprocessable`, `document.invalid`, `publish.blocked`, `publish.topology.invalid`, `import.name.invalid`, `layerset.default.unknown`, `layerset.invalid`, `package.invalid` |
+| 422 | `request.unprocessable`, `document.invalid`, `publish.blocked`, `publish.topology.invalid`, `publish.experiment.invalid`, `publish.experiment.reserved`, `publish.experiment.name-too-long`, `publish.experiment.unmergeable`, `publish.include.hostname`, `publish.scenario.missing`, `publish.scenario.not-listed`, `publish.scenario.invalid`, `import.name.invalid`, `import.name.source`, `layerset.default.unknown`, `layerset.invalid`, `package.invalid` |
 | 500 | `server.error` |
 | 503 | `server.busy` |
 
 `OPTIONS` on a Builder route gets 204 and the same `Allow` header as a 405
 answer for that path, and does nothing else.
 
-More about issues in answers:
+Where else issues show up in answers:
 
 - In `package.invalid`, each issue has a `package.*` code, or, for the
-  document of the package, a document code at a path below `document`.
+  package's document, a document code at a path below `document`.
 - A publication that goes through lists its warnings in `warnings`. A
   partial publication lists its failures in `errors`.
 - The Topology YAML download (`POST /builder/export/topology`) lists issues
@@ -715,3 +707,10 @@ and have no codes. The warnings of an import or a legacy diagram conversion
 | `server.busy` | error | The server stopped trying because what the request asked for kept changing. Try again. |
 
 <!-- codes:end -->
+
+## See Also
+
+- [Troubleshooting](troubleshooting.md): what to do about the messages above.
+- [REST API](details/administration.md#api): the Builder routes.
+- [API](../api.md#errors): errors, revisions and authentication for the whole
+  phēnix API.

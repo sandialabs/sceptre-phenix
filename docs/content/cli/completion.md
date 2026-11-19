@@ -63,6 +63,6 @@ phenix completion [bash|zsh|fish|powershell]
   -h, --help   help for completion
 ```
 
-### SEE ALSO
+## See Also
 
-* [phenix](index.md) - A cli application for phēnix
+* [Shell Completion](../index.md#accessing-the-cli-shell-completion): the wrapper script and shell setup.

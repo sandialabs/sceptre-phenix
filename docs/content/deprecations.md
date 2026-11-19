@@ -1,7 +1,7 @@
 # Deprecations
 
-This page lists each deprecated part of the `phenix` command line and the
-part to use instead. A future release will remove each deprecated part.
+This page lists each deprecated part of the `phenix` command line, settings
+and configs, and the part to use instead. A future release will remove each deprecated part.
 
 ## How phēnix Shows a Deprecation
 
@@ -36,6 +36,15 @@ error.
 |---|---|---|
 | `unix-socket-gid` (config file), `PHENIX_UNIX_SOCKET_GID` (environment) | `ui.unix-socket-gid`, `PHENIX_UI_UNIX_SOCKET_GID` | The `--unix-socket-gid` flag of `phenix ui` sets `ui.unix-socket-gid`. |
 
+## Deprecated Config Values
+
+phēnix continues to accept these values in a config. When it reads one, it
+writes a warning to the [log](logging.md).
+
+| Deprecated | Use instead | Notes |
+|---|---|---|
+| `os_type: linux` on a `Router` or `Firewall` node of a [Topology](configuration.md#topology) | `os_type: vyatta`, `vyos` or `minirouter` | The [vrouter app](apps.md#vrouter-app) configures the node as a Vyatta router. |
+
 ## Flags That Are Not Deprecated
 
 These flags are aliases of `-o/--output`. They are not deprecated.
@@ -51,3 +60,13 @@ format. phēnix refuses that command line.
 
 `phenix config get -p/--pretty` is not an alias. JSON output is always
 indented, so the flag has no effect. It stays so that existing scripts work.
+
+`phenix workflow apply --name` is also not deprecated: it's the same flag as
+`-b/--branch-name`. If you give both, use the same value.
+
+## See Also
+
+* [CLI Reference](cli/index.md): the current commands and flags.
+* [Settings](settings.md): the current settings keys and their environment variables.
+* [Configuration](configuration.md): the fields of each config.
+* [Logging](logging.md): the log that gets the warning for a deprecated config value.

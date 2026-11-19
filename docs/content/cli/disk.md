@@ -29,20 +29,6 @@ phenix disk [flags]
   -h, --help   help for disk
 ```
 
-### SEE ALSO
-
-* [phenix](index.md) - A cli application for phēnix
-* [phenix disk checksum](disk.md#phenix-disk-checksum) - Print the SHA-256 checksum of a disk image
-* [phenix disk clone](disk.md#phenix-disk-clone) - Copy a disk image to a new file
-* [phenix disk commit](disk.md#phenix-disk-commit) - Write a disk image into its backing image
-* [phenix disk delete](disk.md#phenix-disk-delete) - Delete a disk image
-* [phenix disk details](disk.md#phenix-disk-details) - Show what phenix reads from a disk image
-* [phenix disk list](disk.md#phenix-disk-list) - Display a table of disk images
-* [phenix disk rebase](disk.md#phenix-disk-rebase) - Change the backing image of a disk image
-* [phenix disk rename](disk.md#phenix-disk-rename) - Rename a disk image
-* [phenix disk resize](disk.md#phenix-disk-resize) - Change the virtual size of a disk image
-* [phenix disk snapshot](disk.md#phenix-disk-snapshot) - Create a qcow2 snapshot backed by a disk image
-
 ## phenix disk checksum
 
 Print the SHA-256 checksum of a disk image
@@ -67,10 +53,6 @@ phenix disk checksum <disk> [flags]
   -h, --help            help for checksum
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
-
-### SEE ALSO
-
-* [phenix disk](disk.md) - Disk image file management
 
 ## phenix disk clone
 
@@ -97,10 +79,6 @@ phenix disk clone <disk> <new> [flags]
   -h, --help   help for clone
 ```
 
-### SEE ALSO
-
-* [phenix disk](disk.md) - Disk image file management
-
 ## phenix disk commit
 
 Write a disk image into its backing image
@@ -124,10 +102,6 @@ phenix disk commit <disk> [flags]
       --dry-run   Show what the command would change, and change nothing
   -h, --help      help for commit
 ```
-
-### SEE ALSO
-
-* [phenix disk](disk.md) - Disk image file management
 
 ## phenix disk delete
 
@@ -155,10 +129,6 @@ phenix disk delete <disk> [flags]
   -h, --help      help for delete
 ```
 
-### SEE ALSO
-
-* [phenix disk](disk.md) - Disk image file management
-
 ## phenix disk details
 
 Show what phenix reads from a disk image
@@ -184,10 +154,6 @@ phenix disk details <disk> [flags]
   -h, --help            help for details
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
-
-### SEE ALSO
-
-* [phenix disk](disk.md) - Disk image file management
 
 ## phenix disk list
 
@@ -229,10 +195,6 @@ phenix disk list --experiment exp1 --refresh
       --type string         only images of these kinds, separated by commas (vm, container, iso, unknown)
 ```
 
-### SEE ALSO
-
-* [phenix disk](disk.md) - Disk image file management
-
 ## phenix disk rebase
 
 Change the backing image of a disk image
@@ -273,10 +235,6 @@ phenix disk rebase win10-snap.qcow2 --independent
       --unsafe        change only the backing image name, and copy no data
 ```
 
-### SEE ALSO
-
-* [phenix disk](disk.md) - Disk image file management
-
 ## phenix disk rename
 
 Rename a disk image
@@ -301,10 +259,6 @@ phenix disk rename <disk> <new> [flags]
       --dry-run   Show what the command would change, and change nothing
   -h, --help      help for rename
 ```
-
-### SEE ALSO
-
-* [phenix disk](disk.md) - Disk image file management
 
 ## phenix disk resize
 
@@ -338,10 +292,6 @@ phenix disk resize win10.qcow2 +10G
   -h, --help      help for resize
 ```
 
-### SEE ALSO
-
-* [phenix disk](disk.md) - Disk image file management
-
 ## phenix disk snapshot
 
 Create a qcow2 snapshot backed by a disk image
@@ -366,6 +316,7 @@ phenix disk snapshot <disk> <new> [flags]
   -h, --help   help for snapshot
 ```
 
-### SEE ALSO
+## See Also
 
-* [phenix disk](disk.md) - Disk image file management
+* [Disks](../disks.md): the Disks page, backing chains and image formats.
+* [Images](../image.md): how to build a disk image.

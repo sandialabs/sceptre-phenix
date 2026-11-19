@@ -28,11 +28,6 @@ phenix host [flags]
   -h, --help   help for host
 ```
 
-### SEE ALSO
-
-* [phenix](index.md) - A cli application for phēnix
-* [phenix host list](host.md#phenix-host-list) - Display a table of the cluster hosts
-
 ## phenix host list
 
 Display a table of the cluster hosts
@@ -59,6 +54,6 @@ phenix host list [flags]
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
 
-### SEE ALSO
+## See Also
 
-* [phenix host](host.md) - Cluster host management
+* [Hosts](../hosts.md): the Hosts page.

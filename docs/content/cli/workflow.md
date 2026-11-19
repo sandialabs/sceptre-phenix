@@ -28,12 +28,6 @@ phenix workflow [flags]
   -h, --help   help for workflow
 ```
 
-### SEE ALSO
-
-* [phenix](index.md) - A cli application for phēnix
-* [phenix workflow apply](workflow.md#phenix-workflow-apply) - Deploy a topology directory through the phenix server
-* [phenix workflow render](workflow.md#phenix-workflow-render) - Print the configs of a topology directory with their variables filled in
-
 ## phenix workflow apply
 
 Deploy a topology directory through the phenix server
@@ -190,10 +184,6 @@ docker exec phenix phenix workflow apply /phenix/topologies/helloworld -f
       --name string              same as -b/--branch-name
 ```
 
-### SEE ALSO
-
-* [phenix workflow](workflow.md) - Workflow management
-
 ## phenix workflow render
 
 Print the configs of a topology directory with their variables filled in
@@ -249,6 +239,7 @@ phenix workflow render ./topo --env-file site.env -c alt.yml
       --name string            same as -b/--branch-name
 ```
 
-### SEE ALSO
+## See Also
 
-* [phenix workflow](workflow.md) - Workflow management
+* [Workflow](../workflow.md): the topology directory layout and how apply works.
+* [Configuration Files](../configuration.md): the kinds of config and how to write them.

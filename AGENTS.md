@@ -163,7 +163,7 @@ Routes are below `/api/v1`. Each route needs the RBAC permission `builder`
 `use`. Import, Publish, and published documents also need the `configs` verbs
 of the configs they read or write. Request bodies, ETag rules, and the
 permission of each route are in
-`docs/content/builder/details/administration.md#rest-api`.
+`docs/content/builder/details/administration.md#api`.
 
 | Area | Routes |
 |---|---|

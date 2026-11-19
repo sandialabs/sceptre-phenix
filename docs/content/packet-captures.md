@@ -85,7 +85,7 @@ data.
 Some tools can read only classic pcap. For these tools, select `pcap`. Or
 convert a pcapng file with `editcap -F pcap in.pcapng out.pcap`.
 
-## From the Web-UI
+## Web UI
 
 ### Start a Capture
 
@@ -94,6 +94,8 @@ convert a pcapng file with `editcap -F pcap in.pcapng out.pcap`.
    the netflow button. The `Captures` tab has the same button.
 3. In the dialog, set the options. Leave `VLANs` empty to capture all VLANs.
 4. Click `Start capture`.
+
+![Capture all experiment traffic dialog with the SCADA VLAN checked, the BPF filter tcp port 502, a snaplen of 1600, the pcapng format, the default file name, the note about hardware behind a trunk, and the Cancel and Start capture buttons.](images/capture_start_dialog.png){: width=500 .center}
 
 To capture one VLAN, click a network in the `Network` column of the VM table.
 Then click `Capture VLAN <alias>…`. The same dialog opens with that VLAN
@@ -113,6 +115,8 @@ A user who does not have `experiments/captures` `create` does not see the
 button or the menu item.
 
 ### Captures Tab
+
+![Captures tab of bennu with one running capture expanded to its two hosts, one of them with a skew warning, a stopped capture of the SCADA VLAN, a failed capture with its error, and the Open in WebShark, Stop, Download and Delete buttons.](images/captures_tab.png){: width=800 .center}
 
 The `Captures` tab lists the experiment captures. The tab label shows the
 number of running captures. The tab reads the list again every 5 seconds while
@@ -187,12 +191,14 @@ For a pcapng capture, the page shows a display filter for each host, for
 example `frame.interface_name == "compute1/mega_bridge_exp1"`. Click the copy
 button of a filter. Then paste the filter into the WebShark display filter box.
 
-## From the Command Line Binary
+![WebShark page on the live capture 3 of bennu before it has a packet, with the Experiment and Capture pickers, the Live tag, and a display filter with a Copy button for each of the hosts compute1 and compute2.](images/webshark_experiment_capture.png){: width=800 .center}
+
+## Command Line
 
 To start an experiment capture of all VLANs, use the following command.
 
 ```shell
-phenix experiment capture start <experiment name>
+phenix experiment capture start <experiment-name>
 ```
 
 To capture some VLANs, give `--vlan` one time for each VLAN. The other options
@@ -210,21 +216,21 @@ command. The list has a row for each capture, and a row for each host and
 bridge under it.
 
 ```shell
-phenix experiment capture list <experiment name>
+phenix experiment capture list <experiment-name>
 ```
 
 To stop an experiment capture, use the following command. It prints the last
 counters of the capture. The file stays in the experiment's files directory.
 
 ```shell
-phenix experiment capture stop <experiment name> <capture ID>
+phenix experiment capture stop <experiment-name> <capture-ID>
 ```
 
 The CLI applies the `ui.captures.max-size` setting, as `phenix ui` does, and
 asks minimega for its version before a capture command. See
 [phenix experiment](cli/experiment.md#phenix-experiment-capture) for all flags.
 
-## From the REST API
+## API
 
 | Method | Path | Result |
 |---|---|---|
@@ -361,3 +367,9 @@ minimega version of the head node turns it on.
 The clock of a host is more than 500 ms from the clock of the head node. The
 file has frames of that host out of order. Synchronize the clocks of all hosts
 with chrony or PTP.
+
+## See Also
+
+* [WebShark](webshark.md): view a capture in the browser, or stream it to Wireshark.
+* [phenix vm capture](cli/vm.md#phenix-vm-capture): capture on one VM interface.
+* [Experiment Files](experiments.md#experiment-files): download or delete the capture files.

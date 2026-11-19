@@ -14,14 +14,14 @@ UI.
 
 ## Downloading the Tunneler
 
-Click the `Tunneler` button (a download icon) near the right-hand end of the
+Click the `Tunneler` button near the right-hand end of the
 banner at the top of the phēnix UI.
 
-![The Tunneler page, opened from the Tunneler button in the banner, with the Tunneler Downloads table above the Quick Start and its Tunneler Documentation button](images/tunneler_page.png)
+![The Tunneler page, opened from the Tunneler button in the banner, with the Tunneler Downloads table above the Quick Start, and the Tunneler Documentation button after the Quick Start text](images/tunneler_page.png)
 
-This page lists the `phenix-tunneler` binaries built for the phēnix
-instance's version, along with a download link for each supported OS and
-architecture:
+This page lists the `phenix-tunneler` builds on the phēnix server, with a
+`Download` link for each OS and architecture, and a `Quick Start` that sums up
+the steps below. phēnix ships these builds:
 
 | OS      | Architecture |
 | ------- | ------------ |
@@ -118,6 +118,16 @@ Existing port forwards for a VM are listed in the `Port forwards` section
 of the same VM details, each with the user that created it, and can be
 removed by clicking the trash icon next to a forward.
 
+You can also manage port forwards from the phēnix server with
+`phenix vm forward add`, `list` and `remove` (this needs a running
+`phenix ui`). Forwards added this way are owned by `global-admin`, so other
+users have to [`activate`](#activate-id) them in their tunneler.
+
+```shell
+phenix vm forward add my-exp my-vm 80 --host 10.0.0.5 --source-port 8080
+phenix vm forward list my-exp my-vm
+```
+
 ## Managing Listeners from the Local Web App
 
 The `serve` command provides an option for also serving up a local web
@@ -170,3 +180,7 @@ phenix-tunneler move <id> <port>
 
 Listener IDs used by `activate`, `deactivate`, and `move` can be found
 in the output of `phenix-tunneler list`.
+
+## See Also
+
+* [phenix vm forward](cli/vm.md#phenix-vm-forward): manage port forwards from the phēnix server.

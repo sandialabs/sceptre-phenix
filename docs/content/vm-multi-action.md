@@ -2,7 +2,7 @@
 
 ## Selecting VMs
 
-### From the Web-UI
+### Web UI
 
 The experiment must be started; click on the experiment name to enter the
 Running Experiment component. Within that component, click on the checkbox
@@ -11,12 +11,58 @@ select all the VMs; its tooltip reads `Select/Unselect All`. Alternatively,
 the checkbox at the start of a VM's row can be used to select the
 VM. Once one or more VMs are selected, a toolbar will appear to the
 left of the `Hosts` and `Labels` filters, before the search text box.
-The buttons on the toolbar are essentially the same as described in
-[VMs](vms.md).
 
 ![Running experiment page with two VMs checked and the bulk start, pause, memory snapshot, backing image, VM snapshot and modify state buttons beside the Hosts, Labels and Paginate controls above the VM table.](images/vms_multi_select.png)
 
-### From the Command Line Binary
+Every button on the toolbar acts on all of the selected VMs at once. A button
+is grayed out if your role does not allow its action on every one of them.
+Its tooltip then names the permission, for example
+`Your role does not permit this action (vms delete)`. The buttons, named by
+their tooltips, are:
+
+* `start` - starts the selected VMs, and resumes the paused ones
+* `pause` - pauses the selected VMs
+* `create memory snapshot` - dumps each VM's memory to the file named for it
+  in the dialog
+* `create backing image` - creates a new backing image from each VM's disk
+* `create VM snapshot` - saves each VM's disk and memory as a snapshot
+* `modify state` - replaces these buttons with the modify state toolbar
+  described below
+
+A button skips the selected VMs its action cannot be applied to, by the same
+rules that disable the action in a VM's details card (see [VMs](vms.md)). For
+example, `start` skips VMs that are already running, and every button skips a
+VM that is busy with another action. One dialog asks before anything happens.
+It lists the VMs the action will act on, and names the skipped VMs with the
+reason, such as `The VMs web and db are not running.`
+
+`start`, `pause`, `restart`, `shutdown`, `kill` and `reset disk state` run as
+one [background job](jobs.md) for all the VMs, which the
+[jobs menu](web-ui.md#background-jobs-menu) shows and can cancel. The page
+stays usable while the job runs. When it ends, one message sums up the
+outcome, names the VMs that failed or were skipped, and offers `Retry failed`
+for the VMs that may work if tried again.
+
+#### Modify State Toolbar
+
+The `modify state` button replaces the toolbar with the actions that change
+a VM's state. These buttons, again named by their tooltips, are:
+
+* `redeploy` - sets `CPUs`, `Memory`, `Disk` and
+  `Replicate Original Injection(s)` for each VM, then kills and deploys it
+  again
+* `reset disk state` - resets each selected VM's disk to how it was when the
+  experiment started
+* `restart` - restarts the selected VMs that are running
+* `shutdown` - powers off the selected VMs that are running
+* `kill` - kills the selected VMs and removes them from the running
+  experiment
+* `close toolbar` - returns to the toolbar above
+
+Per-VM actions, including the ones this toolbar has no equivalent for, are
+described in [VMs](vms.md).
+
+### Command Line
 
 Several `phenix vm` commands support selecting target VMs by label with `-l` / `--label`, or all VMs using `all`.
 When using labels, a VM name argument is not required.
@@ -43,24 +89,41 @@ Examples:
 
 ```shell
 # Show VM info for all VMs with a label matching "ot-*"
-phenix vm info <experiment name> --label ot-*
+phenix vm info <experiment-name> --label ot-*
 
 # Restart VMs that match either label
-phenix vm restart <experiment name> -l control -l historian
+phenix vm restart <experiment-name> -l control -l historian
 
 # Pause VMs using comma-separated labels
-phenix vm pause <experiment name> -l control,historian
+phenix vm pause <experiment-name> -l control,historian
 
 # Shutdown all VMs in the experiment
-phenix vm shutdown <experiment name> --label all
+phenix vm shutdown <experiment-name> --label all
 ```
+
+### API
+
+`POST /api/v1/experiments/<name>/vms/actions` runs one power action (`start`,
+`pause`, `restart`, `shutdown`, `kill` or `resetDisk`) on several VMs as a
+[background job](jobs.md):
+
+```bash
+curl -X POST -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
+  -d '{"action": "restart", "vms": ["web", "db", "fw"]}' \
+  http://localhost:3000/api/v1/experiments/exp1/vms/actions
+```
+
+The job records each VM's outcome. A VM your role may not act on is skipped,
+and a VM busy with another action fails and is marked retryable.
+`PATCH /api/v1/experiments/<name>/vms` changes the settings of several VMs at
+once in the same way. See the [API](api.md) documentation for both.
 
 ## Searching for VMs
 
 The search text box can be used to filter the list of VMs to
 only apply actions to the filtered list.
 
-### From the Web-UI
+### Web UI
 
 The experiment must be started; click on the experiment name to enter the
 Running Experiment component. Within that component, use the search
@@ -74,7 +137,7 @@ textbox to find VMs by:
   subnet (i.e `192.168.1.0/30`). An address with no mask (i.e. `192.168.1.5`)
   finds the VMs that have that address.
 
-* other fields (i.e. name, taps, tags) - All other fields will be
+* other fields (i.e. name, network, host, disk, tags) - All other fields will be
   searched for a keyword contained within the field
 
 * combine search terms - Search terms can be combined by using `or and`
@@ -91,32 +154,33 @@ textbox to find VMs by:
 A search that the Web-UI cannot parse finds no VMs. For example, `(web`,
 `web and`, and `"web` find no VMs.
 
-The `Hosts` and `Labels` filters beside the search box narrow the list further.
+The `Hosts` and `Labels` filters beside the search box narrow the list further;
+see [Filtering and Sorting the VM Table](vms.md#filtering-and-sorting-the-vm-table).
 
 #### Example
 
 Multiple search terms
 
-![VM table filtered by the search shutdown or capturing, showing two capturing VMs and one VM that is not running.](images/vms_multi_running_combined_terms.png)
+![VM table filtered by the search shutdown or capturing, showing the capturing site-1-hmi and the shut-down historian.](images/vms_multi_running_combined_terms.png)
 
-### From the Command Line Binary
+### Command Line
 
 While the interactive search bar is specific to the Web-UI, you can view and list all VMs in an experiment (or filter for specific VMs by name or label) using the `phenix vm info` command:
 
 ```bash
 # List details for all VMs in an experiment
-phenix vm info <experiment name>
+phenix vm info <experiment-name>
 
 # Display details for a specific VM in an experiment
-phenix vm info <experiment name> <vm name>
+phenix vm info <experiment-name> <vm-name>
 
 # Filter VMs by label
-phenix vm info <experiment name> --label <label>
+phenix vm info <experiment-name> --label <label>
 ```
 
 ## Starting/Stopping Packet Captures
 
-### From the Web-UI
+### Web UI
 
 In the VM table, click a network in the `Network` column to open its menu.
 The menu has these capture items:
@@ -154,6 +218,8 @@ The menu also has these items:
   receives on the interface. Enter a loss in percent (less than 100), a delay
   in us, ms, or s (such as `100ms`), or a rate of 1 to 999999999 kbit, mbit,
   or gbit. You cannot set a rate with a loss or a delay. `Clear` removes the link quality from the interface.
+  The command line equivalent is `phenix vm qos` (see
+  [Link Quality](vms.md#link-quality)).
 * `Show VMs on VLAN <alias>` shows only the VMs on that VLAN. It puts the
   network name and its VLAN ID in the search box, for example `"exp_1 (101)"`.
 
@@ -162,49 +228,56 @@ The VM must be running to use `Change VLAN…`, `Disconnect`, or
 as text. A VLAN request shows one message for all of its captures.
 
 The Web-UI has no single control for a subnet's captures. Enter the subnet in
-the search box, such as `10.1.5.20/30`, to list the VMs in it. Then click an
+the search box, such as `10.1.2.0/29`, to list the VMs in it. Then click an
 address in a VM's `IP` column, or a tap in its `Taps` column, to start a
 capture on that interface (see [Packet Capture](vms.md#packet-capture)).
 
-![VM table filtered to 10.1.5.20/30 with the start packet capture tooltip shown over a VM's address.](images/vms_multi_capture_start.png)
+![VM table filtered to 10.1.2.0/29 with the start packet capture tooltip shown over a VM's address.](images/vms_multi_capture_start.png)
 
-![VM table filtered to 10.1.5.20/30 with both VMs capturing, their captured IPs and taps in green and stop capture buttons in red.](images/vms_multi_capture_stop.png)
+The `Capture all interfaces` button in a VM's `Actions` column starts a capture
+on every connected interface of that VM. While the VM is capturing, the button
+becomes `Stop all packet captures`, which stops them all (see
+[Capture All Interfaces](vms.md#capture-all-interfaces)).
+
+![VM table filtered to 10.1.2.0/29 with both VMs capturing, their captured IPs and taps in green and stop capture buttons in red.](images/vms_multi_capture_stop.png)
 
 To find every VM with a running packet capture, enter `capturing` in the search
 box.
 
-![VM table filtered by the search capturing, listing the two VMs that have packet captures running.](images/vms_multi_captures_stop_all.png)
+![VM table filtered by the search capturing, listing the three VMs that have packet captures running.](images/vms_multi_captures_stop_all.png)
 
-### From the Command Line Binary
+### Command Line
 
 To start packet captures on running VMs for a specific subnet, use the following command.
 
 ```shell
-phenix vm capture start-subnet <experiment name> <subnet>
+phenix vm capture start-subnet <experiment-name> <subnet>
 ```
 
 To stop all packet captures for a specific subnet, use the following command.
 
 ```shell
-phenix vm capture stop-subnet <experiment name> <subnet>
+phenix vm capture stop-subnet <experiment-name> <subnet>
 ```
 
 To start packet captures on each interface on a VLAN of the running VMs, use
 the following command. Give the VLAN alias, such as `EXP_1`.
 
 ```shell
-phenix vm capture start-vlan <experiment name> <vlan alias>
+phenix vm capture start-vlan <experiment-name> <vlan-alias>
 ```
 
 To stop the packet captures on the interfaces on a VLAN, use the following
 command. The captures on other interfaces continue.
 
 ```shell
-phenix vm capture stop-vlan <experiment name> <vlan alias>
+phenix vm capture stop-vlan <experiment-name> <vlan-alias>
 ```
 
 The `--filter` flag of these four commands limits them to the VMs that the
-filter matches.
+filter matches. The filter has the syntax of the VM search box (see
+[Searching for VMs](#searching-for-vms)), such as `running and web`. It is not
+a minimega filter.
 
 The `--format` flag of `start-subnet` and `start-vlan` sets the capture file
 format, `pcapng` (the default) or `pcap`.
@@ -212,10 +285,10 @@ format, `pcapng` (the default) or `pcap`.
 To stop all packet captures for an experiment, use the following command.
 
 ```shell
-phenix vm capture stop-all <experiment name>
+phenix vm capture stop-all <experiment-name>
 ```
 
-## Stopped Experiment Component
+## Stopped Experiment
 
 Similar to the Running Experiment component, multiple VMs can be selected
 for the Stopped Experiment component. Its toolbar shows how many VMs you
@@ -229,6 +302,8 @@ selected and has these buttons, named by their tooltips:
   the values of the topology. The toolbar shows this button only when a
   selected VM has these values. The reset skips each selected VM that does
   not have these values or that already uses them.
+
+![Stopped experiment page with two VMs checked: the toolbar shows 2 selected and the set to boot, set to not boot, make the disks persistent and make the disks non-persistent buttons beside the Hosts and Labels buttons.](images/vms_multi_stopped.png)
 
 Each button changes every selected VM. While the server works, the button
 spins and the toolbar tells what it does. Then a message tells how many VMs
@@ -260,3 +335,8 @@ Stopped Experiment component can be searched by:
   named `my web server`.
 
 A search that the Web-UI cannot parse finds no VMs.
+
+## See Also
+
+* [VMs](vms.md): the actions on a single VM.
+* [phenix vm](cli/vm.md): the VM commands of the command line.

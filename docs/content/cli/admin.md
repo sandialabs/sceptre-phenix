@@ -30,13 +30,6 @@ phenix admin [flags]
   -h, --help   help for admin
 ```
 
-### SEE ALSO
-
-* [phenix](index.md) - A cli application for phēnix
-* [phenix admin role](admin.md#phenix-admin-role) - List, get, create, update, or delete roles
-* [phenix admin token](admin.md#phenix-admin-token) - Create API tokens
-* [phenix admin user](admin.md#phenix-admin-user) - List, get, create, update, or delete users
-
 ## phenix admin role
 
 List, get, create, update, or delete roles
@@ -63,15 +56,6 @@ phenix admin role [flags]
 ```text
   -h, --help   help for role
 ```
-
-### SEE ALSO
-
-* [phenix admin](admin.md) - Administration of users, roles and API tokens
-* [phenix admin role create](admin.md#phenix-admin-role-create) - Create a custom role
-* [phenix admin role delete](admin.md#phenix-admin-role-delete) - Delete a custom role that no user has
-* [phenix admin role get](admin.md#phenix-admin-role-get) - Show the policies of a role
-* [phenix admin role list](admin.md#phenix-admin-role-list) - List the roles
-* [phenix admin role update](admin.md#phenix-admin-role-update) - Replace the policies of a custom role
 
 ## phenix admin role create
 
@@ -106,10 +90,6 @@ phenix admin role create "Lab Viewer" --policy 'resources=experiments,vms;verbs=
       --policy stringArray   Policy of the role, as resources=<list>;verbs=<list>[;names=<list>] (repeatable)
 ```
 
-### SEE ALSO
-
-* [phenix admin role](admin.md#phenix-admin-role) - List, get, create, update, or delete roles
-
 ## phenix admin role delete
 
 Delete a custom role that no user has
@@ -134,10 +114,6 @@ phenix admin role delete <role name> [flags]
       --dry-run   Show what the command would change, and change nothing
   -h, --help      help for delete
 ```
-
-### SEE ALSO
-
-* [phenix admin role](admin.md#phenix-admin-role) - List, get, create, update, or delete roles
 
 ## phenix admin role get
 
@@ -164,10 +140,6 @@ phenix admin role get <role name> [flags]
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
 
-### SEE ALSO
-
-* [phenix admin role](admin.md#phenix-admin-role) - List, get, create, update, or delete roles
-
 ## phenix admin role list
 
 List the roles
@@ -191,10 +163,6 @@ phenix admin role list [flags]
   -h, --help            help for list
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
-
-### SEE ALSO
-
-* [phenix admin role](admin.md#phenix-admin-role) - List, get, create, update, or delete roles
 
 ## phenix admin role update
 
@@ -227,10 +195,6 @@ phenix admin role update lab-viewer --policy 'resources=experiments;verbs=list,g
       --policy stringArray   Policy of the role, as resources=<list>;verbs=<list>[;names=<list>] (repeatable)
 ```
 
-### SEE ALSO
-
-* [phenix admin role](admin.md#phenix-admin-role) - List, get, create, update, or delete roles
-
 ## phenix admin token
 
 Create API tokens
@@ -244,11 +208,6 @@ phenix admin token [flags]
 ```text
   -h, --help   help for token
 ```
-
-### SEE ALSO
-
-* [phenix admin](admin.md) - Administration of users, roles and API tokens
-* [phenix admin token create](admin.md#phenix-admin-token-create) - Create an API token for a user
 
 ## phenix admin token create
 
@@ -286,10 +245,6 @@ TOKEN=$(phenix admin token create ci-bot --lifetime 30 --description "CI runner"
       --lifetime string      How long the token is valid: a duration or a whole number of days (default "24h")
 ```
 
-### SEE ALSO
-
-* [phenix admin token](admin.md#phenix-admin-token) - Create API tokens
-
 ## phenix admin user
 
 List, get, create, update, or delete users
@@ -303,15 +258,6 @@ phenix admin user [flags]
 ```text
   -h, --help   help for user
 ```
-
-### SEE ALSO
-
-* [phenix admin](admin.md) - Administration of users, roles and API tokens
-* [phenix admin user create](admin.md#phenix-admin-user-create) - Create a user
-* [phenix admin user delete](admin.md#phenix-admin-user-delete) - Delete a user
-* [phenix admin user get](admin.md#phenix-admin-user-get) - Show a user and the policies of its role
-* [phenix admin user list](admin.md#phenix-admin-user-list) - List the users
-* [phenix admin user update](admin.md#phenix-admin-user-update) - Change the names, role, resource names, or password of a user
 
 ## phenix admin user create
 
@@ -351,10 +297,6 @@ printf '%s\n' "$PASSWORD" | phenix admin user create bob --role global-viewer --
       --role string              Role of the user, by its name or its config name
 ```
 
-### SEE ALSO
-
-* [phenix admin user](admin.md#phenix-admin-user) - List, get, create, update, or delete users
-
 ## phenix admin user delete
 
 Delete a user
@@ -381,10 +323,6 @@ phenix admin user delete <username> [flags]
   -h, --help      help for delete
 ```
 
-### SEE ALSO
-
-* [phenix admin user](admin.md#phenix-admin-user) - List, get, create, update, or delete users
-
 ## phenix admin user get
 
 Show a user and the policies of its role
@@ -407,10 +345,6 @@ phenix admin user get <username> [flags]
   -h, --help            help for get
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
-
-### SEE ALSO
-
-* [phenix admin user](admin.md#phenix-admin-user) - List, get, create, update, or delete users
 
 ## phenix admin user list
 
@@ -435,10 +369,6 @@ phenix admin user list [flags]
   -h, --help            help for list
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
-
-### SEE ALSO
-
-* [phenix admin user](admin.md#phenix-admin-user) - List, get, create, update, or delete users
 
 ## phenix admin user update
 
@@ -480,6 +410,7 @@ phenix admin user update alice --password
       --role string              New role of the user, by its name or its config name
 ```
 
-### SEE ALSO
+## See Also
 
-* [phenix admin user](admin.md#phenix-admin-user) - List, get, create, update, or delete users
+* [User Administration](../user-administration.md): users, roles and permissions.
+* [API](../api.md#authentication): how to use an API token.

@@ -18,15 +18,6 @@ phenix settings [flags]
   -h, --help   help for settings
 ```
 
-### SEE ALSO
-
-* [phenix](index.md) - A cli application for phēnix
-* [phenix settings db](settings.md#phenix-settings-db) - View or edit legacy database settings
-* [phenix settings get](settings.md#phenix-settings-get) - Get configuration value(s)
-* [phenix settings list](settings.md#phenix-settings-list) - List all runtime settings
-* [phenix settings set](settings.md#phenix-settings-set) - Set a configuration value
-* [phenix settings unset](settings.md#phenix-settings-unset) - Unset configuration value(s)
-
 ## phenix settings db
 
 View or edit legacy database settings
@@ -46,12 +37,6 @@ phenix settings db [flags]
 ```text
   -h, --help   help for db
 ```
-
-### SEE ALSO
-
-* [phenix settings](settings.md) - View, list, or edit phenix system settings
-* [phenix settings db edit](settings.md#phenix-settings-db-edit) - Edit a setting in the database
-* [phenix settings db list](settings.md#phenix-settings-db-list) - List settings in the database
 
 ## phenix settings db edit
 
@@ -80,10 +65,6 @@ phenix settings db edit Password MinLength 20
   -h, --help   help for edit
 ```
 
-### SEE ALSO
-
-* [phenix settings db](settings.md#phenix-settings-db) - View or edit legacy database settings
-
 ## phenix settings db list
 
 List settings in the database
@@ -99,10 +80,6 @@ phenix settings db list [category] [flags]
       --json            Output as JSON (the same as -o json)
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
-
-### SEE ALSO
-
-* [phenix settings db](settings.md#phenix-settings-db) - View or edit legacy database settings
 
 ## phenix settings get
 
@@ -134,10 +111,6 @@ phenix settings get log -o json
   -o, --output string   Output format (table, json, yaml) (default "yaml")
 ```
 
-### SEE ALSO
-
-* [phenix settings](settings.md) - View, list, or edit phenix system settings
-
 ## phenix settings list
 
 List all runtime settings
@@ -154,10 +127,6 @@ phenix settings list [flags]
       --json            Output as JSON (the same as -o json)
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
-
-### SEE ALSO
-
-* [phenix settings](settings.md) - View, list, or edit phenix system settings
 
 ## phenix settings set
 
@@ -185,10 +154,6 @@ phenix settings set log.system.max-size 200
 ```text
   -h, --help   help for set
 ```
-
-### SEE ALSO
-
-* [phenix settings](settings.md) - View, list, or edit phenix system settings
 
 ## phenix settings unset
 
@@ -220,6 +185,7 @@ phenix settings unset --all
   -h, --help      help for unset
 ```
 
-### SEE ALSO
+## See Also
 
-* [phenix settings](settings.md) - View, list, or edit phenix system settings
+* [Settings](../settings.md): every setting, with its flag and environment variable.
+* [Doctor](../doctor.md): what each check means and how to fix it.

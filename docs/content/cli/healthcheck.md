@@ -52,6 +52,7 @@ phenix healthcheck --url https://phenix.example.com/readyz
       --url string         URL to check, instead of the one derived from the UI settings
 ```
 
-### SEE ALSO
+## See Also
 
-* [phenix](index.md) - A cli application for phēnix
+* [Health Checks](../health.md): the health endpoints of the server.
+* [Doctor](../doctor.md): what each check means and how to fix it.

@@ -45,6 +45,9 @@ phenix ui [flags]
       --users strings                 initial users to add, each as <username>:<password>:<role>[:<resource name>...] (comma-separated or repeated)
 ```
 
-### SEE ALSO
+## See Also
 
-* [phenix](index.md) - A cli application for phēnix
+* [Web UI](../web-ui.md): a tour of the web UI.
+* [Settings](../settings.md): every setting, with its flag and environment variable.
+* [User Administration](../user-administration.md): users, roles and permissions.
+* [Health Checks](../health.md): the health endpoints of the server.

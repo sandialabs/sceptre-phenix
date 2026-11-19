@@ -27,17 +27,6 @@ phenix config [flags]
   -h, --help   help for config
 ```
 
-### SEE ALSO
-
-* [phenix](index.md) - A cli application for phēnix
-* [phenix config apply](config.md#phenix-config-apply) - Create or update configurations from files
-* [phenix config create](config.md#phenix-config-create) - Create a configuration(s)
-* [phenix config delete](config.md#phenix-config-delete) - Delete a configuration(s)
-* [phenix config diff](config.md#phenix-config-diff) - Show how configuration files differ from the stored configurations
-* [phenix config edit](config.md#phenix-config-edit) - Edit a configuration
-* [phenix config get](config.md#phenix-config-get) - Get a configuration
-* [phenix config list](config.md#phenix-config-list) - Show table of stored configuration files
-
 ## phenix config apply
 
 Create or update configurations from files
@@ -109,10 +98,6 @@ phenix config apply topology.yml -e NODES=3 --env-file site.env
       --skip-validation        Skip schema validation of new configurations (updates are always validated)
 ```
 
-### SEE ALSO
-
-* [phenix config](config.md) - Configuration file management
-
 ## phenix config create
 
 Create a configuration(s)
@@ -168,10 +153,6 @@ phenix config create topology.yml -e NODES=3 --env-file site.env
       --skip-validation        Skip configuration spec validation against schema
 ```
 
-### SEE ALSO
-
-* [phenix config](config.md) - Configuration file management
-
 ## phenix config delete
 
 Delete a configuration(s)
@@ -218,11 +199,6 @@ phenix config delete 'topology/cm-*' --dry-run
   -h, --help      help for delete
 ```
 
-### SEE ALSO
-
-* [phenix config](config.md) - Configuration file management
-* [phenix config delete all](config.md#phenix-config-delete-all) - Delete all configurations (optionally by kind)
-
 ## phenix config delete all
 
 Delete all configurations (optionally by kind)
@@ -257,10 +233,6 @@ phenix config delete all topology --dry-run
       --dry-run   Show what the command would change, and change nothing
   -h, --help      help for all
 ```
-
-### SEE ALSO
-
-* [phenix config delete](config.md#phenix-config-delete) - Delete a configuration(s)
 
 ## phenix config diff
 
@@ -315,10 +287,6 @@ phenix config diff topology.yml -e NODES=3 --env-file site.env
   -h, --help                   help for diff
 ```
 
-### SEE ALSO
-
-* [phenix config](config.md) - Configuration file management
-
 ## phenix config edit
 
 Edit a configuration
@@ -341,10 +309,6 @@ phenix config edit <kind/name> [flags]
       --force   override checks (only applies to configs for running experiments)
   -h, --help    help for edit
 ```
-
-### SEE ALSO
-
-* [phenix config](config.md) - Configuration file management
 
 ## phenix config get
 
@@ -380,10 +344,6 @@ phenix config get topology/foo -o json
   -o, --output string   Output format (yaml, json) (default "yaml")
   -p, --pretty          Pretty print the JSON output (JSON output is always indented)
 ```
-
-### SEE ALSO
-
-* [phenix config](config.md) - Configuration file management
 
 ## phenix config list
 
@@ -421,6 +381,8 @@ phenix config list topology -o json
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
 
-### SEE ALSO
+## See Also
 
-* [phenix config](config.md) - Configuration file management
+* [Configuration Files](../configuration.md): the kinds of config and how to write them.
+* [Schema](../schema.md): the schema of each config kind.
+* [Workflow](../workflow.md): deploy a directory of configs with one command.

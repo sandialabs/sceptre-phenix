@@ -41,7 +41,9 @@ To build the phēnix container image from source (does not require installing lo
 make docker
 ```
 
-The compose file checks the `phenix` container's health with `phenix healthcheck`, which probes the server's `/healthz` endpoint; `docker exec phenix phenix healthcheck --ready` also checks minimega, the store and free disk space.
+The compose file checks the `phenix` container's health with `phenix healthcheck`, which probes the server's `/healthz` endpoint; `docker exec phenix phenix healthcheck --ready` also checks minimega, the store and free disk space. See [Health Checks](https://phenix.sceptre.dev/latest/health/).
+
+To check the configuration without the server, run `docker exec phenix phenix doctor`. `phenix doctor --report` prints the same result with host names and secrets replaced, ready to paste into a bug report. See [Checking the Configuration](https://phenix.sceptre.dev/latest/doctor/).
 
 ### Native Installation (.deb)
 
@@ -206,6 +208,16 @@ To build the phēnix core services locally:
 git clone https://github.com/sandialabs/sceptre-phenix.git
 cd sceptre-phenix
 make build
+```
+
+`make build` also renders the API reference that `bin/phenix` serves at
+`/docs/`. That step runs the Redocly CLI with `npx` (its version is pinned in
+`scripts/api-docs.sh`), so it needs network access the first time. To build
+offline, skip it with `SKIP_API_DOCS=1`. `SKIP_UI=1` reuses an existing UI
+build in `src/js/dist`.
+
+```bash
+make build SKIP_API_DOCS=1 SKIP_UI=1
 ```
 
 ## Logging & Configuration

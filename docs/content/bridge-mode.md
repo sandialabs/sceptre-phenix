@@ -32,6 +32,11 @@ experiment creation form because it would have no effect.
     return an error if you attempt to create or update an experiment with a
     longer name while `auto` mode is active.
 
+When an experiment stops in `auto` mode, phēnix deletes the bridge named after
+the experiment on each of its hosts, unless another running experiment uses
+it. minimega keeps an OVS bridge that it did not create. In `manual` mode,
+phēnix leaves bridges alone.
+
 ## Bridge Names and Topologies
 
 The experiment's default bridge is applied to every node interface in the
@@ -149,3 +154,8 @@ netflow capture.
 | Setting Key | Environment Variable | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `bridge-mode` | `PHENIX_BRIDGE_MODE` | `manual` | Bridge naming mode for experiments. `auto` uses the experiment name as the bridge name; `manual` uses the user-specified bridge name, or `phenix` if not specified. |
+
+## See Also
+
+* [VLANs](vlans.md): VLAN aliases, ranges and the VLANs page.
+* [GRE Mesh](gre-mesh.md): carry VLANs between cluster hosts over GRE tunnels.
