@@ -2,13 +2,13 @@ name: Packages
 
 # Builds the phenix container images and Debian package. A push to any branch
 # publishes ghcr.io/<owner>/<repo>/phenix:<branch>; pull requests only build
-# and test. A v* tag push, or a manual run given a tag, publishes the release
-# images and attaches the .deb and SBOMs to the GitHub release.
+# and test. release.yml calls this workflow with a release tag to publish the
+# release and `latest` images and attach the .deb and SBOMs to the GitHub
+# release; a manual run given a tag rebuilds and re-attaches packages without
+# moving `latest`.
 on:
-  # Path filters do not apply to tag pushes, so releases always build.
   push:
     branches: ['**', '!dependabot/**']
-    tags: ['v*']
     paths:
       - '**'
       - '!docs/**'
@@ -17,6 +17,7 @@ on:
       - '!src/js/e2e/**'
       - '!src/js/test/**'
       - '!CODEOWNERS'
+      - '!releasaurus.toml'
       - '!.github/**'
       - '.github/workflows/packages.yml'
   # Other workflows test pull request code; this one rebuilds only for packaging changes.
@@ -40,17 +41,34 @@ on:
     - cron: '17 5 * * 1'
   repository_dispatch:
     types: [apps-update]
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to build, publish as latest, and attach packages to
+        type: string
+        required: true
+      publish-latest:
+        description: Also tag and push the release container images as latest
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch:
     inputs:
       tag:
         description: Release tag to rebuild and attach packages to (blank for the selected branch)
         type: string
         required: false
+      publish-latest:
+        description: Also tag and push the release container images as latest (requires tag)
+        type: boolean
+        required: false
+        default: false
 
 env:
   MM_REV: latest
-  # A pushed v* tag, or the tag given to a manual run. Only a tag push moves `latest`.
-  RELEASE_TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
+  # The tag passed by release.yml (workflow_call) or a manual run (workflow_dispatch).
+  # Only moves `latest` when publish-latest is true alongside a release tag.
+  RELEASE_TAG: ${{ inputs.tag || '' }}
 
 permissions:
   contents: read
@@ -58,7 +76,7 @@ permissions:
 concurrency:
   group: packages-${{ inputs.tag || (github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number)) || github.ref }}
   # Never cancel a release build.
-  cancel-in-progress: ${{ !(inputs.tag || github.ref_type == 'tag') }}
+  cancel-in-progress: ${{ !inputs.tag }}
 
 jobs:
   build:
@@ -115,7 +133,7 @@ jobs:
             type=ref,event=branch,enable=${{ !env.RELEASE_TAG }}
             type=sha,enable=${{ !env.RELEASE_TAG }}
             type=raw,value=${{ env.RELEASE_TAG }},enable=${{ !!env.RELEASE_TAG }}
-            type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+            type=raw,value=latest,enable=${{ !!env.RELEASE_TAG && inputs.publish-latest == true }}
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -172,7 +190,7 @@ jobs:
             type=ref,event=branch,enable=${{ !env.RELEASE_TAG }}
             type=sha,enable=${{ !env.RELEASE_TAG }}
             type=raw,value=${{ env.RELEASE_TAG }},enable=${{ !!env.RELEASE_TAG }}
-            type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+            type=raw,value=latest,enable=${{ !!env.RELEASE_TAG && inputs.publish-latest == true }}
       - name: Build JIT container image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -282,7 +300,7 @@ jobs:
   release:
     name: Attach Debian package and SBOMs to the release
     needs: build
-    if: inputs.tag || github.ref_type == 'tag'
+    if: inputs.tag != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -294,12 +312,8 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: phenix-sbom
-      - name: Create or update the release
+      - name: Upload packages to the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" ./*.deb ./*.spdx.json --clobber --repo "$GITHUB_REPOSITORY"
-          else
-            gh release create "$RELEASE_TAG" ./*.deb ./*.spdx.json --generate-notes --verify-tag --repo "$GITHUB_REPOSITORY"
-          fi
+          gh release upload "$RELEASE_TAG" ./*.deb ./*.spdx.json --clobber --repo "$GITHUB_REPOSITORY"

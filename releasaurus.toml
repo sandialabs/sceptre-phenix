@@ -1,0 +1,10 @@
+[defaults.versioning]
+version_type = "%Y.%m.%d"
+
+[defaults.changelog]
+include_pr_link = true
+
+[[package]]
+name = "phenix"
+path = "."
+release_type = "generic"
