@@ -66,9 +66,10 @@ const (
 	ConfigUpdate Action = "config-update"
 	ConfigDelete Action = "config-delete"
 
-	// Workflows applied, and the server's settings.
+	// Workflows applied and deleted, and the server's settings.
 
 	WorkflowApply  Action = "workflow-apply"
+	WorkflowDelete Action = "workflow-delete"
 	SettingsUpdate Action = "settings-update"
 
 	// Experiments and their apps.
@@ -225,6 +226,7 @@ var kinds = map[Action]kind{
 	ConfigDelete: {categoryConfiguration, typeDeletion},
 
 	WorkflowApply:  {categoryConfiguration, typeChange},
+	WorkflowDelete: {categoryConfiguration, typeDeletion},
 	SettingsUpdate: {categoryConfiguration, typeChange},
 
 	ExperimentCreate:   {categoryConfiguration, typeCreation},

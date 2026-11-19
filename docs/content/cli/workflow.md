@@ -14,8 +14,8 @@ Workflow management
 Workflow management
 
   Deploy topology directories through the running phenix server over its
-  unix socket (--unix-socket), and print their configs with the variables
-  filled in.
+  unix socket (--unix-socket), print their configs with the variables
+  filled in, and delete what a deploy made.
 ```
 
 ```text
@@ -182,6 +182,83 @@ docker exec phenix phenix workflow apply /phenix/topologies/helloworld -f
   -f, --force                    allow apply to stop, reconfigure and restart a running experiment
   -h, --help                     help for apply
       --name string              same as -b/--branch-name
+```
+
+## phenix workflow delete
+
+Delete what workflow apply deployed for a branch name
+
+### Synopsis
+
+```text
+Delete what workflow apply deployed for a branch name
+
+  NAME is the branch name of the deployment, not a directory. delete
+  removes:
+
+    the experiment mapped to NAME, through the phenix server
+    <base-dir.injects>/NAME, the injects directory
+    .NAME.tmp-* and .NAME.old-*, the staging copies of workflow apply,
+      such as the leftovers of an interrupted apply
+
+  Do not run delete and workflow apply for the same NAME at the same time.
+  delete removes the injects directory and the staging copies that apply
+  writes.
+
+  delete does not remove the stored configs, such as the Topology and
+  Scenario configs. Use phenix config delete for them.
+
+  delete does not stop a running experiment unless you give -f. When the
+  experiment runs and -f is not given, or when more than one experiment is
+  mapped to NAME, delete removes nothing and exits with an error.
+
+  delete keeps the injects directory when the topology of another
+  experiment has an injection whose absolute source path is in it. It
+  logs a warning that names those experiments. Relative source paths are
+  not checked.
+
+  The injects directory is in --base-dir.injects when it is given on the
+  command line, else in the base-dir.injects of the server, else in the
+  local setting. When nothing exists for NAME, delete logs that there is
+  nothing to delete and exits 0, so you can run it again.
+
+  -n writes one "would ..." line for each item that delete would stop,
+  delete or keep, and changes nothing. Progress is logged at the info
+  level, and a kept injects directory at the warn level.
+```
+
+```text
+phenix workflow delete <NAME> [flags]
+```
+
+### Examples
+
+```text
+# Delete the experiment and the injects of the branch name helloworld
+phenix workflow delete helloworld
+
+# Show what delete would remove; change nothing
+phenix workflow delete helloworld -n
+
+# Stop the running experiment, then delete it
+phenix workflow delete helloworld -f
+
+# Use a non-default socket
+phenix --unix-socket /run/phenix.sock workflow delete helloworld
+
+# Delete the injects in another injects directory
+phenix --base-dir.injects /srv/injects workflow delete helloworld
+
+# Compose deployment; the socket is inside the container
+docker exec phenix phenix workflow delete helloworld -f
+```
+
+### Options
+
+```text
+  -n, --dry-run   show what the command would remove, and change nothing
+  -f, --force     stop a running experiment before the delete
+  -h, --help      help for delete
 ```
 
 ## phenix workflow render

@@ -50,7 +50,7 @@ func TestBaseDirFlags(t *testing.T) {
 			env:  "PHENIX_BASE_DIR_INJECTS",
 			sub:  "injects",
 			usage: "base directory for staged workflow injects (default: <base-dir.phenix>/injects; " +
-				"workflow apply uses the server's value unless this flag is given)",
+				"workflow apply and workflow delete use the server's value unless this flag is given)",
 		},
 		{
 			flag:  "base-dir.topologies",

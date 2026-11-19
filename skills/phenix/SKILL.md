@@ -23,7 +23,7 @@ Detailed references and examples, loaded only when needed:
 | `runPeriodically`, `fromScenario`, app catalog | [`references/scenario.md`](references/scenario.md) |
 | Node annotations read by the default apps | [`references/annotations.md`](references/annotations.md) |
 | App environment variables | [`references/app-environment.md`](references/app-environment.md) |
-| Deploying a topology directory with `phenix workflow apply`: layout, steps, workflow config, endpoints, gotchas, troubleshooting | [`references/workflow.md`](references/workflow.md) |
+| Deploying a topology directory with `phenix workflow apply`, and removing it with `phenix workflow delete`: layout, steps, workflow config, endpoints, gotchas, troubleshooting | [`references/workflow.md`](references/workflow.md) |
 | Copyable Topology and Scenario configs | [`examples/topology.yaml`](examples/topology.yaml), [`examples/scenario.yaml`](examples/scenario.yaml) |
 | Image build scripts, overlays, vmdb2 troubleshooting | sibling [`phenix-image`](../phenix-image/SKILL.md) skill |
 
@@ -174,7 +174,8 @@ running `phenix ui`: it stages `phenix-injects/`, upserts the configs in
 `phenix-configs/`, and applies the `phenix.yml` workflow config; `-n` is a dry
 run that changes nothing. `-e`, `--env-file` and `<DIR>/.env` set the
 variables for the `${NAME}` placeholders, and `phenix workflow render` prints
-the result. See [`references/workflow.md`](references/workflow.md).
+the result. `phenix workflow delete <NAME>` removes the experiment and the
+injects of a branch name. See [`references/workflow.md`](references/workflow.md).
 
 ## Running phenix
 

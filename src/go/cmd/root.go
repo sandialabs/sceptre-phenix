@@ -385,7 +385,7 @@ func init() {
 		String(
 			"base-dir.injects", "",
 			"base directory for staged workflow injects "+
-				"(default: <base-dir.phenix>/injects; workflow apply uses the server's value unless this flag is given)",
+				"(default: <base-dir.phenix>/injects; workflow apply and workflow delete use the server's value unless this flag is given)",
 		)
 	rootCmd.PersistentFlags().
 		String("base-dir.topologies", "", "base directory for topology directories (default: <base-dir.phenix>/topologies)")

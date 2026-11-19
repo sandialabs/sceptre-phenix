@@ -232,7 +232,7 @@ The phēnix API can be used to integrate phēnix with external systems. Known
 integrations include:
 
 * [Workflow](workflow.md) - deploy a topology directory with
-  `phenix workflow apply`, or drive experiment topology/scenario updates from
+  `phenix workflow apply`, delete it with `phenix workflow delete`, or drive experiment topology/scenario updates from
   a git-based CI/CD pipeline reacting to push events.
 * [Builder](builder/details/administration.md#api) - create, edit and publish
   drafts, convert legacy diagrams, and manage packages, icons and templates
