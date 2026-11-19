@@ -125,7 +125,7 @@ func builtinBuilderRole(t *testing.T) *rbac.Role {
 func (h *builderHarness) reroute(extra ...builderOption) {
 	h.t.Helper()
 
-	router, api := newBuilderRouter()
+	api := newBuilderAPIGroup()
 
 	options := slices.Concat([]builderOption{
 		withBuilderService(h.service),
@@ -141,11 +141,12 @@ func (h *builderHarness) reroute(extra ...builderOption) {
 		withBuilderTemplateFiles(""),
 	}, extra)
 
-	if err := registerBuilderRoutes(api, options...); err != nil {
+	if err := registerBuilderRoutes(&api, options...); err != nil {
 		h.t.Fatalf("registerBuilderRoutes returned error: %v", err)
 	}
 
-	h.router, h.api = router, api
+	h.api = api
+	h.serve()
 }
 
 // withBuilderService sets the draft service the handlers persist to.

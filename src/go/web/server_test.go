@@ -8,16 +8,18 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/gorilla/mux"
 
 	"phenix/api/experiment"
 	"phenix/util/common"
 	"phenix/util/plog"
+	"phenix/web/routing"
 )
 
 func TestRouterServesTheUI(t *testing.T) {
@@ -190,27 +192,108 @@ func TestUnknownRoutesLogNoToken(t *testing.T) {
 	}
 }
 
+// The API middleware runs in order: compression first, then Auth, then the
+// sequence number, the version and the request log.
+func TestAPIMiddlewareOrder(t *testing.T) {
+	saved := o
+	t.Cleanup(func() { o = saved })
+
+	refused := do(t, http.MethodGet, serveRouter(t, testPublic(), testJWTKey).URL+"/api/v1/options", "")
+
+	got := []string{refused.Status, refused.Header.Get("X-Phenix-Seq"), refused.Header.Get("Vary")}
+	if diff := cmp.Diff([]string{"403 Forbidden", "", "Accept-Encoding"}, got); diff != "" {
+		t.Errorf("GET /api/v1/options without a token: status, X-Phenix-Seq and Vary mismatch (-want +got):\n%s", diff)
+	}
+
+	// the log record of each mode shows where its logger runs
+	tests := map[string]func(record map[string]any) bool{
+		// the request log runs after Auth, which names the user
+		"requests": func(record map[string]any) bool {
+			return record["msg"] == "HTTP request" && record["user"] == "alice"
+		},
+		// the full log runs inside compression, so it logs the response uncompressed
+		"full": func(record map[string]any) bool {
+			response, _ := record["response"].(string)
+
+			return strings.Contains(response, `"deploy-mode"`) && !strings.Contains(response, "Content-Encoding")
+		},
+	}
+
+	for mode, logged := range tests {
+		t.Run(mode, func(t *testing.T) {
+			lines := captureRecords(t)
+
+			o.logMiddleware = mode
+			resp := do(t, http.MethodGet, serveAs(t, "alice", testRole("options", "list")).URL+"/api/v1/options", "",
+				"Accept-Encoding", "gzip")
+			_ = readBody(t, resp)
+
+			got := []string{resp.Header.Get("Content-Encoding"), strconv.FormatBool(resp.Header.Get("X-Phenix-Version") != "")}
+			if diff := cmp.Diff([]string{"gzip", "true"}, got); diff != "" {
+				t.Errorf("GET /api/v1/options Content-Encoding and has X-Phenix-Version mismatch (-want +got):\n%s", diff)
+			}
+
+			written := lines()
+			records := make([]map[string]any, 0, len(written))
+
+			for _, line := range written {
+				var record map[string]any
+				if err := json.Unmarshal([]byte(line), &record); err != nil {
+					t.Fatalf("log line %q is not JSON: %v", line, err)
+				}
+
+				records = append(records, record)
+			}
+
+			if !slices.ContainsFunc(records, logged) {
+				t.Errorf("logs of GET /api/v1/options as alice with %s logging = %v, want the record in order", mode, records)
+			}
+		})
+	}
+}
+
+// The query matcher of the console size route refuses a size that is not
+// digits with the JSON 404, before Auth.
+func TestRouterRefusesConsoleSizeNotDigits(t *testing.T) {
+	server := serveRouter(t, testPublic(), testJWTKey).URL
+
+	resp := do(t, http.MethodPost, server+"/api/v1/console/1/size?cols=a&rows=1", "")
+
+	got := []any{resp.StatusCode, errorMessage(t, resp.StatusCode, readBody(t, resp))}
+	if diff := cmp.Diff([]any{http.StatusNotFound, "no API route matches this request"}, got); diff != "" {
+		t.Errorf("POST /api/v1/console/1/size?cols=a&rows=1 without a token mismatch (-want +got):\n%s", diff)
+	}
+}
+
 // spaIndexBody stands in for the SPA index the router level NotFoundHandler serves in production.
 const spaIndexBody = "<!doctype html><title>phenix</title>"
 
 // newNotFoundRouter returns a router wired as [Start] wires it: the SPA index
 // at the root and [apiNotFoundHandler] under "/api/v1", with one API route.
-func newNotFoundRouter() *mux.Router {
-	router := mux.NewRouter().StrictSlash(true)
+func newNotFoundRouter(t *testing.T) *routing.Mux {
+	t.Helper()
 
-	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	spa := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 
 		_, _ = w.Write([]byte(spaIndexBody))
 	})
 
-	api := router.PathPrefix("/api/v1").Subrouter()
-	api.NotFoundHandler = apiNotFoundHandler()
-
-	api.HandleFunc("/known", func(w http.ResponseWriter, _ *http.Request) {
+	known := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
-	}).Methods(http.MethodGet)
+	})
+
+	router, err := routing.NewMux(
+		routing.Group{Prefix: "", Routes: nil, Middleware: nil, Options: nil, NotFound: spa, MethodNotAllowed: nil},
+		routing.Group{
+			Prefix: "/api/v1", Routes: []routing.Route{routing.Row(http.MethodGet, "/known", known)},
+			Middleware: nil, Options: nil, NotFound: apiNotFoundHandler(), MethodNotAllowed: nil,
+		},
+	)
+	if err != nil {
+		t.Fatalf("routing.NewMux() error = %v", err)
+	}
 
 	return router
 }
@@ -228,7 +311,7 @@ func TestUnknownAPIRoutesAnswerJSON(t *testing.T) {
 		{method: http.MethodDelete, path: "/api/v1/experiments/exp/no-such-route"},
 	}
 
-	router := newNotFoundRouter()
+	router := newNotFoundRouter(t)
 
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
@@ -265,7 +348,7 @@ func TestUnknownAPIRoutesAnswerJSON(t *testing.T) {
 // TestNonAPIRoutesStillServeTheSPA asserts the SPA index still answers every
 // path outside /api/v1, and a known API route is still served by its handler.
 func TestNonAPIRoutesStillServeTheSPA(t *testing.T) {
-	router := newNotFoundRouter()
+	router := newNotFoundRouter(t)
 
 	for _, path := range []string{"/", "/experiments", "/configs/topology/foo", "/api", "/api/v2/experiments"} {
 		recorder := httptest.NewRecorder()

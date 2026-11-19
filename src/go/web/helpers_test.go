@@ -622,6 +622,19 @@ func serveRouter(t *testing.T, public fs.FS, jwtKey string) *httptest.Server {
 	return server
 }
 
+// socketRouter returns the router of the Unix socket, as [newSocketRouter]
+// builds it.
+func socketRouter(t *testing.T) http.Handler {
+	t.Helper()
+
+	router, err := newSocketRouter()
+	if err != nil {
+		t.Fatalf("newSocketRouter() error = %v", err)
+	}
+
+	return router
+}
+
 // do sends a request to the server and returns the response, which is closed
 // when the test ends.
 func do(t *testing.T, method, url, body string, header ...string) *http.Response {

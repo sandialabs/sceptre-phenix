@@ -10,6 +10,7 @@ import (
 	bapi "phenix/api/builder"
 	bdoc "phenix/types/builder"
 	"phenix/util/plog"
+	"phenix/web/routing"
 	"phenix/web/weberror"
 )
 
@@ -184,26 +185,21 @@ func builderLayerSetLimitsNow() builderLayerSetLimits {
 	}
 }
 
-// layerSetRoutes registers the routes of the layer set library. The route
-// of the default set comes before the route of one set, which would match
-// its path too.
-func (b *builderAPI) layerSetRoutes(router *mux.Router) {
+// layerSetRoutes are the routes of the layer set library. The route of the
+// default set comes before the route of one set, which would match its path
+// too.
+func (b *builderAPI) layerSetRoutes() []routing.Route {
 	const setPath = builderLayerSetsPath + "/{layerset}"
 
-	router.Handle(builderLayerSetsPath, builderHandler(b.listLayerSets)).
-		Methods("GET")
-	router.Handle(builderLayerSetsPath, builderHandler(b.createLayerSet)).
-		Methods("POST")
-	router.Handle(builderLayerSetsPath+"/default", builderHandler(b.getDefaultLayerSet)).
-		Methods("GET")
-	router.Handle(builderLayerSetsPath+"/default", builderHandler(b.putDefaultLayerSet)).
-		Methods("PUT")
-	router.Handle(setPath, builderHandler(b.getLayerSet)).
-		Methods("GET")
-	router.Handle(setPath, builderHandler(b.putLayerSet)).
-		Methods("PUT")
-	router.Handle(setPath, builderHandler(b.deleteLayerSet)).
-		Methods("DELETE")
+	return []routing.Route{
+		routing.Row(http.MethodGet, builderLayerSetsPath, builderHandler(b.listLayerSets)),
+		routing.Row(http.MethodPost, builderLayerSetsPath, builderHandler(b.createLayerSet)),
+		routing.Row(http.MethodGet, builderLayerSetsPath+"/default", builderHandler(b.getDefaultLayerSet)),
+		routing.Row(http.MethodPut, builderLayerSetsPath+"/default", builderHandler(b.putDefaultLayerSet)),
+		routing.Row(http.MethodGet, setPath, builderHandler(b.getLayerSet)),
+		routing.Row(http.MethodPut, setPath, builderHandler(b.putLayerSet)),
+		routing.Row(http.MethodDelete, setPath, builderHandler(b.deleteLayerSet)),
+	}
 }
 
 // listLayerSets - GET /builder/layersets.

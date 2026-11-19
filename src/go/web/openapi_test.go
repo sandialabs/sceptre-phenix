@@ -12,10 +12,10 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/google/go-cmp/cmp"
-	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v3"
 
 	"phenix/version"
+	"phenix/web/routing"
 )
 
 // openAPISpec maps each openapi.yml operation, keyed by scope (api or root), method and path,
@@ -136,34 +136,28 @@ func routerOperations(t *testing.T) (map[string][]string, []string) {
 		o.features = map[string]bool{"webshark": true, "vm-mount": true, "tunneler-download": true}
 	})
 
-	router, ok := server.Config.Handler.(*mux.Router)
+	router, ok := server.Config.Handler.(*routing.Mux)
 	if !ok {
-		t.Fatalf("contract server handler = %T, want *mux.Router", server.Config.Handler)
+		t.Fatalf("contract server handler = %T, want *routing.Mux", server.Config.Handler)
 	}
 
-	return walkOperations(t, router)
+	return walkOperations(router.Routes())
 }
 
-// walkOperations are the operations of router, as routerOperations returns them.
-func walkOperations(t *testing.T, router *mux.Router) (map[string][]string, []string) {
-	t.Helper()
-
+// walkOperations are the operations of routes, as routerOperations returns them.
+func walkOperations(routes []routing.Route) (map[string][]string, []string) {
 	var (
 		ops       = map[string][]string{}
 		anyMethod []string
 	)
 
-	err := router.Walk(func(route *mux.Route, _ *mux.Router, _ []*mux.Route) error {
-		path, err := route.GetPathTemplate()
-		if err != nil {
-			return nil //nolint:nilerr // a route of no path, such as a subrouter's
-		}
+	for _, route := range routes {
+		path := route.Path
 
-		methods, err := route.GetMethods()
-		if err != nil {
+		if route.Method == "" {
 			anyMethod = append(anyMethod, path)
 
-			return nil //nolint:nilerr // a route of any method, which the caller checks
+			continue
 		}
 
 		scope := "root"
@@ -171,49 +165,37 @@ func walkOperations(t *testing.T, router *mux.Router) (map[string][]string, []st
 			scope, path = "api", rest
 		}
 
-		// a route of no query templates gives an error
-		queries, _ := route.GetQueriesTemplates()
-		names := make([]string, 0, len(queries))
+		// the query pairs are names and value templates
+		queries := route.Queries()
+		names := make([]string, 0, len(queries)/2)
 
-		for _, query := range queries {
-			name, _, _ := strings.Cut(query, "=")
-			names = append(names, name)
+		for i := 0; i < len(queries); i += 2 {
+			names = append(names, queries[i])
 		}
 
-		for _, method := range methods {
-			if method == http.MethodOptions {
-				continue
-			}
+		key := openAPIKey(scope, route.Method, path)
 
-			key := openAPIKey(scope, method, path)
-
-			cur := slices.Clone(names)
-
-			// two routes of one key need only the queries that both need
-			if prior, ok := ops[key]; ok {
-				cur = slices.DeleteFunc(cur, func(n string) bool { return !slices.Contains(prior, n) })
-			}
-
-			ops[key] = cur
+		// two routes of one key need only the queries that both need
+		if prior, ok := ops[key]; ok {
+			names = slices.DeleteFunc(names, func(n string) bool { return !slices.Contains(prior, n) })
 		}
 
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("Router.Walk() error = %v", err)
+		ops[key] = names
 	}
 
 	return ops, anyMethod
 }
 
-// Each method of a route gets its own queries, cut only by an earlier route of
+// Each method of a path gets its own queries, cut only by an earlier route of
 // that method and path.
 func TestWalkOperationsQueriesPerMethod(t *testing.T) {
-	router := mux.NewRouter()
-	router.Methods(http.MethodGet).Path("/x").Queries("a", "{a}")
-	router.Methods(http.MethodGet, http.MethodPost).Path("/x").Queries("a", "{a}", "b", "{b}")
+	handler := http.NotFoundHandler()
 
-	ops, _ := walkOperations(t, router)
+	ops, _ := walkOperations([]routing.Route{
+		routing.Row(http.MethodGet, "/x", handler).WithQueries("a", "{a}"),
+		routing.Row(http.MethodGet, "/x", handler).WithQueries("a", "{a}", "b", "{b}"),
+		routing.Row(http.MethodPost, "/x", handler).WithQueries("a", "{a}", "b", "{b}"),
+	})
 
 	want := map[string][]string{"root GET /x": {"a"}, "root POST /x": {"a", "b"}}
 	if diff := cmp.Diff(want, ops); diff != "" {
@@ -221,11 +203,10 @@ func TestWalkOperationsQueriesPerMethod(t *testing.T) {
 	}
 }
 
-// routesOfAnyMethod are routes taking any method: UI files openapi.yml omits, and the API subrouter.
+// routesOfAnyMethod are routes taking any method: UI files openapi.yml omits.
 //
 //nolint:gochecknoglobals // constant table
 var routesOfAnyMethod = map[string]string{
-	"/api/v1":      "the API's subrouter; its routes are walked one by one",
 	"/webshark/":   "WebShark's pages and scripts, behind its own routes",
 	"/docs/":       "the documentation site",
 	"/assets/":     "the UI's hashed scripts, styles and images",
@@ -288,7 +269,7 @@ func TestRouterMatchesOpenAPI(t *testing.T) {
 	// an API route must name its methods to be compared with openapi.yml
 	for _, path := range anyMethod {
 		if routesOfAnyMethod[path] == "" {
-			t.Errorf("route %s takes any method: give it Methods(), or add it to routesOfAnyMethod", path)
+			t.Errorf("route %s takes any method: give it a method, or add it to routesOfAnyMethod", path)
 		}
 	}
 
@@ -299,10 +280,8 @@ func TestRouterMatchesOpenAPI(t *testing.T) {
 	}
 
 	for _, r := range socketRoutes() {
-		for _, method := range r.methods {
-			if key := openAPIKey("api", method, r.path); router[key] == nil {
-				t.Errorf("socket route %s is not an HTTP API route", key)
-			}
+		if key := openAPIKey("api", r.Method, r.Path); router[key] == nil {
+			t.Errorf("socket route %s is not an HTTP API route", key)
 		}
 	}
 
@@ -346,32 +325,22 @@ func TestRouterPathParametersMatchOpenAPI(t *testing.T) {
 		o.features = map[string]bool{"webshark": true, "vm-mount": true, "tunneler-download": true}
 	})
 
-	router, ok := server.Config.Handler.(*mux.Router)
+	router, ok := server.Config.Handler.(*routing.Mux)
 	if !ok {
-		t.Fatalf("contract server handler = %T, want *mux.Router", server.Config.Handler)
+		t.Fatalf("contract server handler = %T, want *routing.Mux", server.Config.Handler)
 	}
 
-	err := router.Walk(func(route *mux.Route, _ *mux.Router, _ []*mux.Route) error {
-		path, err := route.GetPathTemplate()
-		if err != nil {
-			return nil //nolint:nilerr // a route of no path, such as a subrouter's
-		}
-
-		path = strings.TrimPrefix(path, "/api/v1")
+	for _, route := range router.Routes() {
+		path := strings.TrimPrefix(route.Path, "/api/v1")
 
 		want, ok := spec[pathParams.ReplaceAllString(path, "{}")]
 		if !ok {
-			return nil
+			continue
 		}
 
 		if got := templateNames(path); !slices.Equal(got, want) {
 			t.Errorf("route %s path parameters = %v, openapi.yml names them %v", path, got, want)
 		}
-
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("Router.Walk() error = %v", err)
 	}
 }
 

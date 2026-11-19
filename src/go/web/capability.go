@@ -21,6 +21,7 @@ import (
 	"phenix/web/audit"
 	"phenix/web/capability"
 	"phenix/web/middleware"
+	"phenix/web/routing"
 	"phenix/web/weberror"
 )
 
@@ -155,10 +156,8 @@ func grantAuditFields(r *http.Request, g capability.Grant, op capability.Op) aud
 	f.URLPath = "-"
 	f.Extra = append(f.Extra, "phenix.capability.id", g.ID, "phenix.capability.op", string(op))
 
-	if route := mux.CurrentRoute(r); route != nil {
-		if tmpl, err := route.GetPathTemplate(); err == nil {
-			f.URLPath = tmpl
-		}
+	if tmpl := routing.Template(r); tmpl != "" {
+		f.URLPath = tmpl
 	}
 
 	return f

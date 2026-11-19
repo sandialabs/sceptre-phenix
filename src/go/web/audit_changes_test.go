@@ -218,7 +218,7 @@ func TestUnixSocketWorkflowIsAudited(t *testing.T) {
 
 	o = newServerOptions()
 
-	server := httptest.NewServer(newSocketRouter())
+	server := httptest.NewServer(socketRouter(t))
 	t.Cleanup(server.Close)
 
 	events := captureAudit(t)

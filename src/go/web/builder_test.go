@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/gorilla/mux"
 	"github.com/mitchellh/mapstructure"
 	"gopkg.in/yaml.v2"
 
@@ -35,6 +34,7 @@ import (
 	"phenix/util/common"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/routing"
 	"phenix/web/weberror"
 )
 
@@ -46,8 +46,8 @@ const builderSPABody = "<!doctype html><title>phenix</title>"
 // fakes backing it.
 type builderHarness struct {
 	t                 *testing.T
-	router            *mux.Router
-	api               *mux.Router
+	router            *routing.Mux
+	api               routing.Group
 	service           *bapi.Service
 	store             *memrecord.Store
 	configs           store.Configs
@@ -77,23 +77,59 @@ type builderHarness struct {
 	fileReads int
 }
 
-// newBuilderRouter returns a router wired as [Start] wires it: the SPA index
-// at the root, and JSON NotFound and MethodNotAllowed handlers under "/api/v1".
-func newBuilderRouter() (*mux.Router, *mux.Router) {
-	router := mux.NewRouter().StrictSlash(true)
+// newBuilderAPIGroup returns an API group wired as [Start] wires it: JSON
+// NotFound and MethodNotAllowed handlers, and OPTIONS on every path.
+func newBuilderAPIGroup() routing.Group {
+	return routing.Group{
+		Prefix: "/api/v1", Routes: nil, Middleware: nil, Options: http.HandlerFunc(optionsAnswered),
+		NotFound: apiNotFoundHandler(), MethodNotAllowed: http.HandlerFunc(methodNotAllowed),
+	}
+}
 
-	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+// newBuilderRouter returns a router wired as [Start] wires it: the SPA index
+// at the root, and the API group under "/api/v1".
+func newBuilderRouter(api routing.Group) (*routing.Mux, error) {
+	spa := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 
 		_, _ = w.Write([]byte(builderSPABody))
 	})
 
-	api := router.PathPrefix("/api/v1").Subrouter()
-	api.NotFoundHandler = apiNotFoundHandler()
-	api.MethodNotAllowedHandler = http.HandlerFunc(methodNotAllowed)
+	return routing.NewMux(
+		routing.Group{Prefix: "", Routes: nil, Middleware: nil, Options: nil, NotFound: spa, MethodNotAllowed: nil},
+		api,
+	)
+}
 
-	return router, api
+// handle adds routes to the API group after the routes it has, as [Start]
+// adds the rest after the Builder routes, and serves them.
+func (h *builderHarness) handle(routes ...routing.Route) {
+	h.t.Helper()
+
+	h.api.Routes = append(h.api.Routes, routes...)
+	h.serve()
+}
+
+// use adds middleware to the API group after the middleware it has, and
+// serves it.
+func (h *builderHarness) use(mw func(http.Handler) http.Handler) {
+	h.t.Helper()
+
+	h.api.Middleware = append(h.api.Middleware, mw)
+	h.serve()
+}
+
+// serve routes the harness's requests by its API group.
+func (h *builderHarness) serve() {
+	h.t.Helper()
+
+	router, err := newBuilderRouter(h.api)
+	if err != nil {
+		h.t.Fatalf("newBuilderRouter() error = %v", err)
+	}
+
+	h.router = router
 }
 
 // builderRequest describes a request to the harness.
@@ -143,7 +179,7 @@ func newBuilderHarnessWith(t *testing.T, extra []builderOption, configs ...store
 	harness := &builderHarness{
 		t:                 t,
 		router:            nil,
-		api:               nil,
+		api:               newBuilderAPIGroup(),
 		service:           service,
 		store:             fake,
 		configs:           configs,
@@ -440,8 +476,7 @@ func TestBuilderUnknownAPIRoutesAnswerJSON(t *testing.T) {
 	harness := newBuilderHarness(t)
 
 	// Registered after the Builder routes, exactly as [Start] does.
-	harness.api.Handle("/schemas/{kind}/{version}", weberror.ErrorHandler(GetSchema)).
-		Methods("GET", "OPTIONS")
+	harness.handle(routing.Row(http.MethodGet, "/schemas/{kind}/{version}", weberror.ErrorHandler(GetSchema)))
 
 	for _, tt := range paths {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
@@ -1299,8 +1334,7 @@ func TestBuilderSchemaRoutes(t *testing.T) {
 	harness := newBuilderHarness(t)
 
 	// Registered after the Builder routes, exactly as [Start] does.
-	harness.api.Handle("/schemas/{kind}/{version}", weberror.ErrorHandler(GetSchema)).
-		Methods("GET", "OPTIONS")
+	harness.handle(routing.Row(http.MethodGet, "/schemas/{kind}/{version}", weberror.ErrorHandler(GetSchema)))
 
 	want, err := bdoc.SchemaJSON()
 	if err != nil {
@@ -1356,31 +1390,38 @@ func TestBuilderSchemaRoutes(t *testing.T) {
 	}
 }
 
-// TestBuilderRegisteredBeforeGenericSchema guards the registration order in
-// server.go, which TestBuilderSchemaRoutes cannot see.
+// TestBuilderRegisteredBeforeGenericSchema guards the order of the routes
+// that [Start] serves, which TestBuilderSchemaRoutes cannot see: the router
+// matches the routes in order.
 func TestBuilderRegisteredBeforeGenericSchema(t *testing.T) {
-	t.Parallel()
+	server := serveContract(t, nil)
 
-	source, err := os.ReadFile("server.go")
-	if err != nil {
-		t.Fatalf("reading server.go: %v", err)
+	router, ok := server.Config.Handler.(*routing.Mux)
+	if !ok {
+		t.Fatalf("contract server handler = %T, want *routing.Mux", server.Config.Handler)
 	}
 
-	var (
-		builderRoutes = bytes.Index(source, []byte("registerBuilderRoutes(api,"))
-		generic       = bytes.Index(source, []byte(`"/schemas/{kind}/{version}"`))
-	)
+	builder, generic := -1, -1
 
-	if builderRoutes < 0 {
-		t.Error("server.go does not register the Builder routes")
+	for i, route := range router.Routes() {
+		switch route.Path {
+		case builderAPIPrefix + builderSchemaPath:
+			builder = i
+		case builderAPIPrefix + "/schemas/{kind}/{version}":
+			generic = i
+		}
+	}
+
+	if builder < 0 {
+		t.Error("the router has no Builder schema route")
 	}
 
 	if generic < 0 {
-		t.Error("server.go does not register the generic schema route")
+		t.Error("the router has no generic schema route")
 	}
 
-	if builderRoutes >= 0 && generic >= 0 && builderRoutes > generic {
-		t.Error("server.go registers the Builder routes after /schemas/{kind}/{version}, want them before")
+	if builder >= 0 && generic >= 0 && builder > generic {
+		t.Error("the router has the Builder routes after /schemas/{kind}/{version}, want them before")
 	}
 }
 
@@ -1393,43 +1434,26 @@ func TestBuilderRoutesNeedTheBuilder(t *testing.T) {
 	variable := regexp.MustCompile(`\{[^}]+\}`)
 	operations := 0
 
-	err := harness.api.Walk(func(route *mux.Route, _ *mux.Router, _ []*mux.Route) error {
-		template, templateErr := route.GetPathTemplate()
-		methods, methodsErr := route.GetMethods()
-
-		if templateErr != nil || methodsErr != nil {
-			return nil //nolint:nilerr // routes without a path or methods are not operations
-		}
-
+	for _, route := range harness.router.Routes() {
+		template, method := route.Path, route.Method
 		path := variable.ReplaceAllString(strings.TrimPrefix(template, "/api/v1"), draft.ID)
 
-		for _, method := range methods {
-			if method == http.MethodOptions {
-				continue
-			}
+		operations++
 
-			operations++
-
-			t.Run(method+" "+template, func(t *testing.T) {
-				for name, caller := range map[string]builderCaller{
-					"no identity":   harness.as("", nil),
-					"Global Viewer": harness.as(builderBob, viewer),
-					"configs only":  harness.as(builderBob, builderConfigsOnlyRole()),
-				} {
-					recorder := caller.do(builderRequest{method: method, path: path, body: `{}`, ifMatch: draft.ETag})
-					if recorder.Code != http.StatusForbidden {
-						t.Errorf("%s %s as %s: status = %d, want 403: %s", method, template, name, recorder.Code, recorder.Body)
-					} else if code := builderRefusal(t, recorder).Code; code != string(bdoc.CodeRequestForbidden) {
-						t.Errorf("%s %s as %s: code = %q, want %q", method, template, name, code, bdoc.CodeRequestForbidden)
-					}
+		t.Run(method+" "+template, func(t *testing.T) {
+			for name, caller := range map[string]builderCaller{
+				"no identity":   harness.as("", nil),
+				"Global Viewer": harness.as(builderBob, viewer),
+				"configs only":  harness.as(builderBob, builderConfigsOnlyRole()),
+			} {
+				recorder := caller.do(builderRequest{method: method, path: path, body: `{}`, ifMatch: draft.ETag})
+				if recorder.Code != http.StatusForbidden {
+					t.Errorf("%s %s as %s: status = %d, want 403: %s", method, template, name, recorder.Code, recorder.Body)
+				} else if code := builderRefusal(t, recorder).Code; code != string(bdoc.CodeRequestForbidden) {
+					t.Errorf("%s %s as %s: code = %q, want %q", method, template, name, code, bdoc.CodeRequestForbidden)
 				}
-			})
-		}
-
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking the routes: %v", err)
+			}
+		})
 	}
 
 	if operations < 40 {
@@ -1525,32 +1549,14 @@ func TestBuilderRoutesDocumented(t *testing.T) {
 
 	operations := 0
 
-	err = harness.api.Walk(func(route *mux.Route, _ *mux.Router, _ []*mux.Route) error {
-		template, templateErr := route.GetPathTemplate()
-		methods, methodsErr := route.GetMethods()
+	for _, route := range harness.router.Routes() {
+		path := strings.TrimPrefix(route.Path, "/api/v1")
 
-		if templateErr != nil || methodsErr != nil {
-			return nil //nolint:nilerr // routes without a path or methods are not operations
+		operations++
+
+		if _, ok := spec.Paths[path][strings.ToLower(route.Method)]; !ok {
+			t.Errorf("openapi.yml does not document %s %s", route.Method, path)
 		}
-
-		path := strings.TrimPrefix(template, "/api/v1")
-
-		for _, method := range methods {
-			if method == http.MethodOptions {
-				continue
-			}
-
-			operations++
-
-			if _, ok := spec.Paths[path][strings.ToLower(method)]; !ok {
-				t.Errorf("openapi.yml does not document %s %s", method, path)
-			}
-		}
-
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking the routes: %v", err)
 	}
 
 	if operations == 0 {
@@ -2284,21 +2290,13 @@ func TestBuilderRoutesNeedAStore(t *testing.T) {
 		t.Errorf("newBuilderAPI() = %v, %v, want nil and an error that matches %v", api, err, bapi.ErrInvalid)
 	}
 
-	router := mux.NewRouter()
+	api := newBuilderAPIGroup()
 
-	if err := registerBuilderRoutes(router); !errors.Is(err, bapi.ErrInvalid) {
+	if err := registerBuilderRoutes(&api); !errors.Is(err, bapi.ErrInvalid) {
 		t.Errorf("registerBuilderRoutes() error = %v, want one that matches %v", err, bapi.ErrInvalid)
 	}
 
-	routes := 0
-
-	_ = router.Walk(func(*mux.Route, *mux.Router, []*mux.Route) error {
-		routes++
-
-		return nil
-	})
-
-	if routes != 0 {
+	if routes := len(api.Routes); routes != 0 {
 		t.Errorf("registerBuilderRoutes() without a store registered %d routes, want 0", routes)
 	}
 }
@@ -2308,7 +2306,7 @@ func TestBuilderRoutesNeedAStore(t *testing.T) {
 // tag back in If-Match, and the Builder refuses a weak tag there.
 func TestBuilderETagsStayStrongWhenCompressed(t *testing.T) {
 	harness := newBuilderHarness(t)
-	harness.api.Use(CompressResponses)
+	harness.use(CompressResponses)
 
 	draft := harness.createDraft(builderAlice, "compressed")
 

@@ -324,15 +324,15 @@ func TestAnswerOptions(t *testing.T) {
 
 			var reached bool
 
-			allowed := func(*http.Request) []string { return []string{http.MethodGet, http.MethodOptions} }
-
-			h := AnswerOptions(allowed)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			h := AnswerOptions(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				reached = true
 
 				_, _ = w.Write([]byte("ran"))
 			}))
 
+			// the router sets Allow before the middleware runs
 			rec := httptest.NewRecorder()
+			rec.Header().Set("Allow", "GET, OPTIONS")
 			h.ServeHTTP(rec, httptest.NewRequest(method, "/api/v1/experiments/exp", nil))
 
 			options := method == http.MethodOptions

@@ -31,6 +31,7 @@ import (
 	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/routing"
 	"phenix/web/util"
 	"phenix/web/weberror"
 )
@@ -45,42 +46,34 @@ func init() { //nolint:gochecknoinits // hook registration
 
 const routeBase = "/experiments/{name}/scorch/"
 
-// Route is a SCORCH API route: its path under /api/v1, its handler and its
-// methods, OPTIONS left out.
-type Route struct {
-	Path    string
-	Handler http.Handler
-	Methods []string
-}
-
 // SocketRoutes are the SCORCH routes that the Unix socket serves as well, so
 // that phenix experiment scorch can start, follow, cancel and clear a run
-// that the server executes. RegisterRoutes does not register them.
-func SocketRoutes() []Route {
-	return []Route{
-		{routeBase + "pipelines", weberror.ErrorHandler(GetPipelines), []string{"GET"}},
-		{routeBase + "pipelines/{run}/cleanup", weberror.ErrorHandler(CleanupPipeline), []string{"POST"}},
-		{routeBase + "pipelines/{run}/clear", weberror.ErrorHandler(ClearPipeline), []string{"POST"}},
-		{routeBase + "pipelines/{run}", weberror.ErrorHandler(StartPipeline), []string{"POST"}},
-		{routeBase + "pipelines/{run}", weberror.ErrorHandler(CancelPipeline), []string{"DELETE"}},
+// that the server executes. Routes does not return them.
+func SocketRoutes() []routing.Route {
+	return []routing.Route{
+		routing.Row(http.MethodGet, routeBase+"pipelines", weberror.ErrorHandler(GetPipelines)),
+		routing.Row(http.MethodPost, routeBase+"pipelines/{run}/cleanup", weberror.ErrorHandler(CleanupPipeline)),
+		routing.Row(http.MethodPost, routeBase+"pipelines/{run}/clear", weberror.ErrorHandler(ClearPipeline)),
+		routing.Row(http.MethodPost, routeBase+"pipelines/{run}", weberror.ErrorHandler(StartPipeline)),
+		routing.Row(http.MethodDelete, routeBase+"pipelines/{run}", weberror.ErrorHandler(CancelPipeline)),
 	}
 }
 
-// RegisterRoutes serves the SCORCH API from api, the router of the /api/v1
-// paths, except SocketRoutes, which the caller registers.
-func RegisterRoutes(api *mux.Router) {
+// Routes are the SCORCH API routes below /api/v1, except SocketRoutes, which
+// the caller adds.
+func Routes() []routing.Route {
 	const base = routeBase
 
-	api.Handle(base+"components/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(GetComponentOutput)).
-		Methods("GET", "OPTIONS")
-	api.Handle(base+"components/{run}/{loop}/{stage}/{cmp}/ws", weberror.ErrorHandler(StreamComponentOutput)).
-		Methods("GET", "OPTIONS")
-	api.Handle(base+"pipelines/{run}/{loop}", weberror.ErrorHandler(GetPipeline)).Methods("GET", "OPTIONS")
-	api.Handle(base+"terminals", weberror.ErrorHandler(GetTerminals)).Methods("GET", "OPTIONS")
-	api.Handle(base+"terminals/{pid}", weberror.ErrorHandler(ConnectTerminalByPID)).Methods("GET", "OPTIONS")
-	api.Handle(base+"terminals/{pid}/exit/{id}", weberror.ErrorHandler(ExitTerminal)).Methods("POST", "OPTIONS")
-	api.Handle(base+"terminals/{pid}/ws/{id}", weberror.ErrorHandler(StreamTerminal)).Methods("GET", "OPTIONS")
-	api.Handle(base+"terminals/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(ConnectTerminal)).Methods("GET", "OPTIONS")
+	return []routing.Route{
+		routing.Row(http.MethodGet, base+"components/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(GetComponentOutput)),
+		routing.Row(http.MethodGet, base+"components/{run}/{loop}/{stage}/{cmp}/ws", weberror.ErrorHandler(StreamComponentOutput)),
+		routing.Row(http.MethodGet, base+"pipelines/{run}/{loop}", weberror.ErrorHandler(GetPipeline)),
+		routing.Row(http.MethodGet, base+"terminals", weberror.ErrorHandler(GetTerminals)),
+		routing.Row(http.MethodGet, base+"terminals/{pid}", weberror.ErrorHandler(ConnectTerminalByPID)),
+		routing.Row(http.MethodPost, base+"terminals/{pid}/exit/{id}", weberror.ErrorHandler(ExitTerminal)),
+		routing.Row(http.MethodGet, base+"terminals/{pid}/ws/{id}", weberror.ErrorHandler(StreamTerminal)),
+		routing.Row(http.MethodGet, base+"terminals/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(ConnectTerminal)),
+	}
 }
 
 const (
