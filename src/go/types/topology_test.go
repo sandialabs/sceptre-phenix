@@ -1,6 +1,7 @@
 package types_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -191,7 +192,7 @@ func TestLoadTopology(t *testing.T) { //nolint:paralleltest // replaces the phen
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := types.LoadTopology(tt.source, os.LookupEnv)
+			got, err := types.LoadTopology(tt.source, types.ExpandIncludes(os.LookupEnv))
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("LoadTopology(%s) = %+v, want an error", tt.source, got)
@@ -208,6 +209,49 @@ func TestLoadTopology(t *testing.T) { //nolint:paralleltest // replaces the phen
 				t.Errorf("LoadTopology(%s) = %s/%s, want Topology/%s", tt.source, got.Kind, got.Metadata.Name, tt.wantName)
 			}
 		})
+	}
+}
+
+// TestDecodeTopologyIncludeReader checks that the reader gets the path and the
+// text of each included file, that its text is decoded, and that its error
+// stops the decode.
+func TestDecodeTopologyIncludeReader(t *testing.T) { //nolint:paralleltest // replaces the phenix store
+	storetest.UseBolt(t)
+
+	path := filepath.Join(t.TempDir(), "inc.yaml")
+	text := "apiVersion: phenix.sandia.gov/v1\nkind: Topology\nmetadata:\n  name: inc\nspec:\n  nodes:\n" +
+		"  - type: VirtualMachine\n    general:\n      hostname: ${HOST}\n"
+
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var read []string
+
+	fill := func(file string, got []byte) ([]byte, error) {
+		read = append(read, file+"\n"+string(got))
+
+		return envsubst.Expand(got, envsubst.Fixed("from-reader")), nil
+	}
+
+	spec, err := types.DecodeTopologyFromConfigWith(topoConfig("top", []string{path}, "web"), fill)
+	if err != nil {
+		t.Fatalf("DecodeTopologyFromConfigWith() error = %v", err)
+	}
+
+	if diff := cmp.Diff([]string{"web", "from-reader"}, nodeHostnames(spec)); diff != "" {
+		t.Errorf("DecodeTopologyFromConfigWith() hostnames (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff([]string{path + "\n" + text}, read); diff != "" {
+		t.Errorf("DecodeTopologyFromConfigWith() reader calls (-want +got):\n%s", diff)
+	}
+
+	errStop := errors.New("stop")
+	refuse := func(string, []byte) ([]byte, error) { return nil, errStop }
+
+	if _, err := types.DecodeTopologyFromConfigWith(topoConfig("top", []string{path}, "web"), refuse); !errors.Is(err, errStop) {
+		t.Errorf("DecodeTopologyFromConfigWith() with a failing reader error = %v, want %v", err, errStop)
 	}
 }
 

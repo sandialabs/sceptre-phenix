@@ -217,7 +217,7 @@ func runPrepareCases(t *testing.T, cases []prepareCase) {
 
 			plan := workflow.Plan{Action: tc.action, Experiment: "exp1", Reason: ""}
 
-			got, err := workflow.Prepare(tc.spec, plan, tc.exp, os.LookupEnv, tc.pending...)
+			got, err := workflow.Prepare(tc.spec, plan, tc.exp, types.ExpandIncludes(os.LookupEnv), tc.pending...)
 
 			if tc.wantErr != nil {
 				if !errors.Is(err, tc.wantErr) {
@@ -257,7 +257,7 @@ func TestPrepareNone(t *testing.T) {
 	)
 
 	for _, exp := range []*types.Experiment{nil, prepareExperiment(store.Annotations{"topology": "foo"})} {
-		got, err := workflow.Prepare(spec, plan, exp, os.LookupEnv)
+		got, err := workflow.Prepare(spec, plan, exp, types.ExpandIncludes(os.LookupEnv))
 		if err != nil {
 			t.Fatalf("Prepare() unexpected error: %v", err)
 		}
@@ -273,7 +273,7 @@ func TestPrepareNone(t *testing.T) {
 func TestPrepareRejectsUnknownAction(t *testing.T) {
 	installPrepareStore(t)
 
-	_, err := workflow.Prepare(workflow.Spec{Topology: "foo"}, workflow.Plan{Action: "rebuild"}, nil, os.LookupEnv)
+	_, err := workflow.Prepare(workflow.Spec{Topology: "foo"}, workflow.Plan{Action: "rebuild"}, nil, types.ExpandIncludes(os.LookupEnv))
 	if !errors.Is(err, workflow.ErrInvalidSpec) || !strings.Contains(err.Error(), `"rebuild"`) {
 		t.Fatalf("Prepare() error = %v, want an %v naming the action", err, workflow.ErrInvalidSpec)
 	}
@@ -796,7 +796,7 @@ func TestPrepareLeavesTopologyUntouched(t *testing.T) {
 				plan.spec,
 				workflow.Plan{Action: plan.action, Experiment: "exp1", Reason: ""},
 				plan.exp,
-				os.LookupEnv,
+				types.ExpandIncludes(os.LookupEnv),
 			)
 			if err != nil {
 				t.Fatalf("Prepare() unexpected error: %v", err)
@@ -901,7 +901,7 @@ spec:
 
 			got, err := workflow.Prepare(
 				plan.spec, workflow.Plan{Action: plan.action, Experiment: "exp1", Reason: ""}, plan.exp,
-				store.BranchNameLookup("lab-2"),
+				types.ExpandIncludes(store.BranchNameLookup("lab-2")),
 			)
 			if err != nil {
 				t.Fatalf("Prepare() unexpected error: %v", err)
@@ -1606,7 +1606,7 @@ func TestPreparePendingMatchesStored(t *testing.T) {
 				expectPrepareReadFails(m, name)
 			}
 
-			_, stored := workflow.Prepare(tc.spec, plan, nil, os.LookupEnv)
+			_, stored := workflow.Prepare(tc.spec, plan, nil, types.ExpandIncludes(os.LookupEnv))
 
 			// The dry run, before the upsert: the directory's configs are
 			// pending.
@@ -1620,7 +1620,7 @@ func TestPreparePendingMatchesStored(t *testing.T) {
 				refs = append(refs, workflow.PendingRef(cfg))
 			}
 
-			_, dryRun := workflow.Prepare(tc.spec, plan, nil, os.LookupEnv, refs...)
+			_, dryRun := workflow.Prepare(tc.spec, plan, nil, types.ExpandIncludes(os.LookupEnv), refs...)
 
 			if !errors.Is(stored, workflow.ErrUnresolved) || !strings.Contains(stored.Error(), tc.wantMsg) {
 				t.Fatalf("real apply: Prepare() error = %v, want an %v containing %q", stored, workflow.ErrUnresolved, tc.wantMsg)
@@ -1696,13 +1696,22 @@ func TestPreparePendingMatchesStoredProperties(t *testing.T) {
 
 		prepareMockStore(t, topology, scenario)
 
-		_, stored := workflow.Prepare(create, plan, nil, os.LookupEnv)
+		_, stored := workflow.Prepare(create, plan, nil, types.ExpandIncludes(os.LookupEnv))
 
 		prepareMockStore(t)
 
 		refs := []string{workflow.PendingRef(topology), workflow.PendingRef(scenario)}
 
-		if _, dryRun := workflow.Prepare(create, plan, nil, os.LookupEnv, refs...); fmt.Sprint(dryRun) != fmt.Sprint(stored) {
+		if _, dryRun := workflow.Prepare(
+			create,
+			plan,
+			nil,
+			types.ExpandIncludes(os.LookupEnv),
+			refs...); fmt.Sprint(
+			dryRun,
+		) != fmt.Sprint(
+			stored,
+		) {
 			t.Fatalf("dry run: Prepare(pending %q) error = %v, want the real apply's %v", refs, dryRun, stored)
 		}
 	})

@@ -13,6 +13,7 @@ import (
 	"phenix/api/workflow"
 	"phenix/store"
 	"phenix/util/envsubst"
+	"phenix/web"
 )
 
 // renderTestOptions returns the options of a plain render, with env as the
@@ -67,8 +68,8 @@ func TestRunWorkflowRender(t *testing.T) {
 }
 
 // TestRunWorkflowRenderMatchesApply checks that render prints each file as
-// the server has it after an apply: the body that apply sends, with
-// ${BRANCH_NAME} filled in as the server does it.
+// the server has it after an apply: the file and the variables that apply
+// sends, filled in by the server's own function, then ${BRANCH_NAME}.
 func TestRunWorkflowRenderMatchesApply(t *testing.T) {
 	dir := newTopologyDir(t, "helloworld", renderTestFiles())
 	env := []string{"NODES=3", "DIR=/phenix/injects/${BRANCH_NAME}"}
@@ -97,7 +98,12 @@ func TestRunWorkflowRenderMatchesApply(t *testing.T) {
 			want.WriteString("---\n")
 		}
 
-		stored := string(store.ExpandBranchName([]byte(req.body), branch))
+		filled, err := web.FillVariables([]byte(req.body), paths[i], "helloworld", req.variables, nil)
+		if err != nil || len(filled.Warnings) != 0 {
+			t.Fatalf("FillVariables(%s) = %v, %v, want no warning", paths[i], filled.Warnings, err)
+		}
+
+		stored := string(store.ExpandBranchName(filled.Text, branch))
 		want.WriteString("# " + filepath.FromSlash(paths[i]) + "\n" + strings.TrimSuffix(stored, "\n") + "\n")
 	}
 

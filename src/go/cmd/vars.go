@@ -78,21 +78,32 @@ func newVarSet(o envsubst.Options, attrs ...any) (*envsubst.Set, error) {
 // every problem and changes no file: the error wraps [errVariables].
 func substituteVars(set *envsubst.Set, files []envsubst.File, attrs ...any) ([]envsubst.File, error) {
 	res, err := set.Substitute(files)
+
+	return logSubstitution(res, err, attrs)
+}
+
+// substituteVarsDeferUnused is [substituteVars], but it returns the -e
+// variables that no file uses, with no error, for the caller to check later.
+func substituteVarsDeferUnused(
+	set *envsubst.Set, files []envsubst.File, attrs ...any,
+) ([]envsubst.File, []envsubst.Problem, error) {
+	res, unused, err := set.SubstituteDeferUnused(files)
+
+	out, err := logSubstitution(res, err, attrs)
+
+	return out, unused, err
+}
+
+// logSubstitution logs the result of a substitution as [substituteVars]
+// describes, and returns its files.
+func logSubstitution(res envsubst.Result, err error, attrs []any) ([]envsubst.File, error) {
 	if err != nil {
 		var subErr *envsubst.Error
 		if !errors.As(err, &subErr) {
 			return nil, fmt.Errorf("filling in the variables: %w", err)
 		}
 
-		for _, problem := range subErr.Problems {
-			logVarProblem(problem, attrs)
-		}
-
-		return nil, fmt.Errorf(
-			"%d %w; nothing was changed: set a variable with -e NAME=value or an env file, "+
-				"give it a default with ${NAME:default}, or write $${NAME} to keep the text",
-			len(subErr.Problems), errVariables,
-		)
+		return nil, varProblemsError(subErr.Problems, attrs)
 	}
 
 	for _, warning := range res.Warnings {
@@ -119,6 +130,39 @@ func substituteVars(set *envsubst.Set, files []envsubst.File, attrs ...any) ([]e
 	plog.Info(plog.TypeSystem, "variables filled in", slices.Concat(attrs, []any{"variables", strings.Join(names, ", ")})...)
 
 	return res.Files, nil
+}
+
+// varProblemsError logs each problem as an error record and returns the error
+// that stops the command, which wraps [errVariables].
+func varProblemsError(problems []envsubst.Problem, attrs []any) error {
+	for _, problem := range problems {
+		logVarProblem(problem, attrs)
+	}
+
+	return fmt.Errorf(
+		"%d %w; nothing was changed: set a variable with -e NAME=value or an env file, "+
+			"give it a default with ${NAME:default}, or write $${NAME} to keep the text",
+		len(problems), errVariables,
+	)
+}
+
+// unusedFlagsError returns the error of the -e variables of unused that the
+// server did not use either: used names those that it used. It is nil when
+// every variable is used.
+func unusedFlagsError(unused []envsubst.Problem, used []string) error {
+	var left []envsubst.Problem
+
+	for _, problem := range unused {
+		if !slices.Contains(used, problem.Name) {
+			left = append(left, problem)
+		}
+	}
+
+	if len(left) == 0 {
+		return nil
+	}
+
+	return varProblemsError(left, []any{"step", stepPlan})
 }
 
 // logVarProblem logs one problem of a variable as an error record.

@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"mime/multipart"
 	"net"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"strings"
 	"time"
@@ -59,6 +61,16 @@ func (e *unknownActionError) Unwrap() error {
 	return errNoWorkflowDryRun
 }
 
+// configPartName and variablesPartName are the form names of the parts of a
+// workflow request: the config file as written and its variables.
+const (
+	configPartName    = "config"
+	variablesPartName = "variables"
+
+	// maxVariablesBytes is the largest variables part that the server takes.
+	maxVariablesBytes = 1 << 20
+)
+
 // preflightTimeout bounds each request of the preflight: the options and the
 // dry runs of the configs and of the workflow config, which the phenix server
 // answers at once. A server that accepts the connection and never answers
@@ -83,10 +95,11 @@ func withPreflightTimeout(ctx context.Context) (context.Context, context.CancelF
 }
 
 // workflowClient calls the workflow API of the running phenix server over its
-// unix socket.
+// unix socket. vars are the variables that each workflow request sends.
 type workflowClient struct {
 	http *http.Client
 	base string
+	vars map[string]string
 }
 
 // newWorkflowClient returns a client whose requests all dial socket.
@@ -102,7 +115,16 @@ func newWorkflowClient(socket string) *workflowClient {
 	return &workflowClient{
 		http: &http.Client{Transport: transport},
 		base: "http://unix",
+		vars: nil,
 	}
+}
+
+// withVariables sets the variables that each workflow request sends, and
+// returns c.
+func (c *workflowClient) withVariables(vars map[string]string) *workflowClient {
+	c.vars = vars
+
+	return c
 }
 
 // options returns the decoded body of GET /api/v1/options. The request is
@@ -234,12 +256,18 @@ func (c *workflowClient) upsertConfig(ctx context.Context, branch string, body [
 	return err
 }
 
-// post sends body to path with the given query and Content-Type header, and
-// returns the status and body of a 2xx response.
-func (c *workflowClient) post(ctx context.Context, path string, query url.Values, body []byte, contentType string) (int, []byte, error) {
+// post sends text, a config file as written whose Content-Type is
+// contentType, to path with the given query, as a multipart/form-data body
+// with the variables of c. It returns the status and body of a 2xx response.
+func (c *workflowClient) post(ctx context.Context, path string, query url.Values, text []byte, contentType string) (int, []byte, error) {
 	target := c.base + path
 	if encoded := query.Encode(); encoded != "" {
 		target += "?" + encoded
+	}
+
+	body, bodyType, err := variablesBody(text, contentType, c.vars)
+	if err != nil {
+		return 0, nil, fmt.Errorf("building request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
@@ -247,9 +275,61 @@ func (c *workflowClient) post(ctx context.Context, path string, query url.Values
 		return 0, nil, fmt.Errorf("building request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("Content-Type", bodyType)
 
 	return c.do(req)
+}
+
+// variablesBody returns the multipart/form-data body of a workflow request,
+// and its Content-Type: a config part with text, of the Content-Type
+// contentType, and a variables part with vars as a JSON object.
+func variablesBody(text []byte, contentType string, vars map[string]string) ([]byte, string, error) {
+	if vars == nil {
+		vars = map[string]string{}
+	}
+
+	// A map of strings always encodes.
+	encoded, _ := json.Marshal(vars)
+
+	if len(encoded) > maxVariablesBytes {
+		return nil, "", fmt.Errorf(
+			"the variables are %d bytes as JSON, more than the 1 MiB that the server takes: "+
+				"unset shell variables that the files do not use, or use fewer -e and --env-file values",
+			len(encoded),
+		)
+	}
+
+	var (
+		buf    bytes.Buffer
+		writer = multipart.NewWriter(&buf)
+	)
+
+	for _, part := range []struct {
+		name, contentType string
+		body              []byte
+	}{
+		{name: configPartName, contentType: contentType, body: text},
+		{name: variablesPartName, contentType: mimeJSON, body: encoded},
+	} {
+		header := textproto.MIMEHeader{}
+		header.Set("Content-Disposition", `form-data; name="`+part.name+`"`)
+		header.Set("Content-Type", part.contentType)
+
+		w, err := writer.CreatePart(header)
+		if err != nil {
+			return nil, "", fmt.Errorf("writing the %s part: %w", part.name, err)
+		}
+
+		if _, err := w.Write(part.body); err != nil {
+			return nil, "", fmt.Errorf("writing the %s part: %w", part.name, err)
+		}
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, "", fmt.Errorf("closing the multipart body: %w", err)
+	}
+
+	return buf.Bytes(), writer.FormDataContentType(), nil
 }
 
 // do sends req and returns the status and body of a 2xx response. Any other

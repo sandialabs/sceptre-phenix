@@ -122,7 +122,7 @@ func newApplyRun(opts applyOptions, arg string) (*applyRun, error) {
 
 	run := &applyRun{
 		opts:     opts,
-		client:   newWorkflowClient(opts.Socket),
+		client:   newWorkflowClient(opts.Socket).withVariables(src.vars.Values()),
 		started:  started,
 		dir:      dir,
 		name:     name,
@@ -205,7 +205,9 @@ func (r *applyRun) preflight(ctx context.Context) (preflightResult, error) {
 		)
 	}
 
-	configs, wfConfig, err := loadWorkflowFiles(r.dir, paths, r.wfConfig, r.vars)
+	// The server reads the topology files that the configs include, so the
+	// apply dry run can use a -e variable that no local file uses.
+	configs, wfConfig, unused, err := loadWorkflowFilesDeferUnused(r.dir, paths, r.wfConfig, r.vars, r.wfConfig != "")
 	if err != nil {
 		return preflightResult{}, err
 	}
@@ -218,11 +220,11 @@ func (r *applyRun) preflight(ctx context.Context) (preflightResult, error) {
 		plog.Info(plog.TypeSystem, "workflow config parsed", "step", stepPreflight, "file", r.rel(wfConfig.Path), "kind", wfConfig.Kind)
 	}
 
-	return preflightResult{injectsBase: injectsBase, configs: configs, wfConfig: wfConfig}, nil
+	return preflightResult{injectsBase: injectsBase, configs: configs, wfConfig: wfConfig, unused: unused}, nil
 }
 
-// checkServer checks that the server answers and supports workflow dry runs,
-// and returns the injects directory to stage into.
+// checkServer checks that the server answers and supports workflow dry runs
+// and variables, and returns the injects directory to stage into.
 func (r *applyRun) checkServer(ctx context.Context) (string, error) {
 	if r.opts.Socket == "" {
 		return "", errors.New("no phenix unix socket configured; set --unix-socket")
@@ -235,6 +237,10 @@ func (r *applyRun) checkServer(ctx context.Context) (string, error) {
 
 	if supported, _ := serverOpts[optionWorkflowDryRun].(bool); !supported {
 		return "", fmt.Errorf("the phenix server at %s does not support workflow dry runs; upgrade the phenix server", r.opts.Socket)
+	}
+
+	if supported, _ := serverOpts[optionWorkflowVariables].(bool); !supported {
+		return "", fmt.Errorf("the phenix server at %s does not support workflow variables: update the server", r.opts.Socket)
 	}
 
 	injectsBase := injectsBaseDir(r.opts, serverOpts)

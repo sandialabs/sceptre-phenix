@@ -350,12 +350,6 @@ func TestRunWorkflowApplyVariableProblems(t *testing.T) {
 			wantLog: "variable is not set and has no default",
 		},
 		{
-			name:    "a -e variable that no file uses",
-			env:     "NODES=3\n",
-			setup:   func(_ string, opts *applyOptions) { opts.Env = []string{"NODSE=5"} },
-			wantLog: "no file uses the variable that -e sets",
-		},
-		{
 			name:    "a value with a line break",
 			setup:   func(_ string, opts *applyOptions) { opts.Env = []string{"NODES=3\n4"} },
 			wantLog: "variable value holds a line break",
@@ -395,8 +389,8 @@ func TestRunWorkflowApplyRefusesOldServer(t *testing.T) {
 		options map[string]any
 	}{
 		{name: "option missing", options: map[string]any{"bridge-mode": "manual"}},
-		{name: "option false", options: map[string]any{optionWorkflowDryRun: false}},
-		{name: "option not a bool", options: map[string]any{optionWorkflowDryRun: "true"}},
+		{name: "option false", options: map[string]any{optionWorkflowDryRun: false, optionWorkflowVariables: true}},
+		{name: "option not a bool", options: map[string]any{optionWorkflowDryRun: "true", optionWorkflowVariables: true}},
 	}
 
 	for _, tt := range tests {
@@ -408,6 +402,35 @@ func TestRunWorkflowApplyRefusesOldServer(t *testing.T) {
 			err := runWorkflowApply(t.Context(), testApplyOptions(fake.socket, injects), dir)
 			if err == nil || !strings.Contains(err.Error(), "does not support workflow dry runs; upgrade the phenix server") {
 				t.Fatalf("runWorkflowApply() error = %v, want an upgrade error", err)
+			}
+
+			checkRequests(t, fake, reqOptions)
+			assertEmptyDir(t, injects)
+		})
+	}
+}
+
+// A server without the workflow-variables option stops the run in the
+// preflight, before any other request.
+func TestRunWorkflowApplyRefusesServerWithoutVariables(t *testing.T) {
+	tests := []struct {
+		name    string
+		options map[string]any
+	}{
+		{name: "option missing", options: map[string]any{optionWorkflowDryRun: true}},
+		{name: "option false", options: map[string]any{optionWorkflowDryRun: true, optionWorkflowVariables: false}},
+		{name: "option not a bool", options: map[string]any{optionWorkflowDryRun: true, optionWorkflowVariables: "true"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := newTopologyDir(t, "foo", fullTopology())
+			injects := t.TempDir()
+			fake := newFakePhenix(t, fakePhenix{options: tt.options})
+
+			err := runWorkflowApply(t.Context(), testApplyOptions(fake.socket, injects), dir)
+			if want := "does not support workflow variables: update the server"; err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("runWorkflowApply() error = %v, want it to contain %q", err, want)
 			}
 
 			checkRequests(t, fake, reqOptions)

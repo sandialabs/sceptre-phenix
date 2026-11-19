@@ -10746,9 +10746,21 @@ paths:
       description: >
         Creates the config if it does not exist and updates it otherwise. The
         server replaces each ${BRANCH_NAME} placeholder in the body with the
-        branch name of the request. The server
+        branch name of the request. With a JSON or YAML body, the server
         stores every other ${NAME} placeholder as written. The Content-Type
-        header must be exactly application/json or application/x-yaml. A
+        header must be exactly application/json, application/x-yaml or
+        multipart/form-data. A multipart/form-data body holds the config in a
+        `config` part and the variables in a `variables` part. The server
+        fills in each ${NAME} placeholder from the variables before it reads
+        the kind and name. A placeholder that no variable sets gets its
+        default, or stays as written with a warning. A warning is for one
+        variable and kind, with the first line and the count of the other
+        lines. The server log gets each
+        warning. A dry run also returns them, with the names of the variables
+        that the config used. The response holds at most 50 warnings, then one
+        that says how many it left out. The config can be at most 5 MiB after
+        the variables and the branch name are filled in, else the request
+        gets 400. A
         Topology is also checked for a node an experiment could not use, such
         as a hostname used twice or a reserved hostname, before it is stored.
         With dryRun=true it runs the same checks, returns what it would do, and
@@ -10793,6 +10805,14 @@ paths:
           application/x-yaml:
             schema:
               $ref: "#/components/schemas/Config"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/WorkflowVariablesRequest"
+            encoding:
+              config:
+                contentType: application/json, application/x-yaml
+              variables:
+                contentType: application/json
       responses:
         "200":
           description: dry run; nothing was stored
@@ -10810,7 +10830,8 @@ paths:
                 format: uri-reference
         "400":
           description: >
-            unsupported Content-Type, unparsable body, a missing or unknown kind
+            unsupported Content-Type, unparsable body, a bad multipart body (see
+            WorkflowVariablesRequest), a missing or unknown kind
             or a name containing "/", an invalid dryRun value, a schema
             validation failure (explained lines in metadata.validation, original
             validator text in metadata.validation-raw), or, for a Topology, a
@@ -10877,9 +10898,29 @@ paths:
         experiment lists in `warnings` what that disk check finds. A dry run
         before a first deploy names the configs the caller will store with
         pending. The server replaces each ${BRANCH_NAME} placeholder in the
-        body with the branch name of the request. The server keeps every
+        body with the branch name of the request. With a JSON or YAML body,
+        the server keeps every
         other ${NAME} placeholder as written. The Content-Type header must be
-        exactly application/json or application/x-yaml.
+        exactly application/json, application/x-yaml or multipart/form-data.
+        A multipart/form-data body holds the workflow config in a `config`
+        part and the variables in a `variables` part. The server fills in each
+        ${NAME} placeholder of the workflow config from the variables. A
+        placeholder that no variable sets gets its default, or stays as
+        written with a warning. A topology file that includeTopologies names
+        by a path gets the variables too. There, a placeholder that no
+        variable sets gets the value of the server environment with a
+        warning, then its default, then an empty string with a warning. The
+        workflow config or an included file can be at most 5 MiB after the
+        variables and the branch name are filled in, else the request gets
+        400. A warning is for one file,
+        variable and kind, with the first line and the count of the other
+        lines. The
+        server log and `warnings` get each warning, and `variables` names the
+        variables that the workflow config or an included file used.
+        `warnings` holds at most 50 variable warnings, then one that says how
+        many the server left out. A multipart dry run reads each topology file
+        that the topology of the workflow includes, at any depth and for every
+        plan, so it reports a line break in an included file.
       operationId: postWorkflowApplyBranch
       parameters:
         - name: branch
@@ -10971,6 +11012,14 @@ paths:
           application/x-yaml:
             schema:
               $ref: "#/components/schemas/Workflow"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/WorkflowVariablesRequest"
+            encoding:
+              config:
+                contentType: application/json, application/x-yaml
+              variables:
+                contentType: application/json
       responses:
         "200":
           description: plan carried out, or only returned when dryRun is true
@@ -10980,7 +11029,8 @@ paths:
                 $ref: "#/components/schemas/WorkflowResult"
         "400":
           description: >
-            unsupported Content-Type, unparsable body, invalid dryRun, expect or
+            unsupported Content-Type, unparsable body, a bad multipart body (see
+            WorkflowVariablesRequest), invalid dryRun, expect or
             pending value, pending without dryRun=true, Workflow schema failure
             (explained lines in metadata.validation, original validator text in
             metadata.validation-raw), invalid config (e.g. defaultBridge longer
@@ -11055,6 +11105,9 @@ paths:
         support dryRun, and apply supports pending and expect. An older server
         ignores dryRun on /workflow/configs/{branch} and stores the config, so
         phenix workflow apply refuses servers without it.
+        workflow-variables is true when both routes take a multipart/form-data
+        body with variables. phenix workflow apply refuses servers without it
+        too.
       operationId: getOptions
       responses:
         "200":
@@ -21846,16 +21899,32 @@ components:
         warnings:
           title: "Warnings"
           description: >-
-            Only a dry run of a plan that starts the experiment sets it. It
-            lists each problem that the disk check of that start finds, such as
-            a missing backing file. A problem that would refuse the start begins
-            with `the start would fail: `
+            First, for a multipart request, one warning for each file,
+            variable and kind of placeholder that no variable set and that the
+            server filled in from the server environment, or kept as written,
+            or replaced with an empty string. It names the first line and
+            counts the other lines. At most 50 of these, then one that says how
+            many the server left out. Then, only for a
+            dry run of a plan that starts the experiment, each problem that the
+            disk check of that start finds, such as a missing backing file. A
+            problem that would refuse the start begins with
+            `the start would fail: `
           type: array
           items:
             type: string
             example: >-
               the start would fail: VM host-01: disk kali.qc2: backing file
               /phenix/images/ro_kali.qc2 is missing
+        variables:
+          title: "Variables"
+          description: >-
+            For a multipart request, the sorted names of the variables that
+            the workflow config or an included topology file used. Not set
+            when there are none.
+          type: array
+          items:
+            type: string
+            example: SITE
     WorkflowConfigResult:
       title: "Workflow Config Result"
       type: object
@@ -21893,6 +21962,73 @@ components:
             POST /workflow/apply/{branch}: Kind/name, followed for a scenario by
             ?from=...&topology=... (its fromScenario names and topology
             annotation) and for a topology that includes others by ?include=...
+        variables:
+          title: "Variables"
+          description: >-
+            For a multipart request, the sorted names of the variables that the
+            config used. Not set when there are none.
+          type: array
+          items:
+            type: string
+            example: SITE
+        warnings:
+          title: "Warnings"
+          description: >-
+            For a multipart request, one warning for each variable that the
+            request does not set and that a placeholder with no default uses,
+            which the server kept as written. It names the first line and
+            counts the other lines. At most 50, then one that says how many
+            the server left out. Not set when there are none.
+          type: array
+          items:
+            type: string
+            example: >-
+              Topology/lab line 4: the request has no variable SITE and the
+              placeholder has no default; phenix kept the text ${SITE}
+    WorkflowVariablesRequest:
+      title: "Workflow Variables Request"
+      description: >-
+        A request body for POST /workflow/configs/{branch} and
+        POST /workflow/apply/{branch} with exactly one `config` part and
+        exactly one `variables` part. Any other part, a second part of the
+        same name, a `config` part of another Content-Type, or a `variables`
+        part that is larger than 1 MiB, that is not a JSON object of strings,
+        that sets a name twice, that has a name that is not a variable name,
+        or that sets BRANCH_NAME, gets 400. So does a variable value or a
+        default with a line break (CR, LF, NEL, LS or PS) that the text uses,
+        and a config or included topology file that is larger than 5 MiB
+        after the server fills in the variables and the branch name.
+        A variable that no text uses is not an error.
+      type: object
+      required:
+        - config
+        - variables
+      properties:
+        config:
+          title: "Config"
+          description: >-
+            The config text as written, with the Content-Type
+            application/json or application/x-yaml. ${NAME:default} gives
+            a default, and $${NAME} gives the text ${NAME}.
+          example: |
+            apiVersion: phenix.sandia.gov/v1
+            kind: Topology
+            metadata:
+              name: ${SITE}-lab
+            spec:
+              nodes: []
+          type: string
+        variables:
+          title: "Variables"
+          description: >-
+            A JSON object. Each key is a variable name (a letter or "_", then
+            letters, digits and "_") and each value is a string. BRANCH_NAME
+            is not allowed: the branch in the path sets it.
+          type: object
+          example:
+            SITE: lab
+          additionalProperties:
+            type: string
     Options:
       title: "Options"
       description: "The server-side settings that clients read."
@@ -21925,6 +22061,13 @@ components:
           description: >
             true when POST /workflow/configs/{branch} and POST /workflow/apply/{branch}
             support dryRun, and apply supports pending and expect
+        workflow-variables:
+          title: "Workflow Variables"
+          example: true
+          type: boolean
+          description: >
+            true when POST /workflow/configs/{branch} and POST /workflow/apply/{branch}
+            take a multipart/form-data body with a config part and a variables part
     VLANList:
       title: VLAN List
       type: object

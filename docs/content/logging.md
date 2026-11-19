@@ -198,10 +198,10 @@ security-relevant action.
 | `role-update` | `iam` | `change` | `PATCH /roles/{name}` (`phenix.role.name`, and `phenix.role.users` for the users whose copy of the role changed, or could not change); refused as `role-create` is |
 | `role-delete` | `iam` | `deletion` | `DELETE /roles/{name}` (`phenix.role.name`) |
 | `request-auth` | `authentication` | `info` | any API or file server request refused for its token (`event.reason`), at most once a minute for each client address and reason |
-| `config-create` | `configuration` | `creation` | `POST /configs`, `POST /workflow/configs/{branch}` for a new config (and its refusal by a role that may neither create nor update configs), and `PUT /configs/{kind}/{name}` refusals of the new name it renames a config to |
-| `config-update` | `configuration` | `change` | `PUT /configs/{kind}/{name}`, `POST /workflow/configs/{branch}` for a stored config |
+| `config-create` | `configuration` | `creation` | `POST /configs`, `POST /workflow/configs/{branch}` for a new config (and its refusal by a role that may neither create nor update configs; `phenix.workflow.variables` when the request used a variable, also in a refusal for the config name: the sorted names, never values), and `PUT /configs/{kind}/{name}` refusals of the new name it renames a config to |
+| `config-update` | `configuration` | `change` | `PUT /configs/{kind}/{name}`, `POST /workflow/configs/{branch}` for a stored config (`phenix.workflow.variables` when the request used a variable, also in a refusal for the config name: the sorted names, never values) |
 | `config-delete` | `configuration` | `deletion` | `DELETE /configs/{kind}/{name}` |
-| `workflow-apply` | `configuration` | `change` | `POST /workflow/apply/{branch}` (`phenix.workflow.branch`, `phenix.workflow.action`) |
+| `workflow-apply` | `configuration` | `change` | `POST /workflow/apply/{branch}` (`phenix.workflow.branch`, `phenix.workflow.action`, and `phenix.workflow.variables` when the request used a variable: the sorted names of the variables that the workflow config or an included topology file used, never their values) |
 | `settings-update` | `configuration` | `change` | `POST /settings` (`phenix.settings.changed`) |
 | `experiment-create` | `configuration` | `creation` | `POST /experiments` |
 | `experiment-update` | `configuration` | `change` | `PATCH /experiments/{name}`, and the VLAN pin and range routes `PUT` and `DELETE .../vlans/aliases/{alias}`, `PUT` and `DELETE .../vlans/range`, `POST .../vlans/pin-live` |

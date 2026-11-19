@@ -88,18 +88,21 @@ func TestLoadWorkflowFilesFillsInVariables(t *testing.T) {
 			Kind:        kindTopology,
 			ContentType: mimeYAML,
 			Body:        []byte("kind: Topology\nmetadata:\n  name: lab-${BRANCH_NAME}\nspec:\n  count: 3\n"),
+			Raw:         []byte("kind: ${KIND}\nmetadata:\n  name: ${SITE}-${BRANCH_NAME}\nspec:\n  count: ${NODES}\n"),
 		},
 		{
 			Path:        filepath.Join(configsDir, "scenario.json"),
 			Kind:        "Scenario",
 			ContentType: mimeJSON,
 			Body:        []byte(`{"kind": "Scenario", "spec": {"size": 4, "keep": "${SIZE}", "home": "/root"}}`),
+			Raw:         []byte(`{"kind": "Scenario", "spec": {"size": ${SIZE:4}, "keep": "$${SIZE}", "home": "${HOME}"}}`),
 		},
 		{
 			Path:        wfPath,
 			Kind:        "Workflow",
 			ContentType: mimeYAML,
 			Body:        []byte("kind: Workflow\nspec:\n  auto:\n    create: lab-${BRANCH_NAME:x}\n"),
+			Raw:         []byte("kind: Workflow\nspec:\n  auto:\n    create: ${SITE}-${BRANCH_NAME:x}\n"),
 		},
 	}
 
@@ -176,11 +179,29 @@ func TestLoadConfigs(t *testing.T) {
 	}
 
 	want := []configFile{
-		{Path: filepath.Join(dir, "sub", "topology.yml"), Kind: "topology", ContentType: mimeYAML, Body: []byte(lowerTopology)},
-		{Path: filepath.Join(dir, "z-topology.json"), Kind: kindTopology, ContentType: mimeJSON, Body: []byte(topologyJSON)},
-		{Path: filepath.Join(dir, "a-scenario.yml"), Kind: "Scenario", ContentType: mimeYAML, Body: []byte(wfScenarioYAML)},
-		{Path: filepath.Join(dir, "c-image.yaml"), Kind: "Image", ContentType: mimeYAML, Body: []byte(imageYAML)},
-		{Path: filepath.Join(dir, "d-role.YAML"), Kind: "Role", ContentType: mimeYAML, Body: []byte(roleYAML)},
+		{
+			Path:        filepath.Join(dir, "sub", "topology.yml"),
+			Kind:        "topology",
+			ContentType: mimeYAML,
+			Body:        []byte(lowerTopology),
+			Raw:         []byte(lowerTopology),
+		},
+		{
+			Path:        filepath.Join(dir, "z-topology.json"),
+			Kind:        kindTopology,
+			ContentType: mimeJSON,
+			Body:        []byte(topologyJSON),
+			Raw:         []byte(topologyJSON),
+		},
+		{
+			Path:        filepath.Join(dir, "a-scenario.yml"),
+			Kind:        "Scenario",
+			ContentType: mimeYAML,
+			Body:        []byte(wfScenarioYAML),
+			Raw:         []byte(wfScenarioYAML),
+		},
+		{Path: filepath.Join(dir, "c-image.yaml"), Kind: "Image", ContentType: mimeYAML, Body: []byte(imageYAML), Raw: []byte(imageYAML)},
+		{Path: filepath.Join(dir, "d-role.YAML"), Kind: "Role", ContentType: mimeYAML, Body: []byte(roleYAML), Raw: []byte(roleYAML)},
 	}
 
 	if !reflect.DeepEqual(got, want) {
@@ -379,8 +400,20 @@ func TestLoadConfigsSymlinks(t *testing.T) {
 	}
 
 	want := []configFile{
-		{Path: filepath.Join(dir, "topology.yml"), Kind: kindTopology, ContentType: mimeYAML, Body: []byte(wfTopologyYAML)},
-		{Path: filepath.Join(dir, "linked.yml"), Kind: "Scenario", ContentType: mimeYAML, Body: []byte(wfScenarioYAML)},
+		{
+			Path:        filepath.Join(dir, "topology.yml"),
+			Kind:        kindTopology,
+			ContentType: mimeYAML,
+			Body:        []byte(wfTopologyYAML),
+			Raw:         []byte(wfTopologyYAML),
+		},
+		{
+			Path:        filepath.Join(dir, "linked.yml"),
+			Kind:        "Scenario",
+			ContentType: mimeYAML,
+			Body:        []byte(wfScenarioYAML),
+			Raw:         []byte(wfScenarioYAML),
+		},
 	}
 
 	if !reflect.DeepEqual(got, want) {

@@ -202,7 +202,7 @@ func TestWorkflowClientConfigDryRun(t *testing.T) {
 		DryRun:  true,
 		Pending: "Topology/main-topo",
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("configDryRun() = %+v, want %+v", got, want)
 	}
 
@@ -691,18 +691,36 @@ func TestWorkflowClientLogsRequests(t *testing.T) {
 		_, _ = w.Write([]byte(`{"name":"foo"}`))
 	})
 
-	err := newWorkflowClient(fake.socket).upsertConfig(t.Context(), "foo", []byte("kind: Topology\n"), "application/x-yaml")
+	client := newWorkflowClient(fake.socket).withVariables(map[string]string{"SECRET": "s3cret-value"})
+
+	err := client.upsertConfig(t.Context(), "foo", []byte("kind: Topology\n"), "application/x-yaml")
 	if err != nil {
 		t.Fatalf("upsertConfig() error = %v", err)
 	}
 
-	checkFields(t, logs.first(t, "phenix server request"), map[string]string{
+	body := fake.recorded()[0]
+	request := logs.first(t, "phenix server request")
+
+	checkFields(t, request, map[string]string{
 		"level":  "DEBUG",
 		"type":   "SYSTEM",
 		"method": http.MethodPost,
 		"url":    "http://unix/api/v1/workflow/configs/foo",
-		"bytes":  "15",
 	})
+
+	// The request line gives the size of the body and never the body.
+	if _, ok := request["body"]; ok || request["bytes"] == float64(0) {
+		t.Errorf("request record = %v, want its size and no body", request)
+	}
+
+	if !body.multipart || body.variables["SECRET"] != "s3cret-value" {
+		t.Errorf("request = %+v, want a multipart request with the variables", body)
+	}
+
+	if text := fmt.Sprint(logs.records(t)); strings.Contains(text, "s3cret-value") {
+		t.Errorf("a log record holds a variable value: %s", text)
+	}
+
 	response := logs.first(t, "phenix server response")
 	checkFields(t, response, map[string]string{
 		"level":  "DEBUG",
@@ -711,7 +729,22 @@ func TestWorkflowClientLogsRequests(t *testing.T) {
 		"bytes":  "14",
 	})
 
-	if body, ok := response["body"]; ok {
-		t.Errorf("log record %q has the response body %q, want no body field", response["msg"], body)
+	if text, ok := response["body"]; ok {
+		t.Errorf("log record %q has the response body %q, want no body field", response["msg"], text)
+	}
+}
+
+// variablesBody refuses variables that are larger than the 1 MiB that the
+// server takes, and names the cause.
+func TestVariablesBodyTooLarge(t *testing.T) {
+	t.Parallel()
+
+	_, _, err := variablesBody([]byte("a: 1\n"), mimeYAML, map[string]string{"BIG": strings.Repeat("x", 1<<20)})
+	if err == nil || !strings.Contains(err.Error(), "more than the 1 MiB that the server takes") {
+		t.Errorf("variablesBody(1 MiB value) error = %v, want one that names the 1 MiB limit", err)
+	}
+
+	if _, _, err := variablesBody([]byte("a: 1\n"), mimeYAML, map[string]string{"OK": strings.Repeat("x", 1<<19)}); err != nil {
+		t.Errorf("variablesBody(512 KiB value) error = %v, want nil", err)
 	}
 }

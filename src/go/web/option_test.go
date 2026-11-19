@@ -63,11 +63,12 @@ func TestGetOptionsReportsWorkflowSettings(t *testing.T) {
 	}
 
 	want := map[string]any{
-		"bridge-mode":      string(common.BridgeMode),
-		"deploy-mode":      string(common.DeployMode),
-		"use-gre-mesh":     common.UseGREMesh,
-		"base-dir.injects": "/srv/phenix/injects",
-		"workflow-dry-run": true,
+		"bridge-mode":        string(common.BridgeMode),
+		"deploy-mode":        string(common.DeployMode),
+		"use-gre-mesh":       common.UseGREMesh,
+		"base-dir.injects":   "/srv/phenix/injects",
+		"workflow-dry-run":   true,
+		"workflow-variables": true,
 	}
 
 	if !reflect.DeepEqual(got, want) {

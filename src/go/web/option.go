@@ -337,12 +337,14 @@ func GetOptions(w http.ResponseWriter, r *http.Request) error {
 
 	// workflow-dry-run tells clients the workflow endpoints honor dryRun,
 	// pending and expect; older servers ignore them and apply for real.
+	// workflow-variables tells them the endpoints take the multipart request.
 	options := map[string]any{
-		"bridge-mode":      common.BridgeMode,
-		"deploy-mode":      common.DeployMode,
-		"use-gre-mesh":     common.UseGREMesh,
-		"base-dir.injects": common.InjectsBase,
-		"workflow-dry-run": true,
+		"bridge-mode":        common.BridgeMode,
+		"deploy-mode":        common.DeployMode,
+		"use-gre-mesh":       common.UseGREMesh,
+		"base-dir.injects":   common.InjectsBase,
+		"workflow-dry-run":   true,
+		"workflow-variables": true,
 	}
 
 	body, err := json.Marshal(options)

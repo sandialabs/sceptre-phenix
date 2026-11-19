@@ -19,6 +19,7 @@ const (
 	injectsDirName             = "phenix-injects"
 	configsDirName             = "phenix-configs"
 	optionWorkflowDryRun       = "workflow-dry-run"
+	optionWorkflowVariables    = "workflow-variables"
 	optionInjectsBase          = "base-dir.injects"
 	optionFollowInjectSymlinks = "follow-inject-symlinks"
 	workflowDateLayout         = "20060102150405MST"
@@ -64,15 +65,19 @@ const (
   only when no experiment is mapped to the branch.
 
   apply fills in the ${NAME} and ${NAME:default} placeholders of each
-  config and of the workflow config before it sends them. A value comes
+  config and of the workflow config to check them. Then it sends each
+  file as written, with the variables, and the server fills them in, also
+  in each topology file that includeTopologies names by a path. A value comes
   from -e, else from an env file, else from the shell. --env-file names
   the env files; without it, apply reads .env in the topology directory.
   The shell gives no PHENIX_ variable unless -e NAME names it. A
   placeholder with no value and no default is an error, and so is a -e
-  variable that no file uses. Write ${NAME:} for an optional variable and
-  $${NAME} for the literal text ${NAME}. Only -b sets BRANCH_NAME, and the
-  server fills in ${BRANCH_NAME}. Files in phenix-injects/ are not
-  changed.
+  variable that no file uses. With a workflow config, a topology file that
+  a topology includes by a path counts as a file. Without a workflow
+  config, it does not. Write
+  ${NAME:} for an optional variable and $${NAME} for the literal text
+  ${NAME}. Only -b sets BRANCH_NAME, and the server fills in
+  ${BRANCH_NAME}. Files in phenix-injects/ are not changed.
 
   The names phenix.yml, phenix-configs and phenix-injects are
   reserved, in any letter case: they cannot be the branch name,

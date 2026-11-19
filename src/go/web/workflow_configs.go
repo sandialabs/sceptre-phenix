@@ -28,6 +28,25 @@ func parseDryRun(q url.Values) (bool, error) {
 	return parseBoolQuery(q, "dryRun")
 }
 
+// readConfigRequest reads a configs request in the multipart format for
+// branch. It returns the Content-Type of the config part and the config text
+// with the request variables filled in and ${BRANCH_NAME} as written.
+func readConfigRequest(r *http.Request, branch string) (string, []byte, *workflowVars, error) {
+	req, err := readMultipartConfig(r)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	vars := newWorkflowVars(branch, req.vars)
+
+	src, err := vars.fill(req.text, requestConfigFile, nil)
+	if err != nil {
+		return "", nil, nil, fillError(err, requestConfigFile)
+	}
+
+	return req.contentType, src, vars, nil
+}
+
 // configName returns the "<kind>/<name>" of a JSON or YAML config body without
 // reading the server's environment: ${BRANCH_NAME} becomes branch and each
 // other placeholder a distinct number, so a parse error quotes only the body.
@@ -69,8 +88,9 @@ func configName(body []byte, typ, branch string) (string, error) {
 }
 
 // authorizeConfigWrite reports whether the config name exists, once role may
-// update it if it does or create it if it does not.
-func authorizeConfigWrite(r *http.Request, role rbac.Role, name, branch string) (bool, error) {
+// update it if it does or create it if it does not. extra holds the audit
+// fields of a refusal.
+func authorizeConfigWrite(r *http.Request, role rbac.Role, name string, extra []any) (bool, error) {
 	// NewConfig rejects a kind the store does not hold, such as Workflow, and
 	// a name containing a slash; its nil result would make store.Get panic.
 	tester, err := store.NewConfig(name)
@@ -98,7 +118,7 @@ func authorizeConfigWrite(r *http.Request, role rbac.Role, name, branch string) 
 	if !role.Allowed("configs", verb, name) {
 		user := middleware.UserFromContext(r.Context())
 		audit.Denied(r, audited, action+" config not allowed",
-			audit.Fields{Config: name, Extra: []any{"phenix.workflow.branch", branch}})
+			audit.Fields{Config: name, Extra: extra})
 
 		err := weberror.NewWebError(
 			nil,
@@ -157,26 +177,29 @@ func createOrValidate(cfg *store.Config, dryRun bool) (*store.Config, error) {
 }
 
 // writeConfigDryRun writes the 200 response to a config dry run: what the
-// upsert would do, cfg's expanded kind and name, and its pending ref.
-func writeConfigDryRun(w http.ResponseWriter, exists bool, cfg *store.Config) {
+// upsert would do, cfg's expanded kind and name, its pending ref, and the used
+// variables and the variable warnings of vars.
+func writeConfigDryRun(w http.ResponseWriter, exists bool, cfg *store.Config, vars *workflowVars) {
 	action := workflow.ActionCreate
 	if exists {
 		action = workflow.ActionUpdate
 	}
 
 	// No HTML escaping, so the "&" in a pending ref can be copied from the raw
-	// body. A ConfigResult holds only strings and a bool, so encoding it cannot
-	// fail; TrimSpace drops the newline Encode appends.
+	// body. A ConfigResult holds only strings, a bool and lists of strings, so
+	// encoding it cannot fail; TrimSpace drops the newline Encode appends.
 	var buf bytes.Buffer
 
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(workflow.ConfigResult{
-		Action:  action,
-		Kind:    cfg.Kind,
-		Name:    cfg.Metadata.Name,
-		DryRun:  true,
-		Pending: workflow.PendingRef(*cfg),
+		Action:    action,
+		Kind:      cfg.Kind,
+		Name:      cfg.Metadata.Name,
+		DryRun:    true,
+		Pending:   workflow.PendingRef(*cfg),
+		Variables: vars.usedNames(),
+		Warnings:  vars.warningTexts(),
 	})
 
 	w.Header().Set("Content-Type", mimeJSON)

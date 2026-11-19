@@ -86,25 +86,31 @@ func NewPlan(spec Spec, branch string, mapped []types.Experiment, existing []str
 }
 
 // Result is the JSON body of an apply response. The fields of the embedded
-// [Plan] are flattened into the same object as dryRun. Warnings, set only by
-// a dry run of a plan that starts the experiment, are the problems the disk
-// check of that start finds (see experiment.CheckDisks).
+// [Plan] are flattened into the same object as dryRun. Warnings are the variable
+// warnings, then the disk check problems of a dry run that starts the experiment
+// (see experiment.CheckDisks). Variables are the sorted names of the request
+// variables that the workflow config or an included topology file used.
 type Result struct {
 	Plan
 
-	DryRun   bool     `json:"dryRun"`
-	Warnings []string `json:"warnings,omitempty"`
+	DryRun    bool     `json:"dryRun"`
+	Warnings  []string `json:"warnings,omitempty"`
+	Variables []string `json:"variables,omitempty"`
 }
 
 // ConfigResult is the JSON body of a config dry run response. Kind and Name
 // are the config's after ${BRANCH_NAME} expansion, and Pending is its ref from
-// [PendingRef], which a client passes on unchanged to an apply dry run.
+// [PendingRef], which a client passes on unchanged to an apply dry run. For a
+// request with variables, Variables are the sorted names that the config used
+// and Warnings the variable warnings.
 type ConfigResult struct {
-	Action  Action `json:"action"`
-	Kind    string `json:"kind"`
-	Name    string `json:"name"`
-	DryRun  bool   `json:"dryRun"`
-	Pending string `json:"pending,omitempty"`
+	Action    Action   `json:"action"`
+	Kind      string   `json:"kind"`
+	Name      string   `json:"name"`
+	DryRun    bool     `json:"dryRun"`
+	Pending   string   `json:"pending,omitempty"`
+	Variables []string `json:"variables,omitempty"`
+	Warnings  []string `json:"warnings,omitempty"`
 }
 
 // Mapped returns the experiments in exps whose [BranchAnnotation] equals

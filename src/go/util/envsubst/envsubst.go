@@ -117,6 +117,31 @@ func ExpandOnly(text []byte, name string, lookup Lookup) []byte {
 	})
 }
 
+// ExpandOnlySize returns the length of the text that [ExpandOnly] gives for
+// name with [Fixed] of value, without building that text.
+func ExpandOnlySize(text []byte, name, value string) int {
+	size := len(text)
+
+	for at := 0; ; {
+		m := placeholder.FindSubmatchIndex(text[at:])
+		if m == nil {
+			return size
+		}
+
+		start, end := at+m[0], at+m[1]
+
+		if string(text[at+m[nameStart]:at+m[nameEnd]]) == name {
+			if text[start+1] == '$' {
+				size--
+			} else {
+				size += len(value) - (end - start)
+			}
+		}
+
+		at = end
+	}
+}
+
 func expandToken(tok Token, lookup Lookup) []byte {
 	if tok.Escaped {
 		return tok.Literal()

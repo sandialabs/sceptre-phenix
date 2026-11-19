@@ -97,12 +97,22 @@ func configPaths(dir string) ([]string, error) {
 // first, then the rest, each group sorted by path. Problems name each file by
 // its path relative to dir.
 func loadWorkflowFiles(dir string, paths []string, wfConfig string, vars *envsubst.Set) ([]configFile, *configFile, error) {
+	configs, wf, _, err := loadWorkflowFilesDeferUnused(dir, paths, wfConfig, vars, false)
+
+	return configs, wf, err
+}
+
+// loadWorkflowFilesDeferUnused is [loadWorkflowFiles]. With deferUnused, a -e
+// variable that no file uses is not an error: it is returned for a later check.
+func loadWorkflowFilesDeferUnused(
+	dir string, paths []string, wfConfig string, vars *envsubst.Set, deferUnused bool,
+) ([]configFile, *configFile, []envsubst.Problem, error) {
 	files := make([]envsubst.File, 0, len(paths)+1)
 
 	for _, path := range paths {
 		body, err := readConfigFile(path)
 		if err != nil {
-			return nil, nil, fmt.Errorf("checking configs: %w", err)
+			return nil, nil, nil, fmt.Errorf("checking configs: %w", err)
 		}
 
 		files = append(files, envsubst.File{Path: relTo(dir, path), Text: body})
@@ -111,40 +121,54 @@ func loadWorkflowFiles(dir string, paths []string, wfConfig string, vars *envsub
 	if wfConfig != "" {
 		body, err := readConfigFile(wfConfig)
 		if err != nil {
-			return nil, nil, fmt.Errorf("checking the workflow config: %w", err)
+			return nil, nil, nil, fmt.Errorf("checking the workflow config: %w", err)
 		}
 
 		files = append(files, envsubst.File{Path: relTo(dir, wfConfig), Text: body})
 	}
 
-	files, err := substituteVars(vars, files, "step", stepPreflight)
+	var (
+		filled []envsubst.File
+		unused []envsubst.Problem
+		err    error
+	)
+
+	if deferUnused {
+		filled, unused, err = substituteVarsDeferUnused(vars, files, "step", stepPreflight)
+	} else {
+		filled, err = substituteVars(vars, files, "step", stepPreflight)
+	}
+
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	configs := make([]configFile, 0, len(paths))
 
 	for i, path := range paths {
-		cfg, err := parseConfigBody(path, files[i].Text, true)
+		cfg, err := parseConfigBody(path, filled[i].Text, true)
 		if err != nil {
-			return nil, nil, fmt.Errorf("checking configs: %w", err)
+			return nil, nil, nil, fmt.Errorf("checking configs: %w", err)
 		}
 
+		cfg.Raw = files[i].Text
 		configs = append(configs, cfg)
 	}
 
 	slices.SortFunc(configs, compareConfigs)
 
 	if wfConfig == "" {
-		return configs, nil, nil
+		return configs, nil, unused, nil
 	}
 
-	wf, err := parseConfigBody(wfConfig, files[len(paths)].Text, false)
+	wf, err := parseConfigBody(wfConfig, filled[len(paths)].Text, false)
 	if err != nil {
-		return nil, nil, fmt.Errorf("checking the workflow config: %w", err)
+		return nil, nil, nil, fmt.Errorf("checking the workflow config: %w", err)
 	}
 
-	return configs, &wf, nil
+	wf.Raw = files[len(paths)].Text
+
+	return configs, &wf, unused, nil
 }
 
 // compareConfigs orders Topology configs before everything else, and each
@@ -210,7 +234,7 @@ func parseConfigBody(path string, body []byte, requireKind bool) (configFile, er
 		}
 	}
 
-	cfg := configFile{Path: path, Kind: "", ContentType: contentTypeFor(path), Body: body}
+	cfg := configFile{Path: path, Kind: "", ContentType: contentTypeFor(path), Body: body, Raw: nil}
 
 	if kind == nil {
 		if requireKind {
