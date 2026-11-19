@@ -13,7 +13,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/gorilla/mux"
 	"golang.org/x/sync/errgroup"
 
 	"phenix/api/config"
@@ -45,8 +44,7 @@ func GetExperimentTopology(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		name    = vars["name"]
+		name    = r.PathValue("name")
 
 		query  = r.URL.Query()
 		ignore = query["ignore"]
@@ -93,8 +91,7 @@ func SearchExperimentTopology(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		name    = vars["name"]
+		name    = r.PathValue("name")
 
 		query = r.URL.Query()
 	)
@@ -539,8 +536,7 @@ func UpdateExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		name = vars["name"]
+		name = r.PathValue("name")
 	)
 
 	if !role.Allowed("experiments", "patch", name) {
@@ -668,8 +664,7 @@ func GetExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx   = r.Context()
 		role  = middleware.RoleFromContext(ctx)
-		vars  = mux.Vars(r)
-		name  = vars["name"]
+		name  = r.PathValue("name")
 		query = r.URL.Query()
 		size  = query.Get("screenshot")
 	)
@@ -767,8 +762,7 @@ func DeleteExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		name = vars["name"]
+		name = r.PathValue("name")
 	)
 
 	deleted := audit.Fields{Experiment: name}
@@ -848,8 +842,7 @@ func StopExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		name = vars["name"]
+		name = r.PathValue("name")
 	)
 
 	if !role.Allowed("experiments/stop", "update", name) {

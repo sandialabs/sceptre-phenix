@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/gorilla/mux"
 
 	"phenix/util/common"
 	"phenix/util/mm"
@@ -129,6 +128,36 @@ func TestMountFileRequestsStayWithinTheMount(t *testing.T) {
 				wantAudit(t, events(), "file-download", "failure", map[string]any{"event.reason": "outside mount"})
 			}
 		})
+	}
+}
+
+// A request for the mounted files without a path query parameter gets 400
+// with the JSON Error, and an empty path is the root of the mount.
+func TestMountFileRequestsNeedAPath(t *testing.T) {
+	useTestMount(t)
+
+	for _, tc := range []struct{ method, route string }{
+		{http.MethodGet, ""}, {http.MethodGet, "/download"}, {http.MethodHead, "/download"}, {http.MethodPut, "/upload"},
+	} {
+		t.Run(tc.method+" files"+tc.route, func(t *testing.T) {
+			resp := requestMount(t, tc.method, tc.route, url.Values{})
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Errorf("%s files%s without path = %d, want %d", tc.method, tc.route, resp.StatusCode, http.StatusBadRequest)
+			}
+
+			if tc.method == http.MethodHead {
+				return
+			}
+
+			if got := errorMessage(t, resp.StatusCode, readBody(t, resp)); got != "path must be given" {
+				t.Errorf("%s files%s without path = %q, want %q", tc.method, tc.route, got, "path must be given")
+			}
+		})
+	}
+
+	resp := requestMount(t, http.MethodGet, "", url.Values{"path": {""}})
+	if body := readBody(t, resp); resp.StatusCode != http.StatusOK || !strings.Contains(body, `"/etc"`) {
+		t.Errorf("GET files?path= = %d %s, want 200 and the root of the mount", resp.StatusCode, body)
 	}
 }
 
@@ -724,10 +753,8 @@ func mountServe(
 	ctx = context.WithValue(ctx, middleware.ContextKeyRole, role)
 	ctx = context.WithValue(ctx, middleware.ContextKeyUser, "alice")
 
-	values, _ := url.ParseQuery(query)
-
 	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v1/experiments/test-experiment/vms/"+name+"?"+query, nil)
-	req = mux.SetURLVars(req, map[string]string{"exp": "test-experiment", "name": name, "path": values.Get("path")})
+	req = withPathValues(req, map[string]string{"exp": "test-experiment", "name": name})
 
 	rec := httptest.NewRecorder()
 	weberror.ErrorHandler(h).ServeHTTP(rec, req)

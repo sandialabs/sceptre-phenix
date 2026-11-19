@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/vm"
 	"phenix/types"
 	"phenix/util/mm"
@@ -56,9 +54,8 @@ func GetVMQoS(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role    = middleware.RoleFromContext(ctx)
-		vars    = mux.Vars(r)
-		expName = vars["exp"]
-		name    = vars["name"]
+		expName = r.PathValue("exp")
+		name    = r.PathValue("name")
 	)
 
 	if !role.Allowed("vms", "patch", expName+"/"+name) {
@@ -89,12 +86,11 @@ func SetVMInterfaceQoS(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role    = middleware.RoleFromContext(ctx)
-		vars    = mux.Vars(r)
-		expName = vars["exp"]
-		name    = vars["name"]
+		expName = r.PathValue("exp")
+		name    = r.PathValue("name")
 	)
 
-	index, indexErr := qosIndex(vars["iface"])
+	index, indexErr := qosIndex(r.PathValue("iface"))
 	fields := qosFields(expName, name, index)
 
 	if !role.Allowed("vms", "patch", expName+"/"+name) {
@@ -146,12 +142,11 @@ func ClearVMInterfaceQoS(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role    = middleware.RoleFromContext(ctx)
-		vars    = mux.Vars(r)
-		expName = vars["exp"]
-		name    = vars["name"]
+		expName = r.PathValue("exp")
+		name    = r.PathValue("name")
 	)
 
-	index, indexErr := qosIndex(vars["iface"])
+	index, indexErr := qosIndex(r.PathValue("iface"))
 	fields := qosFields(expName, name, index)
 
 	if !role.Allowed("vms", "patch", expName+"/"+name) {

@@ -356,15 +356,12 @@ func newRouter(assets http.FileSystem, builderOpts ...builderOption) (*routing.M
 		Prefix: "/api/v1", Routes: nil, Middleware: nil,
 		// API routes take OPTIONS: the router sets Allow, and AnswerOptions answers 204
 		Options: http.HandlerFunc(optionsAnswered),
-		// The router's NotFoundHandler serves the SPA index, so an API client would get 200 HTML.
+		// The root group's NotFound serves the SPA index, so an API client would get 200 HTML.
 		// A route behind a disabled feature flag would then also look enabled.
 		NotFound:         apiNotFoundHandler(),
 		MethodNotAllowed: http.HandlerFunc(methodNotAllowed),
 	}
 
-	// The Builder routes are registered before the generic schema routes
-	// so /schemas/builder/v1 is matched by the builder schema handler rather
-	// than by /schemas/{kind}/{version}.
 	if err := registerBuilderRoutes(&api, builderOpts...); err != nil {
 		return nil, fmt.Errorf("configuring Builder API: %w", err)
 	}
@@ -584,14 +581,11 @@ func apiRoutes() []routing.Route {
 			routes,
 			routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/mount", weberror.ErrorHandler(MountVM)),
 			routing.Row(http.MethodDelete, "/experiments/{exp}/vms/{name}/unmount", weberror.ErrorHandler(UnmountVM)),
-			routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/files", weberror.ErrorHandler(GetMountFiles)).
-				WithQueries("path", "{path}"),
-			routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/files/download", weberror.ErrorHandler(DownloadMountFile)).
-				WithQueries("path", "{path}"),
-			routing.Row(http.MethodHead, "/experiments/{exp}/vms/{name}/files/download", weberror.ErrorHandler(DownloadMountFile)).
-				WithQueries("path", "{path}"),
-			routing.Row(http.MethodPut, "/experiments/{exp}/vms/{name}/files/upload", weberror.ErrorHandler(UploadMountFile)).
-				WithQueries("path", "{path}"),
+			// the handlers of the mount files read path from the query and answer 400 without it
+			routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/files", weberror.ErrorHandler(GetMountFiles)),
+			routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/files/download", weberror.ErrorHandler(DownloadMountFile)),
+			routing.Row(http.MethodHead, "/experiments/{exp}/vms/{name}/files/download", weberror.ErrorHandler(DownloadMountFile)),
+			routing.Row(http.MethodPut, "/experiments/{exp}/vms/{name}/files/upload", weberror.ErrorHandler(UploadMountFile)),
 			routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/files/copy", weberror.ErrorHandler(CopyExperimentFileToMount)),
 		)
 	}
@@ -618,7 +612,6 @@ func apiRoutes() []routing.Route {
 		routing.Row(http.MethodGet, "/topologies", weberror.ErrorHandler(GetTopologies)),
 		routing.Row(http.MethodGet, "/topologies/{topo}/scenarios", weberror.ErrorHandler(GetScenarios)),
 		routing.Row(http.MethodGet, "/hosts", weberror.ErrorHandler(GetClusterHosts)),
-		// the literal VLAN paths come before /vlans/{id}, which would match them too
 		routing.Row(http.MethodGet, "/vlans", weberror.ErrorHandler(GetVLANs)),
 		routing.Row(http.MethodGet, "/vlans/free", weberror.ErrorHandler(FindFreeVLANs)),
 		routing.Row(http.MethodPost, "/vlans/check", weberror.ErrorHandler(CheckVLANs)),
@@ -642,13 +635,12 @@ func apiRoutes() []routing.Route {
 		routing.Row(http.MethodGet, "/login", weberror.ErrorHandler(Login)),
 		routing.Row(http.MethodPost, "/login", weberror.ErrorHandler(Login)),
 		routing.Row(http.MethodPost, "/logout", weberror.ErrorHandler(Logout)),
-		routing.Row(http.MethodGet, "/ws", http.HandlerFunc(broker.ServeWS)).WithoutOptions(),
+		routing.Row(http.MethodGet, "/ws", http.HandlerFunc(broker.ServeWS)),
 		routing.Row(http.MethodPost, "/console", weberror.ErrorHandler(CreateConsole)),
 		routing.Row(http.MethodGet, "/console/{pid}", weberror.ErrorHandler(GetConsole)),
 		routing.Row(http.MethodDelete, "/console/{pid}", weberror.ErrorHandler(DeleteConsole)),
 		routing.Row(http.MethodGet, "/console/{pid}/ws", weberror.ErrorHandler(WsConsole)),
-		routing.Row(http.MethodPost, "/console/{pid}/size", weberror.ErrorHandler(ResizeConsole)).
-			WithQueries("cols", "{cols:[0-9]+}", "rows", "{rows:[0-9]+}"),
+		routing.Row(http.MethodPost, "/console/{pid}/size", weberror.ErrorHandler(ResizeConsole)),
 		// background jobs; listing, reading and canceling them are socket routes
 		routing.Row(http.MethodDelete, "/jobs/{id}", weberror.ErrorHandler(DeleteJob)),
 		routing.Row(http.MethodGet, "/jobs/{id}/artifact", weberror.ErrorHandler(GetJobArtifact)),

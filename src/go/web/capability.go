@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
-	"github.com/gorilla/mux"
 
 	"phenix/api/experiment"
 	"phenix/store"
@@ -504,7 +503,7 @@ func captureOps(ops []capability.Op) ([]capability.Op, error) {
 // is named as that route takes it, with the same permissions.
 func CreateCaptureToken(w http.ResponseWriter, r *http.Request) error {
 	var (
-		exp = mux.Vars(r)["exp"]
+		exp = r.PathValue("exp")
 		req captureTokenRequest
 	)
 
@@ -562,7 +561,7 @@ func CreateCaptureToken(w http.ResponseWriter, r *http.Request) error {
 // ended, without the tokens themselves.
 func ListCaptureTokens(w http.ResponseWriter, r *http.Request) {
 	var (
-		exp    = mux.Vars(r)["exp"]
+		exp    = r.PathValue("exp")
 		user   = middleware.UserFromContext(r.Context())
 		grants = captureGrants.List(user, exp)
 		tokens = make([]captureToken, 0, len(grants))
@@ -584,18 +583,17 @@ func ListCaptureTokens(w http.ResponseWriter, r *http.Request) {
 // token that is not the user's is not found, like one that has ended.
 func DeleteCaptureToken(w http.ResponseWriter, r *http.Request) error {
 	var (
-		vars = mux.Vars(r)
 		user = middleware.UserFromContext(r.Context())
-		id   = vars["id"]
+		id   = r.PathValue("id")
 	)
 
-	grants := captureGrants.List(user, vars["exp"])
+	grants := captureGrants.List(user, r.PathValue("exp"))
 	if !slices.ContainsFunc(grants, func(g capability.Grant) bool { return g.ID == id }) || !captureGrants.Revoke(id, user) {
 		return weberror.New(http.StatusNotFound, "capture token not found")
 	}
 
 	audit.Success(r, audit.CaptureTokenRevoke, "capture token revoked", audit.Fields{
-		Experiment: vars["exp"], Extra: []any{"phenix.capability.id", id},
+		Experiment: r.PathValue("exp"), Extra: []any{"phenix.capability.id", id},
 	})
 
 	w.WriteHeader(http.StatusNoContent)

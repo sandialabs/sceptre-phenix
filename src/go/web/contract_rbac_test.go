@@ -10,7 +10,7 @@ import (
 )
 
 // servedRoute is one method of a route the router serves: its path template
-// and its query templates.
+// and the query parameters its handler requires.
 type servedRoute struct {
 	method, path string
 	queries      []string
@@ -38,40 +38,35 @@ func servedRoutes(t *testing.T) []servedRoute {
 			continue
 		}
 
-		// the query pairs as name=template, as the router writes them
-		pairs := route.Queries()
-		queries := make([]string, 0, len(pairs)/2)
-
-		for i := 0; i+1 < len(pairs); i += 2 {
-			queries = append(queries, pairs[i]+"="+pairs[i+1])
-		}
-
-		if len(queries) == 0 {
-			queries = handlerQueries[route.Method+" "+route.Path]
-		}
-
-		routes = append(routes, servedRoute{method: route.Method, path: route.Path, queries: queries})
+		routes = append(routes, servedRoute{
+			method: route.Method, path: route.Path, queries: handlerQueries[route.Method+" "+route.Path],
+		})
 	}
 
 	return routes
 }
 
-// handlerQueries are the query parameters that a route's handler, not the router, requires.
+// handlerQueries are the query parameters that a route's handler requires.
 //
 //nolint:gochecknoglobals // constant table
 var handlerQueries = map[string][]string{
-	"POST /api/v1/disks/snapshot":   {"disk", "new"},
-	"POST /api/v1/disks/rebase":     {"disk", "backing", "unsafe"},
-	"POST /api/v1/disks/resize":     {"disk", "size"},
-	"POST /api/v1/disks/commit":     {"disk"},
-	"POST /api/v1/disks/clone":      {"disk", "new"},
-	"POST /api/v1/disks/clone/jobs": {"disk", "new"},
-	"DELETE /api/v1/disks":          {"disk"},
-	"POST /api/v1/disks/rename":     {"disk", "new"},
-	"GET /api/v1/disks/download":    {"disk"},
-	"HEAD /api/v1/disks/download":   {"disk"},
-	"GET /api/v1/disks/checksum":    {"disk"},
-	"GET /api/v1/disks/details":     {"disk"},
+	"POST /api/v1/disks/snapshot":                              {"disk", "new"},
+	"POST /api/v1/disks/rebase":                                {"disk", "backing", "unsafe"},
+	"POST /api/v1/disks/resize":                                {"disk", "size"},
+	"POST /api/v1/disks/commit":                                {"disk"},
+	"POST /api/v1/disks/clone":                                 {"disk", "new"},
+	"POST /api/v1/disks/clone/jobs":                            {"disk", "new"},
+	"DELETE /api/v1/disks":                                     {"disk"},
+	"POST /api/v1/disks/rename":                                {"disk", "new"},
+	"GET /api/v1/disks/download":                               {"disk"},
+	"HEAD /api/v1/disks/download":                              {"disk"},
+	"GET /api/v1/disks/checksum":                               {"disk"},
+	"GET /api/v1/disks/details":                                {"disk"},
+	"GET /api/v1/experiments/{exp}/vms/{name}/files":           {"path"},
+	"GET /api/v1/experiments/{exp}/vms/{name}/files/download":  {"path"},
+	"HEAD /api/v1/experiments/{exp}/vms/{name}/files/download": {"path"},
+	"PUT /api/v1/experiments/{exp}/vms/{name}/files/upload":    {"path"},
+	"POST /api/v1/console/{pid}/size":                          {"cols", "rows"},
 }
 
 // routeParams are the contract fixture's value of each path and query
@@ -102,7 +97,7 @@ func (r servedRoute) concrete() string {
 			continue
 		}
 
-		name, _, _ := strings.Cut(strings.Trim(segment, "{}"), ":")
+		name := strings.Trim(segment, "{}")
 
 		value, ok := routeParams[segments[i-1]+"/{"+name+"}"]
 		if !ok {
@@ -113,8 +108,7 @@ func (r servedRoute) concrete() string {
 	}
 
 	query := make([]string, 0, len(r.queries))
-	for _, q := range r.queries {
-		name, _, _ := strings.Cut(q, "=")
+	for _, name := range r.queries {
 		query = append(query, name+"="+routeParams[name])
 	}
 
@@ -252,10 +246,9 @@ func TestServedRouteConcrete(t *testing.T) {
 		},
 		"after a filled parameter": {servedRoute{path: "/api/v1/configs/{kind}/{name}"}, "/api/v1/configs/topology/" + contractTopo},
 		"unknown segment":          {servedRoute{path: "/api/v1/hosts/{name}"}, "/api/v1/hosts/none"},
-		"pattern dropped":          {servedRoute{path: "/api/v1/console/{pid:[0-9]+}"}, "/api/v1/console/1"},
 		"job":                      {servedRoute{path: "/api/v1/jobs/{id}"}, "/api/v1/jobs/{job}"},
 		"queries": {
-			servedRoute{path: "/api/v1/console/{pid}/size", queries: []string{"cols={cols:[0-9]+}", "rows={rows:[0-9]+}"}},
+			servedRoute{path: "/api/v1/console/{pid}/size", queries: []string{"cols", "rows"}},
 			"/api/v1/console/1/size?cols=80&rows=24",
 		},
 	}

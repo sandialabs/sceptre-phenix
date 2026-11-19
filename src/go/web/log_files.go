@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	"phenix/util/plog"
 	"phenix/web/audit"
 	"phenix/web/middleware"
@@ -75,7 +73,7 @@ func GetLogFiles(w http.ResponseWriter, r *http.Request) error {
 // log file as an attachment, with byte ranges and HEAD (util.ServeDownload).
 func DownloadLogFile(w http.ResponseWriter, r *http.Request) error {
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-	name := mux.Vars(r)["name"]
+	name := r.PathValue("name")
 	fields := audit.Fields{Extra: []any{"phenix.log.name", name}}
 
 	if !role.Allowed("logs", "get") {

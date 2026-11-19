@@ -33,7 +33,7 @@ func contractSpec(t *testing.T) *openapi3.T {
 }
 
 // specOperation returns openapi.yml's template and operation for method on the concrete path, query ignored,
-// or nil; it prefers the template of fewest parameters, as gorilla matches a literal segment first.
+// or nil; it prefers the template of fewest parameters, as the router matches a literal segment first.
 func specOperation(doc *openapi3.T, method, path string) (string, *openapi3.Operation) {
 	path, _, _ = strings.Cut(path, "?")
 

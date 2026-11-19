@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid/v5"
-	"github.com/gorilla/mux"
 	"golang.org/x/net/websocket"
 
 	"phenix/api/experiment"
@@ -132,8 +131,7 @@ func GetTerminals(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetTerminal")
 
 	var (
-		vars = mux.Vars(r)
-		exp  = vars["name"]
+		exp = r.PathValue("name")
 	)
 
 	// a wildcard name such as "a*" matches the whole list, so check each name
@@ -157,22 +155,21 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ConnectTerminal")
 
 	var (
-		vars  = mux.Vars(r)
-		exp   = vars["name"]
-		stage = vars["stage"]
-		cmp   = vars["cmp"]
+		exp   = r.PathValue("name")
+		stage = r.PathValue("stage")
+		cmp   = r.PathValue("cmp")
 	)
 
 	if err := canView(r, exp); err != nil {
 		return err
 	}
 
-	run, err := strconv.Atoi(vars["run"])
+	run, err := strconv.Atoi(r.PathValue("run"))
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, "invalid run ID provided")
 	}
 
-	loop, err := strconv.Atoi(vars["loop"])
+	loop, err := strconv.Atoi(r.PathValue("loop"))
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, "invalid loop number provided")
 	}
@@ -196,12 +193,12 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) error {
 func ConnectTerminalByPID(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ConnectTerminalByPID")
 
-	exp := mux.Vars(r)["name"]
+	exp := r.PathValue("name")
 	if err := canView(r, exp); err != nil {
 		return err
 	}
 
-	pid, err := strconv.Atoi(mux.Vars(r)["pid"])
+	pid, err := strconv.Atoi(r.PathValue("pid"))
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, "invalid terminal PID provided")
 	}
@@ -227,12 +224,12 @@ func ConnectTerminalByPID(w http.ResponseWriter, r *http.Request) error {
 func StreamTerminal(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StreamTerminal")
 
-	exp := mux.Vars(r)["name"]
+	exp := r.PathValue("name")
 	if err := canView(r, exp); err != nil {
 		return err
 	}
 
-	pid, _ := strconv.Atoi(mux.Vars(r)["pid"])
+	pid, _ := strconv.Atoi(r.PathValue("pid"))
 
 	t, err := GetTerminalByPID(pid)
 	if err != nil {
@@ -247,7 +244,7 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	readOnly, status := claimTerminalClient(pid, mux.Vars(r)["id"], mayWrite(r, exp))
+	readOnly, status := claimTerminalClient(pid, r.PathValue("id"), mayWrite(r, exp))
 
 	switch status {
 	case http.StatusNotFound:
@@ -269,14 +266,14 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) error {
 func ExitTerminal(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ExitTerminal")
 
-	exp := mux.Vars(r)["name"]
-	id := mux.Vars(r)["id"]
+	exp := r.PathValue("name")
+	id := r.PathValue("id")
 
 	if err := canView(r, exp); err != nil {
 		return err
 	}
 
-	pid, err := strconv.Atoi(mux.Vars(r)["pid"])
+	pid, err := strconv.Atoi(r.PathValue("pid"))
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, "invalid terminal PID provided")
 	}
@@ -567,22 +564,21 @@ func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetScorchComponentOutput")
 
 	var (
-		vars  = mux.Vars(r)
-		exp   = vars["name"]
-		stage = vars["stage"]
-		cmp   = vars["cmp"]
+		exp   = r.PathValue("name")
+		stage = r.PathValue("stage")
+		cmp   = r.PathValue("cmp")
 	)
 
 	if err := canView(r, exp); err != nil {
 		return err
 	}
 
-	run, err := strconv.Atoi(vars["run"])
+	run, err := strconv.Atoi(r.PathValue("run"))
 	if err != nil {
-		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
+		return weberror.NewWebError(err, "invalid run ID '%s' provided", r.PathValue("run"))
 	}
 
-	loop, err := strconv.Atoi(vars["loop"])
+	loop, err := strconv.Atoi(r.PathValue("loop"))
 	if err != nil {
 		return weberror.NewWebError(err, "invalid loop number provided")
 	}
@@ -653,22 +649,21 @@ func StreamComponentOutput(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StreamScorchComponentOutput")
 
 	var (
-		vars  = mux.Vars(r)
-		exp   = vars["name"]
-		stage = vars["stage"]
-		cmp   = vars["cmp"]
+		exp   = r.PathValue("name")
+		stage = r.PathValue("stage")
+		cmp   = r.PathValue("cmp")
 	)
 
 	if err := canView(r, exp); err != nil {
 		return err
 	}
 
-	run, err := strconv.Atoi(vars["run"])
+	run, err := strconv.Atoi(r.PathValue("run"))
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, "invalid run ID provided")
 	}
 
-	loop, err := strconv.Atoi(vars["loop"])
+	loop, err := strconv.Atoi(r.PathValue("loop"))
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, "invalid loop number provided")
 	}
@@ -708,8 +703,7 @@ func GetPipelines(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		name    = vars["name"]
+		name    = r.PathValue("name")
 	)
 
 	if !role.Allowed("experiments", "get", name) {
@@ -811,18 +805,17 @@ func GetPipeline(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		exp     = vars["name"]
+		exp     = r.PathValue("name")
 	)
 
-	run, err := strconv.Atoi(vars["run"])
+	run, err := strconv.Atoi(r.PathValue("run"))
 	if err != nil {
-		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
+		return weberror.NewWebError(err, "invalid run ID '%s' provided", r.PathValue("run"))
 	}
 
-	loop, err := strconv.Atoi(vars["loop"])
+	loop, err := strconv.Atoi(r.PathValue("loop"))
 	if err != nil {
-		return weberror.NewWebError(err, "invalid loop number '%s' provided", vars["loop"])
+		return weberror.NewWebError(err, "invalid loop number '%s' provided", r.PathValue("loop"))
 	}
 
 	if !role.Allowed("experiments", "get", exp) {
@@ -869,13 +862,12 @@ func ClearPipeline(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		name    = vars["name"]
+		name    = r.PathValue("name")
 	)
 
-	run, err := strconv.Atoi(vars["run"])
+	run, err := strconv.Atoi(r.PathValue("run"))
 	if err != nil {
-		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
+		return weberror.NewWebError(err, "invalid run ID '%s' provided", r.PathValue("run"))
 	}
 
 	cleared := runFields(name, run)
@@ -1036,13 +1028,12 @@ func startPipeline(w http.ResponseWriter, r *http.Request, cleanupOnly bool) err
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		name    = vars["name"]
+		name    = r.PathValue("name")
 	)
 
-	run, err := strconv.Atoi(vars["run"])
+	run, err := strconv.Atoi(r.PathValue("run"))
 	if err != nil {
-		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
+		return weberror.NewWebError(err, "invalid run ID '%s' provided", r.PathValue("run"))
 	}
 
 	started := runFields(name, run)
@@ -1170,13 +1161,12 @@ func CancelPipeline(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		name    = vars["name"]
+		name    = r.PathValue("name")
 	)
 
-	run, err := strconv.Atoi(vars["run"])
+	run, err := strconv.Atoi(r.PathValue("run"))
 	if err != nil {
-		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
+		return weberror.NewWebError(err, "invalid run ID '%s' provided", r.PathValue("run"))
 	}
 
 	canceled := runFields(name, run)

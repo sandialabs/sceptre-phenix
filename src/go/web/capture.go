@@ -11,8 +11,6 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/experiment"
 	"phenix/api/vm"
 	"phenix/util/mm"
@@ -34,8 +32,7 @@ func GetExperimentCaptures(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		name = vars["name"]
+		name = r.PathValue("name")
 	)
 
 	if !role.Allowed("experiments/captures", "list", name) {
@@ -105,9 +102,8 @@ func GetVMCaptures(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
-		name = vars["name"]
+		exp  = r.PathValue("exp")
+		name = r.PathValue("name")
 	)
 
 	if !role.Allowed("vms/captures", "list", fmt.Sprintf("%s/%s", exp, name)) {
@@ -147,9 +143,8 @@ func StartVMCapture(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
-		name = vars["name"]
+		exp  = r.PathValue("exp")
+		name = r.PathValue("name")
 	)
 
 	if !role.Allowed("vms/captures", "create", fmt.Sprintf("%s/%s", exp, name)) {
@@ -305,9 +300,8 @@ func StopVMCaptures(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx       = r.Context()
 		role      = middleware.RoleFromContext(ctx)
-		vars      = mux.Vars(r)
-		exp       = vars["exp"]
-		name      = vars["name"]
+		exp       = r.PathValue("exp")
+		name      = r.PathValue("name")
 		query     = r.URL.Query()
 		ifaceStr  = query.Get("iface")
 		ifaceName = query.Get("ifaceName")
@@ -428,8 +422,7 @@ func StartCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
+		exp  = r.PathValue("exp")
 	)
 
 	if !role.Allowed("exp/captureSubnet", "create", exp) {
@@ -507,8 +500,7 @@ func StopCaptureSubnet(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
+		exp  = r.PathValue("exp")
 	)
 
 	if !role.Allowed("exp/captureSubnet", "delete", exp) {
@@ -727,7 +719,7 @@ func vlanCaptureTargets(r *http.Request, exp, verb string, action audit.Action) 
 
 // StartCaptureVLAN - POST /experiments/{exp}/captureVlan.
 func StartCaptureVLAN(w http.ResponseWriter, r *http.Request) error {
-	exp := mux.Vars(r)["exp"]
+	exp := r.PathValue("exp")
 
 	req, targets, err := vlanCaptureTargets(r, exp, "create", audit.CaptureStart)
 	if err != nil {
@@ -787,7 +779,7 @@ func StartCaptureVLAN(w http.ResponseWriter, r *http.Request) error {
 
 // StopCaptureVLAN - POST /experiments/{exp}/stopCaptureVlan.
 func StopCaptureVLAN(w http.ResponseWriter, r *http.Request) error {
-	exp := mux.Vars(r)["exp"]
+	exp := r.PathValue("exp")
 
 	req, targets, err := vlanCaptureTargets(r, exp, "delete", audit.CaptureStop)
 	if err != nil {

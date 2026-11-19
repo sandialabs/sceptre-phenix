@@ -38,8 +38,8 @@ import (
 	"phenix/web/weberror"
 )
 
-// builderSPABody is what the router level NotFoundHandler serves in
-// production: the SPA index. A Builder request must never reach it.
+// builderSPABody is what the root group's NotFound serves in production: the
+// SPA index. A Builder request must never reach it.
 const builderSPABody = "<!doctype html><title>phenix</title>"
 
 // builderHarness bundles a router serving the Builder routes with the
@@ -475,7 +475,7 @@ func TestBuilderUnknownAPIRoutesAnswerJSON(t *testing.T) {
 
 	harness := newBuilderHarness(t)
 
-	// Registered after the Builder routes, exactly as [Start] does.
+	// the generic schema route, which matches the Builder schema paths too
 	harness.handle(routing.Row(http.MethodGet, "/schemas/{kind}/{version}", weberror.ErrorHandler(GetSchema)))
 
 	for _, tt := range paths {
@@ -1333,7 +1333,7 @@ func TestBuilderErrorStatuses(t *testing.T) {
 func TestBuilderSchemaRoutes(t *testing.T) {
 	harness := newBuilderHarness(t)
 
-	// Registered after the Builder routes, exactly as [Start] does.
+	// the generic schema route, which matches the Builder schema paths too
 	harness.handle(routing.Row(http.MethodGet, "/schemas/{kind}/{version}", weberror.ErrorHandler(GetSchema)))
 
 	want, err := bdoc.SchemaJSON()
@@ -1390,38 +1390,29 @@ func TestBuilderSchemaRoutes(t *testing.T) {
 	}
 }
 
-// TestBuilderRegisteredBeforeGenericSchema guards the order of the routes
-// that [Start] serves, which TestBuilderSchemaRoutes cannot see: the router
-// matches the routes in order.
-func TestBuilderRegisteredBeforeGenericSchema(t *testing.T) {
-	server := serveContract(t, nil)
+// TestBuilderSchemaPathsReachTheBuilder asserts that the router [Start]
+// serves sends each Builder schema path to its Builder handler, not to
+// /schemas/{kind}/{version}, which matches the path too.
+func TestBuilderSchemaPathsReachTheBuilder(t *testing.T) {
+	server := serveContractAs(t, *builderOnlyRole(), nil)
 
-	router, ok := server.Config.Handler.(*routing.Mux)
-	if !ok {
-		t.Fatalf("contract server handler = %T, want *routing.Mux", server.Config.Handler)
-	}
+	for path, schema := range map[string]func() ([]byte, error){
+		builderSchemaPath:         bdoc.SchemaJSON,
+		builderTemplateSchemaPath: bdoc.TemplateFileSchemaJSON,
+		builderPackageSchemaPath:  bdoc.PackageSchemaJSON,
+		builderLayerSetSchemaPath: bdoc.LayerSetFileSchemaJSON,
+	} {
+		t.Run(path, func(t *testing.T) {
+			want, err := schema()
+			if err != nil {
+				t.Fatalf("the schema of %s: %v", path, err)
+			}
 
-	builder, generic := -1, -1
-
-	for i, route := range router.Routes() {
-		switch route.Path {
-		case builderAPIPrefix + builderSchemaPath:
-			builder = i
-		case builderAPIPrefix + "/schemas/{kind}/{version}":
-			generic = i
-		}
-	}
-
-	if builder < 0 {
-		t.Error("the router has no Builder schema route")
-	}
-
-	if generic < 0 {
-		t.Error("the router has no generic schema route")
-	}
-
-	if builder >= 0 && generic >= 0 && builder > generic {
-		t.Error("the router has the Builder routes after /schemas/{kind}/{version}, want them before")
+			resp := do(t, http.MethodGet, server.URL+builderAPIPrefix+path, "")
+			if body := readBody(t, resp); resp.StatusCode != http.StatusOK || body != string(want) {
+				t.Errorf("GET %s = %d with %d bytes, want 200 with the Builder schema", path, resp.StatusCode, len(body))
+			}
+		})
 	}
 }
 

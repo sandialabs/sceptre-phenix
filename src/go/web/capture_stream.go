@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 
 	"phenix/api/livecapture"
@@ -81,9 +80,8 @@ func captureStreamStatus(err error) int {
 func GetVMCaptureStream(w http.ResponseWriter, r *http.Request) error {
 	var (
 		role = middleware.RoleFromContext(r.Context())
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
-		name = vars["name"]
+		exp  = r.PathValue("exp")
+		name = r.PathValue("name")
 	)
 
 	if !captureReadAllowed(role, exp, name) {
@@ -92,7 +90,7 @@ func GetVMCaptureStream(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	iface, err := strconv.Atoi(vars["iface"])
+	iface, err := strconv.Atoi(r.PathValue("iface"))
 	if err != nil || iface < 0 {
 		return weberror.New(http.StatusBadRequest, "interface must be an interface index")
 	}
@@ -135,7 +133,7 @@ func GetVMCaptureStream(w http.ResponseWriter, r *http.Request) error {
 // Streams the running capture a stream grant names, as GetVMCaptureStream does; the grant is the credential. It ends with
 // the grant, or when its user may no longer read the capture.
 func (c grantChecker) GetCaptureStreamByToken(w http.ResponseWriter, r *http.Request) error {
-	g, status := c.use(r, mux.Vars(r)["token"], capability.OpStream)
+	g, status := c.use(r, r.PathValue("token"), capability.OpStream)
 	if status != 0 {
 		return weberror.New(status, http.StatusText(status))
 	}

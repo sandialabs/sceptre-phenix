@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/mux"
 	"golang.org/x/net/websocket"
 
 	"phenix/api/experiment"
@@ -299,9 +298,8 @@ func GetPortForwards(w http.ResponseWriter, r *http.Request) error {
 		user, _ = ctx.Value(middleware.ContextKeyUser).(string)
 		role    = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
 
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
-		vm   = vars["name"]
+		exp = r.PathValue("exp")
+		vm  = r.PathValue("name")
 	)
 
 	if !role.Allowed("vms/forwards", "list", fmt.Sprintf("%s/%s", exp, vm)) {
@@ -350,9 +348,8 @@ func CreatePortForward(w http.ResponseWriter, r *http.Request) error {
 		user, _ = ctx.Value(middleware.ContextKeyUser).(string)
 		role    = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
 
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
-		vm   = vars["name"]
+		exp = r.PathValue("exp")
+		vm  = r.PathValue("name")
 
 		query = r.URL.Query()
 		src   = query.Get("src")
@@ -425,9 +422,8 @@ func DeletePortForward(w http.ResponseWriter, r *http.Request) error {
 		user, _ = ctx.Value(middleware.ContextKeyUser).(string)
 		role    = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
 
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
-		vm   = vars["name"]
+		exp = r.PathValue("exp")
+		vm  = r.PathValue("name")
 
 		query = r.URL.Query()
 		host  = query.Get("host")
@@ -582,11 +578,10 @@ func GetPortForwardWebSocket(w http.ResponseWriter, r *http.Request) error {
 		user, _ = ctx.Value(middleware.ContextKeyUser).(string)
 		role    = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
 
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
-		vm   = vars["name"]
-		host = vars["host"]
-		port = vars["port"]
+		exp  = r.PathValue("exp")
+		vm   = r.PathValue("name")
+		host = r.PathValue("host")
+		port = r.PathValue("port")
 	)
 
 	fields := audit.Fields{Experiment: exp, VM: vm, Extra: []any{"destination.address", host}}

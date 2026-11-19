@@ -19,7 +19,6 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/gorilla/mux"
 	"pgregory.net/rapid"
 
 	"phenix/store"
@@ -1446,7 +1445,7 @@ func capabilityTokensRequest(t *testing.T, method, user string, vars map[string]
 	ctx := context.WithValue(t.Context(), middleware.ContextKeyUser, user)
 	r := httptest.NewRequestWithContext(ctx, method, "/api/v1/experiments/"+vars["exp"]+"/captureTokens", nil)
 
-	return mux.SetURLVars(r, vars)
+	return withPathValues(r, vars)
 }
 
 // The user's own tokens of the experiment are listed, without the tokens.

@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 
 	expcapture "phenix/api/capture"
@@ -191,7 +190,7 @@ func experimentCaptureList(r *http.Request, exp string, running bool) (*proto.Ca
 func StartExperimentCapture(w http.ResponseWriter, r *http.Request) error {
 	var (
 		role = middleware.RoleFromContext(r.Context())
-		exp  = mux.Vars(r)["name"]
+		exp  = r.PathValue("name")
 	)
 
 	if !role.Allowed("experiments/captures", "create", exp) {
@@ -263,9 +262,8 @@ func StartExperimentCapture(w http.ResponseWriter, r *http.Request) error {
 func GetExperimentCapture(w http.ResponseWriter, r *http.Request) error {
 	var (
 		role = middleware.RoleFromContext(r.Context())
-		vars = mux.Vars(r)
-		exp  = vars["name"]
-		id   = vars["id"]
+		exp  = r.PathValue("name")
+		id   = r.PathValue("id")
 	)
 
 	if !role.Allowed("experiments/captures", "get", exp) {
@@ -284,9 +282,8 @@ func GetExperimentCapture(w http.ResponseWriter, r *http.Request) error {
 func StopExperimentCapture(w http.ResponseWriter, r *http.Request) error {
 	var (
 		role   = middleware.RoleFromContext(r.Context())
-		vars   = mux.Vars(r)
-		exp    = vars["name"]
-		id     = vars["id"]
+		exp    = r.PathValue("name")
+		id     = r.PathValue("id")
 		fields = experimentCaptureAuditFields(exp, id, "")
 	)
 
@@ -331,9 +328,8 @@ func StopExperimentCapture(w http.ResponseWriter, r *http.Request) error {
 func GetExperimentCaptureStream(w http.ResponseWriter, r *http.Request) error {
 	var (
 		role    = middleware.RoleFromContext(r.Context())
-		vars    = mux.Vars(r)
-		exp     = vars["name"]
-		id      = vars["id"]
+		exp     = r.PathValue("name")
+		id      = r.PathValue("id")
 		fromNow = streamsFromNow(r)
 		fields  = experimentCaptureAuditFields(exp, id, "")
 	)

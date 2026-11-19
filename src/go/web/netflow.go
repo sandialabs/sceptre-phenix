@@ -9,7 +9,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 
 	"phenix/api/experiment"
@@ -38,8 +37,7 @@ func GetNetflow(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		exp     = vars["exp"]
+		exp     = r.PathValue("exp")
 	)
 
 	if !role.Allowed("experiments/netflow", "get", exp) {
@@ -70,8 +68,7 @@ func StartNetflow(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		exp     = vars["exp"]
+		exp     = r.PathValue("exp")
 	)
 
 	started := audit.Fields{Experiment: exp}
@@ -117,8 +114,7 @@ func StopNetflow(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		exp     = vars["exp"]
+		exp     = r.PathValue("exp")
 	)
 
 	stopped := audit.Fields{Experiment: exp}
@@ -155,8 +151,7 @@ func GetNetflowWebSocket(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		exp     = vars["exp"]
+		exp     = r.PathValue("exp")
 	)
 
 	if !role.Allowed("experiments/netflow", "get", exp) {
@@ -386,7 +381,7 @@ func GetNetflowCaptures(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		exp  = mux.Vars(r)["exp"]
+		exp  = r.PathValue("exp")
 	)
 
 	if !role.Allowed("experiments/netflow", "get", exp) {
@@ -425,9 +420,8 @@ func GetNetflowCaptures(w http.ResponseWriter, r *http.Request) error {
 func DownloadNetflowCapture(w http.ResponseWriter, r *http.Request) error {
 	var (
 		role   = middleware.RoleFromContext(r.Context())
-		vars   = mux.Vars(r)
-		exp    = vars["exp"]
-		id     = vars["id"]
+		exp    = r.PathValue("exp")
+		id     = r.PathValue("id")
 		format = r.URL.Query().Get("format")
 		head   = r.Method == http.MethodHead
 	)

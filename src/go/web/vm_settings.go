@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/experiment"
 	"phenix/api/job"
 	"phenix/api/vm"
@@ -40,7 +38,7 @@ func ResetVMSettings(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role    = middleware.RoleFromContext(ctx)
-		expName = mux.Vars(r)["exp"]
+		expName = r.PathValue("exp")
 	)
 
 	if !role.Allowed("vms", "patch") {

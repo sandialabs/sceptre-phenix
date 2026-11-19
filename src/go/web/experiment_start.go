@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/experiment"
 	"phenix/api/experiment/startopts"
 	"phenix/api/vm"
@@ -59,7 +57,7 @@ func StartExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		name = mux.Vars(r)["name"]
+		name = r.PathValue("name")
 	)
 
 	if name == experiment.ReservedName {

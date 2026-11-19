@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	bapi "phenix/api/builder"
 	"phenix/api/config"
 	"phenix/api/disk"
@@ -741,7 +739,7 @@ func (b *builderAPI) draftFor(r *http.Request, action string) (builderActor, *ba
 // pathDraft loads the draft that the request path names (see
 // [builderAPI.namedDraft]).
 func (b *builderAPI) pathDraft(r *http.Request, damaged bool) (*bapi.DraftMetadata, error) {
-	return b.namedDraft(r.Context(), mux.Vars(r)["draft"], damaged)
+	return b.namedDraft(r.Context(), r.PathValue("draft"), damaged)
 }
 
 // namedDraft loads the draft with the given ID. When damaged is set, it also

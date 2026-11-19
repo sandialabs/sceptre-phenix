@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	bapi "phenix/api/builder"
 	bdoc "phenix/types/builder"
 	"phenix/util/plog"
@@ -229,7 +227,7 @@ func (b *builderAPI) getIcon(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	icon, err := b.drafts.GetIcon(r.Context(), mux.Vars(r)["icon"])
+	icon, err := b.drafts.GetIcon(r.Context(), r.PathValue("icon"))
 	if err != nil {
 		return builderIconError(err, "unable to read the icon")
 	}
@@ -304,7 +302,7 @@ func (b *builderAPI) renameIcon(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	name := mux.Vars(r)["icon"]
+	name := r.PathValue("icon")
 
 	icon, err := b.drafts.RenameIcon(r.Context(), actor.user, name, request.Name)
 	if errors.Is(err, bapi.ErrForbidden) {
@@ -340,7 +338,7 @@ func (b *builderAPI) deleteIcon(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	name := mux.Vars(r)["icon"]
+	name := r.PathValue("icon")
 
 	err = b.drafts.DeleteIcon(r.Context(), actor.user, name, ifMatch)
 

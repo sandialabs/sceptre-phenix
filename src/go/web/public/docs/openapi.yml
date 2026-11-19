@@ -7324,7 +7324,9 @@ paths:
                     items:
                       $ref: "#/components/schemas/File"
         "400":
-          description: the VM is not mounted, or the path is a file or outside the mount
+          description: >-
+            the path query parameter is missing, the VM is not mounted, or the
+            path is a file or outside the mount
           content:
             application/json:
               schema:
@@ -7452,7 +7454,9 @@ paths:
         "304":
           $ref: "#/components/responses/NotModified"
         "400":
-          description: the VM is not mounted, or the path is a folder or outside the mount
+          description: >-
+            the path query parameter is missing, the VM is not mounted, or the
+            path is a folder or outside the mount
           content:
             application/json:
               schema:
@@ -7522,7 +7526,9 @@ paths:
             Last-Modified:
               $ref: "#/components/headers/LastModified"
         "400":
-          description: the VM is not mounted, or the path is a folder or outside the mount
+          description: >-
+            the path query parameter is missing, the VM is not mounted, or the
+            path is a folder or outside the mount
           content:
             application/json:
               schema:
@@ -8050,7 +8056,9 @@ paths:
         "200":
           description: the file was written
         "400":
-          description: the VM is not mounted, or the path is outside the mount
+          description: >-
+            the path query parameter is missing, the VM is not mounted, or the
+            path is outside the mount
           content:
             application/json:
               schema:
@@ -13219,9 +13227,8 @@ paths:
       summary: Set a console's terminal size
       description: >-
         Both query parameters are required and must be unsigned integers. A
-        request without them, or with a value that is not all digits, does not
-        match this route at all. A console starts at 80 columns and 24 rows.
-        A resize sends no input to the console.
+        console starts at 80 columns and 24 rows. A resize sends no input to
+        the console.
       operationId: postConsoleSize
       parameters:
         - name: pid
@@ -13252,7 +13259,9 @@ paths:
         "200":
           description: successful operation
         "400":
-          description: the pid is not a number, or rows or cols is above 65535
+          description: >-
+            the pid is not a number, or rows or cols is missing, is not all
+            digits or is above 65535
           content:
             application/json:
               schema:

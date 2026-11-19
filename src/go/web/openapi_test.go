@@ -28,8 +28,8 @@ func openAPIKey(scope, method, path string) string {
 	return scope + " " + strings.ToUpper(method) + " " + pathParams.ReplaceAllString(path, "{}")
 }
 
-// pathParams are the parameters of a path template, as OpenAPI and gorilla
-// write them (gorilla's with an optional pattern).
+// pathParams are the parameters of a path template, as OpenAPI and the router
+// write them.
 var pathParams = regexp.MustCompile(`\{[^}]*\}`)
 
 // loadOpenAPI reads the operations of public/docs/openapi.yml.
@@ -128,8 +128,8 @@ func (s openAPISpec) documents(method, path string, status int) bool {
 }
 
 // routerOperations are the router's operations, keyed as in an openAPISpec, with all features on,
-// each with the query parameters it needs, plus the paths of any-method routes (OPTIONS left out).
-func routerOperations(t *testing.T) (map[string][]string, []string) {
+// plus the paths of any-method routes (OPTIONS left out).
+func routerOperations(t *testing.T) (map[string]bool, []string) {
 	t.Helper()
 
 	server := serveContract(t, func(o *serverOptions) {
@@ -145,9 +145,9 @@ func routerOperations(t *testing.T) (map[string][]string, []string) {
 }
 
 // walkOperations are the operations of routes, as routerOperations returns them.
-func walkOperations(routes []routing.Route) (map[string][]string, []string) {
+func walkOperations(routes []routing.Route) (map[string]bool, []string) {
 	var (
-		ops       = map[string][]string{}
+		ops       = map[string]bool{}
 		anyMethod []string
 	)
 
@@ -165,42 +165,10 @@ func walkOperations(routes []routing.Route) (map[string][]string, []string) {
 			scope, path = "api", rest
 		}
 
-		// the query pairs are names and value templates
-		queries := route.Queries()
-		names := make([]string, 0, len(queries)/2)
-
-		for i := 0; i < len(queries); i += 2 {
-			names = append(names, queries[i])
-		}
-
-		key := openAPIKey(scope, route.Method, path)
-
-		// two routes of one key need only the queries that both need
-		if prior, ok := ops[key]; ok {
-			names = slices.DeleteFunc(names, func(n string) bool { return !slices.Contains(prior, n) })
-		}
-
-		ops[key] = names
+		ops[openAPIKey(scope, route.Method, path)] = true
 	}
 
 	return ops, anyMethod
-}
-
-// Each method of a path gets its own queries, cut only by an earlier route of
-// that method and path.
-func TestWalkOperationsQueriesPerMethod(t *testing.T) {
-	handler := http.NotFoundHandler()
-
-	ops, _ := walkOperations([]routing.Route{
-		routing.Row(http.MethodGet, "/x", handler).WithQueries("a", "{a}"),
-		routing.Row(http.MethodGet, "/x", handler).WithQueries("a", "{a}", "b", "{b}"),
-		routing.Row(http.MethodPost, "/x", handler).WithQueries("a", "{a}", "b", "{b}"),
-	})
-
-	want := map[string][]string{"root GET /x": {"a"}, "root POST /x": {"a", "b"}}
-	if diff := cmp.Diff(want, ops); diff != "" {
-		t.Errorf("walkOperations() mismatch (-want +got):\n%s", diff)
-	}
 }
 
 // routesOfAnyMethod are routes taking any method: UI files openapi.yml omits.
@@ -280,7 +248,7 @@ func TestRouterMatchesOpenAPI(t *testing.T) {
 	}
 
 	for _, r := range socketRoutes() {
-		if key := openAPIKey("api", r.Method, r.Path); router[key] == nil {
+		if key := openAPIKey("api", r.Method, r.Path); !router[key] {
 			t.Errorf("socket route %s is not an HTTP API route", key)
 		}
 	}
@@ -344,15 +312,13 @@ func TestRouterPathParametersMatchOpenAPI(t *testing.T) {
 	}
 }
 
-// templateNames are the names of the variables of a path template, in order,
-// without a gorilla pattern such as {id:[0-9]+}.
+// templateNames are the names of the variables of a path template, in order.
 func templateNames(path string) []string {
 	matches := pathParams.FindAllString(path, -1)
 	names := make([]string, 0, len(matches))
 
 	for _, match := range matches {
-		name, _, _ := strings.Cut(strings.Trim(match, "{}"), ":")
-		names = append(names, name)
+		names = append(names, strings.Trim(match, "{}"))
 	}
 
 	return names
@@ -526,11 +492,10 @@ func TestOpenAPIOperationsAreDescribed(t *testing.T) {
 	}
 }
 
-// TestRouterQueriesAreRequiredParameters asserts openapi.yml makes each query
-// parameter that a route needs (gorilla's Queries) a required parameter, since
-// the router answers 404 without it.
-func TestRouterQueriesAreRequiredParameters(t *testing.T) {
-	router, _ := routerOperations(t)
+// TestHandlerQueriesAreRequiredParameters asserts openapi.yml makes each query
+// parameter that a handler requires (handlerQueries) a required parameter,
+// since the handler answers 400 without it.
+func TestHandlerQueriesAreRequiredParameters(t *testing.T) {
 	required := map[string][]string{}
 
 	for path, item := range loadOpenAPIDocument(t).Paths {
@@ -554,10 +519,19 @@ func TestRouterQueriesAreRequiredParameters(t *testing.T) {
 		}
 	}
 
-	for key, queries := range router {
+	for route, queries := range handlerQueries {
+		method, path, _ := strings.Cut(route, " ")
+
+		scope := "root"
+		if rest, ok := strings.CutPrefix(path, "/api/v1"); ok {
+			scope, path = "api", rest
+		}
+
+		key := openAPIKey(scope, method, path)
+
 		for _, name := range queries {
 			if !slices.Contains(required[key], name) {
-				t.Errorf("openapi.yml does not make %s query parameter %q required, which the router needs", key, name)
+				t.Errorf("openapi.yml does not make %s query parameter %q required, which the handler needs", key, name)
 			}
 		}
 	}

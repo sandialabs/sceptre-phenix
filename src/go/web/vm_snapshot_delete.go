@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/vm"
 	"phenix/util/plog"
 	"phenix/web/audit"
@@ -21,11 +19,10 @@ func DeleteVMSnapshot(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
-		vars     = mux.Vars(r)
-		exp      = vars["exp"]
-		name     = vars["name"]
+		exp      = r.PathValue("exp")
+		name     = r.PathValue("name")
 		fullName = exp + "/" + name
-		snap     = vars["snapshot"]
+		snap     = r.PathValue("snapshot")
 	)
 
 	deleted := audit.Fields{Experiment: exp, VM: name, File: snap}

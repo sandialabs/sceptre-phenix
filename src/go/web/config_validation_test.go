@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
-	"github.com/gorilla/mux"
 
 	"phenix/store"
 	"phenix/types"
@@ -184,7 +183,7 @@ func validationTestRequest(t *testing.T, method, target, contentType string, bod
 
 	req := httptest.NewRequest(method, target, bytes.NewReader(body))
 	req.Header.Set("Content-Type", contentType)
-	req = mux.SetURLVars(req, vars)
+	req = withPathValues(req, vars)
 
 	ctx := context.WithValue(req.Context(), middleware.ContextKeyRole, workflowTestRole(true))
 	ctx = context.WithValue(ctx, middleware.ContextKeyUser, "test-user")
