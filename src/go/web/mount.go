@@ -14,8 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/experiment"
 	"phenix/api/vm"
 	"phenix/util/file"
@@ -115,13 +113,12 @@ func lockMountForUnmount(ctx context.Context, info *MountInfo) bool {
 
 // MountVM - POST /experiments/{exp}/vms/{name}/mount.
 func MountVM(w http.ResponseWriter, r *http.Request) error {
-	vars := mux.Vars(r)
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-	mapKey := mm.GetLocalMountPath(vars["exp"], vars["name"])
+	mapKey := mm.GetLocalMountPath(r.PathValue("exp"), r.PathValue("name"))
 
-	mounted := mountAuditFields(vars["exp"], vars["name"], mapKey)
+	mounted := mountAuditFields(r.PathValue("exp"), r.PathValue("name"), mapKey)
 
-	if !role.Allowed("vms/mount", "post", fmt.Sprintf("%s/%s", vars["exp"], vars["name"])) {
+	if !role.Allowed("vms/mount", "post", fmt.Sprintf("%s/%s", r.PathValue("exp"), r.PathValue("name"))) {
 		audit.Denied(r, audit.VMMount, "mounting vm not allowed", mounted)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
@@ -176,7 +173,7 @@ func MountVM(w http.ResponseWriter, r *http.Request) error {
 
 	activeMountsMu.Unlock()
 
-	err := mountFilesystem(vars["exp"], vars["name"])
+	err := mountFilesystem(r.PathValue("exp"), r.PathValue("name"))
 
 	activeMountsMu.Lock()
 
@@ -253,13 +250,12 @@ func waitForMount(w http.ResponseWriter, r *http.Request, mapKey string, mountIn
 //
 //nolint:funlen // handler
 func UnmountVM(w http.ResponseWriter, r *http.Request) error {
-	vars := mux.Vars(r)
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-	mapKey := mm.GetLocalMountPath(vars["exp"], vars["name"])
+	mapKey := mm.GetLocalMountPath(r.PathValue("exp"), r.PathValue("name"))
 
-	unmounted := mountAuditFields(vars["exp"], vars["name"], mapKey)
+	unmounted := mountAuditFields(r.PathValue("exp"), r.PathValue("name"), mapKey)
 
-	if !role.Allowed("vms/mount", "delete", fmt.Sprintf("%s/%s", vars["exp"], vars["name"])) {
+	if !role.Allowed("vms/mount", "delete", fmt.Sprintf("%s/%s", r.PathValue("exp"), r.PathValue("name"))) {
 		audit.Denied(r, audit.VMUnmount, "unmounting vm not allowed", unmounted)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
@@ -277,7 +273,7 @@ func UnmountVM(w http.ResponseWriter, r *http.Request) error {
 			plog.TypeSystem,
 			"tried to unmount VM whose lock was not in map",
 			"vm",
-			vars["name"],
+			r.PathValue("name"),
 		)
 
 		w.WriteHeader(http.StatusOK)
@@ -340,7 +336,7 @@ func UnmountVM(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusConflict, "mount busy")
 	}
 
-	err := unmountFilesystem(vars["exp"], vars["name"])
+	err := unmountFilesystem(r.PathValue("exp"), r.PathValue("name"))
 
 	mountInfo.lock.Unlock()
 
@@ -372,13 +368,17 @@ func UnmountVM(w http.ResponseWriter, r *http.Request) error {
 //
 //nolint:funlen // handler
 func GetMountFiles(w http.ResponseWriter, r *http.Request) error {
+	path, err := mountQueryPath(r)
+	if err != nil {
+		return err
+	}
+
 	var (
-		vars     = mux.Vars(r)
-		basePath = mm.GetLocalMountPath(vars["exp"], vars["name"])
+		basePath = mm.GetLocalMountPath(r.PathValue("exp"), r.PathValue("name"))
 		role, _  = r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
 	)
 
-	if !role.Allowed("vms/mount", "list", fmt.Sprintf("%s/%s", vars["exp"], vars["name"])) {
+	if !role.Allowed("vms/mount", "list", fmt.Sprintf("%s/%s", r.PathValue("exp"), r.PathValue("name"))) {
 		user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
 		plog.Warn(
 			plog.TypeSecurity,
@@ -399,7 +399,7 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) error {
 
 	defer mountInfo.lock.RUnlock()
 
-	combinedPath := filepath.Join(basePath, vars["path"])
+	combinedPath := filepath.Join(basePath, path)
 	user, _ := r.Context().Value(middleware.ContextKeyUser).(string)
 	plog.Info(
 		plog.TypeAction,
@@ -426,7 +426,6 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) error {
 	var (
 		dir  *os.File
 		info fs.FileInfo
-		err  error
 		done = make(chan struct{})
 	)
 
@@ -523,13 +522,17 @@ func GetMountFiles(w http.ResponseWriter, r *http.Request) error {
 
 // DownloadMountFile - GET /experiments/{exp}/vms/{name}/files/download?path=.
 func DownloadMountFile(w http.ResponseWriter, r *http.Request) error {
-	vars := mux.Vars(r)
-	basePath := mm.GetLocalMountPath(vars["exp"], vars["name"])
+	path, err := mountQueryPath(r)
+	if err != nil {
+		return err
+	}
 
-	downloaded := audit.Fields{Experiment: vars["exp"], VM: vars["name"]}
+	basePath := mm.GetLocalMountPath(r.PathValue("exp"), r.PathValue("name"))
+
+	downloaded := audit.Fields{Experiment: r.PathValue("exp"), VM: r.PathValue("name")}
 
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-	if !role.Allowed("vms/mount", "get", fmt.Sprintf("%s/%s", vars["exp"], vars["name"])) {
+	if !role.Allowed("vms/mount", "get", fmt.Sprintf("%s/%s", r.PathValue("exp"), r.PathValue("name"))) {
 		audit.Denied(r, audit.FileDownload, "downloading vm mount files not allowed", downloaded)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
@@ -542,7 +545,7 @@ func DownloadMountFile(w http.ResponseWriter, r *http.Request) error {
 
 	defer mountInfo.lock.RUnlock()
 
-	combinedPath := filepath.Join(basePath, vars["path"])
+	combinedPath := filepath.Join(basePath, path)
 	downloaded.File = combinedPath
 
 	if !file.WithinDir(basePath, combinedPath) {
@@ -582,13 +585,17 @@ func DownloadMountFile(w http.ResponseWriter, r *http.Request) error {
 
 // UploadMountFile - PUT /experiments/{exp}/vms/{name}/files/upload?path=.
 func UploadMountFile(w http.ResponseWriter, r *http.Request) error {
-	vars := mux.Vars(r)
-	basePath := mm.GetLocalMountPath(vars["exp"], vars["name"])
+	path, err := mountQueryPath(r)
+	if err != nil {
+		return err
+	}
 
-	uploaded := audit.Fields{Experiment: vars["exp"], VM: vars["name"]}
+	basePath := mm.GetLocalMountPath(r.PathValue("exp"), r.PathValue("name"))
+
+	uploaded := audit.Fields{Experiment: r.PathValue("exp"), VM: r.PathValue("name")}
 
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-	if !role.Allowed("vms/mount", "patch", fmt.Sprintf("%s/%s", vars["exp"], vars["name"])) {
+	if !role.Allowed("vms/mount", "patch", fmt.Sprintf("%s/%s", r.PathValue("exp"), r.PathValue("name"))) {
 		audit.Denied(r, audit.VMFileUpload, "uploading vm mount files not allowed", uploaded)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
@@ -601,7 +608,7 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) error {
 
 	defer mountInfo.lock.RUnlock()
 
-	combinedPath := filepath.Join(basePath, vars["path"])
+	combinedPath := filepath.Join(basePath, path)
 	uploaded.Target = combinedPath
 
 	if !file.WithinDir(basePath, combinedPath) {
@@ -668,24 +675,34 @@ func UploadMountFile(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// mountQueryPath returns the path query parameter of r, relative to the
+// mount, and a 400 error when r has none. An empty path is the mount's root.
+func mountQueryPath(r *http.Request) (string, error) {
+	query := r.URL.Query()
+	if !query.Has("path") {
+		return "", weberror.New(http.StatusBadRequest, "path must be given")
+	}
+
+	return query.Get("path"), nil
+}
+
 // CopyExperimentFileToMount copies a same-experiment file into a mounted VM directory.
 //
 //nolint:funlen // handler
 func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) error {
-	vars := mux.Vars(r)
-	basePath := mm.GetLocalMountPath(vars["exp"], vars["name"])
+	basePath := mm.GetLocalMountPath(r.PathValue("exp"), r.PathValue("name"))
 
 	query := r.URL.Query()
-	copied := audit.Fields{Experiment: vars["exp"], VM: vars["name"], File: query.Get("source")}
+	copied := audit.Fields{Experiment: r.PathValue("exp"), VM: r.PathValue("name"), File: query.Get("source")}
 
 	role, _ := r.Context().Value(middleware.ContextKeyRole).(rbac.Role)
-	if !role.Allowed("vms/mount", "patch", fmt.Sprintf("%s/%s", vars["exp"], vars["name"])) {
+	if !role.Allowed("vms/mount", "patch", fmt.Sprintf("%s/%s", r.PathValue("exp"), r.PathValue("name"))) {
 		audit.Denied(r, audit.VMFileCopy, "copying file to vm mount not allowed", copied)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
 	}
 
-	if !role.Allowed("experiments/files", "get", vars["exp"]) {
+	if !role.Allowed("experiments/files", "get", r.PathValue("exp")) {
 		audit.Denied(r, audit.VMFileCopy, "copying file to vm mount not allowed", copied)
 
 		return weberror.New(http.StatusForbidden, "forbidden")
@@ -721,7 +738,7 @@ func CopyExperimentFileToMount(w http.ResponseWriter, r *http.Request) error {
 		return weberror.New(http.StatusBadRequest, "Expected directory not file: "+destDir)
 	}
 
-	source, err := experiment.LocalFile(r.Context(), vars["exp"], query.Get("source"))
+	source, err := experiment.LocalFile(r.Context(), r.PathValue("exp"), query.Get("source"))
 	if err != nil {
 		audit.Failure(r, audit.VMFileCopy, "copying file to vm mount failed", copied, err)
 

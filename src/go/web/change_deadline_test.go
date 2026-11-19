@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/gorilla/mux"
 	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -107,7 +106,7 @@ func serveVMChange(ctx context.Context, t *testing.T, change vmChange) *httptest
 		exp = "exp"
 	}
 
-	req = mux.SetURLVars(req, map[string]string{"exp": exp, "name": "a", "snapshot": change.snapshot})
+	req = withPathValues(req, map[string]string{"exp": exp, "name": "a", "snapshot": change.snapshot})
 
 	var (
 		rec  = httptest.NewRecorder()

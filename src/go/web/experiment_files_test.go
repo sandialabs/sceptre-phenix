@@ -23,7 +23,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/gorilla/mux"
 
 	"phenix/api/experiment"
 	"phenix/api/job"
@@ -1304,7 +1303,7 @@ func TestGetExperimentFilesCanceled(t *testing.T) {
 	r := httptest.NewRequestWithContext(ctx, http.MethodGet, filesPath, nil)
 	w := httptest.NewRecorder()
 
-	if err := GetExperimentFiles(w, mux.SetURLVars(r, map[string]string{"name": "test-experiment"})); err != nil {
+	if err := GetExperimentFiles(w, withPathValues(r, map[string]string{"name": "test-experiment"})); err != nil {
 		t.Errorf("GetExperimentFiles() of a canceled request = %v, want nil", err)
 	}
 

@@ -18,7 +18,6 @@ import (
 	"unsafe"
 
 	"github.com/creack/pty"
-	"github.com/gorilla/mux"
 	"golang.org/x/net/websocket"
 
 	"phenix/api/experiment"
@@ -238,11 +237,9 @@ func ResizeConsole(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	if err := r.ParseForm(); err != nil {
-		return weberror.New(http.StatusBadRequest, "invalid form")
-	}
+	query := r.URL.Query()
 
-	rows, cols, err := parseConsoleSize(r.FormValue("rows"), r.FormValue("cols"))
+	rows, cols, err := parseConsoleSize(query.Get("rows"), query.Get("cols"))
 	if err != nil {
 		return err
 	}
@@ -315,7 +312,7 @@ func WsConsole(w http.ResponseWriter, r *http.Request) error {
 // ownConsole returns the running console the request's pid names if the user started it, and otherwise the
 // error to answer: another user's console is not found, so pids are not probed, and action a is audited.
 func ownConsole(r *http.Request, a audit.Action) (*consoleSession, error) {
-	pid, err := strconv.Atoi(mux.Vars(r)["pid"])
+	pid, err := strconv.Atoi(r.PathValue("pid"))
 	if err != nil {
 		return nil, weberror.New(http.StatusBadRequest, "invalid pid")
 	}

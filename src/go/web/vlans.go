@@ -9,8 +9,6 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/vlan"
 	"phenix/util/freshness"
 	"phenix/util/plog"
@@ -217,7 +215,7 @@ func GetVLAN(w http.ResponseWriter, r *http.Request) error {
 		return vlanDenied(r, "getting a VLAN")
 	}
 
-	id, err := parseVLANID(mux.Vars(r)["id"])
+	id, err := parseVLANID(r.PathValue("id"))
 	if err != nil {
 		return err
 	}
@@ -371,7 +369,7 @@ func GetVLANBlacklist(w http.ResponseWriter, r *http.Request) error {
 // vlanAudit is the audit fields of an action on the VLAN ID of a path, which
 // name the ID when it is valid.
 func vlanAudit(r *http.Request) (int, audit.Fields, error) {
-	id, err := parseVLANID(mux.Vars(r)["id"])
+	id, err := parseVLANID(r.PathValue("id"))
 
 	at := audit.Fields{}
 	if err == nil {
@@ -448,7 +446,7 @@ func RemoveVLANBlacklist(w http.ResponseWriter, r *http.Request) error {
 func ReleaseVLANAllocations(w http.ResponseWriter, r *http.Request) error {
 	var (
 		role = middleware.RoleFromContext(r.Context())
-		ns   = mux.Vars(r)["namespace"]
+		ns   = r.PathValue("namespace")
 		at   = audit.Fields{Extra: []any{"phenix.vlan.namespace", ns}}
 	)
 
@@ -509,7 +507,7 @@ func writeExperimentVLANs(w http.ResponseWriter, r *http.Request, role rbac.Role
 func GetExperimentVLANs(w http.ResponseWriter, r *http.Request) error {
 	var (
 		role = middleware.RoleFromContext(r.Context())
-		name = mux.Vars(r)["name"]
+		name = r.PathValue("name")
 	)
 
 	if !role.Allowed(resourceVLANs, verbGet, name) {
@@ -524,7 +522,7 @@ func GetExperimentVLANs(w http.ResponseWriter, r *http.Request) error {
 func changeExperimentVLANs(w http.ResponseWriter, r *http.Request, change func(name string) error) error {
 	var (
 		role = middleware.RoleFromContext(r.Context())
-		name = mux.Vars(r)["name"]
+		name = r.PathValue("name")
 		at   = audit.Fields{Experiment: name}
 	)
 
@@ -576,14 +574,14 @@ func PinExperimentVLANAlias(w http.ResponseWriter, r *http.Request) error {
 			return fmt.Errorf("%w: the body is not {\"id\": <VLAN ID>}: %w", vlan.ErrInvalid, err)
 		}
 
-		return vlan.PinAlias(r.Context(), vlanView(role, name), name, mux.Vars(r)["alias"], body.ID, force)
+		return vlan.PinAlias(r.Context(), vlanView(role, name), name, r.PathValue("alias"), body.ID, force)
 	})
 }
 
 // UnpinExperimentVLANAlias - DELETE /experiments/{name}/vlans/aliases/{alias}.
 func UnpinExperimentVLANAlias(w http.ResponseWriter, r *http.Request) error {
 	return changeExperimentVLANs(w, r, func(name string) error {
-		return vlan.UnpinAlias(name, mux.Vars(r)["alias"])
+		return vlan.UnpinAlias(name, r.PathValue("alias"))
 	})
 }
 

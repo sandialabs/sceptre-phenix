@@ -63,8 +63,6 @@ updates:
     ignore:
       # These need a newer Go than the project targets, and move with it.
       - dependency-name: golang.org/x/*
-      # v1.8.1 serves the UI's index.html instead of a 405 for wrong-method API requests.
-      - dependency-name: github.com/gorilla/mux
 
   - package-ecosystem: npm
     directories: [/src/js, /src/js/e2e]

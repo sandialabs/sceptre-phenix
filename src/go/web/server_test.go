@@ -89,6 +89,31 @@ func TestRouterServesTheUI(t *testing.T) {
 	}
 }
 
+// A root path with a trailing "/" that no route has gets the UI page, not a
+// redirect to the route without the "/".
+func TestRouterServesTheUIForATrailingSlash(t *testing.T) {
+	server := serveRouter(t, testPublic(), testJWTKey)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/version/", nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext(GET /version/) error = %v", err)
+	}
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("GET /version/ error = %v", err)
+	}
+
+	t.Cleanup(func() { resp.Body.Close() })
+
+	got := []any{resp.StatusCode, resp.Header.Get("Location"), readBody(t, resp)}
+	if diff := cmp.Diff([]any{http.StatusOK, "", "<!DOCTYPE html><title>phenix</title>"}, got); diff != "" {
+		t.Errorf("GET /version/ mismatch (-want +got):\n%s", diff)
+	}
+}
+
 // The router refuses the removed legacy Builder route, which only matches
 // /experiments/{name}, with 405, and an unknown experiment path with the JSON 404.
 func TestRouterRefusesRemovedAndUnknownExperimentRoutes(t *testing.T) {
@@ -252,20 +277,7 @@ func TestAPIMiddlewareOrder(t *testing.T) {
 	}
 }
 
-// The query matcher of the console size route refuses a size that is not
-// digits with the JSON 404, before Auth.
-func TestRouterRefusesConsoleSizeNotDigits(t *testing.T) {
-	server := serveRouter(t, testPublic(), testJWTKey).URL
-
-	resp := do(t, http.MethodPost, server+"/api/v1/console/1/size?cols=a&rows=1", "")
-
-	got := []any{resp.StatusCode, errorMessage(t, resp.StatusCode, readBody(t, resp))}
-	if diff := cmp.Diff([]any{http.StatusNotFound, "no API route matches this request"}, got); diff != "" {
-		t.Errorf("POST /api/v1/console/1/size?cols=a&rows=1 without a token mismatch (-want +got):\n%s", diff)
-	}
-}
-
-// spaIndexBody stands in for the SPA index the router level NotFoundHandler serves in production.
+// spaIndexBody stands in for the SPA index the root group's NotFound serves in production.
 const spaIndexBody = "<!doctype html><title>phenix</title>"
 
 // newNotFoundRouter returns a router wired as [Start] wires it: the SPA index

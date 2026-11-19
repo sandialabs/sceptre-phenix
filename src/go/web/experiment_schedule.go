@@ -6,8 +6,6 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/experiment"
 	"phenix/scheduler"
 	"phenix/store"
@@ -28,8 +26,7 @@ func GetExperimentSchedule(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		name = vars["name"]
+		name = r.PathValue("name")
 	)
 
 	if !role.Allowed("experiments/schedule", "get", name) {
@@ -81,8 +78,7 @@ func ScheduleExperiment(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		name = vars["name"]
+		name = r.PathValue("name")
 	)
 
 	if !role.Allowed("experiments/schedule", "create", name) {

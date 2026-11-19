@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	bapi "phenix/api/builder"
 	bdoc "phenix/types/builder"
 	"phenix/util/plog"
@@ -185,9 +183,7 @@ func builderLayerSetLimitsNow() builderLayerSetLimits {
 	}
 }
 
-// layerSetRoutes are the routes of the layer set library. The route of the
-// default set comes before the route of one set, which would match its path
-// too.
+// layerSetRoutes are the routes of the layer set library.
 func (b *builderAPI) layerSetRoutes() []routing.Route {
 	const setPath = builderLayerSetsPath + "/{layerset}"
 
@@ -246,7 +242,7 @@ func (b *builderAPI) getLayerSet(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	id := mux.Vars(r)["layerset"]
+	id := r.PathValue("layerset")
 
 	set, err := b.drafts.GetLayerSet(r.Context(), id)
 	if err != nil {
@@ -307,7 +303,7 @@ func (b *builderAPI) putLayerSet(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	id := mux.Vars(r)["layerset"]
+	id := r.PathValue("layerset")
 
 	set, err := b.drafts.UpdateLayerSet(r.Context(), actor.user, id, ifMatch, request)
 	if err != nil {
@@ -337,7 +333,7 @@ func (b *builderAPI) deleteLayerSet(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 
-	id := mux.Vars(r)["layerset"]
+	id := r.PathValue("layerset")
 
 	if err := b.drafts.DeleteLayerSet(r.Context(), id, ifMatch); err != nil {
 		return builderLayerSetError(w, err, id)

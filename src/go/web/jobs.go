@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/job"
 	"phenix/util/common"
 	"phenix/util/plog"
@@ -239,7 +237,7 @@ func ownJob(r *http.Request, may jobAccess) (job.Job, error) {
 // act on.
 func ownJobOr(r *http.Request, may jobAccess, denied func(job.Job)) (job.Job, error) {
 	var (
-		id   = mux.Vars(r)["id"]
+		id   = r.PathValue("id")
 		ctx  = r.Context()
 		user = middleware.UserFromContext(ctx)
 		role = middleware.RoleFromContext(ctx)

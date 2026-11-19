@@ -1,8 +1,10 @@
 package routing_test
 
 import (
+	"bufio"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -60,9 +62,10 @@ func testMux(t *testing.T) *routing.Mux {
 				routing.Row(http.MethodPost, "/items", named("create")),
 				routing.Row(http.MethodGet, "/items/{id}", named("item")),
 				routing.Row(http.MethodHead, "/items/{id}", named("item-head")),
-				routing.Row(http.MethodGet, "/ws", named("ws")).WithoutOptions(),
-				routing.Row(http.MethodGet, "/search", named("search")).WithQueries("q", "{q}"),
+				routing.Row(http.MethodGet, "/any/json", named("any-json")),
 				routing.Row("", "/any/", named("any")),
+				routing.Row(http.MethodGet, "/vlans/{id}", named("vlan")),
+				routing.Row(http.MethodGet, "/vlans/free", named("free")),
 			},
 			Middleware:       []func(http.Handler) http.Handler{trail("a"), trail("b")},
 			Options:          named("options"),
@@ -105,16 +108,19 @@ func TestMuxServeHTTP(t *testing.T) {
 		{http.MethodPost, "/api/v1/items", answer{200, "create", "/api/v1/items", []string{"a", "b"}, ""}},
 		{http.MethodDelete, "/api/v1/items", answer{200, "api-405", "", nil, "GET, POST, OPTIONS"}},
 		{http.MethodOptions, "/api/v1/items", answer{200, "options", "/api/v1/items", []string{"a", "b"}, "GET, POST, OPTIONS"}},
+		{http.MethodGet, "/api/v1/items?q=x", answer{200, "list", "/api/v1/items", []string{"a", "b"}, ""}},
+		{http.MethodTrace, "/api/v1/items", answer{200, "api-405", "", nil, "GET, POST, OPTIONS"}},
 		{http.MethodGet, "/api/v1/items/7", answer{200, "item", "/api/v1/items/{id}", []string{"a", "b"}, ""}},
 		{http.MethodHead, "/api/v1/items/7", answer{200, "item-head", "/api/v1/items/{id}", []string{"a", "b"}, ""}},
 		{http.MethodPut, "/api/v1/items/7", answer{200, "api-405", "", nil, "GET, HEAD, OPTIONS"}},
-		{http.MethodGet, "/api/v1/ws", answer{200, "ws", "/api/v1/ws", []string{"a", "b"}, ""}},
-		{http.MethodOptions, "/api/v1/ws", answer{200, "api-405", "", nil, "GET"}},
-		{http.MethodGet, "/api/v1/search?q=x", answer{200, "search", "/api/v1/search", []string{"a", "b"}, ""}},
-		{http.MethodPost, "/api/v1/search?q=x", answer{200, "api-405", "", nil, "GET, OPTIONS"}},
-		{http.MethodGet, "/api/v1/search", answer{200, "api-404", "", nil, ""}},
 		{http.MethodDelete, "/api/v1/any/x/y", answer{200, "any", "/api/v1/any/", []string{"a", "b"}, ""}},
 		{http.MethodOptions, "/api/v1/any/x", answer{200, "any", "/api/v1/any/", []string{"a", "b"}, ""}},
+		{http.MethodGet, "/api/v1/any/json", answer{200, "any-json", "/api/v1/any/json", []string{"a", "b"}, ""}},
+		{http.MethodPost, "/api/v1/any/json", answer{200, "any", "/api/v1/any/", []string{"a", "b"}, ""}},
+		{http.MethodHead, "/api/v1/any/json", answer{200, "any", "/api/v1/any/", []string{"a", "b"}, ""}},
+		{http.MethodGet, "/api/v1/any", answer{200, "api-404", "", nil, ""}},
+		{http.MethodGet, "/api/v1/vlans/free", answer{200, "free", "/api/v1/vlans/free", []string{"a", "b"}, ""}},
+		{http.MethodGet, "/api/v1/vlans/7", answer{200, "vlan", "/api/v1/vlans/{id}", []string{"a", "b"}, ""}},
 		{http.MethodGet, "/api/v1/missing", answer{200, "api-404", "", nil, ""}},
 		{http.MethodGet, "/api/v1", answer{200, "api-404", "", nil, ""}},
 		{http.MethodGet, "/api/v1x", answer{200, "api-404", "", nil, ""}},
@@ -149,32 +155,21 @@ func TestMuxServeHTTP(t *testing.T) {
 	}
 }
 
-// A path that differs from a route's template by a trailing "/" gets the 301
-// to the template's form behind the middleware of the group, as gorilla
-// replaces the route's handler with the redirect.
-func TestMuxRedirectsBehindMiddleware(t *testing.T) {
+// A path with a trailing "/" that no route has gets the NotFound of its
+// group, without a redirect and without the middleware of the group.
+func TestMuxTrailingSlashIsNotFound(t *testing.T) {
 	t.Parallel()
 
 	m := testMux(t)
 
-	type redirect struct {
-		Status   int
-		Location string
-		Trail    []string
-		Allow    string
-	}
-
 	tests := []struct {
 		method, target string
-		want           redirect
+		want           answer
 	}{
-		{http.MethodGet, "/api/v1/items/", redirect{http.StatusMovedPermanently, "/api/v1/items", []string{"a", "b"}, ""}},
-		{
-			http.MethodOptions, "/api/v1/items/",
-			redirect{http.StatusMovedPermanently, "/api/v1/items", []string{"a", "b"}, "GET, POST, OPTIONS"},
-		},
-		{http.MethodGet, "/page/", redirect{http.StatusMovedPermanently, "/page", []string{"root"}, ""}},
-		{http.MethodGet, "/bare/x/", redirect{http.StatusMovedPermanently, "/bare/x", []string{"c"}, ""}},
+		{http.MethodGet, "/api/v1/items/", answer{200, "api-404", "", nil, ""}},
+		{http.MethodOptions, "/api/v1/items/", answer{200, "api-404", "", nil, ""}},
+		{http.MethodGet, "/page/", answer{200, "root-404", "", nil, ""}},
+		{http.MethodGet, "/bare/x/", answer{200, "root-404", "", nil, ""}},
 	}
 
 	for _, tt := range tests {
@@ -186,14 +181,220 @@ func TestMuxRedirectsBehindMiddleware(t *testing.T) {
 
 			header := sent(rec)
 
-			got := redirect{
-				Status: rec.Code, Location: header.Get("Location"),
+			got := answer{
+				Status: rec.Code, Handler: header.Get("X-Handler"), Template: header.Get("X-Template"),
+				Trail: header.Values("X-Trail"), Allow: header.Get("Allow"),
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("%s %s mismatch (-want +got):\n%s", tt.method, tt.target, diff)
+			}
+
+			if location := header.Get("Location"); location != "" {
+				t.Errorf("%s %s Location = %q, want none", tt.method, tt.target, location)
+			}
+		})
+	}
+}
+
+// A path that is not clean gets a 301 to its clean form, with its query,
+// before any route or middleware.
+func TestMuxRedirectsToTheCleanPath(t *testing.T) {
+	t.Parallel()
+
+	m := testMux(t)
+
+	tests := map[string]string{
+		"/api/v1//items":         "/api/v1/items",
+		"/api/v1/x/../items?q=1": "/api/v1/items?q=1",
+		"/api/v1/items/%2E%2E/x": "/api/v1/x",
+		"/./page":                "/page",
+	}
+
+	for target, want := range tests {
+		rec := httptest.NewRecorder()
+		m.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+
+		header := sent(rec)
+
+		got := []any{rec.Code, header.Get("Location"), header.Values("X-Trail")}
+		if diff := cmp.Diff([]any{http.StatusMovedPermanently, want, []string(nil)}, got); diff != "" {
+			t.Errorf("GET %s mismatch (-want +got):\n%s", target, diff)
+		}
+	}
+}
+
+// rawRequest returns the request of a raw request line, with its target as
+// a client sent it.
+func rawRequest(t *testing.T, method, target string) *http.Request {
+	t.Helper()
+
+	r, err := http.ReadRequest(bufio.NewReader(strings.NewReader(method + " " + target + " HTTP/1.1\r\nHost: x\r\n\r\n")))
+	if err != nil {
+		t.Fatalf("http.ReadRequest(%s %s) error = %v", method, target, err)
+	}
+
+	return r
+}
+
+// Routes match the decoded path: an escaped "/" separates segments as "/"
+// does, so no {name} variable holds a "/".
+func TestMuxMatchesTheDecodedPath(t *testing.T) {
+	t.Parallel()
+
+	m := testMux(t)
+
+	tests := []struct {
+		method, target string
+		want           answer
+	}{
+		{http.MethodGet, "/api/v1/items%2F7", answer{200, "item", "/api/v1/items/{id}", []string{"a", "b"}, ""}},
+		{http.MethodGet, "/api/v1/items%2f7", answer{200, "item", "/api/v1/items/{id}", []string{"a", "b"}, ""}},
+		{http.MethodHead, "/api/v1/items%2F7", answer{200, "item-head", "/api/v1/items/{id}", []string{"a", "b"}, ""}},
+		{http.MethodPut, "/api/v1/items%2F7", answer{200, "api-405", "", nil, "GET, HEAD, OPTIONS"}},
+		{http.MethodGet, "/api/v1/items/a%2Fb", answer{200, "api-404", "", nil, ""}},
+		{http.MethodGet, "/api/v1/items/a%2fb", answer{200, "api-404", "", nil, ""}},
+		{http.MethodGet, "/api/v1/items/a%2Fb|", answer{200, "api-404", "", nil, ""}},
+		{http.MethodGet, "/api/v1/items%2F7|", answer{200, "item", "/api/v1/items/{id}", []string{"a", "b"}, ""}},
+		{http.MethodGet, "/api/v1%2Fitems", answer{200, "list", "/api/v1/items", []string{"a", "b"}, ""}},
+		{http.MethodGet, "/api%2Fv1/items", answer{200, "list", "/api/v1/items", []string{"a", "b"}, ""}},
+		{http.MethodGet, "/api/v%31/items", answer{200, "list", "/api/v1/items", []string{"a", "b"}, ""}},
+		{http.MethodGet, "/api/v1/any/a%2Fb", answer{200, "any", "/api/v1/any/", []string{"a", "b"}, ""}},
+		{http.MethodGet, "/api/v1/any%2Fa", answer{200, "any", "/api/v1/any/", []string{"a", "b"}, ""}},
+		{http.MethodGet, "/files%2Fa", answer{200, "files", "/files/", []string{"root"}, ""}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.target, func(t *testing.T) {
+			t.Parallel()
+
+			rec := httptest.NewRecorder()
+			m.ServeHTTP(rec, rawRequest(t, tt.method, tt.target))
+
+			header := sent(rec)
+
+			got := answer{
+				Status: rec.Code, Handler: header.Get("X-Handler"), Template: header.Get("X-Template"),
 				Trail: header.Values("X-Trail"), Allow: header.Get("Allow"),
 			}
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("%s %s mismatch (-want +got):\n%s", tt.method, tt.target, diff)
 			}
 		})
+	}
+}
+
+// A handler gets the decoded values of the segments that its route matched:
+// an escaped "/" is a separator, and an escaped "%2F" is the text "%2F".
+func TestMuxPathValuesOfTheDecodedPath(t *testing.T) {
+	t.Parallel()
+
+	value := func(names ...string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			for _, name := range names {
+				w.Header().Add("X-Value", r.PathValue(name))
+			}
+		})
+	}
+
+	m, err := routing.NewMux(routing.Group{
+		Prefix: "/api",
+		Routes: []routing.Route{
+			routing.Row(http.MethodGet, "/{name}", value("name")),
+			routing.Row(http.MethodGet, "/{name}/apps", value("name")),
+			routing.Row(http.MethodGet, "/configs/{kind}/{name}", value("kind", "name")),
+		},
+		Middleware: nil, Options: nil, NotFound: named("api-404"), MethodNotAllowed: nil,
+	})
+	if err != nil {
+		t.Fatalf("NewMux() error = %v", err)
+	}
+
+	tests := map[string][]string{
+		"/api/a%2Fapps":             {"a"},
+		"/api/a%2fapps":             {"a"},
+		"/api/configs%2Ftopo%2Ffoo": {"topo", "foo"},
+		"/api/a%252Fb":              {"a%2Fb"},
+		"/api/a%20b":                {"a b"},
+		"/api/a%25b":                {"a%b"},
+		"/api/%C3%A9":               {"é"},
+		"/api/a%3Fb":                {"a?b"},
+		"/api/a%2Fb":                nil,
+		"/api/a%2Fb|":               nil,
+	}
+
+	for target, want := range tests {
+		t.Run(target, func(t *testing.T) {
+			t.Parallel()
+
+			rec := httptest.NewRecorder()
+			m.ServeHTTP(rec, rawRequest(t, http.MethodGet, target))
+
+			if diff := cmp.Diff(want, sent(rec).Values("X-Value")); diff != "" {
+				t.Errorf("GET %s path values mismatch (-want +got):\n%s", target, diff)
+			}
+		})
+	}
+}
+
+// A request with an escaped "/" under a subtree route goes to that route,
+// where a route with a variable takes the same path with a "/".
+func TestMuxEscapedSlashBelowASubtree(t *testing.T) {
+	t.Parallel()
+
+	m, err := routing.NewMux(routing.Group{
+		Prefix: "",
+		Routes: []routing.Route{
+			routing.Row(http.MethodGet, "/x/{name}", named("name")),
+			routing.Row("", "/x/", named("subtree")),
+		},
+		Middleware: nil, Options: nil, NotFound: named("root-404"), MethodNotAllowed: nil,
+	})
+	if err != nil {
+		t.Fatalf("NewMux() error = %v", err)
+	}
+
+	for target, want := range map[string]answer{
+		"/x/a%2Fb": {200, "subtree", "/x/", nil, ""},
+		"/x%2Fa":   {200, "name", "/x/{name}", nil, ""},
+	} {
+		rec := httptest.NewRecorder()
+		m.ServeHTTP(rec, rawRequest(t, http.MethodGet, target))
+
+		header := sent(rec)
+
+		got := answer{
+			Status: rec.Code, Handler: header.Get("X-Handler"), Template: header.Get("X-Template"),
+			Trail: header.Values("X-Trail"), Allow: header.Get("Allow"),
+		}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("GET %s mismatch (-want +got):\n%s", target, diff)
+		}
+	}
+}
+
+// A handler gets the values of the variables of its route, unescaped.
+func TestMuxPathValues(t *testing.T) {
+	t.Parallel()
+
+	var got []string
+
+	m, err := routing.NewMux(routing.Group{
+		Prefix: "/api",
+		Routes: []routing.Route{
+			routing.Row(http.MethodGet, "/{kind}/{name}", http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				got = []string{r.PathValue("kind"), r.PathValue("name")}
+			})),
+		},
+		Middleware: nil, Options: nil, NotFound: nil, MethodNotAllowed: nil,
+	})
+	if err != nil {
+		t.Fatalf("NewMux() error = %v", err)
+	}
+
+	m.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/topology/a%20b", nil))
+
+	if diff := cmp.Diff([]string{"topology", "a b"}, got); diff != "" {
+		t.Errorf("GET /api/topology/a%%20b path values mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -223,13 +424,11 @@ func TestMuxSetsAllowBeforeMiddleware(t *testing.T) {
 		t.Fatalf("NewMux() error = %v", err)
 	}
 
-	for _, target := range []string{"/x", "/x/"} {
-		rec := httptest.NewRecorder()
-		m.ServeHTTP(rec, httptest.NewRequest(http.MethodOptions, target, nil))
+	rec := httptest.NewRecorder()
+	m.ServeHTTP(rec, httptest.NewRequest(http.MethodOptions, "/x", nil))
 
-		if got := []any{rec.Code, sent(rec).Get("Allow")}; !cmp.Equal(got, []any{http.StatusNoContent, "GET, OPTIONS"}) {
-			t.Errorf("OPTIONS %s = %v, want 204 and Allow GET, OPTIONS", target, got)
-		}
+	if got := []any{rec.Code, sent(rec).Get("Allow")}; !cmp.Equal(got, []any{http.StatusNoContent, "GET, OPTIONS"}) {
+		t.Errorf("OPTIONS /x = %v, want 204 and Allow GET, OPTIONS", got)
 	}
 }
 
@@ -282,20 +481,179 @@ func TestMuxNotFoundStaysInGroup(t *testing.T) {
 	}
 }
 
+// Without a group of prefix "", a path outside every group gets
+// [http.NotFound], not the NotFound of another group.
+func TestMuxNotFoundOutsideEveryGroup(t *testing.T) {
+	t.Parallel()
+
+	m, err := routing.NewMux(routing.Group{
+		Prefix: "/api", Routes: []routing.Route{routing.Row(http.MethodGet, "/x", named("x"))},
+		Middleware: nil, Options: nil, NotFound: named("api-404"), MethodNotAllowed: nil,
+	})
+	if err != nil {
+		t.Fatalf("NewMux() error = %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	m.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/elsewhere", nil))
+
+	got := []any{rec.Code, sent(rec).Get("X-Handler"), rec.Body.String()}
+	if diff := cmp.Diff([]any{http.StatusNotFound, "", "404 page not found\n"}, got); diff != "" {
+		t.Errorf("GET /elsewhere mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// A Mux of no groups answers every request with [http.NotFound].
+func TestMuxWithoutGroups(t *testing.T) {
+	t.Parallel()
+
+	m, err := routing.NewMux()
+	if err != nil {
+		t.Fatalf("NewMux() error = %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	m.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+
+	if got := []any{rec.Code, rec.Body.String()}; !cmp.Equal(got, []any{http.StatusNotFound, "404 page not found\n"}) {
+		t.Errorf("GET /x = %v, want 404 and the body of http.NotFound", got)
+	}
+}
+
+// A request whose path is "" gets a 301 to "/".
+func TestMuxRedirectsAnEmptyPath(t *testing.T) {
+	t.Parallel()
+
+	r := httptest.NewRequest(http.MethodGet, "/page", nil)
+	r.URL.Path = ""
+
+	rec := httptest.NewRecorder()
+	testMux(t).ServeHTTP(rec, r)
+
+	if got := []any{rec.Code, sent(rec).Get("Location")}; !cmp.Equal(got, []any{http.StatusMovedPermanently, "/"}) {
+		t.Errorf("GET with path \"\" = %v, want 301 and Location /", got)
+	}
+}
+
+// NewMux does not change the slice of groups that it gets.
+func TestNewMuxKeepsTheGroups(t *testing.T) {
+	t.Parallel()
+
+	group := func(prefix string) routing.Group {
+		return routing.Group{
+			Prefix: prefix, Routes: []routing.Route{routing.Row(http.MethodGet, "/x", named(prefix))},
+			Middleware: nil, Options: nil, NotFound: nil, MethodNotAllowed: nil,
+		}
+	}
+
+	all := []routing.Group{group("/a"), group("/b"), group("/c")}
+
+	if _, err := routing.NewMux(all[:2]...); err != nil {
+		t.Fatalf("NewMux(/a, /b) error = %v", err)
+	}
+
+	got := make([]string, 0, len(all))
+	for _, g := range all {
+		got = append(got, g.Prefix)
+	}
+
+	if diff := cmp.Diff([]string{"/a", "/b", "/c"}, got); diff != "" {
+		t.Errorf("prefixes after NewMux(all[:2]...) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// The Options of a group serves OPTIONS at each path, also where a {$} or a
+// {name...} variable has the place of a {name} variable.
+func TestMuxOptionsOfEachPath(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		routes  []routing.Route
+		targets map[string]answer
+	}{
+		"{$} and {id}": {
+			routes: []routing.Route{
+				routing.Row(http.MethodGet, "/x/{$}", named("end")),
+				routing.Row(http.MethodGet, "/x/{id}", named("id")),
+			},
+			targets: map[string]answer{
+				"/x/":    {http.StatusOK, "options", "/x/{$}", nil, "GET, OPTIONS"},
+				"/x/abc": {http.StatusOK, "options", "/x/{id}", nil, "GET, OPTIONS"},
+			},
+		},
+		"{id} and {rest...}": {
+			routes: []routing.Route{
+				routing.Row(http.MethodGet, "/x/{id}", named("id")),
+				routing.Row(http.MethodGet, "/x/{rest...}", named("rest")),
+			},
+			targets: map[string]answer{
+				"/x/abc":     {http.StatusOK, "options", "/x/{id}", nil, "GET, OPTIONS"},
+				"/x/abc/def": {http.StatusOK, "options", "/x/{rest...}", nil, "GET, OPTIONS"},
+				"/x/":        {http.StatusOK, "options", "/x/{rest...}", nil, "GET, OPTIONS"},
+			},
+		},
+		"{a} and {b} of two methods": {
+			routes: []routing.Route{
+				routing.Row(http.MethodGet, "/x/{a}", named("get")),
+				routing.Row(http.MethodPost, "/x/{b}", named("post")),
+			},
+			targets: map[string]answer{
+				"/x/1": {http.StatusOK, "options", "/x/{a}", nil, "GET, POST, OPTIONS"},
+			},
+		},
+		"{a} and an OPTIONS route of {b}": {
+			routes: []routing.Route{
+				routing.Row(http.MethodGet, "/x/{a}", named("get")),
+				routing.Row(http.MethodOptions, "/x/{b}", named("own-options")),
+			},
+			targets: map[string]answer{
+				"/x/1": {http.StatusOK, "own-options", "/x/{b}", nil, ""},
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			m, err := routing.NewMux(routing.Group{
+				Prefix: "", Routes: tt.routes, Middleware: nil, Options: named("options"), NotFound: nil, MethodNotAllowed: nil,
+			})
+			if err != nil {
+				t.Fatalf("NewMux() error = %v", err)
+			}
+
+			for target, want := range tt.targets {
+				rec := httptest.NewRecorder()
+				m.ServeHTTP(rec, httptest.NewRequest(http.MethodOptions, target, nil))
+
+				header := sent(rec)
+
+				got := answer{
+					Status: rec.Code, Handler: header.Get("X-Handler"), Template: header.Get("X-Template"),
+					Trail: header.Values("X-Trail"), Allow: header.Get("Allow"),
+				}
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("OPTIONS %s mismatch (-want +got):\n%s", target, diff)
+				}
+			}
+		})
+	}
+}
+
 func TestMuxAllowed(t *testing.T) {
 	t.Parallel()
 
 	m := testMux(t)
 
 	tests := map[string][]string{
-		"/api/v1/items":      {http.MethodGet, http.MethodPost, http.MethodOptions},
-		"/api/v1/items/1":    {http.MethodGet, http.MethodHead, http.MethodOptions},
-		"/api/v1/ws":         {http.MethodGet},
-		"/api/v1/search":     nil,
-		"/api/v1/search?q=x": {http.MethodGet, http.MethodOptions},
-		"/api/v1/missing":    nil,
-		"/page":              {http.MethodGet},
-		"/missing":           nil,
+		"/api/v1/items":     {http.MethodGet, http.MethodPost, http.MethodOptions},
+		"/api/v1/items/1":   {http.MethodGet, http.MethodHead, http.MethodOptions},
+		"/api/v1/items/":    nil,
+		"/api/v1/items%2F1": {http.MethodGet, http.MethodHead, http.MethodOptions},
+		"/api/v1/missing":   nil,
+		"/page":             {http.MethodGet},
+		"/missing":          nil,
 		"/files/x": {
 			http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
 			http.MethodPatch, http.MethodDelete, http.MethodOptions,
@@ -317,43 +675,17 @@ func TestMuxRoutes(t *testing.T) {
 	got := make([]string, 0, len(routes))
 
 	for _, route := range routes {
-		row := route.Method + " " + route.Path
-		if queries := route.Queries(); len(queries) == 2 {
-			row += "?" + queries[0] + "=" + queries[1]
-		}
-
-		got = append(got, row)
+		got = append(got, route.Method+" "+route.Path)
 	}
 
 	want := []string{
 		"GET /page", " /files/",
 		"GET /api/v1/items", "POST /api/v1/items", "GET /api/v1/items/{id}", "HEAD /api/v1/items/{id}",
-		"GET /api/v1/ws", "GET /api/v1/search?q={q}", " /api/v1/any/",
+		"GET /api/v1/any/json", " /api/v1/any/", "GET /api/v1/vlans/{id}", "GET /api/v1/vlans/free",
 		"GET /bare/x",
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Routes() mismatch (-want +got):\n%s", diff)
-	}
-}
-
-// A route keeps its fields through the modifiers, which change only a copy.
-func TestRouteModifiers(t *testing.T) {
-	t.Parallel()
-
-	route := routing.Row(http.MethodGet, "/x", named("x"))
-	queried := route.WithQueries("a", "{a}")
-
-	if diff := cmp.Diff([]string{"a", "{a}"}, queried.Queries()); diff != "" {
-		t.Errorf("WithQueries(a, {a}).Queries() mismatch (-want +got):\n%s", diff)
-	}
-
-	without := queried.WithoutOptions()
-	if got := []string{without.Method, without.Path}; !cmp.Equal(got, []string{http.MethodGet, "/x"}) {
-		t.Errorf("WithoutOptions() method and path = %v, want GET /x", got)
-	}
-
-	if diff := cmp.Diff([]string{"a", "{a}"}, without.Queries()); diff != "" {
-		t.Errorf("WithoutOptions() queries mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -379,31 +711,30 @@ func TestNewMuxRefusesABadTable(t *testing.T) {
 
 	tests := map[string][]routing.Group{
 		"a path without a leading /":     {group("", routing.Row(http.MethodGet, "x", named("x")))},
-		"an empty path":                  {group("", routing.Row(http.MethodGet, "", named("x")))},
+		"an empty path":                  {group("/api", routing.Row(http.MethodGet, "", named("x")))},
 		"an unbalanced variable":         {group("", routing.Row(http.MethodGet, "/x/{id", named("x")))},
-		"a route without a handler":      {group("", routing.Row(http.MethodGet, "/x", nil))},
 		"a method Allowed does not name": {group("", routing.Row(http.MethodTrace, "/x", named("x")))},
 		"a lower-case method":            {group("", routing.Row("get", "/x", named("x")))},
 		"a repeated route": {
 			group("", routing.Row(http.MethodGet, "/x", named("x")), routing.Row(http.MethodGet, "/x", named("y"))),
 		},
+		"a repeated route of every method": {
+			group("", routing.Row("", "/x", named("x")), routing.Row("", "/x", named("y"))),
+		},
 		"routes of the same paths": {
 			group("", routing.Row(http.MethodGet, "/x/{a}", named("x")), routing.Row(http.MethodGet, "/x/{b}", named("y"))),
 		},
-		"a route after a route of every method": {
-			group("", routing.Row("", "/x", named("x")), routing.Row(http.MethodGet, "/x", named("y"))),
+		"routes that overlap": {
+			group("", routing.Row(http.MethodGet, "/x/{a}", named("x")), routing.Row("", "/x/y", named("y"))),
 		},
-		"a route after one with fewer queries": {
-			group("",
-				routing.Row(http.MethodGet, "/x", named("x")).WithQueries("a", "{a}"),
-				routing.Row(http.MethodGet, "/x", named("y")).WithQueries("b", "{b}", "a", "{a}"),
-			),
+		"a repeated HEAD route": {
+			group("", routing.Row(http.MethodHead, "/x", named("x")), routing.Row(http.MethodHead, "/x", named("y"))),
 		},
+		"a route without a handler":    {group("", routing.Row(http.MethodGet, "/x", nil))},
 		"a nil middleware":             {withMiddleware},
 		"a prefix without a leading /": {group("api")},
 		"a prefix with a trailing /":   {group("/api/")},
 		"the prefix /":                 {group("/")},
-		"a prefix after a shorter one": {group(""), group("/api"), group("/api/v1")},
 		"a repeated prefix":            {group("/api"), group("/b"), group("/api")},
 		"a repeated empty prefix":      {group(""), group("")},
 	}
@@ -415,37 +746,35 @@ func TestNewMuxRefusesABadTable(t *testing.T) {
 	}
 }
 
-// A group whose prefix starts with the prefix of a later group takes its own
-// paths, and a route with queries can come before one with fewer.
-func TestNewMuxTakesAGoodTable(t *testing.T) {
+// A request goes to the group with the longest prefix of its path, in either
+// order of the groups.
+func TestMuxLongestPrefix(t *testing.T) {
 	t.Parallel()
 
-	m, err := routing.NewMux(
-		routing.Group{
-			Prefix: "/api/v1",
-			Routes: []routing.Route{
-				routing.Row(http.MethodGet, "/y", named("v1")).WithQueries("a", "{a}"),
-				routing.Row(http.MethodGet, "/y", named("v1-no-query")),
-			},
-			Middleware: nil, Options: nil, NotFound: named("v1-404"), MethodNotAllowed: nil,
-		},
-		routing.Group{
-			Prefix: "/api", Routes: []routing.Route{routing.Row(http.MethodGet, "/y", named("api"))},
-			Middleware: nil, Options: nil, NotFound: named("api-404"), MethodNotAllowed: nil,
-		},
-	)
-	if err != nil {
-		t.Fatalf("NewMux() error = %v", err)
+	v1 := routing.Group{
+		Prefix: "/api/v1", Routes: []routing.Route{routing.Row(http.MethodGet, "/y", named("v1"))},
+		Middleware: nil, Options: nil, NotFound: named("v1-404"), MethodNotAllowed: nil,
+	}
+	api := routing.Group{
+		Prefix: "/api", Routes: []routing.Route{routing.Row(http.MethodGet, "/y", named("api"))},
+		Middleware: nil, Options: nil, NotFound: named("api-404"), MethodNotAllowed: nil,
 	}
 
-	for target, want := range map[string]string{
-		"/api/v1/y?a=1": "v1", "/api/v1/y": "v1-no-query", "/api/v1/z": "v1-404", "/api/y": "api", "/api/z": "api-404",
-	} {
-		rec := httptest.NewRecorder()
-		m.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+	for name, groups := range map[string][]routing.Group{"shorter first": {api, v1}, "longer first": {v1, api}} {
+		m, err := routing.NewMux(groups...)
+		if err != nil {
+			t.Fatalf("NewMux(%s) error = %v", name, err)
+		}
 
-		if got := sent(rec).Get("X-Handler"); got != want {
-			t.Errorf("GET %s handler = %q, want %q", target, got, want)
+		for target, want := range map[string]string{
+			"/api/v1/y": "v1", "/api/v1/z": "v1-404", "/api/y": "api", "/api/z": "api-404",
+		} {
+			rec := httptest.NewRecorder()
+			m.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+
+			if got := sent(rec).Get("X-Handler"); got != want {
+				t.Errorf("GET %s with the %s handler = %q, want %q", target, name, got, want)
+			}
 		}
 	}
 }

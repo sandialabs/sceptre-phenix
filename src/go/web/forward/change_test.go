@@ -12,7 +12,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/gorilla/mux"
 	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
 
 	"phenix/app"
@@ -94,7 +93,8 @@ func serveChange(t *testing.T, handler weberror.ErrorHandler, method, target str
 	ctx = context.WithValue(ctx, middleware.ContextKeyUser, "u")
 
 	req := httptest.NewRequestWithContext(ctx, method, target, nil)
-	req = mux.SetURLVars(req, map[string]string{"exp": "exp", "name": "vm"})
+	req.SetPathValue("exp", "exp")
+	req.SetPathValue("name", "vm")
 
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

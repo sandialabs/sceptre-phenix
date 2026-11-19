@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/gorilla/mux"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"phenix/api/config"
@@ -93,8 +92,7 @@ func GetScenarios(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		topo = vars["topo"]
+		topo = r.PathValue("topo")
 	)
 
 	if !role.Allowed("scenarios", "list") {

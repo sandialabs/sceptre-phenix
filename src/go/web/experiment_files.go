@@ -11,8 +11,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/experiment"
 	"phenix/api/job"
 	"phenix/util/file"
@@ -91,7 +89,7 @@ func forbidFiles(r *http.Request, name string, a audit.Action, msg string) error
 // it is known, then 200 (see util.ServeChecksum).
 func GetExperimentFileChecksum(w http.ResponseWriter, r *http.Request) error {
 	var (
-		name = mux.Vars(r)["name"]
+		name = r.PathValue("name")
 		path = r.URL.Query().Get("path")
 	)
 
@@ -130,7 +128,7 @@ func GetExperimentFileChecksum(w http.ResponseWriter, r *http.Request) error {
 // DeleteExperimentFile - DELETE /experiments/{name}/files/{filename}?path=.
 func DeleteExperimentFile(w http.ResponseWriter, r *http.Request) error {
 	var (
-		name = mux.Vars(r)["name"]
+		name = r.PathValue("name")
 		path = r.URL.Query().Get("path")
 	)
 
@@ -167,7 +165,7 @@ func DeleteExperimentFile(w http.ResponseWriter, r *http.Request) error {
 // It deletes the files it can and lists the rest, with the reason, rather
 // than failing the whole request for one of them.
 func DeleteExperimentFiles(w http.ResponseWriter, r *http.Request) error {
-	name := mux.Vars(r)["name"]
+	name := r.PathValue("name")
 
 	role := middleware.RoleFromContext(r.Context())
 	if !role.Allowed("experiments/files", "delete", name) {
@@ -232,7 +230,7 @@ func DeleteExperimentFiles(w http.ResponseWriter, r *http.Request) error {
 // It streams a zip archive of the files, one at a time; see
 // experiment.ZipFiles.
 func DownloadExperimentFiles(w http.ResponseWriter, r *http.Request) error {
-	name := mux.Vars(r)["name"]
+	name := r.PathValue("name")
 
 	role := middleware.RoleFromContext(r.Context())
 	if !role.Allowed("experiments/files", "get", name) {
@@ -303,7 +301,7 @@ func mayDownloadArchive(role rbac.Role, j job.Job) bool {
 // Checks the files as DownloadExperimentFiles does, then zips them in a background job for GET /jobs/{id}/artifact. A
 // file that fails is listed in MISSING.txt and the archive is named <exp>-files-incomplete.zip.
 func ArchiveExperimentFiles(w http.ResponseWriter, r *http.Request) error {
-	name := mux.Vars(r)["name"]
+	name := r.PathValue("name")
 
 	role := middleware.RoleFromContext(r.Context())
 	if !role.Allowed("experiments/files", "get", name) {
@@ -447,8 +445,7 @@ func GetExperimentFiles(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx          = r.Context()
 		role         = middleware.RoleFromContext(ctx)
-		vars         = mux.Vars(r)
-		name         = vars["name"]
+		name         = r.PathValue("name")
 		query        = r.URL.Query()
 		pageNum      = query.Get("pageNum")
 		perPage      = query.Get("perPage")
@@ -526,9 +523,8 @@ func GetExperimentFile(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx   = r.Context()
 		role  = middleware.RoleFromContext(ctx)
-		vars  = mux.Vars(r)
-		name  = vars["name"]
-		file  = vars["filename"]
+		name  = r.PathValue("name")
+		file  = r.PathValue("filename")
 		query = r.URL.Query()
 		path  = query.Get("path")
 	)

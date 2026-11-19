@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
-	"github.com/gorilla/mux"
 	"golang.org/x/crypto/bcrypt"
 
 	"phenix/api/settings"
@@ -403,8 +402,7 @@ func CreateUserToken(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		uname   = vars["username"]
+		uname   = r.PathValue("username")
 		created = audit.Fields{TargetUser: uname}
 	)
 
@@ -566,7 +564,7 @@ func GetRole(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		name    = mux.Vars(r)["name"]
+		name    = r.PathValue("name")
 	)
 
 	if !role.Allowed("roles", "get", name) {

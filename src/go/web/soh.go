@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/mux"
 	"golang.org/x/sync/errgroup"
 
 	"phenix/api/experiment"
@@ -32,8 +31,7 @@ func GetExperimentSoH(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		exp     = vars["name"]
+		exp     = r.PathValue("name")
 
 		query = r.URL.Query()
 	)

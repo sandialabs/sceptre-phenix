@@ -18,7 +18,6 @@ import (
 
 	"github.com/golang/mock/gomock"
 	gocmp "github.com/google/go-cmp/cmp"
-	"github.com/gorilla/mux"
 
 	"phenix/api/experiment"
 	"phenix/api/workflow"
@@ -205,7 +204,7 @@ func applyWorkflowRequest(role rbac.Role, rawQuery, contentType string, body io.
 	}
 
 	req := httptest.NewRequest(http.MethodPost, target, body)
-	req = mux.SetURLVars(req, map[string]string{"branch": "main"})
+	req = withPathValues(req, map[string]string{"branch": "main"})
 
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
@@ -1599,7 +1598,7 @@ func configDryRunPending(t *testing.T, body string) string {
 	t.Helper()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/workflow/configs/main?dryRun=true", strings.NewReader(body))
-	req = mux.SetURLVars(req, map[string]string{"branch": "main"})
+	req = withPathValues(req, map[string]string{"branch": "main"})
 	req.Header.Set("Content-Type", mimeYAML)
 	req = req.WithContext(context.WithValue(req.Context(), middleware.ContextKeyRole, workflowTestRole(true)))
 

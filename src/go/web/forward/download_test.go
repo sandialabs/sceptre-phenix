@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/gorilla/mux"
 
 	"phenix/web/weberror"
 )
@@ -21,7 +20,7 @@ import (
 //
 //nolint:paralleltest // changes the working directory
 func TestTunnelerDownloads(t *testing.T) {
-	router := mux.NewRouter()
+	router := http.NewServeMux()
 	router.Handle("/downloads/tunneler", weberror.ErrorHandler(ListTunnelers))
 	router.Handle("/downloads/tunneler/{name}", weberror.ErrorHandler(GetTunneler))
 
@@ -154,8 +153,8 @@ func installTunnelers(t *testing.T, dir string) {
 //
 //nolint:paralleltest // changes the working directory
 func TestTunnelerDownloadResumes(t *testing.T) {
-	router := mux.NewRouter()
-	router.Handle("/downloads/tunneler/{name}", weberror.ErrorHandler(GetTunneler)).Methods("GET", "HEAD")
+	router := http.NewServeMux()
+	router.Handle("GET /downloads/tunneler/{name}", weberror.ErrorHandler(GetTunneler))
 
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -198,7 +197,8 @@ func TestGetTunnelerRejectsNames(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			req := mux.SetURLVars(httptest.NewRequest(http.MethodGet, "/downloads/tunneler/x", nil), map[string]string{"name": name})
+			req := httptest.NewRequest(http.MethodGet, "/downloads/tunneler/x", nil)
+			req.SetPathValue("name", name)
 
 			var webErr *weberror.WebError
 

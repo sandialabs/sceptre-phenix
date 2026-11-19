@@ -34,6 +34,16 @@ import (
 	"phenix/web/weberror"
 )
 
+// withPathValues sets the values of the path variables of r, as the router
+// sets those of the route that matches r, and returns r.
+func withPathValues(r *http.Request, values map[string]string) *http.Request {
+	for name, value := range values {
+		r.SetPathValue(name, value)
+	}
+
+	return r
+}
+
 // testRole returns a role with one policy.
 func testRole(resource, verb string, names ...string) rbac.Role {
 	return rbac.Role{

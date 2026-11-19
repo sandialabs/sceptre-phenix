@@ -21,7 +21,6 @@ import (
 
 	"github.com/golang/mock/gomock"
 	gocmp "github.com/google/go-cmp/cmp"
-	"github.com/gorilla/mux"
 
 	"phenix/store"
 	"phenix/util/plog"
@@ -872,7 +871,7 @@ func TestWorkflowVariablesRequestsDoNotMix(t *testing.T) {
 		body, typ := varsTestRequest(t, mimeYAML, workflowTestYAML("  auto:\n    create: foo\n    restart: false\n  topology: topo\n"),
 			map[string]string{"HOST": host, other: "x"})
 		req := applyWorkflowRequest(workflowTestRole(true), "dryRun=true", typ, bytes.NewReader(body))
-		req = mux.SetURLVars(req, map[string]string{"branch": branch})
+		req = withPathValues(req, map[string]string{"branch": branch})
 		rec := serveApplyWorkflow(t, req)
 
 		return fmt.Sprintf("%d %s", rec.Code, rec.Body.String())

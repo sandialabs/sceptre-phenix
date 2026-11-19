@@ -152,8 +152,7 @@ func TestBuilderOptionsRunNoHandler(t *testing.T) {
 		withBuilderPreflightSources(preflightSources(&hostReads)),
 	})
 
-	// The generic schema route that /schemas/builder/v1 also matches,
-	// registered after the Builder routes as [Start] registers it.
+	// The generic schema route, which /schemas/builder/v1 also matches.
 	harness.handle(routing.Row(http.MethodGet, "/schemas/{kind}/{version}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("OPTIONS reached the generic schema route")
 		w.WriteHeader(http.StatusTeapot)

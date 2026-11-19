@@ -12,8 +12,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/experiment"
 	"phenix/app"
 	"phenix/types"
@@ -33,8 +31,7 @@ func TriggerExperimentApps(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		name = vars["name"]
+		name = r.PathValue("name")
 
 		query      = r.URL.Query()
 		appsFilter = query.Get("apps")
@@ -160,8 +157,7 @@ func CancelTriggeredExperimentApps(w http.ResponseWriter, r *http.Request) error
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		name = vars["name"]
+		name = r.PathValue("name")
 
 		query      = r.URL.Query()
 		appsFilter = query.Get("apps")
@@ -288,7 +284,7 @@ func GetExperimentApps(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		name = mux.Vars(r)["name"]
+		name = r.PathValue("name")
 	)
 
 	if !role.Allowed("experiments/apps", "get", name) {
@@ -340,7 +336,7 @@ func GetExperimentAppsInput(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		name = mux.Vars(r)["name"]
+		name = r.PathValue("name")
 	)
 
 	// the input holds the whole stored config, scenario app metadata included
