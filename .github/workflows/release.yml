@@ -1,0 +1,93 @@
+name: Release
+
+# Releases with releasaurus (see releasaurus.toml). Each push to main opens or
+# updates a release PR that names the next version (vYYYY.MM.DD) and prepends
+# its changelog to CHANGELOG.md. Merging that PR tags the release, publishes
+# its notes, and calls packages.yml to build and attach the release packages.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Show what would be released without changing anything
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  releasaurus:
+    name: Release
+    # Forks don't release, but can preview with a dry run.
+    if: github.repository == 'sandialabs/sceptre-phenix' || inputs.dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      tag: ${{ steps.detect.outputs.tag }}
+    env:
+      DRY_RUN: ${{ inputs.dry-run && '--dry-run' || '' }}
+    steps:
+      - name: Record existing automated releases
+        if: ${{ !inputs.dry-run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=10" \
+            --jq '.[] | select(.author.login == "github-actions[bot]") | .tag_name' \
+            | sort > /tmp/releases-before.txt
+
+      - name: Tag and publish a merged release PR
+        uses: robgonnella/releasaurus/action@c06deed80992213625c17d367b4529643927fe17 # v1.4.0
+        with:
+          command: release
+          command_args: >-
+            --forge github
+            --repo ${{ github.server_url }}/${{ github.repository }}
+            ${{ env.DRY_RUN }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Detect newly published release tag
+        id: detect
+        if: ${{ !inputs.dry-run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=10" \
+            --jq '.[] | select(.author.login == "github-actions[bot]") | .tag_name' \
+            | sort > /tmp/releases-after.txt
+          tag=$(comm -13 /tmp/releases-before.txt /tmp/releases-after.txt | tail -n 1)
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the release PR
+        uses: robgonnella/releasaurus/action@c06deed80992213625c17d367b4529643927fe17 # v1.4.0
+        with:
+          command: release-pr
+          command_args: >-
+            --forge github
+            --repo ${{ github.server_url }}/${{ github.repository }}
+            ${{ env.DRY_RUN }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  packages:
+    name: Build and attach release packages
+    needs: releasaurus
+    if: needs.releasaurus.outputs.tag != '' && !inputs.dry-run
+    uses: ./.github/workflows/packages.yml
+    with:
+      tag: ${{ needs.releasaurus.outputs.tag }}
+      publish-latest: true
+    permissions:
+      contents: write
+      packages: write

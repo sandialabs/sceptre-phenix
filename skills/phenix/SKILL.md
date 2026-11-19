@@ -321,5 +321,6 @@ Python reference apps live in the repository's `examples/` directory
 ## Contributing
 
 When changing this repository, read `AGENTS.md` at the repository root first;
-its "Change Management" section sets branch, commit, changelog, and pull
-request requirements. Behavior changes must be reflected in this skill.
+its "Change Management" section sets branch, commit, and pull request
+requirements (do not edit `CHANGELOG.md` — Releasaurus generates it from
+Conventional Commits). Behavior changes must be reflected in this skill.
