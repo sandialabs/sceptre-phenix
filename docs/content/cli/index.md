@@ -39,7 +39,7 @@ phenix [flags]
       --use-gre-mesh                        use GRE tunnels between mesh nodes for VLAN trunking
 ```
 
-### SEE ALSO
+### Commands
 
 * [phenix admin](admin.md) - Administration of users, roles and API tokens
 * [phenix completion](completion.md) - Generate completion script

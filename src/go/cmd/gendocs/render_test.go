@@ -89,14 +89,10 @@ func TestRenderCommandPage(t *testing.T) {
 		"## app alpha\n\nAlpha things\n\n" +
 		"### Synopsis\n\n```text\nAlpha does\n  <many> things.\n```\n\n" +
 		"### Options\n\n```text\n  -h, --help   help for alpha\n```\n\n" +
-		"### SEE ALSO\n\n" +
-		"* [app](index.md) - An app\n" +
-		"* [app alpha beta](alpha.md#app-alpha-beta) - Run beta\n\n" +
 		"## app alpha beta\n\nRun beta\n\n" +
 		"```text\napp alpha beta NAME [flags]\n```\n\n" +
 		"### Examples\n\n```text\napp alpha beta one\n```\n\n" +
-		"### Options\n\n```text\n      --count int   how many (default 1)\n  -h, --help        help for beta\n```\n\n" +
-		"### SEE ALSO\n\n* [app alpha](alpha.md) - Alpha things\n"
+		"### Options\n\n```text\n      --count int   how many (default 1)\n  -h, --help        help for beta\n```\n"
 
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("render() alpha.md mismatch (-want +got):\n%s", diff)
@@ -111,7 +107,7 @@ func TestRenderIndexHoldsGlobalFlags(t *testing.T) {
 	for _, want := range []string{
 		"--level string   log level (default \"info\")",
 		"--store string   store path (default: /etc/store.db as root)",
-		"* [app alpha](alpha.md) - Alpha things",
+		"### Commands\n\n* [app alpha](alpha.md) - Alpha things\n* [app zeta](zeta.md) - Zeta\n",
 	} {
 		if !strings.Contains(pages[indexFile].Body, want) {
 			t.Errorf("render() index.md does not contain %q:\n%s", want, pages[indexFile].Body)
@@ -180,7 +176,8 @@ func hostSpecific() []*regexp.Regexp {
 }
 
 // render gives the same phenix pages on each run, with no path or URL of this host or user in
-// them, links only to generated pages and headings, and the documented store.endpoint default.
+// them, no list of cobra's, links only to generated pages, their headings and the documentation,
+// and the documented store.endpoint default.
 //
 //nolint:paralleltest // renders the shared phenix command tree
 func TestRenderPhenixTree(t *testing.T) {
@@ -199,7 +196,15 @@ func TestRenderPhenixTree(t *testing.T) {
 			}
 		}
 
+		if strings.Contains(p.Body, "SEE ALSO") {
+			t.Errorf("render() %s has a SEE ALSO list of cobra's, want none", file)
+		}
+
 		for _, m := range markdownLink.FindAllStringSubmatch(p.Body, -1) {
+			if strings.HasPrefix(m[1], docsDir) {
+				continue // TestRelatedPagesExist checks these
+			}
+
 			linked, ok := first[m[1]]
 			if !ok {
 				t.Errorf("render() %s links to %s, which is not a generated page", file, m[1])
@@ -234,47 +239,6 @@ func hasHeadingSlug(markdown, anchor string) bool {
 	}
 
 	return false
-}
-
-func TestSlug(t *testing.T) {
-	t.Parallel()
-
-	for _, tc := range []struct{ in, want string }{
-		{"phenix experiment create", "phenix-experiment-create"},
-		{"phenix vm capture start-subnet", "phenix-vm-capture-start-subnet"},
-		{"  Options  ", "options"},
-		{"a - b", "a-b"},
-		{"phenix (beta)!", "phenix-beta"},
-		{"", ""},
-		{"under_score", "under_score"},
-	} {
-		t.Run(tc.in, func(t *testing.T) {
-			t.Parallel()
-
-			if got := slug(tc.in); got != tc.want {
-				t.Errorf("slug(%q) = %q, want %q", tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestSlugProperties(t *testing.T) {
-	t.Parallel()
-
-	anchor := regexp.MustCompile(`^[a-z0-9_-]*$`)
-
-	rapid.Check(t, func(t *rapid.T) {
-		heading := rapid.String().Draw(t, "heading")
-		got := slug(heading)
-
-		if !anchor.MatchString(got) || strings.Contains(got, "--") {
-			t.Fatalf("slug(%q) = %q, want only [a-z0-9_-] without a repeated -", heading, got)
-		}
-
-		if again := slug(got); again != got {
-			t.Fatalf("slug(slug(%q)) = %q, want %q", heading, again, got)
-		}
-	})
 }
 
 func TestDedent(t *testing.T) {
@@ -332,7 +296,6 @@ func TestTidy(t *testing.T) {
 		{"keeps labeled code blocks", "```bash\nx\n```\n", "```bash\nx\n```\n"},
 		{"collapses blank lines", "a\n\n\n\nb\n\n\n", "a\n\nb\n"},
 		{"keeps blank lines in code", "```\na\n\n\nb\n```", "```text\na\n\n\nb\n```\n"},
-		{"drops link list tabs", "* [a](a.md)\t - A\n", "* [a](a.md) - A\n"},
 		{"drops trailing spaces", "a  \n```\nb\t\n```\n", "a\n```text\nb\n```\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -370,44 +333,13 @@ func TestGenMarkdownReportsWriteErrors(t *testing.T) {
 
 	c := &cobra.Command{Use: "app", Short: "An app"}
 
-	err := genMarkdown(c, renderFailingWriter{}, func(s string) string { return s })
+	err := genMarkdown(c, renderFailingWriter{})
 	if err == nil || !strings.Contains(err.Error(), "rendering app") {
 		t.Errorf("genMarkdown(app, a writer that fails) = %v, want an error naming app", err)
 	}
 
 	if !c.DisableAutoGenTag {
 		t.Error("genMarkdown(app) DisableAutoGenTag = false, want true")
-	}
-}
-
-// Each command is documented on its top-level command's page, under its own
-// heading below the top, and cobra links it by its path.
-func TestRenderTargets(t *testing.T) {
-	t.Parallel()
-
-	root := newRenderTestTree()
-
-	for _, tc := range []struct {
-		path         []string
-		target, link string
-	}{
-		{nil, indexFile, "app.md"},
-		{[]string{"alpha"}, "alpha.md", "app_alpha.md"},
-		{[]string{"alpha", "beta"}, "alpha.md#app-alpha-beta", "app_alpha_beta.md"},
-		{[]string{"zeta"}, "zeta.md", "app_zeta.md"},
-	} {
-		c, _, err := root.Find(tc.path)
-		if err != nil {
-			t.Fatalf("Find(%v) error = %v", tc.path, err)
-		}
-
-		if got := target(c); got != tc.target {
-			t.Errorf("target(%s) = %q, want %q", c.CommandPath(), got, tc.target)
-		}
-
-		if got := cobraLink(c); got != tc.link {
-			t.Errorf("cobraLink(%s) = %q, want %q", c.CommandPath(), got, tc.link)
-		}
 	}
 }
 

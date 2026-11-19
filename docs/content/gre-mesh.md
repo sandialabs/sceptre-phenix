@@ -94,3 +94,8 @@ The 1472-byte payload plus IPv4 and ICMP headers makes a 1500-byte guest IP
 packet. This checks guest connectivity at that size, but does not prove the
 outer GRE packets avoided fragmentation. Inspect traffic on the physical
 interfaces or fragmentation counters on the hosts to verify that separately.
+
+## See Also
+
+* [VLANs](vlans.md): VLAN aliases, ranges and the VLANs page.
+* [Troubleshooting](troubleshooting.md#vms-on-different-nodes-cannot-reach-each-other): when VMs on different nodes cannot reach each other.

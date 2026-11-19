@@ -106,3 +106,9 @@ src/go/types/version/schemas/v1.yaml
 src/go/types/version/schemas/v2.yaml
 --8<--
 ```
+
+## See Also
+
+* [Configuration Files](configuration.md): how to write each kind of config, with examples.
+* [phenix config](cli/config.md): create, edit and check configs.
+* [Builder](builder/index.md): draw a topology and publish it as a config.

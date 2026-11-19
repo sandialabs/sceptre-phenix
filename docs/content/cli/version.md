@@ -26,7 +26,3 @@ phenix version [flags]
   -h, --help            help for version
   -o, --output string   Output format (text, json, yaml) (default "text")
 ```
-
-### SEE ALSO
-
-* [phenix](index.md) - A cli application for phēnix

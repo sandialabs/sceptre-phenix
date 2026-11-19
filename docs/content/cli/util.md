@@ -18,14 +18,6 @@ phenix util [flags]
   -h, --help   help for util
 ```
 
-### SEE ALSO
-
-* [phenix](index.md) - A cli application for phēnix
-* [phenix util app-json](util.md#phenix-util-app-json) - Print application JSON input for given experiment to STDOUT
-* [phenix util role-table](util.md#phenix-util-role-table) - Print a table for permissions and roles
-* [phenix util scheduler-json](util.md#phenix-util-scheduler-json) - Print user scheduler JSON input for given experiment to STDOUT
-* [phenix util scorch-json](util.md#phenix-util-scorch-json) - Print SCORCH component JSON input for given experiment to STDOUT
-
 ## phenix util app-json
 
 Print application JSON input for given experiment to STDOUT
@@ -42,10 +34,6 @@ phenix util app-json <experiment name> [flags]
   -p, --pretty          Print indented JSON (the same as -o json)
 ```
 
-### SEE ALSO
-
-* [phenix util](util.md) - Utility commands
-
 ## phenix util role-table
 
 Print a table for permissions and roles
@@ -61,10 +49,6 @@ phenix util role-table [flags]
   -o, --output string   Output format (csv, markdown, json, yaml) (default "csv")
   -p, --pretty          Print the table as markdown (the same as -o markdown)
 ```
-
-### SEE ALSO
-
-* [phenix util](util.md) - Utility commands
 
 ## phenix util scheduler-json
 
@@ -101,10 +85,6 @@ phenix util scheduler-json my-exp | phenix-scheduler-custom
   -h, --help            help for scheduler-json
   -o, --output string   Output format (json, yaml) (default "json")
 ```
-
-### SEE ALSO
-
-* [phenix util](util.md) - Utility commands
 
 ## phenix util scorch-json
 
@@ -168,6 +148,8 @@ phenix util scorch-json my-exp capture --replace '{{DURATION}}=30' -o json \
       --stage string          Stage: configure, start, stop, cleanup (default: the first stage that runs the component)
 ```
 
-### SEE ALSO
+## See Also
 
-* [phenix util](util.md) - Utility commands
+* [Apps](../apps.md#user-apps): the JSON that a user app reads.
+* [Scorch](../scorch.md): how to write and run Scorch components.
+* [User Administration](../user-administration.md): users, roles and permissions.

@@ -18,18 +18,6 @@ phenix vlan [flags]
   -h, --help   help for vlan
 ```
 
-### SEE ALSO
-
-* [phenix](index.md) - A cli application for phēnix
-* [phenix vlan alias](vlan.md#phenix-vlan-alias) - View, pin or unpin VLAN aliases
-* [phenix vlan blacklist](vlan.md#phenix-vlan-blacklist) - View or change the minimega VLAN blacklist
-* [phenix vlan check](vlan.md#phenix-vlan-check) - Check VLAN pins and a VLAN range of an experiment against the cluster
-* [phenix vlan free](vlan.md#phenix-vlan-free) - Find a block of free VLAN IDs
-* [phenix vlan list](vlan.md#phenix-vlan-list) - List the VLAN IDs of the cluster
-* [phenix vlan pin-live](vlan.md#phenix-vlan-pin-live) - Pin the live VLAN IDs of a running experiment
-* [phenix vlan range](vlan.md#phenix-vlan-range) - View, set or clear the VLAN range of an experiment
-* [phenix vlan release](vlan.md#phenix-vlan-release) - Release the VLAN IDs of a minimega namespace that no experiment has
-
 ## phenix vlan alias
 
 View, pin or unpin VLAN aliases
@@ -79,10 +67,6 @@ phenix vlan alias <experiment name> <alias name> --unpin
       --unpin           Clear the pin of the alias, so minimega gives it an ID at start
 ```
 
-### SEE ALSO
-
-* [phenix vlan](vlan.md) - Used to manage VLANs
-
 ## phenix vlan blacklist
 
 View or change the minimega VLAN blacklist
@@ -108,12 +92,6 @@ phenix vlan blacklist [flags]
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
 
-### SEE ALSO
-
-* [phenix vlan](vlan.md) - Used to manage VLANs
-* [phenix vlan blacklist add](vlan.md#phenix-vlan-blacklist-add) - Add a VLAN ID to the minimega blacklist
-* [phenix vlan blacklist remove](vlan.md#phenix-vlan-blacklist-remove) - Remove a VLAN ID from the minimega blacklist
-
 ## phenix vlan blacklist add
 
 Add a VLAN ID to the minimega blacklist
@@ -127,10 +105,6 @@ phenix vlan blacklist add <vlan id> [flags]
 ```text
   -h, --help   help for add
 ```
-
-### SEE ALSO
-
-* [phenix vlan blacklist](vlan.md#phenix-vlan-blacklist) - View or change the minimega VLAN blacklist
 
 ## phenix vlan blacklist remove
 
@@ -154,10 +128,6 @@ phenix vlan blacklist remove <vlan id> [flags]
       --dry-run   Show what the command would change, and change nothing
   -h, --help      help for remove
 ```
-
-### SEE ALSO
-
-* [phenix vlan blacklist](vlan.md#phenix-vlan-blacklist) - View or change the minimega VLAN blacklist
 
 ## phenix vlan check
 
@@ -197,10 +167,6 @@ phenix vlan check my-exp --range 100-199
       --range string        Replace the VLAN range, as <min>-<max>
 ```
 
-### SEE ALSO
-
-* [phenix vlan](vlan.md) - Used to manage VLANs
-
 ## phenix vlan free
 
 Find a block of free VLAN IDs
@@ -238,10 +204,6 @@ phenix vlan free --outside-ranges
   -o, --output string    Output format (table, json, yaml) (default "table")
       --outside-ranges   Give only VLAN IDs outside the VLAN range of each experiment
 ```
-
-### SEE ALSO
-
-* [phenix vlan](vlan.md) - Used to manage VLANs
 
 ## phenix vlan list
 
@@ -288,10 +250,6 @@ phenix vlan list -o csv > vlans.csv
       --vlan string         Show only the rows of this VLAN ID
 ```
 
-### SEE ALSO
-
-* [phenix vlan](vlan.md) - Used to manage VLANs
-
 ## phenix vlan pin-live
 
 Pin the live VLAN IDs of a running experiment
@@ -314,10 +272,6 @@ phenix vlan pin-live <experiment name> [flags]
 ```text
   -h, --help   help for pin-live
 ```
-
-### SEE ALSO
-
-* [phenix vlan](vlan.md) - Used to manage VLANs
 
 ## phenix vlan range
 
@@ -366,10 +320,6 @@ phenix vlan range <experiment name> --clear
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
 
-### SEE ALSO
-
-* [phenix vlan](vlan.md) - Used to manage VLANs
-
 ## phenix vlan release
 
 Release the VLAN IDs of a minimega namespace that no experiment has
@@ -395,6 +345,6 @@ phenix vlan release <namespace> [flags]
   -h, --help      help for release
 ```
 
-### SEE ALSO
+## See Also
 
-* [phenix vlan](vlan.md) - Used to manage VLANs
+* [VLANs](../vlans.md): VLAN aliases, ranges and the VLANs page.

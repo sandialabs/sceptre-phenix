@@ -1,26 +1,68 @@
 # State of Health
 
-State of Health (SoH) is a core (but not default) app meant to assist with
+State of Health (SoH) is a [core (but not default) app](apps.md#additional-core-apps) meant to assist with
 understanding the state of a running experiment. It has many [configuration options](#configuration-options), and relies on [minimega's command and control
 infrastructure](https://sandia-minimega.github.io/minimega/training/miniclass/module-28/) (ie. the `miniccc` agent running in experiment VMs) to drive and
 collect the experiment health state data. See the [command and control](#command-and-control) section for more details.
 
 ## User Interface
 
-SoH information is presented in the UI in two separate tabs. You can access
-the information by clicking the SoH button from the Experiments or Running
-Experiment components. The `SoH` tab in the navbar summarizes
-every experiment in one table.
+SoH information is presented in the UI in two places. The `SoH` tab in the
+navbar [summarizes every experiment](#state-of-health-overview), and each
+experiment has its own SoH page with its [topology graph](#topology-graph)
+and, when SoH [packet capture](#packet-capture) is enabled, its
+[network volume](#network-volume). To open an experiment's SoH page, click the
+heartbeat button in the Experiments table or next to the `Running` status on
+the experiment's page.
 
-Button available on the experiments table.
+![The Actions column of the Experiments table, where each row has start, stop, restart, delete, State of Health heartbeat and SCORCH fire buttons, grayed out where they do not apply.](images/exps_soh.png){: width=236 .center}
 
-![The Actions column of the Experiments table, where each row has start, stop, delete, State of Health heartbeat and SCORCH fire buttons, grayed out where they do not apply.](images/exps_soh.png){: width=200 .center}
+From the command line, [`phenix exp soh`](cli/experiment.md#phenix-experiment-soh) shows the same summary. Give it an
+experiment name to see each VM with its status and failing checks, and
+`--status` (`running`, `notrunning`, `notboot`, `notdeploy` or `external`) to
+see only the VMs with that status.
 
-### Topology Graph
+```bash
+phenix exp soh
+phenix exp soh my-exp --status notrunning
+```
+
+## State of Health Overview
+
+The `SoH` tab in the navbar lists every experiment in one table, worst first,
+so you can see which ones need attention without opening each one.
+
+![State of Health overview with its filters, summary line and a table of five experiments with each one's status, SoH verdict, VM health bar, checks, reachability, a 12-run trend, last check time and actions.](images/soh_overview.png){: width=800 .center}
+
+The `SoH` column holds one of these verdicts:
+
+| Verdict | Meaning |
+|---|---|
+| `degraded` | a VM that should be up is down, at least 20% of the checked hosts have a failing check, or fewer than 90% of the reachability pairs pass |
+| `checks failing` | at least one check is failing, but the experiment is not `degraded` |
+| `waiting for start` | the `soh` app is configured, but the experiment is not running yet |
+| `waiting for first run` | the experiment is running, but the app has no results yet |
+| `first run in progress` | the experiment is running, and the app is running its first checks |
+| `disabled, not run yet` | the experiment is running, but the scenario sets `disabled: true` on the app and nobody has started it |
+| `healthy` | every check the app ran passed |
+| `not configured` | the experiment's scenario does not include the `soh` app |
+
+The buttons above the table filter it: `All`, `Needs attention` (`degraded`
+and `checks failing`), `Healthy`, and `No SOH data` (the waiting verdicts and
+`not configured`).
+
+Expand a row to list the experiment's failing checks and the VMs that are
+down, or click `Run SOH` to start a new run. A VM marked Do Not Boot, an
+external device, or a VM still waiting for its delayed start doesn't count as
+down.
+
+![Expanded bennu row listing its 5 problems by host, check type, target, result and check time, with Open topology graph and Run SOH buttons.](images/soh_overview_detail.png){: width=800 .center}
+
+## Topology Graph
 
 This tab displays a network graph of the running experiment.
 
-![State of Health topology graph in the Force layout, with a status legend, VM and VLAN counts, filter radio buttons, and VMs colored by state around VLAN segment nodes.](images/soh_graph.png){: width=800 .center}
+![State of Health topology graph of bennu in the VLANs layout, with a status legend, VM and VLAN counts, filter radio buttons, the Refresh Network and Run SOH buttons, and VMs colored by state in a box for each VLAN.](images/soh_graph.png){: width=800 .center}
 
 The color of the node is based on the condition of the corresponding VM and
 could be:
@@ -31,6 +73,8 @@ could be:
 * `Not deployed` (part of the experiment, but flushed from minimega)
 * `External / HIL` (an [external node](configuration.md#external-nodes), i.e.
   hardware in the loop, not deployed by minimega)
+
+While the experiment is stopped, its VMs are drawn without a status color.
 
 It is also possible to filter the graph based on nodes that are either:
 
@@ -71,7 +115,7 @@ Hovering over a node in the graph will cause it to expand to show what operating
 system the node is running. An orange border around a node is indicative of the
 node currently having health issues (e.g., expected files, services, or
 processes are missing, or the node cannot reach other nodes on the network).
-Other virtual systems will also be represented accordingly (e.g., a printer or
+Other virtual systems will also be represented accordingly (e.g., a router or
 firewall).
 
 ![Graph node hovered to show its Linux server icon and name, ringed in orange because a check failed.](images/linux.png){: width=800 .center}
@@ -94,7 +138,35 @@ example of no SoH information with the VNC button disabled.
 
 ![VM Details dialog saying there is no state of health data available for the VM.](images/soh_no_details.png){: width=800 .center}
 
-### External Devices
+The `Notes` section of the modal shows the VM's notes. If your role can
+change the VM, the tag button edits its notes and labels, and the paintbrush
+button changes how the graph draws the node (fill color, stroke color and
+stroke style).
+
+## Graph Layouts
+
+Besides the default `VLAN groups`, the layouts are `Force` (a physics
+simulation), `Radial tree` (the most central router or firewall in the middle,
+everything else in rings by hop distance), `Layered` (the core on top, VLANs
+under their routers, hosts below) and `ELK layered` (tiers like `Layered`,
+arranged by the ELK engine). The `Fit` button fits the whole graph in view.
+
+![Layout picker with the Force, Radial, Layered, VLANs and ELK buttons, VLANs selected as the default, and the hint Hosts boxed by VLAN.](images/soh_layout_picker.png){: width=800 .center}
+
+![State of Health graph in the Layered layout, with the router at the top and VLAN segments grouping their VMs in tiers below.](images/soh_layout_layered.png){: width=800 .center}
+
+## Downloading the Graph
+
+The `Download` menu saves the graph as drawn, as a PNG, an SVG, or a GEXF 1.3
+file for [Gephi](https://gephi.org/) and Gephi Lite. The PNG and SVG include
+a title and the legend. The GEXF file holds each VM and VLAN node with its
+status and SoH check results, an edge for each interface and, when
+[network volume](#network-volume) data is available, the traffic flows as
+weighted edges.
+
+![Graph Download menu offering PNG, SVG and GEXF (for Gephi) files.](images/soh_download_menu.png){: width=800 .center}
+
+## External Devices
 
 Experiments that include hardware-in-the-loop or other devices not deployed by
 minimega can still represent them in the topology graph by adding them to the
@@ -105,9 +177,10 @@ was configured for them.
 
 Because external nodes don't run `miniccc`, they're excluded from the
 automated command-and-control-based checks described in [Command and
-Control](#command-and-control) (network config, reachability, listening ports,
-processes, Docker containers, CPU load). Clicking on an external node's details modal will
-therefore always report no SoH information available, and the VNC button will
+Control](#command-and-control) (network config, reachability, files, services,
+listening ports, processes, Docker containers, custom tests, CPU load). An
+external node's details modal will therefore show only the reachability tests
+that other VMs ran to it, or no SoH information when there are none, and the VNC button will
 be disabled since phenix has no console access to it.
 
 External nodes can still participate in reachability testing indirectly: their
@@ -117,7 +190,7 @@ the `src` or `dst` in a
 to/from the device from another VM in the experiment.
 
 When `testReachability` is `sample` or `full`, the other VMs also ping the
-addresses of external nodes on the VLANs that they share. To stop these pings,
+addresses of external nodes. To stop these pings,
 add the external node's hostname to `skipHosts`. Custom reachability tests can
 still reach an external node in `skipHosts`.
 
@@ -132,7 +205,7 @@ still reach an external node in `skipHosts`.
     with no `vlan` set on its interface(s) will appear in the graph as an
     isolated node with no connecting lines.
 
-### Network Volume
+## Network Volume
 
 This tab displays a chord graph that shows network flows between nodes using
 flows from Packetbeat fed to Elasticsearch; connections represent the volume of
@@ -140,7 +213,8 @@ traffic between nodes.
 
 !!! tip
     This information is only available if the packet capture option is enabled
-    for SoH.
+    for SoH. The tab appears only after a run of the `flows` check has
+    recorded flow data.
 
 This is an example chord graph of a Protonuke server with two clients; one of
 which is requesting content at a delayed interval (therefore less traffic flow).
@@ -155,21 +229,62 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
 
 ## Configuration Options
 
+Set these options in the `metadata` of the `soh` app in the
+[Scenario](configuration.md#scenario). The app fails when it has no
+`metadata`.
+
 * `disabled`: Like any (non-default) phenix app, `soh` can be disabled at startup
   by setting `disabled: true`. In this case, health checks will not be run at experiment
   startup but can be triggered manually after the experiment is running through either
-  the `phenix` cli or web UI
+  the `phenix` cli or web UI (see [Running the Checks
+  Again](#running-the-checks-again)). A disabled app also skips its configure
+  and post-start stages, so it does not inject ICMP rules or deploy packet
+  capture.
 
 * `appMetadataProfileKey`: since the listeners and processes one might want to
   monitor could be highly dependent on other apps that are configured for an
-  experiment, it's possible to specify the `hostListeners` and `hostProcesses`
-  to be monitored in the other apps themselves under the key specified here.
+  experiment, it's possible to specify the listeners, processes and custom
+  tests to be monitored in the other apps themselves, in the `metadata` of a
+  host of the app, under the key specified here. The key holds `listeners`,
+  `processes` and `customTests` lists, which take the same values as
+  `hostListeners`, `hostProcesses` and `hostCustomTests` for that host.
   The default key is `sohProfile`.
+
+    ```yaml
+    spec:
+      apps:
+      - name: my-app
+        hosts:
+        - hostname: server
+          metadata:
+            sohProfile:
+              listeners:
+              - :80
+              processes:
+              - nginx
+              customTests:
+              - name: web-check
+                testScript: curl -s http://localhost/
+                testStdout: Welcome
+    ```
 
 * `c2Timeout`: a [Golang duration
   string](https://golang.org/pkg/time/#ParseDuration) specifying how long to
-  wait for the `miniccc` C2 client to become active in a VM before moving on and
-  marking the VM as not to be monitored. The default is `5m`.
+  wait for the `miniccc` C2 client to become active in a VM. If it doesn't, SoH
+  records the VM's remaining checks in that run as failed with the error
+  `c2 not active on host`. The default is `5m`.
+
+* `c2AppearGrace`: how long a C2 command can take to show up on the cluster
+  host that has the VM's `miniccc` client before the check fails. `0s`
+  disables this limit. The default is `30s`.
+
+* `c2ClientGrace`: how long a VM's `miniccc` client can be absent while a
+  check waits for its response before the check fails as if C2 were not
+  active. `0s` disables this limit. The default is `90s`.
+
+* `c2Concurrency`: the maximum number of C2 checks that one SoH run sends at a
+  time. The wait doesn't count against `c2Timeout`. A value of `0` or less
+  removes the limit. The default is `16`.
 
 * `exitOnError`: a boolean representing whether the app should cause the entire
   experiment deployment to fail if it has any errors. The default is `false`.
@@ -180,11 +295,13 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
   when some processes are not healthy immediately at experiment start. This
   only delays SoH when it first runs at the experiment start. It will not delay
   SoH when run manually later by clicking the `Run SOH` button in the UI or
-  running `phenix exp trigger running` (or the deprecated `trigger-running`
-  command) from the command line. The default is no delay.
+  running `phenix exp trigger <experiment-name> running` (or the deprecated
+  `trigger-running` command) from the command line. The default is no delay.
 
 * `hostCustomTests`: If present, a map of custom tests to run on the given
-  hosts.
+  hosts. Each test needs a `testScript` and at least one of `testStdout`,
+  `testStderr`, `validateStdout` and `validateStderr`. SoH sends the script to
+  the VM with `cc send`.
 
     * `name`: name of test. Used as script name to be sent to the host. The
       script name is `<host>-<name>`. SoH replaces each run of white space with
@@ -197,7 +314,10 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
       using the specified `executor`.
 
     * `executor`: the application to execute the `testScript` with (e.g. `bash`,
-      `powershell`).
+      `powershell`). The default is `bash`, or
+      `powershell -NoProfile -ExecutionPolicy bypass -File` on a Windows VM.
+      If the executor starts with `powershell`, SoH adds `.ps1` to the script
+      name.
 
     * `testStdout`: a string to look for in STDOUT from the executed script. If
       found, the test passes. If not found, it fails.
@@ -209,11 +329,15 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
       STDOUT from the executed script. If this validation script exits 0, the
       test passes. If it exits non-zero, the test fails. This validation script
       should always be a bash script, even if the host is a Windows host.
+      phēnix runs it with `bash` on the phēnix server, not in the VM. When both
+      are set, `validateStdout` is used in place of `testStdout`.
 
     * `validateStderr`: a script to run that will be provided, via STDIN, the
       STDERR from the executed script. If this validation script exits 0, the
       test passes. If it exits non-zero, the test fails. This validation script
       should always be a bash script, even if the host is a Windows host.
+      phēnix runs it with `bash` on the phēnix server, not in the VM. When both
+      are set, `validateStderr` is used in place of `testStderr`.
 
 * `hostFiles`: a map of VMs, each specifying a list of file paths that should
   exist within the VM. Paths may target Linux or Windows VMs. Missing files are
@@ -226,6 +350,17 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
       - /etc/phenix/startup/1_hostname-start.sh
       windows-client:
       - 'C:\ProgramData\phenix\ready.txt'
+    ```
+
+* `hostFilesAbsent`: a map of VMs, each specifying a list of file paths that
+  must not exist within the VM. SoH uses the same command as for `hostFiles`.
+  A file that exists is reported in the node's **Files (Absent)** table in the
+  SoH details modal and marks the node as unhealthy. The default is `nil`.
+
+    ```yaml
+    hostFilesAbsent:
+      linux-server:
+      - /etc/phenix/startup/failed
     ```
 
 * `hostServices`: a map of VMs, each specifying a list of service names that
@@ -289,7 +424,7 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
   disabled, then this will be too, regardless of its setting here. The default
   is `false`.
 
-* `packetCapture`: if present, a partially hidden packet capture infrastructure
+* `packetCapture`: if present, and its `captureHosts` lists at least one VM, a partially hidden packet capture infrastructure
   based on Elasticsearch, Kibana, and Packetbeat will be deployed for the experiment.
   See [Packet Capture](#packet-capture) for more details. The default is `nil`.
 
@@ -317,26 +452,27 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
 
         * `ipAddress`: the IP address to use for the Elastic/Kibana server added
           to the experiment topology. The network interface this IP address is
-          used for will be added to the experiment VLAN specified by `vlan`. The
+          used for will be added to the `MGMT` VLAN. The
           IP address must be an IPv4 address in CIDR notation. There should also be
           sufficient IP addresses after the one specified here to be assigned to
           each of the Packetbeat monitor VMs that will be deployed, as the IP
-          addresses assigned to them on the VLAN specified by `vlan` will
+          addresses assigned to them on the `MGMT` VLAN will
           increment up from this IP. There is no default for this setting; if
           packet capture is to be deployed it must be provided.
 
-        * `vlan`: the experiment VLAN to add the Elastic/Kibana and Packetbeat
-          VMs to. There is no default for this setting; if packet capture is to
-          be deployed it must be provided.
-
     * `captureHosts`: a map of VMs, each specifying a list of network interface
-      names to monitor. One Packetbeat VM will be deployed for each VM interface
-      specified. The default is `nil`.
+      names to monitor. One Packetbeat VM will be deployed for each listed VM
+      that boots, and it monitors the interfaces listed for that VM. A listed
+      VM that is not in the topology, is an external node, or will not boot
+      gets no Packetbeat VM, and SoH logs a warning. The default is `nil`.
 
 * `skipInitialNetworkConfigTests`: by default, a set of tests will be run on
   each VM to ensure the VM was assigned the correct IP address and can reach its
   default gateway (if specified). Setting this to true will skip these initial
-  tests, but will also disable reachability testing. The default is `false`.
+  tests, but will also disable reachability testing (including
+  `testCustomReachability`). The default is `false`. These tests skip
+  interfaces on the `MGMT` VLAN and serial interfaces. For an interface that
+  uses DHCP, SoH waits for minimega to report the VM's address instead.
 
 * `skipHosts`: a list of VM hostnames and/or disk image names to skip health
   monitoring for. For disk image names, any host using the disk image as its
@@ -352,10 +488,10 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
     * `off`: reachability testing is disabled. This is the default.
 
     * `sample`: each VM in the experiment will attempt to ping a random VM in
-      every other experiment VLAN.
+      every experiment VLAN, its own VLAN included.
 
     * `full`: each VM in the experiment will attempt to ping every other VM in
-      every other experiment VLAN.
+      every experiment VLAN, its own VLAN included.
 
 * `testCustomReachability`: if present, a list of custom reachability test
   settings.
@@ -363,7 +499,7 @@ details. (In this screenshot, the mouse is hovering over the traffic for IP
     * `src`: hostname to conduct test from.
 
     * `dst`: hostname and interface name (e.g. `host-01|IF0`) to conduct test
-      to.
+      to. A value without `|`, for example an IP address, is used as it is.
 
     * `proto`: protocol to use for test. Currently the options are `tcp` and
       `udp`. If `udp` is used, the `udpPacketBase64` setting must be provided.
@@ -384,9 +520,12 @@ Testing network reachability for a VM requires that the VM has minimega's
 command and control (C2) layer active (ie., the `miniccc` agent is running in
 the VM), has the correct IP address configured, and can ping its default route
 if one is configured. If C2 is not active for a VM after the `c2Timeout`
-duration has passed, then the VM will be excluded from reachability testing.
+duration has passed, then SoH does not run reachability tests from the VM.
+Those tests, the VM's later checks and its CPU load are recorded as failed with
+the error `c2 not active on host`.
 Once C2 is up for a VM, the VM is queried to confirm its IP address is
-configured and its gateway is reachable for a maximum of 5 minutes. Once all the
+configured and its gateway is reachable for a maximum of the `c2Timeout`
+duration (5 minutes by default). Once all the
 VMs with C2 detected have their IP address configured and their gateways are
 reachable, reachability tests begin.
 
@@ -404,14 +543,19 @@ the topology to prevent reachability tests from failing due to ACLs. When
 enabled, all rulesets present in the experiment (either in the topology or
 scenario) will have a rule prepended to the list of existing rules allowing the
 ICMP protocol to/from any address. To ensure this rule is applied before any
-other rule, the SoH app attempts to inject it with an ID of 1 (since Vyatta/VyOS
+other rule, the SoH app attempts to inject it with an ID 10 less than the
+lowest existing rule ID, or 1 if that is less than 1 (since Vyatta/VyOS
 orders rules by ID). If a rule already exists with an ID of 1 then injecting
 this rule will fail.
 
-A check is done each time an experiment is started to see if injecting ICMP
+A check is done in the configure stage, which runs when an experiment is
+created or reconfigured, to see if injecting ICMP
 rules is enabled, and if not, any injected rules are removed from the
 experiment. This means the setting can be changed between runs of an experiment
-(e.g., using `phenix config edit experiment/<name>`) and the change will be
+(e.g., using [`phenix config edit`](cli/config.md#phenix-config-edit)
+`experiment/<name>`, then
+[`phenix experiment reconfigure`](cli/experiment.md#phenix-experiment-reconfigure))
+and the change will be
 reflected accurately when the experiment is started again.
 
 ### Packet Capture
@@ -422,14 +566,21 @@ to Elasticsearch.
 
 When enabled, an Elasticsearch/Kibana VM is added to the experiment's topology so it
 can be accessed via the phenix UI. Packetbeat VMs are deployed in minimega for
-each experiment VM interface that's configured to be monitored, but are not
+each experiment VM that is configured to be monitored and boots, but are not
 added to the experiment topology so they do not clutter the phenix UI.
+The configure stage adds the Elasticsearch/Kibana VM, and the post-start stage
+deploys the Packetbeat VMs.
 
-When packet capture is enabled, the phenix UI SoH tab will include a Network
+This capability is separate from [experiment packet
+captures](packet-captures.md) and [netflow](netflow.md), which minimega
+records without extra VMs.
+
+When packet capture is enabled, the experiment's SoH page will include a Network
 Volume tab that uses network flow data queried from Elasticsearch to populate a
 chord graph in an effort to depict how much traffic is flowing between VMs.
-Users/Analysts can also access Kibana using VNC via the phenix UI to do
-additional analysis on the network flow data that's being captured.
+Users/Analysts can also access Kibana using
+VNC via the phenix UI to do additional analysis on the network flow data that's
+being captured.
 
 ## Sample SoH Scenario Config
 
@@ -453,7 +604,7 @@ spec:
             [[ $count -eq 1 ]] && exit 0 || exit 1
           executor: bash
         host-01:
-        - name: SuckaTest.ps1
+        - name: SuckaTest
           testScript: |
             Get-Process miniccc -ErrorAction SilentlyContinue
           testStdout: miniccc
@@ -463,6 +614,9 @@ spec:
         - /etc/phenix/startup/1_hostname-start.sh
         host-01:
         - 'C:\ProgramData\phenix\ready.txt'
+      hostFilesAbsent:
+        host-00:
+        - /etc/phenix/startup/failed
       hostServices:
         host-00:
         - sshd
@@ -493,8 +647,7 @@ spec:
           hostname: soh-elasticsearch-server
           vcpus: 4
           memory: 4096
-          ipAddress: 172.16.200.1/16
-          vlan: MGMT
+          ipAddress: 172.16.200.1/16  # on the MGMT VLAN
         captureHosts:
           client:
           - IF0  # interface to monitor on "client" node in topology
@@ -518,6 +671,33 @@ spec:
         wait: 30s
 ```
 
+## Running the Checks Again
+
+The `soh` app runs its checks in the post-start stage and each time its
+running stage runs. To run them again on a running experiment:
+
+* click `Run SOH` on the Topology Graph tab, or in the `SoH` tab;
+* run `phenix experiment trigger <experiment-name> running soh` (see
+  [phenix experiment trigger](cli/experiment.md#phenix-experiment-trigger));
+* add a [`soh` Scorch component](scorch.md#soh-component);
+* send `POST /api/v1/experiments/<experiment-name>/trigger?apps=soh` to the
+  [API](api.md).
+
+To repeat the running stage on a schedule, set `runPeriodically` (a duration
+such as `5m`) on the app in the [Scenario](configuration.md#scenario). The
+schedule is a [background job](jobs.md) of the phēnix server that the
+experiment start creates (see
+[Starting / Stopping Experiments](experiments.md#starting-stopping-experiments)),
+and it ends when the experiment stops.
+
+A Scorch component, or a query parameter of the API request, can change one
+run: `checks` limits the run to the listed checks (`network-config`,
+`reachability`, `custom-reachability`, `files`, `files-absent`, `services`,
+`processes`, `ports`, `docker`, `custom`, `cpu-load` and `flows`), and
+`c2Timeout` replaces the app's setting. The API request also takes
+`c2AppearGrace`, `c2ClientGrace` and `c2Concurrency`. The reachability checks
+run only together with `network-config`.
+
 ## Command and Control
 
 As mentioned earlier, SoH relies on minimega's command and control infrastructure ([miniccc](https://sandia-minimega.github.io/minimega/training/miniclass/module-28/))
@@ -535,6 +715,7 @@ Current tests executed on Linux VMs include the following:
 * `systemctl is-active -- <service>`
 * `pgrep -f -- <process>`
 * `ss -lntu state all 'sport = <port>'`
+* `docker inspect --format=<template> -- <container>`
 * `cat /proc/loadavg`
 
 Corresponding tests for Windows VMs include the following:
@@ -546,6 +727,7 @@ Corresponding tests for Windows VMs include the following:
 * `powershell -NoProfile -Command "if ((Get-Service -Name '<service>' -ErrorAction SilentlyContinue).Status -eq 'Running') { 'active' }"`
 * `powershell -NoProfile -Command "Get-Process -Name '<process>' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"`
 * `powershell -NoProfile -Command "@(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue; Get-NetUDPEndpoint -ErrorAction SilentlyContinue) | Where-Object LocalPort -eq <port> | Select-Object -First 1"`
+* `powershell -NoProfile -Command "docker inspect --format='<template>' -- '<container>' 2>&1 | Where-Object -Property Exception -Not"`
 * `powershell -command "Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select -ExpandProperty Average"`
 
 SoH quotes each value, so that the VM gets the value as one argument. A path,
@@ -557,3 +739,25 @@ are permitted, for example at the end of a process pattern. minimega also
 replaces a value that starts with `file:`, `http:`, `https:`, or `tar:`, so
 SoH does not send that check. For each check that SoH does not send, the
 check result shows an error.
+
+Custom tests send their script with `cc send` and run it with `cc exec`.
+Custom reachability tests use `cc test-conn`.
+
+### SoH Run History
+
+Besides the per-host results of its latest run, the `soh` app keeps a short
+history in its app status:
+
+* `lastRun`: when the last run finished
+* `lastRunDuration`: how long it took, in seconds
+* `history`: a summary of the last 20 runs, each with its `time`, `duration`,
+  `total` checks, `failing` checks, and `hostsFailing` and `hostsDown` counts
+
+## See Also
+
+* [Apps](apps.md#additional-core-apps): the other core apps.
+* [Scenario](configuration.md#scenario): where the `soh` app and its metadata go.
+* [phenix experiment soh](cli/experiment.md#phenix-experiment-soh): show the state of health from the command line.
+* [phenix experiment trigger](cli/experiment.md#phenix-experiment-trigger): run a stage of the app by hand.
+* [Scorch](scorch.md#soh-component): run the checks during a Scorch run.
+* [Troubleshooting](troubleshooting.md#a-vm-has-no-miniccc-client): a VM that has no miniccc client.

@@ -104,8 +104,8 @@ All applications (Go or Python) running under phēnix must adhere to the followi
 3. **Required Fields**:
     * `level`: `DEBUG`, `INFO`, `WARN`, `ERROR`
     * `msg`: The log message string.
-    * `time`: Timestamp (RFC3339 or similar).
 4. **Optional Fields**:
+    * `time`: Timestamp (RFC3339 or similar). phēnix keeps it as `proc_time`.
     * `traceback`: For exceptions/panics (string).
 
 !!! tip
@@ -113,7 +113,7 @@ All applications (Go or Python) running under phēnix must adhere to the followi
 
 ### Python Apps
 
-Use the `phenix_apps.common.logger`. It is pre-configured to output JSON to stderr.
+Use the `phenix_apps.common.logger`. `AppBase` configures it to output JSON to stderr; an app that doesn't use `AppBase` calls `configure_logging()` first.
 
 !!! important
     For fatal errors, **raise an exception** (e.g., `ValueError`, `RuntimeError`) instead of calling `sys.exit(1)`. The `AppBase` class wraps execution in a try/except block and will automatically catch the exception, log the traceback as structured JSON, and exit cleanly.
@@ -170,17 +170,60 @@ The log types are `AUDIT`, `SECURITY`, `SOH`, `SCORCH`, `PHENIX-APP`, `ACTION`,
 
 To view detailed HTTP request logs (method, path, status, duration), start the UI with the `--log-requests` flag.
 
-### Logs Page
+## Logs Page
+
+The `Logs` page (in the `Admin` menu) shows the system log, oldest first, and
+follows new entries as the server logs them.
+
+![Logs page with its Logs shown count, the level and type filters, a table of entries with colored level badges, and the Download button at the top right.](images/logs_page.png){: width=800 .center}
 
 On the Logs page, select a log message to open its details. The details show
 the level, the time, the type, the message text, and each `key=value` field in
 a list. Use **Copy** to copy the full message. Use **Previous** and **Next** to
 go to the adjacent messages in the filtered list.
 
+### Downloading Log Files
+
+The `Download` menu gets the whole log files. `phēnix log` is the system log
+file (`log.system.path`), without its rotated files. `minimega log` is the
+file that `ui.logs.minimega-path` names, which the `phenix ui` server must be
+able to read, so in a container deployment, mount minimega's log into the
+phēnix container. The [API](api.md) serves the same files at
+`GET /logs/files/{name}`.
+
+### Command Line
+
+The [phenix logs](cli/logs.md) commands get the same data from the running
+`phenix ui` server. By default, `phenix logs` shows the entries of the last
+hour.
+
+```bash
+# The entries of the last 10 minutes
+phenix logs --since 10m
+
+# The log files and whether the server can read them
+phenix logs files
+
+# Write the minimega log to a file
+phenix logs download minimega -O minimega.log
+```
+
 ## Audit Events
 
 The web API logs an audit event, a record of type `AUDIT`, for each
-security-relevant action.
+security-relevant action. The fields follow the
+[Elastic Common Schema](https://www.elastic.co/guide/en/ecs/current/index.html)
+(ECS) as flat dotted keys, so you can
+[ship the system log file](#shipping-audit-events-with-filebeat) to
+Elasticsearch as it is.
+
+A success logs at `INFO` with `event.outcome` `success`. A refusal or a
+failure logs at `WARN` with `event.outcome` `failure`: a refusal by the user's
+role adds `denied` to `event.type` and says why in `event.reason`, and a
+failure puts the error in `error.message`. An audit event never holds a
+password or a token. A request refused before its permission is checked, such
+as one with a malformed body, isn't audited, unless it was refused for its
+token (see [Refused Tokens](#refused-tokens)).
 
 ### Audited Actions
 
@@ -188,16 +231,16 @@ security-relevant action.
 | :--- | :--- | :--- | :--- |
 | `sign-in` | `authentication` | `start` | `GET`, `POST /login`, by password or through a proxy (`phenix.auth.method`); `POST /signup`, once the user is created |
 | `sign-out` | `authentication` | `end` | `POST /logout` |
-| `user-create` | `iam` | `creation` | `POST /users`, `POST /signup` (as the user signing up) |
+| `user-create` | `iam` | `creation` | `POST /users`, `POST /signup` (as the user signing up); refused for a role that grants a permission the requester does not hold (`event.reason` `privilege escalation`) |
 | `user-update` | `iam` | `change` | `PATCH /users/{username}` changing a first or last name (`phenix.user.changed`) |
-| `user-role-change` | `iam` | `change` | `PATCH /users/{username}` with a `role_name`; refused, and the role left as it is, without `patch` on `users/roles` (a `role_name` equal to the user's current role is not refused) |
+| `user-role-change` | `iam` | `change` | `PATCH /users/{username}` with a `role_name`; refused, and the role left as it is, without `patch` on `users/roles` (a `role_name` equal to the user's current role is not refused), or for a role that grants a permission that neither the requester nor the user holds (`event.reason` `privilege escalation`) |
 | `user-password-change` | `iam` | `change` | `PATCH /users/{username}` with a `new_password` |
 | `user-delete` | `iam` | `deletion` | `DELETE /users/{username}`; refused for the user's own account (`event.reason` `own user`) |
 | `user-token-create` | `iam` | `creation` | `POST /users/{username}/tokens` |
 | `role-create` | `iam` | `creation` | `POST /roles` (`phenix.role.name`); refused for a role that grants a permission the requester does not hold (`event.reason` `privilege escalation`) |
 | `role-update` | `iam` | `change` | `PATCH /roles/{name}` (`phenix.role.name`, and `phenix.role.users` for the users whose copy of the role changed, or could not change); refused as `role-create` is |
 | `role-delete` | `iam` | `deletion` | `DELETE /roles/{name}` (`phenix.role.name`) |
-| `request-auth` | `authentication` | `info` | any API or file server request refused for its token (`event.reason`), at most once a minute for each client address and reason |
+| `request-auth` | `authentication` | `info` | any API or file server request refused for its token (`event.reason`), at most once a minute for each client address and reason (see [Refused Tokens](#refused-tokens)) |
 | `config-create` | `configuration` | `creation` | `POST /configs`, `POST /workflow/configs/{branch}` for a new config (and its refusal by a role that may neither create nor update configs; `phenix.workflow.variables` when the request used a variable, also in a refusal for the config name: the sorted names, never values), and `PUT /configs/{kind}/{name}` refusals of the new name it renames a config to |
 | `config-update` | `configuration` | `change` | `PUT /configs/{kind}/{name}`, `POST /workflow/configs/{branch}` for a stored config (`phenix.workflow.variables` when the request used a variable, also in a refusal for the config name: the sorted names, never values) |
 | `config-delete` | `configuration` | `deletion` | `DELETE /configs/{kind}/{name}` |
@@ -259,5 +302,138 @@ security-relevant action.
 | `minimega-command` | `process` | `start` | `POST /minimega/commands`, naming the command line in `phenix.minimega.command` |
 | `runtime-setting-change` | `configuration` | `change` | `PUT /runtimeSettings/{key}`, `DELETE /runtimeSettings/{key}`, naming the setting in `phenix.setting.key` |
 
+A few things to know when you read these events:
+
+* A resumed download is audited once.
+* An action run as a [background job](jobs.md) is audited when the job
+  finishes, as the user who started it, with `phenix.job.id`. A bulk VM action
+  is audited once for each VM.
+* A workflow apply with `dryRun=true` has `phenix.dry_run` `true` and
+  `event.type` `info`.
+* A request over the Unix socket, such as one from `phenix workflow apply`,
+  has `phenix.auth.method` `unix-socket` and `Global Admin` in `user.roles`.
+* A request with a [capture token](webshark.md) is audited as the user the
+  token was given to, with the route's template as `url.path`, so the token is
+  never logged.
+
+### Fields
+
+| Field | Holds |
+| :--- | :--- |
+| `type` | `AUDIT` |
+| `@timestamp` | when, in UTC (RFC 3339) |
+| `event.kind`, `event.module`, `event.dataset` | `event`, `phenix`, `phenix.audit` |
+| `event.action`, `event.category`, `event.type` | the action, as in the table above (`event.type` is a list) |
+| `event.outcome`, `event.reason`, `error.message` | the outcome, a refusal's reason, a failure's error |
+| `user.name`, `user.roles` | the user, and their role |
+| `user.target.name`, `user.target.roles` | the user a user action acted on, and the role it gave them |
+| `phenix.user.changed` | the names a `user-update` changed: `first_name`, `last_name` |
+| `phenix.auth.method` | how a user signed in: `password`, `proxy-header` or `proxy-jwt`, or `unix-socket` for a request over the Unix socket |
+| `phenix.auth.claimed_user` | the user a refused proxy JWT names, which any client could have forged |
+| `phenix.suppressed` | the token refusals from the same client address and reason not audited since the last one that was |
+| `phenix.workflow.branch`, `phenix.workflow.action` | the branch a workflow was sent for, and the action the apply planned |
+| `phenix.dry_run` | `true` for a dry run, which changed nothing |
+| `phenix.experiment.force` | `true` for an experiment stop forced with `?force=true` |
+| `phenix.settings.changed`, `phenix.settings.values` | the settings a `settings-update` changes, and their new values, other than any that could be a secret |
+| `phenix.vm.changed` | the VM settings a `vm-update` changes, without their values |
+| `phenix.token.expires` | when a created token expires |
+| `phenix.config.name`, `phenix.config.new_name` | the config acted on, as `Kind/name`, and the name an update renames it to |
+| `phenix.app.names` | the apps a trigger names |
+| `phenix.schedule.algorithm` | a schedule's algorithm |
+| `phenix.scorch.run`, `phenix.scorch.cleanup_only`, `phenix.scorch.running` | a SCORCH run, whether only its cleanup stage was started, and whether a canceled run was executing |
+| `source.ip` | the address of the client that sent the request (behind a reverse proxy, the proxy's) |
+| `network.forwarded_ip` | the first address in the request's `X-Forwarded-For` header, which is not verified |
+| `http.request.method`, `url.path` | the request's method and path, never its query |
+| `http.request.range` | a download's `Range` header, when it has one |
+| `phenix.experiment.name`, `phenix.vm.name`, `phenix.vm.interface` | the experiment, VM and interface acted on |
+| `file.path`, `file.name` | the file acted on |
+| `phenix.file.target_path` | the file the action wrote or named: a new image, a backing image, a copy's or upload's destination |
+| `file.size` | the bytes an upload wrote |
+| `process.pid` | a console's or SCORCH terminal's process |
+| `phenix.file.capture`, `phenix.file.preview` | whether a downloaded file is a packet capture, and whether it was shown in the Files tab's viewer |
+| `phenix.netflow.capture`, `phenix.netflow.format` | the netflow capture downloaded, by its ID, and its format: `text`, `csv` or `jsonl` |
+| `phenix.netflow.flows`, `phenix.netflow.skipped` | the flows a CSV or JSONL netflow download wrote, and the lines left out because they do not parse |
+| `phenix.file.count` | the files a failed bulk action asked for |
+| `phenix.job.id` | the background job that did the action, or built the archive downloaded |
+| `phenix.capture.subnet` | a subnet capture's subnet |
+| `phenix.capability.id`, `phenix.capability.op`, `phenix.capability.ops`, `phenix.capability.expires` | a capture grant's ID (never its token), the operation used or those granted, and when it ends |
+| `phenix.log.name` | the log file a `log-download` asked for: `phenix` or `minimega` |
+| `phenix.webshark.live` | whether a capture opened in WebShark is still running |
+| `phenix.console.end_reason` | why a console ended: `user`, `idle`, `shutdown` or `exited` |
+| `phenix.disk.size`, `phenix.disk.unsafe` | a resize's size and a rebase's `unsafe` |
+| `phenix.mount.path` | where a VM's disk is mounted |
+| `destination.address`, `destination.port`, `phenix.forward.owner` | a port forward's destination, and the user who created it |
+
+### Refused Tokens
+
+A request that the API, the file server or a health probe refuses for its
+credentials is audited as a `request-auth` failure, with one of these
+`event.reason` values:
+
+| Reason | The request had |
+| :--- | :--- |
+| `missing` | no token, on a route that needs one |
+| `malformed` | a token or `X-Phenix-Auth-Token` header that does not parse |
+| `invalid` | a token with a bad signature, or one that names no user |
+| `expired` | a token past its expiry |
+| `revoked` | a token its user no longer holds, after signing out or deleting it |
+| `unknown-user`, `no-role` | a token naming a user that does not exist, or whose role cannot be read |
+| `proxy-user-mismatch` | a proxy user header that names another user than the token |
+
+`user.name` is the user the token names, when its signature was checked. With
+`proxy-jwt` the signature isn't checked, so that user goes in
+`phenix.auth.claimed_user` instead. Only the first refusal each minute from a
+client address for a given reason is audited, and the next audited one counts
+the skipped ones in `phenix.suppressed`.
+
+### Where Audit Events Go
+
+Audit events always go to the system log file (`log.system.path`), whatever
+`log.level` is. The console and the Logs page follow `log.level` and
+`ui.logs.level`, so with either set to `warn` you'll only see refusals and
+failures there. On the [Logs page](#logs-page), choose `AUDIT` in the Type
+filter and search for a field, such as `event.action=disk-delete` or
+`user.name=alice`. Actions you take with the `phenix` CLI aren't audited,
+other than those that `phenix workflow apply` sends through the Unix socket.
+
+### Shipping Audit Events with Filebeat
+
+Filebeat (7.17 or later) can ship the audit events from the system log file,
+with their own `@timestamp`, using an input like this:
+
+```yaml
+filebeat.inputs:
+  - type: filestream
+    id: phenix-audit
+    paths:
+      - /var/log/phenix/phenix.log
+    parsers:
+      - ndjson:
+          target: ""
+          overwrite_keys: true
+          expand_keys: true
+    processors:
+      - drop_event:
+          when:
+            not:
+              equals:
+                type: AUDIT
+      - rename:
+          fields:
+            - from: msg
+              to: message
+            - from: level
+              to: log.level
+          ignore_missing: true
+      - drop_fields:
+          fields: [time]
+          ignore_missing: true
+```
+
 !!! tip "Troubleshooting"
     For common logging issues and solutions, please see the [Troubleshooting](troubleshooting.md) page.
+
+## See Also
+
+* [Settings Reference](settings.md#settings-reference): every `log.*` setting.
+* [Doctor](doctor.md): checks the log settings without a running server.

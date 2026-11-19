@@ -18,20 +18,6 @@ phenix image [flags]
   -h, --help   help for image
 ```
 
-### SEE ALSO
-
-* [phenix](index.md) - A cli application for phēnix
-* [phenix image append](image.md#phenix-image-append) - Append to an image configuration
-* [phenix image build](image.md#phenix-image-build) - Build a virtual disk image
-* [phenix image create](image.md#phenix-image-create) - Create a disk image configuration
-* [phenix image create-from](image.md#phenix-image-create-from) - Create image configuration from existing one
-* [phenix image delete](image.md#phenix-image-delete) - Delete one or more image configurations
-* [phenix image edit](image.md#phenix-image-edit) - Edit an image
-* [phenix image inject-miniexe](image.md#phenix-image-inject-miniexe) - Inject a minimega executable into a disk image
-* [phenix image list](image.md#phenix-image-list) - Table of image configurations
-* [phenix image remove](image.md#phenix-image-remove) - Remove from an image configuration
-* [phenix image update](image.md#phenix-image-update) - Reread the scripts of an image configuration from disk
-
 ## phenix image append
 
 Append to an image configuration
@@ -57,10 +43,6 @@ phenix image append <configuration name> [flags]
   -P, --packages string   List of packages to include in addition to those provided by variant (separated by comma)
   -T, --scripts string    List of scripts to include in addition to the defaults (include full path; separated by comma)
 ```
-
-### SEE ALSO
-
-* [phenix image](image.md) - Virtual disk image management
 
 ## phenix image build
 
@@ -96,10 +78,6 @@ phenix image build --very-verbose --output </path/to/dir/>
   -v, --verbose         Enable verbose output
   -x, --very-verbose    Enable very verbose output, additionally writes output log file to <image name>.log
 ```
-
-### SEE ALSO
-
-* [phenix image](image.md) - Virtual disk image management
 
 ## phenix image create
 
@@ -150,10 +128,6 @@ phenix image create --size 2G --variant mingui --release noble --compress --over
   -v, --variant string       Image variant to use (default "minbase")
 ```
 
-### SEE ALSO
-
-* [phenix image](image.md) - Virtual disk image management
-
 ## phenix image create-from
 
 Create image configuration from existing one
@@ -179,10 +153,6 @@ phenix image create-from <existing configuration> <new configuration> [flags]
   -P, --packages string   List of packages to include in addition to those provided by variant (separated by comma)
   -T, --scripts string    List of scripts to include in addition to the defaults (include full path; separated by comma)
 ```
-
-### SEE ALSO
-
-* [phenix image](image.md) - Virtual disk image management
 
 ## phenix image delete
 
@@ -227,10 +197,6 @@ phenix image delete 'cm-*' --dry-run
   -h, --help      help for delete
 ```
 
-### SEE ALSO
-
-* [phenix image](image.md) - Virtual disk image management
-
 ## phenix image edit
 
 Edit an image
@@ -252,10 +218,6 @@ phenix image edit <image name> [flags]
 ```text
   -h, --help   help for edit
 ```
-
-### SEE ALSO
-
-* [phenix image](image.md) - Virtual disk image management
 
 ## phenix image inject-miniexe
 
@@ -304,10 +266,6 @@ phenix image inject-miniexe <path to exe> <path to disk> [flags]
       --init-system string   Linux init system to generate boot scripts for (Linux: systemd, sysinitv; Windows: startup) (default "systemd")
 ```
 
-### SEE ALSO
-
-* [phenix image](image.md) - Virtual disk image management
-
 ## phenix image list
 
 Table of image configurations
@@ -335,10 +293,6 @@ phenix image list [flags]
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
 
-### SEE ALSO
-
-* [phenix image](image.md) - Virtual disk image management
-
 ## phenix image remove
 
 Remove from an image configuration
@@ -364,10 +318,6 @@ phenix image remove <configuration name> [flags]
   -P, --packages string   List of packages to include in addition to those provided by variant (separated by comma)
   -T, --scripts string    List of scripts to include in addition to the defaults (include full path; separated by comma)
 ```
-
-### SEE ALSO
-
-* [phenix image](image.md) - Virtual disk image management
 
 ## phenix image update
 
@@ -398,6 +348,7 @@ phenix image update <configuration name> [flags]
   -h, --help   help for update
 ```
 
-### SEE ALSO
+## See Also
 
-* [phenix image](image.md) - Virtual disk image management
+* [Images](../image.md): how to build a disk image.
+* [Disks](../disks.md): the Disks page, backing chains and image formats.

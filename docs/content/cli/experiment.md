@@ -18,28 +18,6 @@ phenix experiment [flags]
   -h, --help   help for experiment
 ```
 
-### SEE ALSO
-
-* [phenix](index.md) - A cli application for phēnix
-* [phenix experiment apps](experiment.md#phenix-experiment-apps) - List the apps that a scenario can add to an experiment
-* [phenix experiment capture](experiment.md#phenix-experiment-capture) - Experiment capture management
-* [phenix experiment captures](experiment.md#phenix-experiment-captures) - List the running packet captures of an experiment
-* [phenix experiment create](experiment.md#phenix-experiment-create) - Create an experiment
-* [phenix experiment delete](experiment.md#phenix-experiment-delete) - Delete an experiment
-* [phenix experiment edit](experiment.md#phenix-experiment-edit) - Edit an experiment
-* [phenix experiment files](experiment.md#phenix-experiment-files) - Experiment file management
-* [phenix experiment list](experiment.md#phenix-experiment-list) - Display a table of available experiments
-* [phenix experiment netflow](experiment.md#phenix-experiment-netflow) - Netflow capture management
-* [phenix experiment reconfigure](experiment.md#phenix-experiment-reconfigure) - Reconfigure an experiment
-* [phenix experiment restart](experiment.md#phenix-experiment-restart) - Restart an experiment
-* [phenix experiment schedule](experiment.md#phenix-experiment-schedule) - Schedule an experiment
-* [phenix experiment schedulers](experiment.md#phenix-experiment-schedulers) - List the schedulers that put the VMs of an experiment on cluster hosts
-* [phenix experiment scorch](experiment.md#phenix-experiment-scorch) - Start a Scorch run for experiment
-* [phenix experiment soh](experiment.md#phenix-experiment-soh) - Show the state of health of experiments
-* [phenix experiment start](experiment.md#phenix-experiment-start) - Start an experiment
-* [phenix experiment stop](experiment.md#phenix-experiment-stop) - Stop an experiment
-* [phenix experiment trigger](experiment.md#phenix-experiment-trigger) - Trigger lifecycle stage for app(s) in experiment
-
 ## phenix experiment apps
 
 List the apps that a scenario can add to an experiment
@@ -63,10 +41,6 @@ phenix experiment apps [flags]
   -h, --help            help for apps
   -o, --output string   Output format (text, json, yaml) (default "text")
 ```
-
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
 
 ## phenix experiment capture
 
@@ -93,13 +67,6 @@ phenix experiment capture [flags]
   -h, --help   help for capture
 ```
 
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
-* [phenix experiment capture list](experiment.md#phenix-experiment-capture-list) - List the experiment captures of an experiment
-* [phenix experiment capture start](experiment.md#phenix-experiment-capture-start) - Start an experiment capture
-* [phenix experiment capture stop](experiment.md#phenix-experiment-capture-stop) - Stop an experiment capture
-
 ## phenix experiment capture list
 
 List the experiment captures of an experiment
@@ -123,10 +90,6 @@ phenix experiment capture list <experiment name> [flags]
 ```text
   -h, --help   help for list
 ```
-
-### SEE ALSO
-
-* [phenix experiment capture](experiment.md#phenix-experiment-capture) - Experiment capture management
 
 ## phenix experiment capture start
 
@@ -165,10 +128,6 @@ phenix experiment capture start exp1 --vlan EXP_1 --vlan EXP_2 --filter "tcp por
       --vlan stringArray   VLAN alias to capture (repeat for more; all VLANs when not given)
 ```
 
-### SEE ALSO
-
-* [phenix experiment capture](experiment.md#phenix-experiment-capture) - Experiment capture management
-
 ## phenix experiment capture stop
 
 Stop an experiment capture
@@ -191,10 +150,6 @@ phenix experiment capture stop <experiment name> <capture ID> [flags]
 ```text
   -h, --help   help for stop
 ```
-
-### SEE ALSO
-
-* [phenix experiment capture](experiment.md#phenix-experiment-capture) - Experiment capture management
 
 ## phenix experiment captures
 
@@ -227,10 +182,6 @@ phenix experiment captures my-exp -o json
   -h, --help            help for captures
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
-
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
 
 ## phenix experiment create
 
@@ -287,10 +238,6 @@ phenix experiment create <experiment name> -t </path/to/filename> -e NODES=3 --e
       --vlan-min int                  VLAN pool minimum
 ```
 
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
-
 ## phenix experiment delete
 
 Delete an experiment
@@ -324,10 +271,6 @@ phenix experiment delete <experiment name> [flags]
   -h, --help      help for delete
 ```
 
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
-
 ## phenix experiment edit
 
 Edit an experiment
@@ -350,10 +293,6 @@ phenix experiment edit <experiment name> [flags]
       --force   override checks
   -h, --help    help for edit
 ```
-
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
 
 ## phenix experiment files
 
@@ -380,15 +319,6 @@ phenix experiment files [flags]
 ```text
   -h, --help   help for files
 ```
-
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
-* [phenix experiment files archive](experiment.md#phenix-experiment-files-archive) - Write experiment files to a local zip archive
-* [phenix experiment files checksum](experiment.md#phenix-experiment-files-checksum) - Print the SHA-256 checksum of an experiment file
-* [phenix experiment files delete](experiment.md#phenix-experiment-files-delete) - Delete experiment files from every node
-* [phenix experiment files get](experiment.md#phenix-experiment-files-get) - Write an experiment file to stdout or to a local file
-* [phenix experiment files list](experiment.md#phenix-experiment-files-list) - Display a table of the files of an experiment
 
 ## phenix experiment files archive
 
@@ -422,10 +352,6 @@ phenix experiment files archive exp1 web_eth0.pcap db_eth0.pcap -O captures.zip
   -O, --output-file string   write the zip archive to this path (required)
 ```
 
-### SEE ALSO
-
-* [phenix experiment files](experiment.md#phenix-experiment-files) - Experiment file management
-
 ## phenix experiment files checksum
 
 Print the SHA-256 checksum of an experiment file
@@ -450,10 +376,6 @@ phenix experiment files checksum <experiment name> <file> [flags]
   -h, --help            help for checksum
   -o, --output string   Output format (text, json, yaml) (default "text")
 ```
-
-### SEE ALSO
-
-* [phenix experiment files](experiment.md#phenix-experiment-files) - Experiment file management
 
 ## phenix experiment files delete
 
@@ -483,10 +405,6 @@ phenix experiment files delete <experiment name> <file>... [flags]
       --dry-run   Show what the command would change, and change nothing
   -h, --help      help for delete
 ```
-
-### SEE ALSO
-
-* [phenix experiment files](experiment.md#phenix-experiment-files) - Experiment file management
 
 ## phenix experiment files get
 
@@ -522,10 +440,6 @@ phenix experiment files get exp1 captures/web_eth0.pcap -O web_eth0.pcap
   -O, --output-file string   write the file to this path instead of stdout
 ```
 
-### SEE ALSO
-
-* [phenix experiment files](experiment.md#phenix-experiment-files) - Experiment file management
-
 ## phenix experiment files list
 
 Display a table of the files of an experiment
@@ -560,10 +474,6 @@ phenix experiment files list exp1 --filter "packet and size > 1mb"
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
 
-### SEE ALSO
-
-* [phenix experiment files](experiment.md#phenix-experiment-files) - Experiment file management
-
 ## phenix experiment list
 
 Display a table of available experiments
@@ -578,10 +488,6 @@ phenix experiment list [flags]
   -h, --help            help for list
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
-
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
 
 ## phenix experiment netflow
 
@@ -610,15 +516,6 @@ phenix experiment netflow [flags]
   -h, --help   help for netflow
 ```
 
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
-* [phenix experiment netflow captures](experiment.md#phenix-experiment-netflow-captures) - Display a table of the recorded netflow captures of an experiment
-* [phenix experiment netflow download](experiment.md#phenix-experiment-netflow-download) - Write a recorded netflow capture to stdout or to a local file
-* [phenix experiment netflow start](experiment.md#phenix-experiment-netflow-start) - Start the netflow capture of a running experiment
-* [phenix experiment netflow status](experiment.md#phenix-experiment-netflow-status) - Tell whether the netflow capture of an experiment runs
-* [phenix experiment netflow stop](experiment.md#phenix-experiment-netflow-stop) - Stop the netflow capture of an experiment
-
 ## phenix experiment netflow captures
 
 Display a table of the recorded netflow captures of an experiment
@@ -642,10 +539,6 @@ phenix experiment netflow captures <experiment name> [flags]
   -h, --help            help for captures
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
-
-### SEE ALSO
-
-* [phenix experiment netflow](experiment.md#phenix-experiment-netflow) - Netflow capture management
 
 ## phenix experiment netflow download
 
@@ -679,10 +572,6 @@ phenix experiment netflow download exp1 20261028T153012.345Z --format csv -O flo
   -O, --output-file string   write the capture to this path instead of stdout
 ```
 
-### SEE ALSO
-
-* [phenix experiment netflow](experiment.md#phenix-experiment-netflow) - Netflow capture management
-
 ## phenix experiment netflow start
 
 Start the netflow capture of a running experiment
@@ -696,10 +585,6 @@ phenix experiment netflow start <experiment name> [flags]
 ```text
   -h, --help   help for start
 ```
-
-### SEE ALSO
-
-* [phenix experiment netflow](experiment.md#phenix-experiment-netflow) - Netflow capture management
 
 ## phenix experiment netflow status
 
@@ -716,10 +601,6 @@ phenix experiment netflow status <experiment name> [flags]
   -o, --output string   Output format (text, json, yaml) (default "text")
 ```
 
-### SEE ALSO
-
-* [phenix experiment netflow](experiment.md#phenix-experiment-netflow) - Netflow capture management
-
 ## phenix experiment netflow stop
 
 Stop the netflow capture of an experiment
@@ -733,10 +614,6 @@ phenix experiment netflow stop <experiment name> [flags]
 ```text
   -h, --help   help for stop
 ```
-
-### SEE ALSO
-
-* [phenix experiment netflow](experiment.md#phenix-experiment-netflow) - Netflow capture management
 
 ## phenix experiment reconfigure
 
@@ -770,10 +647,6 @@ phenix experiment reconfigure <experiment name> [flags]
 ```text
   -h, --help   help for reconfigure
 ```
-
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
 
 ## phenix experiment restart
 
@@ -823,10 +696,6 @@ phenix experiment restart <experiment name> [flags]
       --vlan-min int                  VLAN pool minimum for this start (1-4094; 0 keeps the minimum of the experiment)
 ```
 
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
-
 ## phenix experiment schedule
 
 Schedule an experiment
@@ -850,10 +719,6 @@ phenix experiment schedule <experiment name> <algorithm> [flags]
   -h, --help   help for schedule
 ```
 
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
-
 ## phenix experiment schedulers
 
 List the schedulers that put the VMs of an experiment on cluster hosts
@@ -868,10 +733,6 @@ phenix experiment schedulers [flags]
   -h, --help            help for schedulers
   -o, --output string   Output format (text, json, yaml) (default "text")
 ```
-
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
 
 ## phenix experiment scorch
 
@@ -937,10 +798,6 @@ phenix experiment scorch exp1 --run 1 --status -o json
       --status          Show the status of the run (needs phenix ui)
 ```
 
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
-
 ## phenix experiment soh
 
 Show the state of health of experiments
@@ -978,10 +835,6 @@ phenix experiment soh -o json
   -o, --output string   Output format (table, json, yaml) (default "table")
       --status string   only the VMs with this status (running, notrunning, notboot, notdeploy, external)
 ```
-
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
 
 ## phenix experiment start
 
@@ -1026,10 +879,6 @@ phenix experiment start <experiment name> [flags]
       --vlan-min int                  VLAN pool minimum for this start (1-4094; 0 keeps the minimum of the experiment)
 ```
 
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
-
 ## phenix experiment stop
 
 Stop an experiment
@@ -1055,10 +904,6 @@ phenix experiment stop <experiment name> [flags]
   -h, --help                       help for stop
   -K, --keep-injection-snapshots   Keep VM injection snapshots after stopping
 ```
-
-### SEE ALSO
-
-* [phenix experiment](experiment.md) - Experiment management
 
 ## phenix experiment trigger
 
@@ -1123,6 +968,12 @@ phenix experiment trigger exp1 --cancel soh
   -h, --help      help for trigger
 ```
 
-### SEE ALSO
+## See Also
 
-* [phenix experiment](experiment.md) - Experiment management
+* [Experiments](../experiments.md): create, start, schedule and stop experiments.
+* [Experiment Files](../experiments.md#experiment-files): the files of an experiment.
+* [Apps](../apps.md): the apps that a scenario can add.
+* [Scorch](../scorch.md): how to write and run Scorch components.
+* [State of Health](../state-of-health.md): the checks of the soh app and its network view.
+* [Netflow](../netflow.md): netflow capture and its recorded files.
+* [Packet Captures](../packet-captures.md): capture options, limits and troubleshooting.

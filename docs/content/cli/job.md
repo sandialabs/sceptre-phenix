@@ -31,14 +31,6 @@ phenix job [flags]
   -h, --help   help for job
 ```
 
-### SEE ALSO
-
-* [phenix](index.md) - A cli application for phēnix
-* [phenix job cancel](job.md#phenix-job-cancel) - Cancel a background job
-* [phenix job get](job.md#phenix-job-get) - Show a background job and the outcome of each item
-* [phenix job list](job.md#phenix-job-list) - List background jobs, newest first
-* [phenix job wait](job.md#phenix-job-wait) - Wait for a background job to finish
-
 ## phenix job cancel
 
 Cancel a background job
@@ -65,10 +57,6 @@ phenix job cancel <ID> [flags]
   -h, --help      help for cancel
 ```
 
-### SEE ALSO
-
-* [phenix job](job.md) - Background job management
-
 ## phenix job get
 
 Show a background job and the outcome of each item
@@ -83,10 +71,6 @@ phenix job get <ID> [flags]
   -h, --help            help for get
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
-
-### SEE ALSO
-
-* [phenix job](job.md) - Background job management
 
 ## phenix job list
 
@@ -115,10 +99,6 @@ phenix job list --experiment exp1 --active -o json
       --kind string         only jobs of this kind (vms.action, files.archive, disk.clone, experiments.start, experiments.trigger, experiments.periodic)
   -o, --output string       Output format (table, json, yaml) (default "table")
 ```
-
-### SEE ALSO
-
-* [phenix job](job.md) - Background job management
 
 ## phenix job wait
 
@@ -154,6 +134,6 @@ phenix job wait j0f3a9c2e81b4d7a6 --timeout 10m
       --timeout duration   give up after this long (0 waits until the job finishes)
 ```
 
-### SEE ALSO
+## See Also
 
-* [phenix job](job.md) - Background job management
+* [Background Jobs](../jobs.md): what runs as a job and how to watch one.

@@ -68,21 +68,29 @@ markdown_extensions:
 
 plugins:
   - search
+  # A click on an image opens it at full size.
+  - glightbox
   - redirects:
       redirect_maps:
         git-workflow.md: workflow.md
 
 nav:
   - Home: index.md
+  - Usage:
+    - Web UI: web-ui.md
+    - Workflow: workflow.md
+    - Experiments: experiments.md
+    - VMs: vms.md
+    - VM Actions: vm-multi-action.md
+    - Disks: disks.md
+    - Images: image.md
+    - API: api.md
+    - Background Jobs: jobs.md
+    - Accessibility: accessibility.md
   - Configuration:
     - Files: configuration.md
     - Settings: settings.md
     - Logging: logging.md
-  - Experiments:
-    - Overview: experiments.md
-    - VMs: vms.md
-    - VM Actions: vm-multi-action.md
-    - Images: image.md
   - Builder:
     - Overview: builder/index.md
     - Tutorial: builder/tutorial.md
@@ -120,12 +128,14 @@ nav:
     - GRE Mesh: gre-mesh.md
     - Netflow: netflow.md
     - Packet Captures: packet-captures.md
+    - WebShark: webshark.md
     - Tunneler: tunneler.md
-  - Integrations:
-    - API: api.md
-    - Workflow: workflow.md
+    - VLANs: vlans.md
   - Administration:
     - Users: user-administration.md
+    - Hosts: hosts.md
+    - Health Checks: health.md
+    - Doctor: doctor.md
   - Reference:
     - CLI:
       # BEGIN generated CLI reference (make cli-docs)

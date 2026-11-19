@@ -1,9 +1,10 @@
 # Virtual Disk Images Management
 
 Disk images are built only with the command line binary. The
-Disks page of the web UI lists the images the phēnix server has,
-and can snapshot, clone, rename, download, upload and delete the ones in the
-minimega files directory.
+[Disks](disks.md) page of the web UI lists the images the phēnix server has,
+both in the minimega files directory (and its folders) and wherever a topology
+points to them. It can snapshot, clone, rename, download, upload and delete the
+images in the files directory; images outside it are listed but not changed.
 
 Click the `In use` count above the table to show only the images in use.
 Click it again, or click the `X` beside the search box, to show all images.
@@ -30,7 +31,7 @@ The [`vmdb2` utility](https://gitlab.com/glattercj/vmdb2) is required -- in path
 -- to create the disk images. This utility is included with the phenix Docker image.
 
 ```shell
-phenix image create <image name>
+phenix image create <image-name>
 ```
 
 The `phenix image create --help` will output:
@@ -59,7 +60,7 @@ Flags:
   -c, --compress             Compress image after creation (does not apply to raw image)
   -f, --format string        Format of disk image (default "qcow2")
   -h, --help                 help for create
-  -k, --kernel-args string   List of parameters which grub will pass to the Linux kernel (e.g. 'net.ifnames=0','consoleblank=0'); separated by comma)
+  -k, --kernel-args string   List of parameters which grub will pass to the Linux kernel (e.g. 'net.ifnames=0','consoleblank=0'); separated by comma). Warning: each comma starts a new parameter, so a value with a comma, such as console=ttyS0,115200n8, is split, which can make the build fail.
   -m, --mirror string        Debootstrap mirror (must match release) (default "http://us.archive.ubuntu.com/ubuntu")
       --no-virtuals          Don't add virtual filesystem mounts to chroot before executing scripts when running vmdb2 (default is 'false')
   -O, --overlays string      List of overlay names (include full path; separated by comma)
@@ -75,7 +76,7 @@ Flags:
 The `vmdb2` configuration file can be read by running the following command:
 
 ```shell
-phenix cfg get image/<image name>
+phenix cfg get image/<image-name>
 ```
 
 ## Building a disk image
@@ -116,7 +117,7 @@ and scripts to existing configurations using the `append` command.
 Command usage is:
 
 ```shell
-phenix image append <configuration name> [flags]
+phenix image append <configuration-name> [flags]
 ```
 
 Flags are for the overlays, packages, and scripts that you want to append.
@@ -129,7 +130,7 @@ referencing the existing configuration, the new configuration name, and
 then additional packages, overlays, and scripts.
 
 ```shell
-phenix image create-from <existing configuration> <new configuration> [flags]
+phenix image create-from <existing-configuration> <new-configuration> [flags]
 ```
 
 Flags are for the overlays, packages, and scripts that you want to add to
@@ -138,8 +139,12 @@ the new configuration.
 ### delete
 
 ```shell
-phenix image delete <image name>
+phenix image delete <image-name>...
 ```
+
+You can give more than one name. If one can't be deleted, the command keeps
+going with the rest, then exits with an error that lists each failure. Add
+`--dry-run` to see which configurations it would delete.
 
 A name can contain the wildcard `*`, which matches zero or more characters.
 Other characters, such as `?` and `[`, match only themselves. Put quotation
@@ -158,7 +163,7 @@ configurations. Another pattern that selects no configuration is an error.
 An alternative could be to use the configuration management tool.
 
 ```shell
-phenix cfg delete image/<image name>
+phenix cfg delete image/<image-name>
 ```
 
 ### remove
@@ -167,7 +172,7 @@ The `remove` command will allow you to remove any packages, overlays,
 and scripts from an existing image configuration.
 
 ```shell
-phenix image remove <configuration name> [flags]
+phenix image remove <configuration-name> [flags]
 ```
 
 Flags are for the overlays, packages, and scripts that you want to remove.
@@ -181,8 +186,11 @@ made no harm. If the path no longer exists, phenix will leave the
 configuration alone.
 
 ```shell
-phenix image update <configuration name>
+phenix image update <configuration-name>
 ```
+
+The scripts keep their order. `update` doesn't add or remove scripts or change
+packages or overlays; use `append` or `remove` for that.
 
 ## Kali Image
 
@@ -215,3 +223,10 @@ ln -s kali kali-rolling
 ```
 
 At this point, you should be able to build a Kali release with `phenix image`.
+
+## See Also
+
+* [phenix image](cli/image.md): every image command and flag.
+* [Image](configuration.md#image): the Image config that a build reads.
+* [Disks](disks.md): manage the built images from the web UI.
+* [Troubleshooting](troubleshooting.md#phenix-image-build-fails-before-or-in-debootstrap): when a build fails.

@@ -109,7 +109,9 @@ the root target does.
   tree, and `make check-generated` and the `cli-docs` prek hook fail when
   they are out of date. A flag whose default depends on the user or host
   sets `DocDefaultAnnotation` (`cmd/root.go`) so the output stays the same
-  on every machine.
+  on every machine. Each page for a command that a documentation page
+  describes ends with a See Also list of those pages: add a new top-level
+  command to `relatedPages` (`cmd/gendocs/seealso.go`).
 - A new or changed root flag or `ui` setting also updates the settings tables
   in `docs/content/settings.md` and `README.md`. `cmd/settings_docs_test.go`
   fails until the Global Flags table lists every root flag, and until each
@@ -119,9 +121,9 @@ the root target does.
   changes behavior, add or update a doctor check for it when relevant: a new
   setting, external program, file or directory, service or port, or feature
   flag. Register the check in `cmd/doctor_registry.go` with an id, a group
-  and a hint. Add its row to the doctor table in `docs/content/settings.md`
-  (`TestDoctorChecksMatchDocs` fails without it). Also update the `--skip`
-  list and flags in `skills/phenix/references/cli.md`, and run
+  and a hint. Add its row to the Failures, Warnings or Other Checks table in
+  `docs/content/doctor.md` (`TestDoctorChecksMatchDocs` fails without it).
+  Also update the `--skip` list and flags in `skills/phenix/references/cli.md`, and run
   `make cli-docs` when the help text changes. A check warns unless the
   problem stops phenix. A check that cannot get its data gives `skip` with
   the reason, and never blocks on minimega, the server or the store lock.

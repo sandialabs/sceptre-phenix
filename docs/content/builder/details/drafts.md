@@ -1,509 +1,255 @@
-# Drafts: details
+# Drafts: Details
 
 !!! info
-    This page holds every rule, limit and message of this feature. For the
-    short guide, see [Drafts](../drafts.md).
+    This page goes deeper than the short guide: [Drafts](../drafts.md).
 
-Each diagram in Builder is a draft on the phenix server. A draft is separate
-from the standard phenix configs. Builder saves each change to the draft as a
-snapshot. Builder makes a phenix Topology config only when you **Publish**
-(see [Publishing](publishing.md)).
-
-## The drafts page
-
-This is the default page when you open Builder.
+## The Drafts Page
 
 ![The drafts page with its buttons, five tabs, a filter field and three draft cards.](../../images/builder/drafts-page.png)
 
-### Top right buttons
+The theme, `Settings`, `Help` and `Focus mode` buttons work as they do in the
+[editor](editor.md#header). The `Node Templates` tab is the
+[template library](templates.md#the-template-library), the `Icons` tab is the
+[icon library](icons.md#the-icons-tab), and [damaged drafts](#damaged-drafts)
+come last on the `Drafts` tab.
 
-**Blank diagram**, **Import** and **Upload** start a new draft (see
-[Creating a draft](#creating-a-draft)).
+"Updated" on a draft card, for example "Updated Sep 29, 2026, 1:02 PM by
+alice", counts any activity on the draft: an edit, an undo, a restore, a
+deleted snapshot or a publish. That's why it can differ from `Last edited` in
+the [Inspector](editor.md#with-nothing-selected), which shows when the
+content was saved.
 
-**Commands** opens the
-[command palette](palette-and-shortcuts.md#command-palette) (<kbd>⌘</kbd>+<kbd>K</kbd> on
-macOS, <kbd>Ctrl</kbd>+<kbd>K</kbd> on Windows and Linux).
+### Filtering the Lists
 
-The theme, **Settings**, **Help** and **Focus mode** buttons work the same as in the
-[editor](editor.md#header).
+`Filter drafts` and `Filter published diagrams` match the name, or the user
+who created or last changed the item. `Filter layer sets` matches the name or
+description, and `Filter templates` matches the name and whatever `t:` finds
+in the command palette (see
+[The Node Templates tab](templates.md#the-node-templates-tab)).
 
-- **Theme**: Dark, Light, or System (the light or dark appearance of your device).
-- **Settings**: opens [Builder settings](editor.md#settings).
-- **Help**: opens this documentation in a new tab.
-- **Focus mode**: full-screen mode for focused editing (see [Focus mode](editor.md#focus-mode)).
+Filters match the way the
+[command palette](palette-and-shortcuts.md#command-palette) does: each word
+you type must appear in the name or a user name, in any case, or the letters
+must appear in the name in order (`pmpst` finds "Pump station"). `Select all`,
+`Download selected` and `Delete selected` act only on the cards that show, and
+a filter that hides a selected card clears its selection.
 
-### Tabs
+## Creating a Draft
 
-Each tab shows a count of its items, for example **Drafts (3)**:
+`Blank diagram` names the new draft "Untitled topology", or "Untitled topology
+2" and so on when a draft of any user already has that name (see [Renaming the
+diagram](editor.md#renaming-the-diagram)). `Import` names the draft after its
+config (see [Importing a topology or
+experiment](import-upload-download.md#importing-a-topology-or-experiment)),
+and `Upload` always makes a new draft. `Edit` on a Builder topology on the
+`Configs` page works like `Edit as a draft` (see [Editing a published
+topology](publishing.md#editing-a-published-topology)).
 
-- **Drafts**: the drafts of all users, most recently changed first.
-  [Damaged drafts](#damaged-drafts) come last.
-- **Published Diagrams**: the topologies that have a Builder diagram (see
-  [Published diagrams](#published-diagrams)).
-- **Node Templates**: the
-  [template library](templates.md#the-template-library). Its count includes
-  only the library templates. The built-in templates and the server
-  collections are under **Show**.
-- **Layers**: the [layer set library](#the-layers-tab), with the built-in set
-  **Purdue Model**.
-- **Icons**: the [icon library](icons.md#the-icons-tab) and the built-in
-  icons. Its count includes both built-in and custom icons.
+## Opening a Draft
 
-Each Builder user can open, change and delete each draft (see
-[Permissions](administration.md#permissions)).
+In the command palette, `open draft` lists the published diagrams as well as
+the drafts.
 
-A draft card shows the name of the draft, its creator, and its last change
-and that user, for example "Updated Sep 29, 2026, 1:02 PM by alice". The
-card has a checkbox (see [Selecting several drafts](#selecting-several-drafts)),
-**Open**, [**Duplicate**](#duplicating-a-draft), **Delete**, and [**Publish**](#publishing-from-the-drafts-page).
+### Links to a Draft
 
-"Updated" is the last activity on the draft: an edit, an undo, a restore, a
-deleted snapshot or a publish. It can differ from **Last edited** in the
-Inspector on the Editor page, which shows when Builder saved the content (see
-[With nothing selected](editor.md#with-nothing-selected)).
+A link to a draft looks like `<phenix-address>/builder?draft=<draft-id>`. The
+address bar shows it while the draft is open, so a reload opens the same
+draft.
 
-### Item buttons
+## Publishing from the Drafts Page
 
-The buttons that act on one item, such as a draft or a layer set, look the
-same in all of Builder:
+`Publish` on a card opens the `Publish diagram` dialog without the editor (see
+[Publishing](publishing.md)). If the diagram has errors, the dialog lists them
+and won't publish; click `Open draft` to fix them. Closing the dialog doesn't
+stop a running publish, and pending changes keep saving.
 
-| Button | Icon | Color |
-|---|---|---|
-| **Edit** | Pencil | Blue |
-| **Delete** | Trash can | Red |
-| **Publish** | Arrow up | Default |
-| **Duplicate** | Two sheets | Default |
-| **Open** | Open folder | Blue |
-| **View** | Eye | Default |
-| **Download** | Arrow down | Default |
+## How Drafts Save
 
-An item that you cannot change has **View** in place of **Edit**.
+Each saved change is a snapshot in [Draft History](#draft-history). Besides
+sending pending changes, `Save now` applies the valid Inspector changes that
+you haven't applied with `Apply`. For every save state, see
+[Save states](../reference.md#save-states).
 
-### Filtering the lists
-
-The **Drafts**, **Published Diagrams**, **Node Templates** and **Layers**
-tabs each have a filter field above their cards, for example
-**Filter drafts**. A line under the field shows the count, for example "2 of 12 drafts
-shown.".
-
-The filters can search by:
-
-- **Filter drafts** and **Filter published diagrams**: the name or user (this searches users who created or last changed a draft).
-- **Filter layer sets**: the name or description.
-- **Filter templates**: the name and what `t:` in the command
-  palette finds (see
-  [The Node Templates tab](templates.md#the-node-templates-tab)).
-
-Filters match the same way as the [command palette](palette-and-shortcuts.md#command-palette)
-does. Each word that you type must be in the name or a user name, in any
-letter case. Or, the letters must be in the name in order: `pmpst` finds
-"Pump station". The words can match in different places, such as the draft name
-and a user name.
-
-Filter actions:
-
-- **Select all**, **Download selected** and **Delete selected** act only on
-  the cards that show. If a filter hides a card that you selected, Builder
-  clears its selection.
-- Each tab keeps its filter while the browser tab is open.
-- To show all cards again, press <kbd>Esc</kbd> in the field, or clear it.
-
-## Creating a draft
-
-### Blank diagram
-
-Click **Blank diagram**. A new draft named "Untitled topology" opens in the
-editor. When a draft of any user has that name, the new draft is "Untitled
-topology 2", and so on. To rename it, see
-[Renaming the diagram](editor.md#renaming-the-diagram).
-
-### Import
-
-**Import** makes a draft from a Topology or Experiment config, in phenix or
-in a file. The draft name matches the name of the config. See
-[Importing a topology or experiment](import-upload-download.md#importing-a-topology-or-experiment).
-
-### Upload
-
-**Upload** always makes a new draft. The source is a Builder JSON or YAML
-file, pasted text, a published diagram, or a legacy Builder diagram. See
-[Import, Upload and Download](import-upload-download.md) and
-[Legacy Builder](../legacy.md).
-
-### From a published diagram
-
-On the **Published Diagrams** tab, open a card and click **Edit as a draft**
-(see [Published diagrams](#published-diagrams)). **Edit** on a Builder
-topology on the **Configs** page does the same (see
-[Editing a published topology](publishing.md#editing-a-published-topology)).
-
-## Opening a draft
-
-Click **Open** on the draft's card.
-
-To open a draft from the command palette:
-
-1. Click **Commands** (<kbd>⌘</kbd>+<kbd>K</kbd> on
-   macOS, <kbd>Ctrl</kbd>+<kbd>K</kbd> on Windows and Linux).
-2. Type `open draft` and press <kbd>Enter</kbd>. The palette lists the
-   drafts and the published diagrams.
-3. Type part of the name and press <kbd>Enter</kbd>.
-
-To go back to the list, click **Drafts** in the editor header. Builder
-saves your changes automatically.
-
-### Links to a draft
-
-A link to a draft has the form `<phenix address>/builder?draft=<draft id>`.
-The address bar shows it while a draft is open, so a reload opens the same
-draft. The link works for each Builder user.
-
-## Publishing from the drafts page
-
-**Publish** on a draft's card opens the **Publish diagram** dialog without
-the editor (see [Publishing](publishing.md)).
-
-**Open draft** in the dialog opens the draft in the editor. When the
-diagram has errors, the dialog lists them. Builder will not publish a draft
-with errors. The dialog then tells you to open the draft and fix any issues.
-
-When you close the dialog, the waiting changes continue to save. Closing the
-dialog during a publish does not stop the publish.
-
-## How drafts save
-
-### Autosave and the save state
-
-Builder saves each change to the server as you make it. Each saved change is
-a snapshot in [Draft History](#draft-history). There is no Save button.
-**Save now** (<kbd>⌘</kbd>+<kbd>S</kbd> on macOS, <kbd>Ctrl</kbd>+<kbd>S</kbd>
-on Windows and Linux) sends the changes immediately. It also applies the
-valid Inspector changes that you did not apply with **Apply**.
-
-The save state, after **Draft History** in the toolbar, shows where your
-changes are. See [save state messages](../reference.md#save-states).
-
-### Working offline
-
-When the server cannot be reached, Builder keeps your changes in this
-browser, and you can continue to edit. The save state then shows **Retry
-saving**:
+### Working Offline
 
 ![The toolbar with the save state Offline: 1 change kept on this device. Saving retries automatically., and the Retry saving button.](../../images/builder/save-state-offline.png)
 
-Within a few seconds after the server answers again, Builder sends the
-changes. **Retry saving** sends them at once. The changes stay in this
-browser when you close the tab. Builder sends them the next time that you
-open the draft in this browser. Logging out deletes them (see
-[Logging out](#logging-out)).
-
-Builder waits at most 60 seconds for the server to answer a save, and 30
-seconds for a read. A save with no answer in time counts as offline, and
-the next try sends it again. For publishing, preflight checks, imports,
-exports, packages and storage cleanup, Builder waits up to 10 minutes.
+Unsent changes stay in this browser even after you close the tab, and Builder
+sends them the next time you open the draft in the same browser.
+[Logging out](#logging-out) deletes them.
 
 ## Draft History
 
-Each change saved to a draft is a snapshot. **Draft History** in the toolbar
-lists the snapshots, newest first, and restores an earlier one.
+`Draft History` in the toolbar lists the snapshots, newest first. Each row
+shows the snapshot's number (1 is the draft as Builder made it), a name that
+says what the change did, such as "Added device", and the date and user. You
+can't restore or delete the current snapshot. The tooltip on each other
+`Restore` says how many newer snapshots your next change after that restore
+removes. If the server doesn't move the draft to the snapshot, for example
+while you're offline, the page says so and the draft stays as it was. `Undo`
+and `Redo` skip a deleted snapshot (see [Undo and
+redo](diagrams.md#undo-and-redo)).
 
-For example, in the Riverside Water draft:
+### Newer Snapshots
 
-1. Under **Templates**, click **Server**.
-2. In the Inspector, set **Hostname** to `files-02`.
-3. Click **Apply**.
-4. Click **Draft History** in the toolbar.
+While you're on an older snapshot, the notice above the toolbar reads like
+"Your next change removes 2 newer snapshots (latest by bob, Oct 26, 2026,
+10:00 AM)."
 
-![The Draft History dialog with three snapshots. The newest is marked Current.](../../images/builder/draft-history.png)
+- After `Undo`, `Return to latest` works like `Redo` and keeps your undo
+  steps. Otherwise it restores the newest snapshot.
+- `Save newer history as a new draft` copies the newest snapshot to a new,
+  unpublished draft, for example "Riverside Water (copy)". Like
+  [a duplicate](#duplicating-a-draft), it publishes as a new topology.
 
-The columns are:
-
-- **#**: the snapshot number. 1 is the oldest, the draft as Builder made it.
-- **Name**: what the change did, for example "Added device".
-- **Date** and **User**: when and by whom Builder saved the snapshot. For
-  the current snapshot, the Inspector shows these as **Last edited**. The
-  exception is snapshot 1 of a draft made with **Edit as a draft**. Its row
-  shows when you made the draft. The Inspector shows who last edited the
-  diagram before that.
-- The Restore and Delete buttons.
-
-**Current** marks the current snapshot. You cannot restore or delete it. The
-tooltip of each other Restore button shows how many newer snapshots your
-next change after the restore removes. Screen readers announce the number
-of snapshots and the tooltip.
-
-### Restoring a snapshot
-
-To go back to the draft as Builder made it, click **Draft created** or its
-Restore button. The dialog closes, and the canvas shows the draft without
-files-02. Riverside Water is now as you uploaded it, as the other pages
-expect.
-
-Restoring does not delete the newer snapshots. You can restore them the same
-way. If the server does not move the draft to the snapshot, for example
-while you are offline, the page says so, and the draft does not change.
-
-**Undo** and **Redo** also move the current snapshot, one change at a time
-(see [Undo and redo](diagrams.md#undo-and-redo)).
-
-!!! warning
-    A change after you restore or undo removes all newer snapshots, also
-    the snapshots of other users. In the example, a note added after the
-    restore removes "Added device" and "Updated device files-02".
-
-### Newer snapshots
-
-While the draft shows a snapshot older than its newest one, a notice above
-the toolbar shows what your next change removes. For example: "Your next
-change removes 2 newer snapshots (latest by bob, Oct 26, 2026, 10:00 AM)."
-The notice has two buttons:
-
-- **Return to latest**: shows the newest snapshot again. After **Undo**, it
-  works as **Redo** and keeps your undo steps. Otherwise, it restores the
-  newest snapshot.
-- **Save newer history as a new draft**: makes a new draft of the newest
-  snapshot, for example "Riverside Water (copy)". You stay on this draft.
-  The new draft is not published, and its publish makes a new topology, as
-  for [Duplicate draft](#duplicating-a-draft).
-
-The notice closes when your next change removes the newer snapshots, or when
-the draft shows its newest snapshot again. It does not show while a save
-conflict is open.
-
-### Deleting a snapshot
-
-1. Click the Delete button of the snapshot.
-2. Click **Delete snapshot**. You cannot undo this.
-
-**Undo** and **Redo** skip a deleted snapshot.
-
-### Automatic snapshots
+### Automatic Snapshots
 
 When you leave, publish or download a draft with Inspector changes that you
-did not apply, Builder applies and saves them. Their snapshot has the name
-of the node, for example "Saved unapplied changes to Device web-01", and the
-mark **Automatic**.
+didn't apply, Builder applies and saves them. The snapshot is named after the
+node, for example "Saved unapplied changes to Device web-01", and marked
+`Automatic`.
 
 ### Limits
 
-The server holds at most 2,000 drafts of all users. At that limit, it
-refuses new drafts. To make space, delete drafts, or click **Clean up…** in
-[Settings](editor.md#settings). It deletes the published, unchanged drafts
-of all users (see [Cleaning up storage](administration.md#cleaning-up-storage)).
+The server holds at most 2,000 drafts across all users. At that limit, delete
+drafts or click `Clean up…` in [Settings](editor.md#settings), which deletes
+every user's published, unchanged drafts (see
+[Cleaning up storage](administration.md#cleaning-up-storage)).
 
-A draft keeps at most 50 snapshots and 50 MiB of them. Past either limit,
-Builder deletes the oldest snapshots. A published diagram and a
-[diagram read from a file](#diagrams-read-from-a-file) have no draft
-history. To keep one, edit the diagram as a draft.
+A draft keeps at most 50 snapshots and 50 MiB of them, and Builder deletes the
+oldest past either limit. A published diagram and a
+[diagram read from a file](#diagrams-read-from-a-file) have no draft history;
+to keep one, edit the diagram as a draft.
 
-## Published diagrams
-
-The **Published Diagrams** tab lists each topology that has a Builder
-diagram, by topology name. A topology published from Builder shows its
-publish time.
+## Published Diagrams
 
 ![The Published Diagrams tab with the cards riverside-water and pump-station, which has the tag File.](../../images/builder/published-diagrams.png)
 
-**Open** on a card shows the diagram read only:
+The cards show the topology name, and the publish time for a topology that
+Builder published. A published diagram records who made it and who last
+edited it, taken from the draft at publish time.
 
 ![The published diagram Riverside Water open read only, with a notice and the Edit as a draft button above the toolbar.](../../images/builder/published-view.png)
 
-To change it, click **Edit as a draft**. Builder makes a new draft from the
-published diagram and opens it. The next time any Builder user does this, Builder opens a draft that
-published the diagram or was made from it, and does not make another.
-This draft can publish to the topology again (see
+After the first `Edit as a draft` by any user, the button opens the draft that
+published the diagram or was made from it instead of making another one (see
 [Publishing again](publishing.md#publishing-again)).
 
-A published diagram records who made it and who edited it last. This
-information comes from the draft at publish time.
+### Opening the Experiment
 
-### Opening the experiment
+When a diagram was published with an experiment (see [Publishing a topology
+and an experiment](publishing.md#publishing-a-topology-and-an-experiment)),
+`Exp` on its card and in the editor toolbar, or `Open experiment` in the
+command palette, opens the experiment page in the same tab. `Exp` shows only
+while the experiment exists and you may view it, and it follows a renamed
+experiment. It doesn't show for an experiment that you made from the topology
+yourself. When one publish made several experiments, `Exp` opens one of them.
 
-When a diagram was published with an experiment (see
-[Publishing a topology and an experiment](publishing.md#publishing-a-topology-and-an-experiment)),
-its card and the editor toolbar have **Exp**. **Exp**, and **Open experiment** in the command palette,
-open the experiment page in the same tab and leave the editor.
+### Diagrams Read from a File
 
-**Exp** shows only while the experiment exists and your role has
-`experiments` `get` on it. It follows a renamed experiment. It does not show
-for an experiment that you made from the topology yourself. When one
-publication made several experiments, **Exp** opens one of them. The others
-are on the **Experiments** page.
-
-### Diagrams read from a file
-
-A topology can name a Builder file on the phenix server as its diagram,
-without a publish. An administrator sets this up (see
+An administrator can point a topology at a Builder file on the phēnix server
+as its diagram, without a publish (see
 [Builder documents in files](administration.md#builder-documents-in-files)).
-Its card has the tag **File** and the file path, but no **Delete**. To
-delete the topology, use the **Configs** page.
+The card shows the tag `File` and the file path, and has no `Delete`; to
+delete the topology, use the `Configs` page.
 
-**Open** reads the file and shows its diagram read only. When the stored
-topology is not what the diagram in the file publishes, the notice says so.
-Then a draft made from that diagram can publish only as a new topology.
+`Open` reads the file. If the stored topology isn't what the diagram in the
+file would publish, the notice says so, and a draft made from it can publish
+only as a new topology. `Edit as a draft` reopens the same draft as long as
+the file holds the same diagram, and makes a new one after the file changes.
+Such a draft can update the topology (see [Publishing to a topology that names
+a Builder
+file](publishing.md#publishing-to-a-topology-that-names-a-builder-file)). If
+the file changes between `Open` and `Edit as a draft`, Builder makes no draft,
+so open the diagram again. When phēnix can't use the file, the page says why
+(see [When the file cannot be
+used](administration.md#when-the-file-cannot-be-used)).
 
-**Edit as a draft** makes a draft from the diagram in the file. Next time, it
-opens the same draft while the file has the same diagram. After the file
-changes, it makes a new draft. Such a draft can update the topology (see
-[Publishing to a topology that names a Builder file](publishing.md#publishing-to-a-topology-that-names-a-builder-file)).
+### Deleting a Published Topology
 
-When phenix cannot use the file, the diagram does not open, and the page
-says why (see
-[When the file cannot be used](administration.md#when-the-file-cannot-be-used)).
-When the file changes between **Open** and **Edit as a draft**, Builder
-makes no draft. Open the diagram again.
+1. Click `Delete` on the card.
+2. Click `Delete topology`.
 
-### Deleting a published topology
-
-**Delete** on a **Published Diagrams** card deletes the Topology config from
-phenix. It needs `configs` `delete` on the topology. Drafts and experiments
-made from the topology do not change.
-
-1. Click **Delete** on the card.
-2. Click **Delete topology**.
-
-When another user published or changed the topology after Builder read the
-list, Builder deletes nothing and reads the list again. Examine the
-topology, and delete it again.
-
-A draft that published the topology, was imported from it, or was opened
-from its published diagram creates the topology again the next time it
+If another user published or changed the topology after Builder read the
+list, Builder deletes nothing and reloads the list, so check the topology and
+try again. A draft that published the topology, was imported from it, or was
+opened from its published diagram creates the topology again the next time it
 publishes to that name.
 
-## The Layers tab
+## The Layers Tab
 
-A layer set is a named list of layers and its options (see
-[Layers](layers.md#layers)). The **Layers** tab lists the layer set
-library of the server, which all users share. On the drafts page, **Show
-Layers** in the command palette opens the tab. In a diagram, **Edit
-layers…** applies a copy of a set to the diagram.
-
-**New layer set** opens the layers editor on a new set with the 7
-placeholder layers. **Upload layer set…** adds a set from a
-[layer set file](import-upload-download.md#layer-set-files). The tab also
-has **Filter layer sets** (see [Filtering the lists](#filtering-the-lists))
-and a row to [select several sets](#selecting-several-layer-sets).
-
-On the cards, the tag **Default** marks the default set. The tag
-**Built-in** marks a set that is part of phenix.
+A layer set is a named list of [layers](layers.md#layers) and their options.
+`Show Layers` in the command palette opens this tab from the drafts page, and
+in a diagram, `Edit layers…` applies a copy of a set to the diagram.
 
 ![The Layers tab with the cards Purdue Model, which is built in, and Lakeside plant zones, which is the default set.](../../images/builder/drafts-layers-tab.png)
 
-Each card has these buttons (see [Item buttons](#item-buttons)):
+`New layer set` opens the layers editor on a new set with the 7 placeholder
+layers, and `Upload layer set…` adds a set from a
+[layer set file](import-upload-download.md#layer-set-files). On the cards:
 
-- **Edit** opens the layers editor. Change the **Name**, **Description**,
-  **Icon**, options and layers, then click **Save**. **Save** first writes
-  the text that you typed in the layer rows. When a layer field has an
-  error, the editor stays open and moves focus to that field (see
-  [Editing the layers](layers.md#editing-the-layers)). Each save gives the
-  set its next version. When you made changes, **Cancel** asks first.
-- **Duplicate** adds a copy with a number after its name, for example
+- `Edit` opens the layers editor (see
+  [Editing the layers](layers.md#editing-the-layers)). Each save gives the set
+  its next version.
+- `Duplicate` adds a copy with a number after its name, such as
   "Purdue Model (2)".
-- **Download** saves the set as a
-  [layer set file](import-upload-download.md#layer-set-files).
-- **Delete** asks first. Diagrams keep their copies of its layers. You
-  cannot undo this.
-- **Set default** makes the set the default set of the server. On the
-  default set, the button is **Clear default**.
+- `Download` saves a layer set file.
+- `Delete` can't be undone. Diagrams keep their copies of the set's layers.
+- `Set default` makes the set the server's default (`Clear default` undoes
+  it). Any Builder user can change the default.
 
-When another user changed the set or the default after the tab read the
-library, **Delete**, **Set default** and **Clear default** change nothing.
-The tab reads the library again. Examine the set, and try again. When
-another user saved the set after you opened it, **Save** fails. Close the
-editor, and open the set again.
+The built-in `Purdue Model` set is read only and can't be deleted. Each
+`Blank diagram` starts with a copy of the default set, linked to it, or with
+the placeholder layers when there's no default. A library template also
+offers the default set's layers in the
+[template editor](templates.md#the-template-editor).
 
-The built-in set **Purdue Model** has the seven levels of the Purdue model,
-from L0 Process to L5 Enterprise, each with an icon and a color. It is read
-only and has no **Delete**. To change it, duplicate it and change the copy.
+If another user changed the set or the default after the tab read the
+library, `Delete`, `Set default` and `Clear default` change nothing and the
+tab reloads the library, so try again. If another user saved the set after
+you opened it, `Save` fails; close the editor and open the set again.
 
-The server keeps one default set for all users, and each Builder user can
-change it. Each **Blank diagram** starts with a copy of the default set,
-linked to the set. Without a default set, a new diagram has the placeholder
-layers. In the template editor, a library template offers the layers of the
-default set (see [The template editor](templates.md#the-template-editor)).
+The tab doesn't list sets that the server can't read, such as sets saved by a
+newer phēnix version, but it says how many there are. The library holds at
+most 200 sets plus the built-in one (see [The
+libraries](administration.md#the-libraries)).
 
-When Builder cannot read the library, the tab says why and shows **Retry**.
-The tab does not list the sets that the server cannot read, for example
-sets that a newer phenix version saved. It shows how many there are.
+### Selecting Several Layer Sets
 
-The library holds at most 200 sets, plus the built-in set (see
-[The libraries](administration.md#the-libraries)).
+Selection works as it does [for drafts](#selecting-several-drafts), except
+that `Download selected` also saves the built-in set and `Delete selected`
+skips it.
 
-### Selecting several layer sets
+## Duplicating a Draft
 
-**Select all**, **Download selected** and **Delete selected** work as for
-drafts (see [Selecting several drafts](#selecting-several-drafts)), with
-these differences:
+`Duplicate draft…` in the
+[command palette](palette-and-shortcuts.md#command-palette) works like
+`Duplicate` on a card. In the editor it copies the open draft once its changes
+are saved; on the drafts page it asks which draft to copy.
 
-- **Download selected** saves a layer set file for each selected set, also
-  the built-in set.
-- **Delete selected** asks once for all sets. Diagrams keep their copies of
-  the layers. It does not delete a built-in set, and the question and the
-  summary say so. When only built-in sets are selected, Builder asks nothing
-  and shows the summary.
+When a name ending in "(copy)" is taken, the copy gets "(copy 2)", "(copy 3)"
+and so on, so a copy of "Pump station (copy)" is "Pump station (copy 2)".
+You're the copy's creator, and it still includes the topologies that the
+original included. A read-only published diagram has no `Duplicate`, so click
+`Edit as a draft` first.
 
-The keys in [Selecting with the keyboard](#selecting-with-the-keyboard) also
-select layer sets.
+## Deleting a Draft
 
-## Duplicating a draft
+If another user has the draft open, their next save fails. A delete during a
+publish of the draft waits until the publish is done.
 
-**Duplicate** makes a new draft with a copy of the current diagram of a
-draft, and opens it.
+## Selecting Several Drafts
 
-**Duplicate draft…** in the [command palette](palette-and-shortcuts.md#command-palette)
-does the same. In the editor, it copies the open draft after Builder saves
-its changes. On the drafts page, it asks which draft to copy.
+A card has a checkbox when `Download selected` or `Delete selected` can act
+on it: every card on `Drafts`, the cards on `Published Diagrams` (for
+`Delete selected`, only those you can delete, and none for a diagram read
+from a file), and each icon on `Icons` (see
+[The Icons tab](icons.md#the-icons-tab)). Each tab keeps its own selection.
 
-The new draft:
+### Selecting with the Keyboard
 
-- Has the name of the draft with "(copy)" at the end. When a draft has that
-  name, the copy is "(copy 2)", "(copy 3)" and so on. A copy of "Pump
-  station (copy)" is "Pump station (copy 2)".
-- Has no [Draft History](#draft-history). You are its creator.
-- Is not published, and has no link to a topology or experiment. When you
-  publish it, Builder asks for a new topology name and makes a new topology
-  (see [Publishing](publishing.md)).
-- Still includes the topologies that the original draft included.
-
-A published diagram that shows read only has no **Duplicate**. Click
-**Edit as a draft** first. When the server refuses the new draft, the page
-says why, and you stay on the same page.
-
-## Deleting a draft
-
-1. Click **Delete** on the draft's card.
-2. Click **Delete draft**. Builder deletes the draft and its whole history
-   from the server. You cannot undo this.
-
-Deleting a draft does not change the configs that it published. During a
-publish of the draft, the server holds the delete until the publish is done.
-It then answers 412 with the new ETag of the draft, and Builder tries the
-delete again once with that ETag. When another user has the draft open,
-their next save fails (see
-[Autosave and the save state](#autosave-and-the-save-state)).
-
-## Selecting several drafts
-
-A card has a checkbox when one of these actions can act on it:
-
-- **Download selected** on **Drafts** and **Published Diagrams**.
-- **Delete selected** on **Drafts**, and on **Published Diagrams** for the
-  cards that you can delete.
-- **Download selected** and **Delete selected** on **Icons**, for each icon
-  (see [The Icons tab](icons.md#the-icons-tab)).
-
-The row above the cards has the actions, the number of selected cards, and
-**Select all**. **Select all** selects all cards that have a checkbox, or
-none. With a filter, it acts on the cards that show (see
-[Filtering the lists](#filtering-the-lists)).
-
-On **Published Diagrams**, a topology whose diagram is read from a file has
-no checkbox. Each tab keeps its own selection.
-
-### Selecting with the keyboard
-
-The cards of a tab are one stop of the Tab key. Tab moves to the card that
-you were last on, and the keys below work there.
+The cards of a tab are one stop for the <kbd>Tab</kbd> key, which lands on the
+card you were last on.
 
 | Key | What it does |
 |---|---|
@@ -513,175 +259,144 @@ you were last on, and the keys below work there.
 | Shift+Space, Shift and an arrow key | Select the cards from the card you last selected or cleared to the focused card, also when you cleared that card |
 | ⌘A (macOS), Ctrl+A | Select every card |
 | Escape | Clear the selection |
-| Delete (Backspace on macOS too) | Ask to delete the selected cards, where **Delete selected** can |
+| Delete (Backspace on macOS too) | Ask to delete the selected cards, where `Delete selected` can |
 
-When you hold Shift and select a checkbox, the cards from the card that you
-last selected or cleared to that checkbox get its new state. After **Select
-all**, ⌘A or Escape, Shift and a checkbox change only that card. Screen
-readers announce each change of the selection.
+Shift-clicking a checkbox gives every card from the one you last selected or
+cleared to that checkbox its new state. After `Select all`, ⌘A or Escape, it
+changes only that card.
 
-### Downloading several drafts
-
-1. Select the cards.
-2. Click **Download selected**.
+### Downloading Several Drafts
 
 ![The Drafts tab with two cards selected, Select all in a mixed state, 2 of 3 selected, and Download selected and Delete selected.](../../images/builder/drafts-selected.png)
 
-Builder saves a Builder JSON file for each card, one after another, with
-its custom icons, as **Download** in the editor does. Each file has the
-draft as the server has it. Your browser may ask you to let the page
-download several files. On **Published Diagrams**, Builder saves each
-published diagram. The summary under the row lists each card that Builder
-could not save, with the reason.
+`Download selected` saves one Builder JSON file per card, with its custom
+icons, as `Download` in the editor does. Each file holds the draft as the
+server has it, or on `Published Diagrams`, the published diagram. Your
+browser may ask you to allow the page to download several files.
 
-### Deleting several drafts
+### Deleting Several Drafts
 
-1. Select the cards of the drafts.
-2. Click **Delete selected**. Builder asks once for all the drafts.
-3. Click **Delete 2 drafts** (the number of selected drafts).
+1. Select the cards.
+2. Click `Delete selected`.
+3. Click `Delete 2 drafts` (the number of selected drafts).
 
-On **Published Diagrams**, **Delete selected** deletes the topologies of the
-selected cards. Drafts and experiments made from them do not change.
+When some items can't be downloaded or deleted, a summary under the row lists
+each one with the reason, and failed deletes stay selected. If the server
+can't be reached partway through, Builder stops and lists the rest as "Not
+attempted."
 
-During the delete, the row shows the progress. When Builder cannot delete
-some items, the summary under the row lists each with the reason. The
-failed items stay selected. **Dismiss** removes the summary.
+## Damaged Drafts
 
-When the server cannot be reached during a delete or download of several
-items, Builder stops and lists the remaining items as "Not attempted." Each
-action uses your permissions for each item.
+A draft that this phēnix server can't read, for example one that a newer
+phēnix version saved, has no `Open`. Open it with the version that saved it,
+or delete it. Any Builder user can delete a damaged draft.
 
-## Damaged drafts
+## Logging Out
 
-A draft that this phenix server cannot read stays on the list, for example
-a draft that a newer phenix version saved. Its card has **Delete** but no
-**Open**. Open the draft with the phenix version that saved it, or delete
-it. Any Builder user can delete a damaged draft.
-
-## Logging out
-
-Logging out, or signing in as another user in the same browser, deletes
-these Builder data from the browser at once: unsent changes, recent
-commands, the last Auto-group name pattern and the Preflight checks that
-you last selected. Before you log out, wait until the save state says "All
-changes saved", or click **Download** to keep a copy. When your session
-ends (see [Troubleshooting](administration.md#troubleshooting)), or after a
-long time with no activity, phenix logs you out in the same way.
-
-Your preferences stay: the theme, column widths, minimap size, keyboard
+Logging out, or signing in as another user in the same browser, deletes your
+Builder data from the browser at once: unsent changes, recent commands, the
+last Auto-group name pattern and the Preflight checks you last selected.
+`Download` keeps a copy of a draft that hasn't finished saving. phēnix logs
+you out the same way when your session ends (see
+[Troubleshooting](../troubleshooting.md)) or after a long idle
+time. Your preferences stay: theme, column widths, minimap size, keyboard
 shortcuts and settings (see [Storage](administration.md#storage)).
 
-## Same draft in multiple tabs
+## Same Draft in Multiple Tabs
 
-Do not open a draft in more than one tab: Builder can save the changes of
-only one tab. When a draft is open in more than one tab, each tab shows a
-notice under the header:
+When a draft is open in more than one browser tab, each tab shows a notice
+under the header:
 
 ![The notice This draft is also open in another tab, where all changes are saved. Changes made in both tabs cannot both be kept.](../../images/builder/two-tabs-warning.png)
 
-When more than one tab holds unsaved changes, for example after offline work,
-**Builder can save the changes of only one tab**. The notice shows how many
-changes the other tab has. Builder opens the **Choose which changes to
-save** dialog:
+If more than one tab holds unsaved changes, for example after offline work,
+Builder can save only one tab's changes, so it opens the
+`Choose which changes to save` dialog:
 
-1. Under **Version to save**, choose a version, for example "This tab: 1
-   change, last at Sep 29, 2026, 1:01:26 PM". **Download** saves a copy of
-   the version of this tab as a file.
-2. Click **Save this version**.
+1. Under `Version to save`, choose a version, for example "This tab: 1
+   change, last at Sep 29, 2026, 1:01:26 PM". `Download` saves this tab's
+   version as a file.
+2. Click `Save this version`.
 
-Builder saves each other version as a new draft, with " (local copy)" after
-the name. The tab with that version changes to the new draft. **Decide
-later** closes the dialog, and Builder sends nothing until you choose.
-**Choose which to save** in the notice opens the dialog again.
+Builder saves each other version as a new draft with " (local copy)" after
+its name, and the tab with that version switches to it. `Decide later` closes
+the dialog without sending anything, and `Choose which to save` in the notice
+opens it again.
 
-## Draft merging
+## Draft Merging
 
-Another person can save a newer version of the draft before your changes
-reach the server, for example while you work offline. Builder then merges
-their changes with yours, field by field. During the merge, edits wait, and
-the save state says "Merging your changes with the server version…".
+When someone saves a newer version of the draft before your changes reach the
+server, Builder merges their changes with yours, field by field, and the save
+state says "Merging your changes with the server version…".
 
-- A change that only one of you made stays, also on different fields of one
-  device. If alice moves router-1 and you rename it, router-1 is moved and
+- A change that only one of you made stays, even on different fields of one
+  device: if alice moves router-1 and you rename it, router-1 is moved and
   renamed.
-- Items that one of you added stay. An item that one of you deleted is
-  deleted, unless the other changed it or added a connection to it.
-- An interface that one of you renamed keeps the changes of the other.
-- Builder adds or deletes the scenarios that one of you added or deleted.
-- Your view of the canvas (zoom and position) does not change.
+- Items either of you added stay. An item one of you deleted is deleted,
+  unless the other changed it or added a connection to it.
+- An interface that one of you renamed keeps the other's changes.
+- Scenarios that either of you added or removed are added or removed.
+- Your zoom and position on the canvas don't change.
 
 When nothing clashes, Builder saves the merged diagram on top of the newer
-version and announces "Merged alice's changes with yours." Draft History
-lists the save as "Merged changes from alice". Undo goes back to alice's
-version. Redo brings back the merged diagram.
+version and says "Merged alice's changes with yours." Draft History lists it
+as "Merged changes from alice", and Undo goes back to alice's version.
 
 These changes clash:
 
-- **A field that you both changed to different values.** A device's name, its
-  hostname and the hostname in its settings are one choice. The new names
-  of one interface are one choice, and the diagram keeps one interface. The
-  whole link of a [linked template](templates.md#linked-templates) is one
-  choice.
-- **An item that one of you deleted while the other changed it or added a
-  connection to it.** For a device or interface, the choices are, for
-  example, **Keep theirs: delete ws-01 and drop your connection to it** and
-  **Keep mine: keep ws-01 with your connection**. Builder announces each
-  connection that it drops.
-- **A group that one of you deleted or ungrouped while the other put a node in it.**
-  When Builder deletes the group, the node goes to the group that
-  held that group, as **Ungroup** does, or to no group. Builder announces
-  each node that it moves.
-- **A node that one of you put in a group while the other put that group in the node.**
-  Two groups cannot be in each other.
+- A field you both changed to different values. A device's name, its hostname
+  and the hostname in its settings are one choice, as are the new names of
+  one interface (the diagram keeps one interface) and the whole link of a
+  [linked template](templates.md#linked-templates).
+- An item one of you deleted while the other changed it or connected to it.
+  The choices read like `Keep theirs: delete ws-01 and drop your connection to
+  it` and `Keep mine: keep ws-01 with your connection`.
+- A group one of you deleted or ungrouped while the other put a node in it.
+  If the group goes, the node moves to the group that held it, as `Ungroup`
+  does, or to no group.
+- A node one of you put in a group while the other put that group in the
+  node. The choices name the groups, such as `Keep mine: Site` and
+  `Keep theirs: no group`. If your choices still nest two groups in each
+  other, Builder moves one of them out.
 
-For the group of a node, the choices name the groups, for example **Keep
-mine: Site** and **Keep theirs: no group**. If your choices still put two
-groups in each other, Builder moves one of them out of its group and
-announces it.
+Builder tells you about each connection it drops and each node it moves.
 
 When something clashes, or the merged diagram has an error such as two
-devices with one hostname, the panel **This draft changed on the server**
-opens under the header. Your unsaved changes stay on this device. Builder
-does not save new edits until you choose one of these:
+devices with one hostname, the `This draft changed on the server` panel opens
+under the header. Your unsaved changes stay on this device, and new edits
+don't save until you choose:
 
-- **Review and merge**: opens the **Merge changes from alice** dialog.
-- **Save my history as a new draft**: saves your version as a new draft, for
-  example "Riverside Water (local copy)", and opens it. The draft that
-  changed on the server does not change. If the save stops before it is
-  complete, Builder deletes the incomplete draft and says why.
-- **Discard mine and load the server version**: asks first, then deletes
-  your changes and loads the newer version. You cannot undo this. If Builder
-  cannot read the newer version, it keeps your changes and says why.
-
-The **Merge changes from alice** dialog lists each clash with **Keep mine**
-and **Keep theirs** and the value of each:
-
-- Choose one for each clash, or click **Keep all mine** or **Keep all
-  theirs**.
-- **Save merged** saves the merged diagram on top of the newer version, with
-  all changes that do not clash. If the merged diagram has an error, the
-  dialog lists it and stays open.
-- When the dialog opens only for such an error, **Save merged** is
-  unavailable. Click **Cancel**, then save your history as a new draft or
-  discard it.
-- If a newer version arrives when you click **Save merged**, Builder saves
-  nothing and merges again.
-- If the save fails, the dialog says why and keeps your choices. Click
-  **Save merged** again.
-- **Cancel** goes back to the panel.
-
-For example, alice and you both rename ws-01 and change its description:
+- `Review and merge` opens the `Merge changes from alice` dialog.
+- `Save my history as a new draft` saves your version as a new draft, for
+  example "Riverside Water (local copy)", and opens it. If that save stops
+  partway, Builder deletes the incomplete draft.
+- `Discard mine and load the server version` asks first, then drops your
+  changes for good. If Builder can't read the newer version, it keeps your
+  changes.
 
 ![The Merge changes from alice dialog with Keep mine chosen for the ws-01 name, and no choice yet for its description.](../../images/builder/merge-dialog.png)
 
-Merging needs the version that your changes started from. The panel says
-"Merging is not available" and does not offer **Review and merge** when:
+In the dialog, pick `Keep mine` or `Keep theirs` for each clash, or click
+`Keep all mine` or `Keep all theirs`. `Save merged` saves the result, with
+every change that doesn't clash, on top of the newer version.
 
-- The server no longer keeps that version (a draft keeps its last 50
-  snapshots).
-- Builder cannot read it.
-- The server does not send it within 15 seconds.
+- If the result has an error, the dialog lists it and stays open. When the
+  dialog opened only because of such an error, `Save merged` is unavailable:
+  click `Cancel`, then save your history as a new draft or discard it.
+- If yet another version arrives while Builder saves, it saves nothing and
+  merges again.
+- If the save fails, the dialog keeps your choices, so click `Save merged`
+  again.
 
-If the merge fails, the panel says "Merging failed" with the reason, and
-offers the same choices. If a third person saves while Builder saves the
-merged diagram, Builder merges again with their version.
+Merging needs the version your changes started from. The panel says "Merging
+is not available", with no `Review and merge`, when the server no longer keeps
+that version (a draft keeps its last 50 snapshots), when Builder can't read
+it, or when the server doesn't send it within 15 seconds. If the merge fails,
+the panel says "Merging failed" with the reason and offers the same choices.
+
+## See Also
+
+- [Troubleshooting](../troubleshooting.md): problems with saving, merging and
+  offline work.
+- [Publishing](publishing.md): what publishing a draft writes and replaces.
+- [Administration](administration.md): permissions, storage and cleanup.

@@ -5,24 +5,24 @@ networking, hardware-in-the-loop devices, etc. in a layered, scripted, and
 codified manner. `phenix` itself includes four (4) default apps that get applied
 to every experiment by default. In addition to the default apps, it is possible
 to apply _user apps_ to an experiment using a
-[scenario](configuration.md#scenario) configuration. Apps can also be disabled at startup,
-either through the `phenix experiment create` command or in the scenario file. This allows apps to execute
-their `running` stage only when manually triggered by the user.
+[scenario](configuration.md#scenario) configuration. Non-default apps can also be disabled at startup,
+either through the [`phenix experiment create`](cli/experiment.md#phenix-experiment-create) command or in the [scenario file](schema.md#scenario-schema). This allows apps to execute
+their `running` stage only when [manually triggered](experiments.md#triggering-app-lifecycle-stages) by the user.
 
 ## Default Apps
 
-| App     | Description                                                                                  |
-|---------|----------------------------------------------------------------------------------------------|
-| ntp     | provides/configures NTP service for experiment                                               |
-| serial  | configures serial interfaces in VM images                                                    |
-| startup | configures guest operating systems at startup using disk injection or C2                     |
-| vrouter | customizes Vyatta/VyOS and minirouter routers, including setting interfaces, ACL rules, etc. |
+| App                     | Description                                                                                  |
+|-------------------------|----------------------------------------------------------------------------------------------|
+| [ntp](#ntp-app)         | provides/configures NTP service for experiment                                               |
+| [serial](#serial-app)   | configures serial interfaces in VM images                                                    |
+| [startup](#startup-app) | configures guest operating systems at startup using disk injection or C2                     |
+| [vrouter](#vrouter-app) | customizes Vyatta/VyOS and minirouter routers, including setting interfaces, ACL rules, etc. |
 
 ### Disable Default Apps for a VM
 
 To keep a VM managed by `phenix` and minimega without applying the built-in
 default apps, set the `phenix/default-apps` node annotation to `false` in the
-topology:
+[topology](configuration.md#topology):
 
 ```yaml title="disable default apps for one VM"
 spec:
@@ -39,23 +39,29 @@ during every lifecycle stage. User apps configured in a scenario are
 unaffected. Omit the annotation, or set it to `true`, to retain the default
 behavior.
 
+To set it on every VM of an experiment without editing the topology, add the
+annotation when you create the experiment (see
+[Adding Annotations](experiments.md#adding-annotations)).
+
 ### startup App
 
 The `startup` app generates scripts that configure supported guest operating
 systems when an experiment starts. These scripts configure settings such as the
-hostname, time zone, and network interfaces. Scenario metadata for the app can
+hostname, time zone, and network interfaces. [Scenario](configuration.md#scenario) metadata for the app can
 also add settings such as Windows domain membership.
 
 By default, phēnix injects the generated scripts into the VM's first drive. For
 images where disk injection is unavailable or intentionally disabled, phēnix
-can instead send and execute the scripts through minimega command and control
+can instead send and execute the scripts through
+[minimega command and control](minimega.md#minimega-command-and-control-miniccc)
 (C2).
 
 #### Scenario Configuration
 
 The `startup` app accepts per-host metadata in a scenario for domain membership
-and Windows automatic logon. The hostname, time zone, network interfaces, and
-routes come from the [topology](configuration.md#topology). DNS servers also
+and Windows automatic logon. The hostname, network interfaces, and
+routes come from the [topology](configuration.md#topology). The time zone of
+Linux, RHEL, and CentOS guests is always set to `Etc/UTC`. DNS servers also
 come from the topology unless Windows `domain_controller.ip` overrides the
 first network adapter's DNS server.
 
@@ -66,6 +72,10 @@ The supported metadata is:
 | `domain_controller` | Linux, RHEL, or CentOS | `domain`, `username`, `password` | Joins the guest to the domain with `realm join`. |
 | `domain_controller` | Windows | `domain`, `ip`, `username`, `password` | Uses `ip` as the first network adapter's DNS server, then joins the domain. |
 | `auto_logon` | Windows | `username`, `password`, and optional `local` | Configures automatic logon. |
+
+A host with no `domain_controller` metadata does not join a domain. If
+`domain_controller` is set and one of its fields is missing, pre-start fails
+with an error that names the host and the field.
 
 ##### Linux Domain Join
 
@@ -155,7 +165,7 @@ There are two ways to enable C2 delivery for a VM:
 * Set the node annotation `phenix/startup-via-cc` to `true`. This explicitly
   uses C2 and removes only the disk injections generated by the `startup` app.
   Other injections configured on the node are unaffected.
-* Set `inject_partition: 0` on the first drive. This disables disk injection for
+* Set [`inject_partition: 0`](configuration.md#optional-values) on the first drive. This disables disk injection for
   the drive and automatically uses C2 for the generated startup scripts. Other
   files configured for disk injection are still skipped.
 
@@ -175,6 +185,10 @@ spec:
         drives:
           - image: ubuntu.qc2
 ```
+
+Like `phenix/default-apps`, you can also add this annotation to every VM of an
+experiment when you create it (see
+[Adding Annotations](experiments.md#adding-annotations)).
 
 For a disk layout that cannot be injected into, such as an LVM-based image, set
 the injection partition on the first drive to `0`:
@@ -197,10 +211,10 @@ spec:
 | Annotation omitted or `false`, first drive partition omitted or nonzero | Disk injection |
 | First drive `inject_partition: 0` | C2, selected automatically |
 | `phenix/startup-via-cc: true` | C2, selected explicitly |
-| Only `general.snapshot: false` | Disk injection; this setting alone does not enable C2 |
+| Only `general.snapshot: false` | None; phēnix injects files only into a snapshot, and this setting alone does not enable C2 |
 
 !!! warning
-    C2 delivery requires the `miniccc` agent to be installed and configured to
+    C2 delivery requires the [`miniccc` agent](troubleshooting.md#a-vm-has-no-miniccc-client) to be installed and configured to
     start in the guest. Linux, RHEL, and CentOS guests must provide `bash`, and
     Windows guests must provide PowerShell.
 
@@ -213,23 +227,77 @@ Set the node annotation `phenix/startup-set-hostname: false` on a Topology node
 to keep the guest's existing hostname while still applying timezone, network
 interface, and domain configuration.
 
+#### Windows Node Annotations
+
+The Windows startup script also reads these node annotations:
+
+* `phenix/domain-controller`: set to `true` on a Windows domain controller.
+  The script then waits until the Active Directory domain services of the VM
+  are ready before it continues.
+* `phenix/windows-rearm`: set to `true` to stop the Windows licensing prompt
+  (`slui.exe`) each time the script runs. On the first run, the script also
+  disables the `WLMS` service and rearms the Windows license with
+  `slmgr.vbs /rearm`.
+
+#### Port Forwards
+
+Set the node annotation `phenix/startup-autotunnel` to a list of
+[port forwards](tunneler.md#creating-a-port-forward-for-a-vm) for the `startup`
+app to create in the `post-start` stage. Each entry is a string (put it in
+quotes) in one of these forms:
+
+* `sport`: forward local port `sport` to port `sport` of the VM.
+* `sport:dport`: forward local port `sport` to port `dport` of the VM.
+* `sport:dhost:dport`: forward local port `sport` to port `dport` of `dhost`,
+  as the VM reaches it.
+
+A `dport` of `VNC` forwards to the VNC console of the VM. Other forwards need a
+[`miniccc` agent](troubleshooting.md#a-vm-has-no-miniccc-client) that is active
+in the VM when the `post-start` stage runs. If the agent is not active, phēnix
+does not create the forward. phēnix creates these forwards as the user `bot`,
+so you must [activate](tunneler.md#activate-id) them in your tunneler. phēnix
+reads this annotation even when `phenix/default-apps` is `false`.
+
+```yaml title="port forwards for one VM"
+spec:
+  nodes:
+    - annotations:
+        phenix/startup-autotunnel:
+          - "8080:80"
+          - "5901:VNC"
+      general:
+        hostname: web-01
+      # remaining node configuration omitted
+```
+
 ### ntp App
 
 The `ntp` app configures experiment VMs to use a NTP server in the experiment.
 
 There are two ways to configure the NTP app:
 
-* By specifying a VM node in the Topology with the label `ntp-server`, with the value for the label being the interface name to use as a destination IP for NTP clients. This method will result in all VMs in the Topology being configured for NTP.
-* By setting `defaultSource` in the `ntp` app metadata in Scenario. This method requires all VMs to be configured as NTP clients be listed in the `hosts` attribute.
+* By specifying a VM node in the [Topology](configuration.md#topology) with the label `ntp-server`, with the value for the label being the interface name to use as a destination IP for NTP clients. This method will result in all VMs with an `os_type` of `linux`, `rhel`, `centos`, or `windows`, and all nodes of type `Router`, in the Topology being configured for NTP.
+* By setting `defaultSource` in the `ntp` app metadata in [Scenario](configuration.md#scenario). This method requires all VMs to be configured as NTP clients be listed in the `hosts` attribute.
 
-**App Options**:
+If any node has the `ntp-server` label, phēnix uses the label method and ignores
+the `ntp` app metadata.
+
+For a Vyatta or VyOS router, the [`vrouter` app](#vrouter-app) also writes the
+NTP server into the router configuration. With the label method, it uses the
+address of the labeled node's interface on the `MGMT` VLAN (in any letter case),
+not the interface that the label names. If the labeled node has no interface on
+that VLAN, the router uses the app metadata. With app metadata, a router listed in
+`hosts` must set `client: ntp`; another value causes an error.
+
+#### NTP Scenario Options
+
 These are only needed if not using the VM label method as explained above.
 
 * `defaultSource`: NTP server to use if no label is specified in topology
     * `hostname`: hostname of NTP server in the topology to use as the source
     * `interface`: interface name from which IP will be extracted to configure clients. Note that this name must be the name of the interface in the phenix Topology.
     * `address`: IP address to use as the NTP server. This takes precedence over other configs, and can be used to configure an external NTP server (e.g. hardware clock).
-* `hosts`: list of hosts to configure NTP options for, including clients and server.
+* `hosts`: list of hosts to configure NTP options for, including clients and server. Each host must set `client` or `server`. If a host sets both, phēnix uses `client`.
     * `client`: what NTP service is used by the client, and thus what configuration file will be changed. Available options are `ntp`, `chrony`, `systemd`, and `windows`.
         * `ntp`: `/etc/ntp.conf`, for the ntp daemon (`sudo apt install ntp`)
         * `chrony`: `/etc/chrony/chrony.conf`, for `chronyd` (`sudo apt install chrony`). Recommended for VMs that may not be able to reach the NTP server immediately at startup — the config is tuned to retry aggressively and step the clock quickly once the server becomes reachable.
@@ -238,7 +306,7 @@ These are only needed if not using the VM label method as explained above.
     * `server`: what NTP service is used by the server. Available options are `ntpd` and `chronyd`. If unset, the NTP server won't be configured.
         * `ntpd`: `/etc/ntp.conf`, for the ntp daemon
         * `chronyd`: `/etc/chrony/chrony.conf`, for `chronyd`. Default path is for Debian/Ubuntu — other distros may use `/etc/chrony.conf`.
-    * `source`: Override source options for this client VM. Available options are the same as `defaultSource`.
+    * `source`: Override source options for this client VM. Available options are the same as `defaultSource`. For a server, `source` sets its upstream NTP server. Without it, the server uses its own clock; a server does not use `defaultSource`.
 
 #### NTP Label Example
 
@@ -320,7 +388,7 @@ spec:
   nodes:
     - general:
         description: Network Time server
-        hostname: ntp
+        hostname: ntp-server
       hardware:
         drives:
           - image: bennu.qc2
@@ -342,12 +410,74 @@ spec:
             vlan: MGMT
 ```
 
+### serial App
+
+The `serial` app configures the serial interfaces of Linux VMs. It needs no
+scenario configuration: it reads the network interfaces of type `serial` from
+the [topology](configuration.md#topology) (see the
+[Interface Schema](schema.md#interface-schema) for their settings).
+
+For each VM with an `os_type` of `linux` and at least one serial interface, the
+app generates a script that starts a `socat` process for each serial interface.
+The process creates a pseudo-terminal at the `device` path of the interface, at
+its `baud_rate`, and carries the serial traffic over UDP multicast on its
+`udp_port`. The script also adds a route for multicast traffic through the
+address of the interface.
+
+The app adds the script to the VM as a disk injection at
+`/etc/phenix/serial-startup.bash`, along with the `serial-startup.service`
+systemd unit that runs the script each time the VM boots. The injections are
+added in the `configure` stage, and the files are generated in the `pre-start`
+stage. The guest must provide systemd, `socat`, `ping`, and `route`.
+
+The `serial` app does not configure RHEL or CentOS guests, external nodes, or
+nodes with [`phenix/default-apps: false`](#disable-default-apps-for-a-vm).
+Unlike the `startup` app, it never uses C2, so a VM whose first drive has
+`inject_partition: 0` does not get these files.
+
+```yaml title="serial interface in a topology"
+spec:
+  nodes:
+    - type: VirtualMachine
+      general:
+        hostname: rtu-01
+      hardware:
+        os_type: linux
+        drives:
+          - image: ubuntu.qc2
+      network:
+        interfaces:
+          - name: S0
+            vlan: SERIAL
+            address: 10.0.0.1
+            mask: 24
+            proto: static
+            type: serial
+            udp_port: 8989
+            baud_rate: 9600
+            device: /dev/ttyS0
+```
+
+With this interface, `/dev/ttyS0` in the VM is a 9600 baud serial port. Its
+traffic reaches the other VMs that have a serial interface in the same subnet
+(`10.0.0.0/24`) with UDP port 8989.
+
 ### vrouter App
 
 The `vrouter` app supports the use of minimega's `minirouter` to include interface configuration, DHCP and DNS configuration, firewall rules, etc.
 
+The app configures each topology node of type `Router` or `Firewall` with an
+`os_type` of `vyatta`, `vyos`, or `minirouter`. For Vyatta and VyOS, it
+generates a configuration in the `pre-start` stage and injects it into the
+router's disk. For minirouter, it sends minimega `router` commands in the
+`post-start` stage. The `os_type` `linux` is deprecated and gets the Vyatta
+configuration. The app skips external nodes and nodes with
+[`phenix/default-apps: false`](#disable-default-apps-for-a-vm).
+
+#### vrouter Example
+
 The following is an example of how the `vrouter` app can be configured via a
-`Scenario` configuration, showing all the possible options.
+[`Scenario`](configuration.md#scenario) configuration, showing all the possible options.
 
 !!! warning
     Some configuration sections only apply to Vyatta/VyOS and do nothing for
@@ -448,22 +578,34 @@ spec:
                 reordering: 5
 ```
 
+#### vrouter Scenario Options
+
 * `ipsec`: if present, point-to-point IPSec tunnels are nailed up between the
   list of given IP addresses and traffic between the given networks is tunneled.
+  Each site needs `local` and `remote` (and `peer` on a VyOS router), and each
+  of its tunnels needs `local` and `remote`.
 
-    * `local`: Local IP address for IPSec connection with this peer. If defined
-      any, then an IP address which configured on interface with default route
-      will be used. It must have a route to the `peer` IP address.
+    * `local`: Local IP address for IPSec connection with this peer. It must
+      be the address of one of the router's interfaces in the topology.
+      It must have a route to the `remote` address.
 
     * `remote`: Remote IP address or hostname for IPSec connection. IPv4 or
       IPv6 address is used when a peer has a public static IP address.
       Hostname is a DNS name which could be used when a peer has a public
       IP address and DNS name, but an IP address could be changed from time
-      to time. It must have a route to the `peer` IP address.
+      to time. A Vyatta router also uses it as the name of the peer
+      connection.
 
     * `peer`: Name of peer connection. The peer name must be an alphanumeric
-      and can have hyphen or underscore as special characters. It is purely
-      informational.
+      and can have hyphen or underscore as special characters. A VyOS router
+      uses it as the name of the site-to-site peer. A Vyatta router does not
+      use it.
+
+    * `secret`: pre-shared key for the connection. If it is not set, phēnix
+      generates a random key of 32 letters and digits. A site on another
+      router with the reverse `local` and `remote` addresses gets the same
+      generated key. Thus set the same `secret` on both ends of a connection,
+      or set it on neither.
 
     * `tunnels`: list of local and remote networks to tunnel through this
       point-to-point connection.
@@ -478,7 +620,7 @@ spec:
     * `ingress`: for each interface-to-ruleset mapping, apply the given ruleset
       to the given interface for inbound traffic. Note that the interface name
       used (in this example, `eth0`) refers to the name given to a network
-      interface in the router's topology configuration.
+      interface in the router's [topology](configuration.md#topology) configuration.
 
     * `egress`: for each interface-to-ruleset mapping, apply the given ruleset
       to the given interface for outbound traffic.
@@ -488,11 +630,17 @@ spec:
         * `name`: name of the ruleset; used in the interface-to-ruleset mapping
           in the `ingress/egress` sections.
 
+        * `description`: description of the ruleset in the Vyatta/VyOS router
+          configuration.
+
         * `default`: default action to apply to traffic that doesn't match any
           rules.
 
         * `rules`: list of rules to apply to traffic.
             * `id`: integer to identify the order of the rules in the set.
+
+            * `description`: description of the rule in the Vyatta/VyOS router
+              configuration.
 
             * `action`: action to apply to traffic matching rule.
 
@@ -506,7 +654,7 @@ spec:
                   provided, all source ports are matched.
 
             * `destination`: map describing what destination to limit matching
-              traffic to. If not provided, all sources are matched.
+              traffic to. If not provided, all destinations are matched.
 
                 * `address`: destination address to limit matching traffic to.
                   If not provided, all destination addresses are matched.
@@ -557,31 +705,68 @@ spec:
 
         * `trapTargets`: a list of IP addresses to send SNMP traps to.
 
+* `snat`: if present, a list of source NAT rules to create on the router.
+  phēnix numbers the rules from 100, in the order of the list.
+
+    * `interface`: name of the topology interface that the translated traffic
+      goes out of. This is required. phēnix stops with an error if the router
+      has no interface with this name.
+
+    * `srcAddr`: source address or network to match.
+
+    * `srcPort`: source port to match, as an integer.
+
+    * `destAddr`: destination address or network to match.
+
+    * `dstPort`: destination port to match, as an integer.
+
+    * `protocol`: protocol to match, for example `tcp`.
+
+    * `translation`: `masquerade`, an address, or an address and a port in
+      the form `address:port`. If it is not set, phēnix uses `masquerade`.
+
+* `dnat`: if present, a list of destination NAT rules to create on the router.
+  phēnix numbers the rules from 100, in the order of the list. A rule takes the
+  same keys as an `snat` rule, with these differences:
+
+    * `interface`: name of the topology interface that the traffic comes in on.
+      This is required.
+
+    * `translation`: address, or address and port in the form `address:port`,
+      to send the matched traffic to. This is required.
+
 * `emulators`: if present, a list of network emulator traffic policies to apply
   to one or more interfaces on egress. For each emulator in the list, only the
   `name` key is required, though the traffic policy will not get applied if
-  there's not at least one `egress` interface defined.
+  there's not at least one `egress` interface defined. The `delay`,
+  `corruption`, `loss`, and `reordering` values must be integers. A text value
+  such as `500ms` causes an error.
 
     * `name`: unique name of traffic policy for this router.
 
     * `egress`: list of interface names to apply traffic policy to on egress.
       The names listed should be the same names used for network interfaces in
-      the topology.
+      the topology. A name that is not an interface of the router is an
+      error.
+
+    * `ingress`: list of interface names to apply traffic policy to on
+      ingress. Only Vyatta routers use it. VyOS routers ignore it.
 
     * `bandwidth`: maximum allowed bandwidth for interface and direction this
-      traffic policy is applied to.
+      traffic policy is applied to, for example `400kbit`.
 
     * `delay`: fixed amount of time to add to all packets for interface and
-      direction this traffic policy is applied to.
+      direction this traffic policy is applied to. On VyOS, the value is in
+      milliseconds, from 0 to 65535.
 
     * `corruption`: percentage of corrupted packets for interface and direction
-      this traffic policy is applied to.
+      this traffic policy is applied to, from 0 to 100.
 
     * `loss`: percentage of lost packets for interface and direction this
-      traffic policy is applied to.
+      traffic policy is applied to, from 0 to 100.
 
     * `reordering`: percentage of reordered packets for interface and direction
-      this traffic policy is applied to.
+      this traffic policy is applied to, from 0 to 100.
 
 !!! important
     The `ingress` and `egress` setting for ACLs are from the perspective of the
@@ -597,6 +782,14 @@ spec:
     apply to Vyatta/VyOS routers.
 
 !!! note
+    If the host metadata has no `snat` rules, phēnix uses the
+    [`nat` settings](configuration.md#network-address-translation-nat) of the
+    router in the topology. For each `ethernet` interface named in `in` that
+    has `proto: static`, phēnix masquerades the network of that interface out
+    of the `out` interface. Scenario `snat` rules replace the topology `nat` settings, and
+    `dnat` rules do not change them.
+
+!!! note
     Currently, the `stateful` setting for ACL rules only applies to Vyatta/VyOS
     routers.
 
@@ -607,7 +800,32 @@ spec:
 !!! note
     Currently, the only emulator policy used is
     [network-emulator](https://docs.vyos.io/en/latest/configuration/trafficpolicy/index.html#network-emulator)
-    and it only applies to outbound traffic (egress).
+    and on VyOS routers it only applies to outbound traffic (egress).
+
+#### Router Node Annotations
+
+Set the node annotation `vrouter/enable-ssh` on a Vyatta or VyOS router to
+enable its SSH service. The value is an IP address, or the name of one of the
+router's topology interfaces. SSH listens on that address, or on the address of
+that interface. If the value is neither, phēnix does not enable SSH.
+
+Set the node annotation `vrouter/vyos-password` on a VyOS router to set the
+password of its `vyos` user. Without the annotation, the router keeps the
+password of its image. The value must be a string with no single quote (`'`)
+and no control character.
+
+```yaml title="enable SSH on a router"
+spec:
+  nodes:
+    - annotations:
+        vrouter/enable-ssh: eth2
+      type: Router
+      general:
+        hostname: rtr
+      hardware:
+        os_type: vyos
+      # remaining node configuration omitted
+```
 
 ## Additional Core Apps
 
@@ -616,12 +834,11 @@ considered default apps since they do not get applied to every experiment by
 default. They're more like a [user app](#user-apps), but implemented in the core
 application instead of as a stand-alone executable.
 
-|        |                                                                                                                                   |
-|--------|-----------------------------------------------------------------------------------------------------------------------------------|
-| scorch | [Scorch](scorch.md) &mdash; **SC**enario **ORCH**estration &mdash; is an automated scenario orchestration framework within phenix |
-| soh    | provide [state of health](state-of-health.md) monitoring for an experiment                                                        |
-| tap    | manage host taps (typically used for external network access) for an experiment                                                   |
-| mgmt_tap    | manage host taps into the mgmt VLAN (typically used for host to VM access) for an experiment                                                   |
+|                  |                                                                                                                                   |
+|------------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| scorch           | [Scorch](scorch.md) &mdash; **SC**enario **ORCH**estration &mdash; is an automated scenario orchestration framework within phenix |
+| soh              | provide [state of health](state-of-health.md) monitoring for an experiment                                                        |
+| [tap](#tap-app)  | manage host taps (typically used for external network access) for an experiment                                                   |
 
 ### tap App
 
@@ -630,7 +847,7 @@ experiments to access external network resources. This includes creating the tap
 in a network namespace (`netns`) to avoid interface address collisions with
 other experiments, connecting the netns with the system network to enable
 external network access, and modifying iptables to allow external network access
-from the tapped experiment VLAN.
+from the tapped experiment [VLAN](experiments.md#vlan-aliases).
 
 !!! note
     Host taps can also be used to access VM network resources directly from the
@@ -667,9 +884,11 @@ preserve backwards compatibility.
 
 The taps are created on the experiment host running the fewest VMs, the first
 by name among hosts with equally few, so every run places them the same way.
+Each tap must name a different VLAN. When `externalAccess.enabled` is `true`,
+`ip` must be an address in CIDR form, such as `172.20.5.254/24`.
 
 The following is an example of how the `tap` app can be configured via a
-`Scenario` configuration, showing all the possible options.
+[`Scenario`](configuration.md#scenario) configuration, showing all the possible options.
 
 !!! note
     The `externalAccess.firewall` portion of the tap configuration has not been
@@ -685,7 +904,8 @@ spec:
         # provided)
         stage: post-start
         taps:
-            # the bridge to add the tap to (will default to 'phenix' if not provided)
+            # the bridge to add the tap to (will default to the experiment's default
+            # bridge, 'phenix' unless changed, if not provided)
           - bridge: phenix
             # the experiment VLAN to tap
             vlan: MGMT
@@ -696,7 +916,8 @@ spec:
             # IP subnet to use for veth pair between host and tap's network
             # namespace when external access is enabled (will default to a /30
             # subnet that is not already in use by any other running experiment if
-            # not provided)
+            # not provided; if this subnet is in use, the next unused subnet of
+            # the same size is used)
             subnet: 10.213.47.8/30
             externalAccess:
               # defaults to false
@@ -720,9 +941,105 @@ spec:
                     protocol: tcp
 ```
 
-### mgmt_tap App
+## User Apps
 
-The `mgmt_tap` application creates tap interfaces on the management network of an experiment, enabling file transfer and remote access to virtual machines within the experiment. The `mgmt_tap`:
+`phenix` _user apps_ are stand-alone executables that `phenix` shells out to at
+different stages of the experiment lifecycle (
+`configure`, `pre-start`, `post-start`,
+`running`, and `cleanup`). When `phenix` encounters an app in an experiment
+scenario that isn't a default app, it
+[checks to see if an executable exists](troubleshooting.md#an-app-or-scorch-component-is-not-found) in
+its current `PATH` in the form of `phenix-app-<app-name>`. If the executable
+exists, `phenix` shells out to it, providing the current lifecycle stage as an
+argument and providing the experiment `metadata`, `spec`, and `status` as a JSON
+string over `STDIN`.
+
+!!! note
+    There will always be three (3) top-level keys available in the JSON passed to a
+    user app over `STDIN`: `metadata`, `spec`, and `status`. For the `configure`
+    and
+    `pre-start` stages, the `status` value will be null or otherwise ignored.
+    The
+    `spec` value will be [experiment schema](schema.md#experiment-schema).
+    phēnix also adds `hosts` (the schedulable cluster hosts) and `vms` (the
+    experiment VMs that minimega reports), and leaves each out when it is
+    empty.
+
+!!! tip
+    You can run [`phenix util app-json <exp-name>`](cli/util.md#phenix-util-app-json) to see an example of what the
+    JSON that's passed to a user app looks like.
+
+!!! note
+    The runtime `hosts` that a user app gets have no `diskusage` field.
+    phēnix does not measure the disk usage of the hosts for user apps. A
+    [user scheduler](experiments.md#schedulers) gets the disk usage of the
+    schedulable hosts.
+
+!!! tip
+    You can also get this JSON from the [REST API](api.md) with
+    `GET /api/v1/experiments/{name}/apps/input`.
+
+The user app can modify the experiment at will, then return the updated
+JSON over `STDOUT` and exit with a `0` status. If the user app encounters an
+error, it should print error messages to `STDERR` and exit with a non-zero
+status. Logs written to `STDERR` must be single-line JSON objects
+containing `level` and `msg` fields to be fully integrated into the
+phēnix [centralized logging system](logging.md#the-app-contract). A `type` field with a phēnix log type, such
+as `SCORCH`, sets the log type of the record. phēnix does not accept the
+`AUDIT` or `SECURITY` type from an app. A field with the same name as a phēnix
+field, such as `time` or `app`, gets the `proc_` prefix.
+
+!!! note
+    `phenix` will only process updates to the `spec` value for the `configure`,
+    `pre-start`, and `cleanup` stages, and will only process updates to the `status` value
+    for the `post-start`, `running`, and `cleanup` stages. More specifically, it
+    will only process updates to `status.apps.<app-name>`, which can be anything
+    the app wants it to be (e.g. a simple string, an array, or a
+    map/dictionary).
+
+!!! note
+    It is possible for the execution of app stages to be
+    [canceled](cli/experiment.md#phenix-experiment-trigger) by the caller.
+    In the case of user apps, `phenix` will send a `SIGTERM` to the user app
+    process and wait a maximum of 10 seconds for the process to exit gracefully
+    before killing the process with a `SIGKILL`.
+
+!!! note
+    phēnix won't start an app's `running` stage (a [Scorch](scorch.md) run, for example)
+    while that app is still running a stage. If phēnix
+    [stops partway through](troubleshooting.md#apps-or-a-scorch-run-stay-marked-as-running),
+    [`phenix ui`](cli/ui.md#phenix-ui) clears this when it starts again, so you don't need to restart
+    the experiment to run the app.
+
+### Available User Apps
+
+The
+[sandialabs/sceptre-phenix-apps](https://github.com/sandialabs/sceptre-phenix-apps)
+repo is home to some user apps that have already been created by the community,
+including the following:
+
+| App          | Link                                                                                                         | Description                                                                                                                                                             |
+| ------------ | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| caldera      | [caldera source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/caldera)      | Deployment and orchestration of [MITRE Caldera](https://caldera.mitre.org/) in an experiment                                                                            |
+| helics       | [helics source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/helics)       | Aids in the generation of [HELICS](https://helics.org/) broker start scripts and injects them into the appropriate nodes in an experiment                               |
+| ignition     | [ignition source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/ignition)     | Configures an Inductive Automation Ignition Gateway 8.3 SCADA master at experiment start                                                                                |
+| [mgmt_tap](#mgmt_tap-app) | [mgmt_tap source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/mgmt_tap) | Creates a tap on the management network of an experiment, allowing a user to copy files to and from VMs connected to that network                                       |
+| mirror       | [mirror source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/go/cmd/phenix-app-mirror)                | The mirror app configures cluster-wide packet mirroring for specific VLANs to a specific interface on a predefined node using GRE tunnels. It is written in Golang.     |
+| ot-sim       | [otsim source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/otsim)        | Aids in the generation of config files for [OT-sim](https://ot-sim.patsec.dev/)                                                                                         |
+| protonuke    | [protonuke source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/protonuke)             | Configures the protonuke traffic generator                                                                                                                              |
+| scale        | [scale source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/scale)        | Specialized phenix application designed for high-volume simulations                                                                                                     |
+| sceptre      | [sceptre source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/sceptre)      | Core functionality for [SCEPTRE](https://sandialabs.github.io/sceptre-docs/), including generating configs for field devices (bennu), SCADA systems, and other systems. |
+| wind-turbine | [wind_turbine source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/wind_turbine) | Deprecated in favor of the `wind_turbine` plugin of the `scale` app. Aids in the generation of wind-turbine-specific [OT-sim](https://ot-sim.patsec.dev/) config files  |
+| wireguard    | [wireguard source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/wireguard)    | Configures Wireguard on VMs                                                                                                                                             |
+
+In addition, this repo also contains some generic library/utility code for
+making custom user app development easier. See the
+[README](https://github.com/sandialabs/sceptre-phenix-apps/blob/main/README.md)
+for additional details.
+
+#### mgmt_tap App
+
+The `mgmt_tap` application creates tap interfaces on the management network of an experiment, enabling file transfer and remote access to virtual machines within the experiment. Unlike the [`tap` app](#tap-app), it is a user app, so its `phenix-app-mgmt_tap` executable must be installed. The `mgmt_tap`:
 
 * Creates taps on the configured VLAN (defaults to `MGMT`) on all compute hosts in the experiment
 * Automatically assigns sequential IPs from a configurable subnet
@@ -751,148 +1068,22 @@ spec:
 
 This creates tap interfaces with IPs `10.0.0.1/24`, `10.0.0.2/24`, etc. on the `INTERNAL` VLAN.
 
-## User Apps
-
-`phenix` _user apps_ are stand-alone executables that `phenix` shells out to at
-different stages of the experiment lifecycle (
-`configure`, `pre-start`, `post-start`,
-`running`, and `cleanup`). When `phenix` encounters an app in an experiment
-scenario that isn't a default app, it checks to see if an executable exists in
-its current `PATH` in the form of `phenix-app-<app name>`. If the executable
-exists, `phenix` shells out to it, providing the current lifecycle stage as an
-argument and providing the experiment `metadata`, `spec`, and `status` as a JSON
-string over `STDIN`.
-
-!!! note
-    There will be three (3) top-level keys available in the JSON passed to a
-    user app over `STDIN`: `metadata`, `spec`, and `status`. For the `configure`
-    and
-    `pre-start` stages, the `status` value will be null or otherwise ignored.
-    The
-    `spec` value will be [experiment schema](schema.md#experiment-schema).
-
-!!! tip
-    You can run `phenix util app-json <exp name>` to see an example of what the
-    JSON that's passed to a user app looks like.
-
-!!! note
-    The runtime `hosts` that a user app gets have no `diskusage` field.
-    phēnix does not measure the disk usage of the hosts for user apps. A user
-    scheduler gets the disk usage of the schedulable hosts.
-
-The user app can modify the experiment at will, then return the updated
-JSON over `STDOUT` and exit with a `0` status. If the user app encounters an
-error, it should print error messages to `STDERR` and exit with a non-zero
-status. Logs written to `STDERR` must be single-line JSON objects
-containing `level`, `msg`, and `time` fields to be fully integrated into the
-phēnix centralized logging system. A `type` field with a phēnix log type, such
-as `SCORCH`, sets the log type of the record. phēnix does not accept the
-`AUDIT` or `SECURITY` type from an app. A field with the same name as a phēnix
-field, such as `time` or `app`, gets the `proc_` prefix.
-
-!!! note
-    `phenix` will only process updates to the `spec` value for the `configure`
-    and `pre-start` stages, and will only process updates to the `status` value
-    for the `post-start`, `running`, and `cleanup` stages. More specifically, it
-    will only process updates to `status.apps.<app name>`, which can be anything
-    the app wants it to be (e.g. a simple string, an array, or a
-    map/dictionary).
-
-!!! note
-    It is possible for the execution of app stages to be canceled by the caller.
-    In the case of user apps, `phenix` will send a `SIGTERM` to the user app
-    process and wait a maximum of 10 seconds for the process to exit gracefully
-    before killin the process with a `SIGKILL`.
-
-### Available User Apps
-
-The
-[sandialabs/sceptre-phenix-apps](https://github.com/sandialabs/sceptre-phenix-apps)
-repo is home to some user apps that have already been created by the community,
-including the following:
-
-| App          | Link                                                                                                         | Description                                                                                                                                                             |
-| ------------ | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| caldera      | [caldera source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/caldera)      | Deployment and orchestration of [MITRE Caldera](https://caldera.mitre.org/) in an experiment                                                                            |
-| helics       | [helics source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/helics)       | Aids in the generation of [HELICS](https://helics.org/) broker start scripts and injects them into the appropriate nodes in an experiment                               |
-| mirror       | [mirror source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/go/cmd/phenix-app-mirror)                | The mirror app configures cluster-wide packet mirroring for specific VLANs to a specific interface on a predefined node using GRE tunnels. It is written in Golang.     |
-| otsim        | [otsim source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/otsim)        | Aids in the generation of config files for [OT-sim](https://ot-sim.patsec.dev/)                                                                                         |
-| protonuke    | [protonuke source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/protonuke)             | Configures the protonuke traffic generator                                                                                                                              |
-| scale        | [scale source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/scale)        | Specialized phenix application designed for high-volume simulations                                                                                                     |
-| sceptre      | [sceptre source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/sceptre)      | Core functionality for [SCEPTRE](https://sandialabs.github.io/sceptre-docs/), including generating configs for field devices (bennu), SCADA systems, and other systems. |
-| wind_turbine | [wind_turbine source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/wind_turbine) | Aids in the generation of wind-turbine-specific [OT-sim](https://ot-sim.patsec.dev/) config files                                                                       |
-| wireguard    | [wireguard source](https://github.com/sandialabs/sceptre-phenix-apps/tree/main/src/python/phenix_apps/apps/wireguard)    | Configures Wireguard on VMs                                                                                                                                             |
-
-In addition, this repo also contains some generic library/utility code for
-making custom user app development easier. See the
-[README](https://github.com/sandialabs/sceptre-phenix-apps/blob/main/README.md)
-for additional details.
+The optional `bridge` setting names the bridge to create the taps on. It defaults to the default bridge of the experiment.
 
 ### Example
 
-Below is a very contrived example of a simple _user app_ that changes the disk
-image used for every node in the experiment topology. Assuming the name of the
-executable for this app as `phenix-app-image-changer`, it could be applied to a
-topology by including a scenario in an experiment that includes an experiment
-app named `image-changer`.
-This example demonstrates best practices, including using the `phenix_apps` logger to produce structured JSON logs on `stderr`.
+A very contrived example of a simple _user app_, which changes the disk image
+used for every node in the experiment topology, is in
+[A Minimal User App](examples.md#a-minimal-user-app).
 
 !!! tip
     Additional information on runnable reference user apps can be found in the [Examples section](examples.md).
 
-```python
-import json
-import sys
-from phenix_apps.common.logger import logger
+## See Also
 
-def main():
-    # The first argument is the lifecycle stage (e.g., 'pre-start')
-    try:
-        stage = sys.argv[1]
-    except IndexError:
-        logger.error("Lifecycle stage argument not provided.")
-        # Raising an exception is preferred over sys.exit()
-        # phēnix will capture the non-zero exit code.
-        raise ValueError("Missing stage argument")
-
-    # Read the experiment JSON from stdin
-    try:
-        experiment = json.load(sys.stdin)
-    except json.JSONDecodeError:
-        logger.error("Failed to decode experiment JSON from stdin.")
-        raise
-
-    logger.info(f"Executing stage: {stage}")
-
-    # Only modify the spec in the 'pre-start' or 'configure' stage
-    if stage in ["pre-start", "configure"]:
-        try:
-            spec = experiment['spec']
-            for node in spec['topology']['nodes']:
-                hostname = node.get("general", {}).get("hostname", "unknown")
-                logger.info("Processing node", hostname=hostname)
-                for drive in node['hardware']['drives']:
-                    original_image = drive['image']
-                    drive['image'] = 'm$.qc2'
-                    logger.debug(
-                        "Changed image for node",
-                        hostname=hostname,
-                        from_image=original_image,
-                        to_image=drive['image'],
-                    )
-        except (KeyError, TypeError) as e:
-            logger.exception("Failed to parse experiment spec to change image.")
-            raise
-
-    # Print the (potentially modified) experiment JSON to stdout
-    # This is how the app returns its changes to phēnix.
-    print(json.dumps(experiment))
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception:
-        # phēnix will capture the non-zero exit code from the raised exception
-        # and log any messages written to stderr.
-        sys.exit(1)
-```
+* [Example Applications](examples.md): user apps in Go and Python to start from.
+* [phenix experiment apps](cli/experiment.md#phenix-experiment-apps): list the apps that a scenario can use.
+* [phenix experiment trigger](cli/experiment.md#phenix-experiment-trigger): run a stage of an app by hand.
+* [Scenario](configuration.md#scenario): how a scenario names and configures apps.
+* [phenix util app-json](cli/util.md#phenix-util-app-json): print the JSON that a user app reads.
+* [Troubleshooting](troubleshooting.md#an-app-or-scorch-component-is-not-found): when phēnix cannot find an app.

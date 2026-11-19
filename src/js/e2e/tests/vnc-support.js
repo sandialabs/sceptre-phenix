@@ -248,8 +248,13 @@ async function standInExperiment(
     });
   });
 
-  // the VNC websockets go to the RFB servers; the others of the experiment,
-  // such as its netflow stream, stay open and quiet
+  await routeVncSockets(page, servers);
+  return servers;
+}
+
+// Sends each VNC websocket to the RFB servers. The other websockets of an
+// experiment, such as its netflow stream, stay open and quiet.
+async function routeVncSockets(page, servers) {
   const vncSocket = /\/vms\/([^/?]+)\/vnc\/ws(\?|$)/;
   await page.routeWebSocket(/\/api\/v1\/experiments\//, (ws) => {
     const vm = vncSocket.exec(ws.url());
@@ -282,7 +287,26 @@ async function standInExperiment(
     }
     window.WebSocket = Flat;
   });
+}
 
+// Stands in for the VNC sessions of the named VMs of an experiment, and for
+// an RFB server behind each of their VNC websockets. Other requests go on.
+// screen(vm, x, y) gives the RGB of each pixel. Returns the RFB servers.
+async function standInConsoles(page, { experiment, vms, screen = solidColor }) {
+  const servers = rfbServers(screen);
+  const vncPath = new RegExp(
+    `^/api/v1/experiments/${experiment}/vms/([^/]+)/vnc$`,
+  );
+  await page.route(
+    (url) => vncPath.test(url.pathname),
+    (route) => {
+      const path = new URL(route.request().url()).pathname;
+      const vm = decodeURIComponent(vncPath.exec(path)[1]);
+      if (!vms.includes(vm)) return route.fallback();
+      return route.fulfill({ json: session(experiment, vm) });
+    },
+  );
+  await routeVncSockets(page, servers);
   return servers;
 }
 
@@ -296,4 +320,5 @@ module.exports = {
   SET_ENCODINGS,
   UPDATE_REQUEST,
   standInExperiment,
+  standInConsoles,
 };

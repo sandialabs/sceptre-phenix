@@ -45,12 +45,6 @@ phenix logs --start 2026-11-06T08:00:00Z --end 2026-11-06T09:00:00Z
       --start string     first time to show, in RFC 3339 format (default: --since before now)
 ```
 
-### SEE ALSO
-
-* [phenix](index.md) - A cli application for phēnix
-* [phenix logs download](logs.md#phenix-logs-download) - Write a log file of the phenix server to stdout or to a local file
-* [phenix logs files](logs.md#phenix-logs-files) - Display a table of the log files to download
-
 ## phenix logs download
 
 Write a log file of the phenix server to stdout or to a local file
@@ -71,10 +65,6 @@ phenix logs download minimega -O minimega.log
   -h, --help                 help for download
   -O, --output-file string   write the log file to this path instead of stdout
 ```
-
-### SEE ALSO
-
-* [phenix logs](logs.md) - Show the log entries of the phenix server
 
 ## phenix logs files
 
@@ -102,6 +92,6 @@ phenix logs files [flags]
   -o, --output string   Output format (table, json, yaml) (default "table")
 ```
 
-### SEE ALSO
+## See Also
 
-* [phenix logs](logs.md) - Show the log entries of the phenix server
+* [Logging](../logging.md): log outputs, levels, fields and the audit log.
