@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -1845,7 +1846,8 @@ func (s SOH) portTest(
 		}
 
 		exec = powerShellEncodedCommand(fmt.Sprintf(
-			`$tcp=Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { %s }; `+
+			`$ProgressPreference='SilentlyContinue'; `+
+				`$tcp=Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { %s }; `+
 				`$udp=Get-NetUDPEndpoint -ErrorAction SilentlyContinue | Where-Object { %s }; `+
 				`if ($tcp -or $udp) { 'listening' }`,
 			filter,
@@ -1876,7 +1878,8 @@ func (s SOH) portTest(
 		var listening bool
 
 		if strings.EqualFold(node.Hardware().OSType(), osTypeWindows) {
-			listening = strings.TrimSpace(resp) == "listening"
+			// PowerShell may also print CLIXML progress records, so look for the token on a line of its own.
+			listening = slices.Contains(trim(resp), "listening")
 		} else {
 			listening = len(trim(resp)) > 1 // more than the ss header line
 		}
