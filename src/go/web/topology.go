@@ -1,6 +1,8 @@
 package web
 
 import (
+	"encoding/json"
+	"errors"
 	"net/http"
 	"slices"
 	"strings"
@@ -11,6 +13,8 @@ import (
 	"phenix/api/config"
 	"phenix/api/scenario"
 	"phenix/app"
+	"phenix/store"
+	"phenix/types"
 	"phenix/util/plog"
 	"phenix/web/middleware"
 	"phenix/web/proto"
@@ -40,6 +44,69 @@ func GetApplications(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	body, err := marshaler.Marshal(&proto.AppList{Applications: allowed})
+	if err != nil {
+		return weberror.New(http.StatusInternalServerError, err.Error())
+	}
+
+	w.Header().Set("Content-Type", mimeJSON)
+	_, _ = w.Write(body)
+
+	return nil
+}
+
+// GetTopologyLaunchableVMNames - GET /topologies/{topo}/launchable-vm-names.
+func GetTopologyLaunchableVMNames(w http.ResponseWriter, r *http.Request) error {
+	var (
+		ctx  = r.Context()
+		role = middleware.RoleFromContext(ctx)
+		vars = mux.Vars(r)
+		topo = vars["topo"]
+	)
+
+	if !role.Allowed("topologies", "get", topo) {
+		user := middleware.UserFromContext(ctx)
+		plog.Warn(
+			plog.TypeSecurity,
+			"getting topology launchable vm names not allowed",
+			"user",
+			user,
+			"topology",
+			topo,
+		)
+
+		return weberror.New(http.StatusForbidden, "forbidden")
+	}
+
+	topoConfig, err := store.NewConfig("topology/" + topo)
+	if err != nil {
+		return weberror.NewWebError(err, "unable to build topology config key").
+			SetStatus(http.StatusInternalServerError)
+	}
+
+	if err := store.Get(topoConfig); err != nil {
+		if errors.Is(err, store.ErrNotExist) {
+			return weberror.New(http.StatusNotFound, "topology not found")
+		}
+
+		return weberror.NewWebError(err, "unable to get topology").
+			SetStatus(http.StatusInternalServerError)
+	}
+
+	topology, err := types.DecodeTopologyFromConfig(*topoConfig)
+	if err != nil {
+		return weberror.NewWebError(err, "unable to decode topology").
+			SetStatus(http.StatusInternalServerError)
+	}
+
+	names := topology.LaunchableVMNames()
+	if names == nil {
+		// A topology with only external or do_not_boot nodes has no
+		// launchable VMs; encode that as [] rather than null so the response
+		// matches the OpenAPI array schema.
+		names = []string{}
+	}
+
+	body, err := json.Marshal(map[string][]string{"vm_names": names})
 	if err != nil {
 		return weberror.New(http.StatusInternalServerError, err.Error())
 	}

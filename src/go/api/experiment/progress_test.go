@@ -245,7 +245,7 @@ func TestProgressReporter(t *testing.T) {
 	none.stopMarking()
 }
 
-// planLaunch starts at once only the bootable VMs that are not external and not delayed by the user, by C2 or by a
+// planLaunch starts at once only the launchable VMs that are not external and not delayed by the user, by C2 or by a
 // timer, and lists them all for minimega's `vm start all` when no VM waits.
 func TestPlanLaunch(t *testing.T) { //nolint:paralleltest // replaces the package store
 	image := "a.qc2"

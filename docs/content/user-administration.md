@@ -546,6 +546,13 @@ development key in `ui.jwt-signing-key` names.
 | Exp. Scoped | no |
 | Res. Scoped | yes (list is filtered to only include topologies in scope) |
 
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | get the VM names phēnix launches for a specific topology (`GET /api/v1/topologies/{topo}/launchable-vm-names`) |
+| Exp. Scoped | no |
+| Res. Scoped | yes |
+
 #### Resource: `disks`
 
 A `disks` resource name is an image's file name, such as `win10.qcow2`, and
