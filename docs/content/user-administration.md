@@ -439,6 +439,13 @@ Global Viewer does not have `builder` `use`. See the policies in
 | Exp. Scoped | no |
 | Res. Scoped | yes (list is filtered to only include topologies in scope) |
 
+|      |      |
+|------|------|
+| Verb | get |
+| Desc | get the VM names phēnix launches for a specific topology (`GET /api/v1/topologies/{topo}/launchable-vm-names`) |
+| Exp. Scoped | no |
+| Res. Scoped | yes |
+
 #### Resource: `disks`
 
 |      |      |

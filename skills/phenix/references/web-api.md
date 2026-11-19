@@ -249,6 +249,14 @@ lack it). Points that are easy to miss:
   `phenix util role-table` does (`roles` `list`).
 - `POST .../vms/{name}/start` of a VM with `general.do_not_boot` that minimega
   did not launch answers 409; redeploy the VM to launch it.
+- `GET /topologies/{topo}/launchable-vm-names` answers `{"vm_names": [...]}`:
+  the `general.hostname` of each node of the stored Topology config that
+  phenix launches in minimega, in topology order. External nodes and nodes
+  with `general.do_not_boot` are left out, and a topology with none to launch
+  answers `[]`, never `null`. It needs `topologies` `get` on the topology,
+  and answers `404` for an unknown topology. Use it to wait for exactly the
+  VMs an experiment of the topology starts, rather than reading the topology
+  yourself. The CLI has no equivalent.
 - Paths use camelCase (`captureSubnet`, `memorySnapshot`, `captureTokens`).
 - VLANs (resource `vlans`, resource names are experiment names):
   `GET /vlans` (`vlans` `list`) merges every experiment's pins and range with

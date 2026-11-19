@@ -49,7 +49,7 @@ func TestTopologyNilReceiver(t *testing.T) {
 
 	var topo *TopologySpec
 
-	if topo.IncludedTopologies() != nil || topo.Nodes() != nil || topo.BootableNodes() != nil || topo.SchedulableNodes("") != nil {
+	if topo.IncludedTopologies() != nil || topo.Nodes() != nil || topo.LaunchableNodes() != nil || topo.SchedulableNodes("") != nil {
 		t.Error("accessors of a nil *TopologySpec return values, want nil")
 	}
 }
@@ -69,7 +69,7 @@ func TestTopologyFindNodes(t *testing.T) {
 		want []string
 	}{
 		{name: "Nodes", got: topo.Nodes(), want: []string{"web", "db", "ext"}},
-		{name: "BootableNodes", got: topo.BootableNodes(), want: []string{"web"}},
+		{name: "LaunchableNodes", got: topo.LaunchableNodes(), want: []string{"web"}},
 		{name: "SchedulableNodes", got: topo.SchedulableNodes("minimega"), want: []string{"web", "db"}},
 		{name: "FindNodesWithLabels role", got: topo.FindNodesWithLabels("role"), want: []string{"web", "db"}},
 		{name: "FindNodesWithLabels any of two", got: topo.FindNodesWithLabels("tier", "role"), want: []string{"web", "db"}},

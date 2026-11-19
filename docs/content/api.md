@@ -82,3 +82,22 @@ integrations include:
 * [Builder](builder/details/administration.md#rest-api) - create, edit and publish
   drafts, convert legacy diagrams, and manage packages, icons and templates
   under `/api/v1/builder/`.
+
+### Launchable VM Names
+
+A tool that creates a topology and then waits for its VMs can ask phēnix which
+VMs it will launch, instead of reading the topology and repeating the launch
+rules itself:
+
+```bash
+curl -s -H "X-Phenix-Auth-Token: Bearer $TOKEN" \
+  http://localhost:3000/api/v1/topologies/demo/launchable-vm-names
+# {"vm_names":["vm1","router1"]}
+```
+
+The answer lists the `general.hostname` of each node of the stored Topology
+config that phēnix launches in minimega, in topology order. External nodes and
+nodes with `general.do_not_boot: true` are left out. A topology with no node to
+launch answers `{"vm_names":[]}`. The route needs the `topologies` `get`
+permission on the topology (see [User Administration](user-administration.md))
+and answers `404` for an unknown topology.

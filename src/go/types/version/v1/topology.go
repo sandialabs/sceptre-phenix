@@ -36,20 +36,44 @@ func (t *TopologySpec) Nodes() []ifaces.NodeSpec {
 	return nodes
 }
 
-func (t *TopologySpec) BootableNodes() []ifaces.NodeSpec {
+func (t *TopologySpec) LaunchableNodes() []ifaces.NodeSpec {
 	if t == nil {
 		return nil
 	}
 
-	var bootable []ifaces.NodeSpec
+	var launchable []ifaces.NodeSpec
 
 	for _, n := range t.NodesF {
+		if n == nil {
+			continue
+		}
+
 		if n.Launchable() {
-			bootable = append(bootable, n)
+			launchable = append(launchable, n)
 		}
 	}
 
-	return bootable
+	return launchable
+}
+
+func (t *TopologySpec) LaunchableVMNames() []string {
+	if t == nil {
+		return nil
+	}
+
+	var names []string
+
+	for _, n := range t.NodesF {
+		if n == nil {
+			continue
+		}
+
+		if n.Launchable() {
+			names = append(names, n.General().Hostname())
+		}
+	}
+
+	return names
 }
 
 func (t *TopologySpec) SchedulableNodes(platform string) []ifaces.NodeSpec {

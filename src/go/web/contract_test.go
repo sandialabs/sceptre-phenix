@@ -536,6 +536,12 @@ func contractRoutes() []contractRoute {
 		},
 		{method: "DELETE", path: config, header: current, need: configs("delete"), want: done},
 
+		// the VM names phenix launches for a topology
+		{
+			method: "GET", path: "/api/v1/topologies/" + contractTopo + "/launchable-vm-names",
+			need: one(testRole("topologies", "get", contractTopo)), want: ok,
+		},
+
 		// every config of a kind, every experiment, permissions, minimega commands and runtime settings
 		{method: "POST", path: "/api/v1/configs/delete", body: `{"kind":"topology"}`, need: configs("delete"), want: ok},
 		{
@@ -1194,6 +1200,9 @@ func configAndRouteErrorCases() map[string]contractErrorCase {
 			body: `{"password_settings":{"min_length":8},"logging_settings":{"max_file_size":50}}`, want: http.StatusConflict,
 		},
 		"unknown config":   {method: "GET", path: "/api/v1/configs/topology/none", want: http.StatusNotFound},
+		"launchable VM names of unknown topology": {
+			method: "GET", path: "/api/v1/topologies/none/launchable-vm-names", want: http.StatusNotFound,
+		},
 		"unknown log file": {method: "GET", path: "/api/v1/logs/files/none", want: http.StatusNotFound},
 		"unknown role":     {method: "GET", path: "/api/v1/roles/none", want: http.StatusNotFound},
 		"role with a bad permissions value": {
@@ -1556,6 +1565,7 @@ func TestContractJSONContentType(t *testing.T) {
 		"/api/v1/disks",
 		"/api/v1/applications",
 		"/api/v1/topologies",
+		"/api/v1/topologies/" + contractTopo + "/launchable-vm-names",
 		"/api/v1/topologies/" + contractTopo + "/scenarios",
 		"/api/v1/users",
 		"/api/v1/roles",
