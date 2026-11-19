@@ -688,6 +688,7 @@ func TestWorkflowClientLogsRequests(t *testing.T) {
 	logs := captureLogs(t)
 	fake := newFakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"name":"foo"}`))
 	})
 
 	err := newWorkflowClient(fake.socket).upsertConfig(t.Context(), "foo", []byte("kind: Topology\n"), "application/x-yaml")
@@ -702,10 +703,15 @@ func TestWorkflowClientLogsRequests(t *testing.T) {
 		"url":    "http://unix/api/v1/workflow/configs/foo",
 		"bytes":  "15",
 	})
-	checkFields(t, logs.first(t, "phenix server response"), map[string]string{
+	response := logs.first(t, "phenix server response")
+	checkFields(t, response, map[string]string{
 		"level":  "DEBUG",
 		"method": http.MethodPost,
 		"status": "201",
-		"body":   "",
+		"bytes":  "14",
 	})
+
+	if body, ok := response["body"]; ok {
+		t.Errorf("log record %q has the response body %q, want no body field", response["msg"], body)
+	}
 }
