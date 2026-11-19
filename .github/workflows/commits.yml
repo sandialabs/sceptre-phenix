@@ -1,0 +1,45 @@
+name: Commits
+
+# Pull requests are rebase-merged and the release changelog is generated from
+# the commit subjects on main, so every commit must follow Conventional Commits.
+on:
+  pull_request:
+    # closed: only to cancel this PR's runs (see concurrency); jobs skip it
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    if: github.event.action != 'closed'
+    name: Conventional Commit subjects
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check the commit subjects
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          pattern='^(feat|fix|perf|docs|style|refactor|test|build|ci|chore|revert)(\([^)]+\))?!?: [^ ].*$'
+          status=0
+          subjects=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR}/commits" --jq '.[].commit.message | split("\n")[0]') || exit "$?"
+          if [[ -z "$subjects" ]]; then
+            echo "::error::No commits returned for PR #${PR}"
+            exit 1
+          fi
+          while IFS= read -r subject; do
+            if [[ ! "$subject" =~ $pattern ]]; then
+              echo "::error::Commit subject must follow Conventional Commits, e.g. 'fix(vm): preserve bridge on interface reconnect': ${subject}"
+              status=1
+            fi
+          done <<< "$subjects"
+          exit "$status"

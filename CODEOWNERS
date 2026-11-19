@@ -15,6 +15,7 @@
 /Makefile               @glattercj @GhostofGoes @activeshadow @cmulk
 /README.md              @glattercj @GhostofGoes @activeshadow @nblair2 @cmulk
 /prek.toml              @GhostofGoes
+/releasaurus.toml       @cmulk @nblair2 @GhostofGoes
 
 # Repository configuration
 /.github/               @GhostofGoes @mgaliar @cmulk
@@ -26,6 +27,7 @@
 /scripts/               @glattercj
 /scripts/go-fuzz.sh     @GhostofGoes
 /scripts/vuln-report.sh @GhostofGoes
+/scripts/check-changelog.sh @cmulk @nblair2 @GhostofGoes
 /skills/                @GhostofGoes @glattercj
 
 # Containers
