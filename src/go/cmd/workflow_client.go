@@ -286,7 +286,7 @@ func (c *workflowClient) do(req *http.Request) (int, []byte, error) {
 
 	plog.Debug(
 		plog.TypeSystem, "phenix server response",
-		"method", req.Method, "url", req.URL.String(), "status", resp.StatusCode, "body", string(body),
+		"method", req.Method, "url", req.URL.String(), "status", resp.StatusCode, "bytes", len(body),
 	)
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
