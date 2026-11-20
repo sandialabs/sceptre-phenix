@@ -86,8 +86,12 @@ func TestTopologyLaunchabilityHelpers(t *testing.T) {
 		},
 	}
 
-	if diff := cmp.Diff([]string{"vm"}, nodeNames(topology.BootableNodes())); diff != "" {
-		t.Errorf("TopologySpec.BootableNodes() mismatch (-want +got):\n%s", diff)
+	if diff := cmp.Diff([]string{"vm"}, nodeNames(topology.LaunchableNodes())); diff != "" {
+		t.Errorf("TopologySpec.LaunchableNodes() mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff([]string{"vm"}, topology.LaunchableVMNames()); diff != "" {
+		t.Errorf("TopologySpec.LaunchableVMNames() mismatch (-want +got):\n%s", diff)
 	}
 
 	if diff := cmp.Diff([]string{"vm", "held"}, nodeNames(topology.SchedulableNodes(""))); diff != "" {

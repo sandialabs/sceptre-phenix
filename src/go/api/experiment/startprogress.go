@@ -30,11 +30,11 @@ const (
 // startVMFixedSteps is the number of steps that every start-vms phase has: the VM start, and the VM hosts and VLANs.
 const startVMFixedSteps = 2
 
-// launchPlan is how a start launches the bootable VMs of an experiment.
+// launchPlan is how a start launches the launchable VMs of an experiment.
 type launchPlan struct {
 	// the VMs to start at once, in topology order
 	vms []string
-	// the VMs to start at once, or nil when they are every bootable VM, as mm.StartLaunchedVMs takes them
+	// the VMs to start at once, or nil when they are every launchable VM, as mm.StartLaunchedVMs takes them
 	start []string
 	// each timer-delayed VM's delay, and each C2-delayed VM's awaited VMs
 	delays map[string]time.Duration
@@ -43,7 +43,7 @@ type launchPlan struct {
 	userDelayed, c2Delayed, timerDelayed []string
 }
 
-// planLaunch sorts the bootable VMs of spec that are not external into those to start at once and the delayed ones.
+// planLaunch sorts the launchable VMs of spec that are not external into those to start at once and the delayed ones.
 func planLaunch(spec ifaces.ExperimentSpec) launchPlan {
 	plan := launchPlan{
 		vms:          make([]string, 0),
@@ -55,9 +55,9 @@ func planLaunch(spec ifaces.ExperimentSpec) launchPlan {
 		timerDelayed: nil,
 	}
 
-	bootable := spec.Topology().BootableNodes()
+	launchable := spec.Topology().LaunchableNodes()
 
-	for _, node := range bootable {
+	for _, node := range launchable {
 		if node.External() {
 			continue
 		}
@@ -105,7 +105,7 @@ func planLaunch(spec ifaces.ExperimentSpec) launchPlan {
 
 	// A nil list has mm.StartLaunchedVMs send `vm start all`, which saves calls to minimega; an empty list starts
 	// nothing.
-	if len(plan.vms) != len(bootable) {
+	if len(plan.vms) != len(launchable) {
 		plan.start = plan.vms
 	}
 
