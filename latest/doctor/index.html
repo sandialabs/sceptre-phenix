@@ -1,0 +1,4023 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A place for phenix users to call home.">
+      
+      
+        <meta name="author" content="activeshadow and dnkcom">
+      
+      
+      
+        <link rel="prev" href="../health/">
+      
+      
+        <link rel="next" href="../cli/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../images/favicon.ico">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>Doctor - phenix documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/style.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="brown">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#doctor" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden="">
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="phenix documentation" class="md-header__button md-logo" aria-label="phenix documentation" data-md-component="logo">
+      
+  <img src="../images/phenix.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            phenix documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Doctor
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="brown" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-orange" data-md-color-accent="brown" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9 2c-1.05 0-2.05.16-3 .46 4.06 1.27 7 5.04 7 9.54s-2.94 8.27-7 9.54c.95.3 1.95.46 3 .46a10 10 0 0 0 10-10A10 10 0 0 0 9 2"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/sandialabs/sceptre-phenix" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    sandialabs/sceptre-phenix
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="phenix documentation" class="md-nav__button md-logo" aria-label="phenix documentation" data-md-component="logo">
+      
+  <img src="../images/phenix.png" alt="logo">
+
+    </a>
+    phenix documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/sandialabs/sceptre-phenix" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    sandialabs/sceptre-phenix
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix="">
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Usage
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Usage
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VMs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vm-multi-action/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VM Actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../disks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Disks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../image/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../jobs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Background Jobs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../accessibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Accessibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3">
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Builder
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Builder
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/drafts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drafts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/editor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Editor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/diagrams/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates and Icons
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/import-upload-download/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Import, Upload and Download
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/publishing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Publishing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_11">
+        
+          
+          <label class="md-nav__link" for="__nav_4_11" id="__nav_4_11_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/administration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/legacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Legacy Builder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_11_3">
+        
+          
+          <label class="md-nav__link" for="__nav_4_11_3" id="__nav_4_11_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Details
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_4_11_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_11_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Details
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/details/drafts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drafts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/details/editor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Editor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/details/checks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Checks and Preflight
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/details/palette-and-shortcuts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command Palette and Shortcuts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/details/diagrams/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/details/layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Layers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/details/icons/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Icons
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/details/scenarios/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scenarios and Included Topologies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/details/templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates and Icons
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/details/import-upload-download/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Import, Upload and Download
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/details/publishing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Publishing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../builder/details/administration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Apps
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Apps
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scorch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scorch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../state-of-health/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    State of Health
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Networking
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Networking
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bridge-mode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bridge Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gre-mesh/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GRE Mesh
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../netflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Netflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packet-captures/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packet Captures
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../webshark/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WebShark
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tunneler/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tunneler
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vlans/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VLANs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked="">
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Administration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-administration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Users
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hosts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hosts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../health/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Health Checks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Doctor
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Doctor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reading-the-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading the Output
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#doctor-and-the-health-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Doctor and the Health Checks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reporting-a-bug" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reporting a Bug
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Checks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failures
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#warnings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Warnings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#other-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other Checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See Also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8">
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1">
+        
+          
+          <label class="md-nav__link" for="__nav_8_1" id="__nav_8_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix admin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/completion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix completion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/disk/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix disk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/doctor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix doctor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/experiment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix experiment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/healthcheck/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix healthcheck
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/host/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix host
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/image/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix image
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/job/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix job
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/logs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix logs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/mm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix mm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix ui
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/util/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix util
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/version/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix version
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/vlan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix vlan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/vm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix vm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    phenix workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deprecations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deprecations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../minimega/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    minimega
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reading-the-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading the Output
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#doctor-and-the-health-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Doctor and the Health Checks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reporting-a-bug" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reporting a Bug
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Checks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failures
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#warnings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Warnings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#other-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other Checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See Also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="doctor">Doctor<a class="headerlink" href="#doctor" title="Permanent link">¶</a></h1>
+<p><code>phenix doctor</code> checks your phēnix configuration, the host and minimega, and
+it doesn't need <code>phenix ui</code> to be running. Reach for it when the server or an
+experiment won't start, when a setting seems to have no effect, after an
+upgrade, and before you report a bug.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Only the checks that warn or fail, without the settings list</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>phenix<span class="w"> </span>doctor<span class="w"> </span>-p<span class="w"> </span>-x
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># In the Docker deployment</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>phenix<span class="w"> </span>phenix<span class="w"> </span>doctor<span class="w"> </span>-p<span class="w"> </span>-x
+</span></code></pre></div>
+<p>Run it as the same user, and with the same flags and environment, as the
+phēnix command you're checking. doctor changes nothing: it opens the store
+read-only, sends minimega only commands that change nothing, and binds no
+port. The only files it writes are the ones every phēnix command creates, and
+temporary files for the <code>inject-partitions</code> check. The
+<a href="../cli/doctor/"><code>phenix doctor</code> CLI reference</a> lists every flag.</p>
+<h2 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">¶</a></h2>
+<p><code>--skip</code> takes any check or group name from the <a href="#checks">Checks</a> tables, such
+as on a host without minimega:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>phenix<span class="w"> </span>doctor<span class="w"> </span>--skip<span class="w"> </span>minimega,images
+</span></code></pre></div>
+<p><code>--timeout</code> is 3 seconds by default. When it runs out, a slow check such as
+<code>disk-chains</code> warns, and <code>minimega</code> and <code>openvswitch</code> fail. To give them more
+time:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>phenix<span class="w"> </span>doctor<span class="w"> </span>--timeout<span class="w"> </span>30s
+</span></code></pre></div>
+<p>Check a host from a script. <code>--strict</code> makes a warning exit 1 too, and the
+JSON report has a hint for each warning and failure:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">if</span><span class="w"> </span>!<span class="w"> </span>phenix<span class="w"> </span>doctor<span class="w"> </span>--strict<span class="w"> </span>-x<span class="w"> </span>-o<span class="w"> </span>json<span class="w"> </span>&gt;<span class="w"> </span>doctor.json<span class="p">;</span><span class="w"> </span><span class="k">then</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>jq<span class="w"> </span>-r<span class="w"> </span><span class="s1">'.checks[] | select(.status == "warn" or .status == "fail") | "\(.id): \(.hint)"'</span><span class="w"> </span>doctor.json
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">fi</span>
+</span></code></pre></div>
+<p>List the settings that aren't at their default value, and where each value
+comes from:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>phenix<span class="w"> </span>doctor<span class="w"> </span>-o<span class="w"> </span>json<span class="w"> </span>--skip<span class="w"> </span>minimega,images<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span><span class="s1">'.settings[] | select(.source != "default") | "\(.key)=\(.value) (\(.source))"'</span>
+</span></code></pre></div>
+<h2 id="reading-the-output">Reading the Output<a class="headerlink" href="#reading-the-output" title="Permanent link">¶</a></h2>
+<p>doctor prints a header, every setting with its value and source, one row per
+check, and a summary. It never prints the values of <code>ui.jwt-signing-key</code> or
+<code>ui.users</code>. Here's the end of
+<code>phenix doctor -p -x</code> on a host where minimega isn't running:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>CHECK               STATUS  DETAIL
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>ui.jwt-signing-key  WARN    empty, so phenix ui serves without authentication
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>minimega            FAIL    no answer on /tmp/minimega/minimega: unable to dial: dial unix /tmp/minimega/minimega: connect: no such file or directory (no socket there: minimega is not running, or base-dir.minimega names another directory)
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>filebeat            WARN    filebeat is not a program on PATH, so SCORCH starts no Filebeat, even for a component that enables it
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>FAIL: 1 failed, 2 warned, 55 passed, 24 skipped. Failed: minimega. Warned: ui.jwt-signing-key, filebeat. 79 passing or skipped checks hidden
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>  minimega: start minimega, or set base-dir.minimega to the directory that holds its socket
+</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Status</th>
+<th style="text-align: left;">Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>pass</code></td>
+<td style="text-align: left;">No problem found.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>warn</code></td>
+<td style="text-align: left;">phēnix works, but something may cause trouble later.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>fail</code></td>
+<td style="text-align: left;">phēnix, or part of it, won't work until you fix this.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>skip</code></td>
+<td style="text-align: left;">The check didn't run. The row says why.</td>
+</tr>
+</tbody>
+</table>
+<p>doctor exits 1 when a check fails (or warns, with <code>--strict</code>), and 0
+otherwise. <code>-o json</code> prints the same report as JSON, with a stable <code>id</code> and
+<code>group</code> for each check.</p>
+<h2 id="doctor-and-the-health-checks">Doctor and the Health Checks<a class="headerlink" href="#doctor-and-the-health-checks" title="Permanent link">¶</a></h2>
+<p>doctor checks a host without a running server. To monitor a running
+<code>phenix ui</code>, use the <a href="../health/">health checks</a> (<code>/healthz</code> and <code>/readyz</code>).</p>
+<h2 id="reporting-a-bug">Reporting a Bug<a class="headerlink" href="#reporting-a-bug" title="Permanent link">¶</a></h2>
+<p><code>--report</code> prints the output in a fenced code block that you can paste into the
+<a href="https://github.com/sandialabs/sceptre-phenix/issues/new?template=1-bug-report.yml">bug report form</a>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>phenix<span class="w"> </span>doctor<span class="w"> </span>--report
+</span></code></pre></div>
+<p>The report swaps host names, IP addresses, user names and email addresses for
+tokens such as <code>&lt;host-1&gt;</code>, and replaces passwords, the JWT signing key and
+other secrets with <code>&lt;redacted&gt;</code>. The same value always gets the same token, so
+a path keeps its shape, such as <code>/home/&lt;user-1&gt;/images</code>. Values that say
+nothing about your site, such as <code>localhost</code> and <code>root</code>, stay as they are.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Read the output before you paste it. doctor can't replace a name it
+doesn't know about, such as another host's name in a path.</p>
+</div>
+<h2 id="checks">Checks<a class="headerlink" href="#checks" title="Permanent link">¶</a></h2>
+<p>The Check column is the name that <code>--skip</code> takes, and Group is its group. A
+check that can both warn and fail is in both tables. The hint in doctor's
+output gives the fix, often with the exact command.</p>
+<h3 id="failures">Failures<a class="headerlink" href="#failures" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Check</th>
+<th style="text-align: left;">Group</th>
+<th style="text-align: left;">Fails when</th>
+<th style="text-align: left;">Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>config-file</code>, <code>users-file</code></td>
+<td style="text-align: left;"><code>config</code></td>
+<td style="text-align: left;">The file can't be read or isn't valid YAML.</td>
+<td style="text-align: left;">Fix the YAML at the line the row names.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>env</code> (one row for each variable)</td>
+<td style="text-align: left;"><code>env</code></td>
+<td style="text-align: left;">phēnix would refuse or misread a value, or <code>EDITOR</code> isn't on <code>PATH</code>.</td>
+<td style="text-align: left;">Fix or unset the variable.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>bridge-mode</code>, <code>deploy-mode</code>, <code>experiment.disk-check</code>, <code>color</code></td>
+<td style="text-align: left;"><code>settings</code></td>
+<td style="text-align: left;">Every command refuses the value.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#every-command-fails-on-a-mode-setting">Set a value that the hint lists</a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>log.system.max-size</code></td>
+<td style="text-align: left;"><code>settings</code></td>
+<td style="text-align: left;">The value is negative, so every write to the system log fails.</td>
+<td style="text-align: left;">Set a whole number of megabytes, or <code>0</code> for 100.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>store.endpoint</code></td>
+<td style="text-align: left;"><code>files</code></td>
+<td style="text-align: left;">This user can't write the store file or its directory.</td>
+<td style="text-align: left;">Create the directory, or set a <code>bolt://</code> path this user can write.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>store-file</code></td>
+<td style="text-align: left;"><code>files</code></td>
+<td style="text-align: left;">The store isn't a whole BoltDB file.</td>
+<td style="text-align: left;">Restore a backup, or move it so phēnix creates an empty store.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>log.system.path</code>, <code>log.console</code></td>
+<td style="text-align: left;"><code>files</code></td>
+<td style="text-align: left;">This user can't write or create the log file.</td>
+<td style="text-align: left;">Use a file or directory this user can write.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>base-dir.phenix</code>, <code>base-dir.minimega</code>, <code>base-dir.injects</code>, <code>base-dir.topologies</code>, <code>mount-dir</code></td>
+<td style="text-align: left;"><code>dirs</code></td>
+<td style="text-align: left;">The path isn't a directory.</td>
+<td style="text-align: left;">Point the setting at a directory this user can use.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.shutdown-grace-period</code>, <code>ui.netflow.max-size</code>, <code>ui.captures.max-size</code></td>
+<td style="text-align: left;"><code>ui</code></td>
+<td style="text-align: left;"><code>phenix ui</code> would refuse the value.</td>
+<td style="text-align: left;">Set a whole number: seconds, or MiB for the sizes.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.jwt-signing-key</code></td>
+<td style="text-align: left;"><code>auth</code></td>
+<td style="text-align: left;">A development key doesn't name a user and a role.</td>
+<td style="text-align: left;">Write it as <code>dev|&lt;user&gt;|&lt;role&gt;</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.jwt-lifetime</code></td>
+<td style="text-align: left;"><code>auth</code></td>
+<td style="text-align: left;">The value is under a minute, such as <code>24</code> (nanoseconds).</td>
+<td style="text-align: left;">Use a unit, such as <code>24h</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.users</code></td>
+<td style="text-align: left;"><code>auth</code></td>
+<td style="text-align: left;">An entry isn't <code>name:password:role[:resource...]</code>, so <code>phenix ui</code> skips it.</td>
+<td style="text-align: left;">Fix the entry.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.proxy-auth-header</code></td>
+<td style="text-align: left;"><code>auth</code></td>
+<td style="text-align: left;">The value isn't an HTTP header name.</td>
+<td style="text-align: left;">Fix the name, or unset <code>ui.proxy-auth-header</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.tls</code></td>
+<td style="text-align: left;"><code>tls</code></td>
+<td style="text-align: left;">Only one of <code>ui.tls-key</code> and <code>ui.tls-cert</code> is set, or they don't load.</td>
+<td style="text-align: left;">Set both to a readable key and its certificate, or neither.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.tls-cert</code></td>
+<td style="text-align: left;"><code>tls</code></td>
+<td style="text-align: left;">The certificate has expired or isn't valid yet.</td>
+<td style="text-align: left;">Renew it, then restart <code>phenix ui</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.listen-endpoint</code>, <code>ui.file-server-endpoint</code></td>
+<td style="text-align: left;"><code>tls</code></td>
+<td style="text-align: left;"><code>phenix ui</code> can't listen on the value.</td>
+<td style="text-align: left;">Use <code>host:port</code>, such as <code>0.0.0.0:3000</code> (<code>0</code> turns the file server off).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>unix-socket</code></td>
+<td style="text-align: left;"><code>socket</code></td>
+<td style="text-align: left;">The directory is missing or unwritable, or the path is too long.</td>
+<td style="text-align: left;">Use a path in a directory this user can write.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>unix-socket-gid</code></td>
+<td style="text-align: left;"><code>socket</code></td>
+<td style="text-align: left;">This user isn't root or in the group, so <code>phenix ui</code> exits.</td>
+<td style="text-align: left;">Use a group this user is in, run as root, or <code>-1</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>server</code></td>
+<td style="text-align: left;"><code>server</code></td>
+<td style="text-align: left;">This user can't connect to the socket of <code>phenix ui</code>.</td>
+<td style="text-align: left;">Run doctor as the user of <code>phenix ui</code>, or in its group.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>minimega</code></td>
+<td style="text-align: left;"><code>minimega</code></td>
+<td style="text-align: left;">minimega doesn't answer on its socket.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#phenix-cannot-reach-minimega-or-its-images">Start minimega, or fix <code>base-dir.minimega</code></a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>minimega-env</code></td>
+<td style="text-align: left;"><code>minimega</code></td>
+<td style="text-align: left;">phēnix can't read minimega's <code>-filepath</code> directory.</td>
+<td style="text-align: left;">Mount the files directory at the same path for both.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>qemu-img</code>, <code>vmdb2</code></td>
+<td style="text-align: left;"><code>tools</code></td>
+<td style="text-align: left;">The program isn't on <code>PATH</code>, or <code>qemu-img</code> doesn't work.</td>
+<td style="text-align: left;">Install <code>qemu-utils</code> or <code>vmdb2</code>, or use <code>--skip vmdb2</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>disk</code></td>
+<td style="text-align: left;"><code>tools</code></td>
+<td style="text-align: left;">A phēnix or minimega filesystem is 98% full.</td>
+<td style="text-align: left;">Free up space.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>nbd</code> (Linux only)</td>
+<td style="text-align: left;"><code>tools</code></td>
+<td style="text-align: left;"><code>qemu-nbd</code> is missing, so minimega injects fail.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#injects-fail-with-an-nbd-error">Install <code>qemu-nbd</code></a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>openvswitch</code> (Linux only)</td>
+<td style="text-align: left;"><code>tools</code></td>
+<td style="text-align: left;"><code>ovs-vsctl</code> is missing, or Open vSwitch doesn't answer.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#open-vswitch-does-not-answer">Install or start Open vSwitch</a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.features</code></td>
+<td style="text-align: left;"><code>features</code></td>
+<td style="text-align: left;"><code>webshark</code> is set without a WebShark build, so <code>phenix ui</code> won't start.</td>
+<td style="text-align: left;">List only <code>vm-mount</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.logs.minimega-path</code></td>
+<td style="text-align: left;"><code>features</code></td>
+<td style="text-align: left;">The path isn't a regular file.</td>
+<td style="text-align: left;">Set it to minimega's log file.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="warnings">Warnings<a class="headerlink" href="#warnings" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Check</th>
+<th style="text-align: left;">Group</th>
+<th style="text-align: left;">Warns when</th>
+<th style="text-align: left;">Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>config-file</code></td>
+<td style="text-align: left;"><code>config</code></td>
+<td style="text-align: left;">There is no <code>config.yaml</code>.</td>
+<td style="text-align: left;">phēnix creates it if it can write its config directory.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>config-keys</code></td>
+<td style="text-align: left;"><code>config</code></td>
+<td style="text-align: left;">A key isn't a phēnix setting, such as a typo.</td>
+<td style="text-align: left;">Rename or remove it. <code>phenix settings list</code> shows the valid keys.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>config-paths</code></td>
+<td style="text-align: left;"><code>config</code></td>
+<td style="text-align: left;">The search path has more than one config or users file.</td>
+<td style="text-align: left;">Merge them into the first one, which phēnix reads.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>settings-file</code></td>
+<td style="text-align: left;"><code>config</code></td>
+<td style="text-align: left;"><code>phenix settings set</code> would write a file phēnix doesn't read, or can't.</td>
+<td style="text-align: left;">Use a YAML config file this user can write.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>scenario-hosts</code></td>
+<td style="text-align: left;"><code>config</code></td>
+<td style="text-align: left;">A scenario app names a host that isn't in the topology.</td>
+<td style="text-align: left;">Fix the names with <code>phenix experiment edit &lt;experiment&gt;</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>env</code> (one row for each variable)</td>
+<td style="text-align: left;"><code>env</code></td>
+<td style="text-align: left;">A <code>PHENIX_*</code> variable is empty, unknown, or overridden by a flag.</td>
+<td style="text-align: left;">Fix or unset the variable.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>env-overrides</code></td>
+<td style="text-align: left;"><code>env</code></td>
+<td style="text-align: left;">A <code>PHENIX_*</code> variable overrides a different config file value.</td>
+<td style="text-align: left;">Unset the variable, or change the file to match.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>proxy-env</code></td>
+<td style="text-align: left;"><code>env</code></td>
+<td style="text-align: left;">A proxy is set, and <code>NO_PROXY</code> doesn't cover <code>phenix ui</code>.</td>
+<td style="text-align: left;">Add the named hosts to <code>NO_PROXY</code> and <code>no_proxy</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>log.level</code>, <code>log.system.max-size</code>, <code>log.system.max-backups</code>, <code>log.system.max-age</code></td>
+<td style="text-align: left;"><code>settings</code></td>
+<td style="text-align: left;">phēnix can't use the value, so it falls back to a default.</td>
+<td style="text-align: left;">Set a value from the hint.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>minimega.read-connections</code></td>
+<td style="text-align: left;"><code>settings</code></td>
+<td style="text-align: left;">The value isn't a number from 3 to 64.</td>
+<td style="text-align: left;">Set a whole number from 3 to 64.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>store-file</code></td>
+<td style="text-align: left;"><code>files</code></td>
+<td style="text-align: left;">One of the store's two meta pages is corrupt.</td>
+<td style="text-align: left;">Back up the store while <code>phenix ui</code> is stopped.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>store-owner</code></td>
+<td style="text-align: left;"><code>files</code></td>
+<td style="text-align: left;">Another user owns the store file.</td>
+<td style="text-align: left;">Run phēnix as the store's owner.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>store-root</code></td>
+<td style="text-align: left;"><code>files</code></td>
+<td style="text-align: left;">This user has its own store, but <code>/etc/phenix/store.bdb</code> exists.</td>
+<td style="text-align: left;">Use <code>sudo -i</code>, or set <code>store.endpoint</code> to <code>bolt:///etc/phenix/store.bdb</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>store-fs</code></td>
+<td style="text-align: left;"><code>files</code></td>
+<td style="text-align: left;">The store is on a network filesystem, or is mostly free pages.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#the-store-is-on-a-network-filesystem-or-has-many-free-pages">Move or compact the store</a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>secret-files</code></td>
+<td style="text-align: left;"><code>files</code></td>
+<td style="text-align: left;">Other users can read a file that holds a secret.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#files-that-hold-secrets-are-readable-by-other-users"><code>chmod 600</code> the file</a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>inject-sources</code></td>
+<td style="text-align: left;"><code>files</code></td>
+<td style="text-align: left;">The source file of a node injection doesn't exist.</td>
+<td style="text-align: left;">Put the file there, or change the injection <code>src</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>base-dir.phenix</code>, <code>base-dir.minimega</code>, <code>base-dir.injects</code>, <code>base-dir.topologies</code>, <code>mount-dir</code></td>
+<td style="text-align: left;"><code>dirs</code></td>
+<td style="text-align: left;">The directory is missing, relative, or unusable by this user.</td>
+<td style="text-align: left;">Create it with access for this user, or use another one.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>base-dir.builder-templates</code></td>
+<td style="text-align: left;"><code>dirs</code></td>
+<td style="text-align: left;">The directory is unusable, or <code>phenix ui</code> skips a template file.</td>
+<td style="text-align: left;">Fix the directory or file. The <code>phenix ui</code> log says why.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.jwt-signing-key</code></td>
+<td style="text-align: left;"><code>auth</code></td>
+<td style="text-align: left;">The key is empty (no sign-in) or a development key.</td>
+<td style="text-align: left;">Set a long random secret to require sign-in.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.users</code></td>
+<td style="text-align: left;"><code>auth</code></td>
+<td style="text-align: left;">A role is unknown, or the list is empty with sign-in on.</td>
+<td style="text-align: left;">Fix the role, or change the default user's password.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>proxy-jwt</code></td>
+<td style="text-align: left;"><code>auth</code></td>
+<td style="text-align: left;"><code>phenix ui</code> listens on every address, but doesn't verify proxy JWTs.</td>
+<td style="text-align: left;">Listen only where the proxy reaches, such as <code>127.0.0.1:3000</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.proxy-auth-header</code></td>
+<td style="text-align: left;"><code>auth</code></td>
+<td style="text-align: left;">With no sign-in or a dev key, <code>phenix ui</code> ignores the header.</td>
+<td style="text-align: left;">Set <code>ui.jwt-signing-key</code>, or unset <code>ui.proxy-auth-header</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>rbac-users</code></td>
+<td style="text-align: left;"><code>auth</code></td>
+<td style="text-align: left;">A user's role is missing, or a role names deleted items.</td>
+<td style="text-align: left;">Fix the role on the Users page or with <code>phenix config edit</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.tls-cert</code></td>
+<td style="text-align: left;"><code>tls</code></td>
+<td style="text-align: left;">The certificate expires within 30 days, or doesn't name this host.</td>
+<td style="text-align: left;">Renew it with the right names, then restart <code>phenix ui</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.listen-endpoint</code></td>
+<td style="text-align: left;"><code>tls</code></td>
+<td style="text-align: left;">The endpoint has no port.</td>
+<td style="text-align: left;">Use <code>host:port</code>, such as <code>0.0.0.0:3000</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>unix-socket</code></td>
+<td style="text-align: left;"><code>socket</code></td>
+<td style="text-align: left;">The path is relative, or holds a non-socket or another user's socket.</td>
+<td style="text-align: left;">Use an absolute path in a directory this user can write.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>unix-socket-gid</code></td>
+<td style="text-align: left;"><code>socket</code></td>
+<td style="text-align: left;">No group has the id (as root), or a deprecated key sets it.</td>
+<td style="text-align: left;">Use an existing group in <code>ui.unix-socket-gid</code>, or set <code>-1</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>server</code></td>
+<td style="text-align: left;"><code>server</code></td>
+<td style="text-align: left;">No <code>phenix ui</code> answers, or its version or modes differ.</td>
+<td style="text-align: left;">Start <code>phenix ui</code>, or match its version and modes.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>stuck-status</code></td>
+<td style="text-align: left;"><code>server</code></td>
+<td style="text-align: left;">The store shows runs in progress that nothing is running.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#apps-or-a-scorch-run-stay-marked-as-running">Start or restart <code>phenix ui</code></a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui-limits</code> (Linux only)</td>
+<td style="text-align: left;"><code>server</code></td>
+<td style="text-align: left;"><code>phenix ui</code> uses over 80% of its open files limit.</td>
+<td style="text-align: left;">Raise <code>LimitNOFILE=</code> or <code>--ulimit nofile</code>, then restart it.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>minimega-env</code></td>
+<td style="text-align: left;"><code>minimega</code></td>
+<td style="text-align: left;"><code>-filepath</code> is relative or read-only, <code>-base</code> differs, or the mesh fails.</td>
+<td style="text-align: left;">Use an absolute <code>-filepath</code>, and match <code>base-dir.minimega</code> to <code>-base</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>experiment-files</code></td>
+<td style="text-align: left;"><code>minimega</code></td>
+<td style="text-align: left;"><code>&lt;base-dir.phenix&gt;/images</code> isn't minimega's <code>-filepath</code>.</td>
+<td style="text-align: left;">Make the two the same directory.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>minimega-limits</code> (Linux only)</td>
+<td style="text-align: left;"><code>minimega</code></td>
+<td style="text-align: left;">Open files, or memory and swap, are too low for the VMs.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#minimega-runs-out-of-open-files-or-memory">Raise the limit, or stop VMs</a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>state-drift</code></td>
+<td style="text-align: left;"><code>minimega</code></td>
+<td style="text-align: left;">The store and minimega disagree on which experiments run.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#experiments-show-as-running-after-minimega-restarts">Stop the experiment, or clear the namespace</a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>vlans</code></td>
+<td style="text-align: left;"><code>minimega</code></td>
+<td style="text-align: left;">Two experiments pin a VLAN ID, or one can't get its VLANs.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#an-experiment-cannot-get-its-vlans">Change the pin, or stop the other experiment</a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>bridge-trunk</code> (Linux only)</td>
+<td style="text-align: left;"><code>minimega</code></td>
+<td style="text-align: left;">A mesh bridge has no trunk or tunnel, so nodes can't connect.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#vms-on-different-nodes-cannot-reach-each-other">Add a trunk, or set <code>use-gre-mesh</code></a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>schedule-hosts</code></td>
+<td style="text-align: left;"><code>minimega</code></td>
+<td style="text-align: left;">An experiment schedules a VM on a node not in the mesh.</td>
+<td style="text-align: left;">Fix the schedule, or add the node to the mesh.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>cc-clients</code></td>
+<td style="text-align: left;"><code>minimega</code></td>
+<td style="text-align: left;">A VM's miniccc client is missing after 5 minutes, or mismatched.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#a-vm-has-no-miniccc-client">Inject a matching miniccc</a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>filebeat</code></td>
+<td style="text-align: left;"><code>tools</code></td>
+<td style="text-align: left;"><code>filebeat</code> isn't on <code>PATH</code>, so SCORCH starts no Filebeat.</td>
+<td style="text-align: left;">Install Filebeat if your SCORCH components use it.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>disk</code></td>
+<td style="text-align: left;"><code>tools</code></td>
+<td style="text-align: left;">A phēnix or minimega filesystem is 90% full.</td>
+<td style="text-align: left;">Free up space.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>kernel-modules</code> (Linux only)</td>
+<td style="text-align: left;"><code>tools</code></td>
+<td style="text-align: left;">The running kernel's modules are missing, or a reboot is pending.</td>
+<td style="text-align: left;">Reboot into the installed kernel.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>nbd</code> (Linux only)</td>
+<td style="text-align: left;"><code>tools</code></td>
+<td style="text-align: left;">The <code>nbd</code> module isn't ready, or no <code>/dev/nbdN</code> is free.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#injects-fail-with-an-nbd-error">Run <code>modprobe nbd max_part=10</code> as root</a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>openvswitch</code> (Linux only)</td>
+<td style="text-align: left;"><code>tools</code></td>
+<td style="text-align: left;">Permission is denied, or <code>ovs-vswitchd</code> or its module isn't running.</td>
+<td style="text-align: left;">Run doctor as root, or start Open vSwitch.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>image-build</code> (Linux only)</td>
+<td style="text-align: left;"><code>tools</code></td>
+<td style="text-align: left;"><code>phenix image build</code> lacks a program, root, a loop device, or keyring.</td>
+<td style="text-align: left;">Install what the row names, and build as root.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>image-configs</code></td>
+<td style="text-align: left;"><code>tools</code></td>
+<td style="text-align: left;">An overlay directory of an image config doesn't exist.</td>
+<td style="text-align: left;">Create it, or <code>phenix image remove &lt;config&gt; --overlays &lt;path&gt;</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>disk-chains</code></td>
+<td style="text-align: left;"><code>images</code></td>
+<td style="text-align: left;">An image has a broken backing chain.</td>
+<td style="text-align: left;"><a href="../disks/#broken-backing-chains">Restore the backing file, or rebase the image</a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>disk-formats</code></td>
+<td style="text-align: left;"><code>images</code></td>
+<td style="text-align: left;">An image's format is old or unsupported, or <code>qemu-img</code> is too old.</td>
+<td style="text-align: left;">See <a href="../disks/#image-format-versions">Image Format Versions</a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>writable-images</code></td>
+<td style="text-align: left;"><code>images</code></td>
+<td style="text-align: left;">A VM with <code>snapshot: false</code> writes to a shared or backing image.</td>
+<td style="text-align: left;">Set <code>snapshot: true</code>, or give each VM its own copy.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>leftovers</code></td>
+<td style="text-align: left;"><code>images</code></td>
+<td style="text-align: left;">Deleted experiments or stopped VMs left files, mounts, taps or mirrors.</td>
+<td style="text-align: left;">Remove each one with the command in the hint.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>disk-space</code></td>
+<td style="text-align: left;"><code>images</code></td>
+<td style="text-align: left;">A filesystem of images or minimega has under 10% or 5 GiB free.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#low-disk-space-and-leftovers-of-deleted-experiments">Delete unused images and leftovers</a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>image-locks</code> (Linux only)</td>
+<td style="text-align: left;"><code>images</code></td>
+<td style="text-align: left;">A qemu process holds an image of a stopped experiment open.</td>
+<td style="text-align: left;">If nothing needs it, <code>kill &lt;pid&gt;</code> or <code>qemu-nbd -d /dev/nbdN</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>inject-partitions</code></td>
+<td style="text-align: left;"><code>images</code></td>
+<td style="text-align: left;"><code>inject_partition</code> names a partition minimega can't write, or one needing repair.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#injects-go-to-the-wrong-partition">Use the suggested partition</a>, or repair it as the hint says.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>scenario-apps</code></td>
+<td style="text-align: left;"><code>apps</code></td>
+<td style="text-align: left;">A scenario uses an app or SCORCH component that isn't installed.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#an-app-or-scorch-component-is-not-found">Install it, or add it to <code>PATH</code></a>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>app-runtimes</code></td>
+<td style="text-align: left;"><code>apps</code></td>
+<td style="text-align: left;">An app isn't executable, lacks its interpreter, or has Windows line ends.</td>
+<td style="text-align: left;"><code>chmod +x</code>, install the interpreter, or <code>dos2unix</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>tunneler-download</code></td>
+<td style="text-align: left;"><code>features</code></td>
+<td style="text-align: left;"><code>downloads/tunneler</code> isn't a directory.</td>
+<td style="text-align: left;">Make it a directory of <code>phenix-tunneler</code> builds, or remove it.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.features</code></td>
+<td style="text-align: left;"><code>features</code></td>
+<td style="text-align: left;">A feature is unknown, is missing what it needs, or is <code>minimega-captures</code>, which has no effect.</td>
+<td style="text-align: left;">List only <code>vm-mount</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>minimega-captures</code></td>
+<td style="text-align: left;"><code>features</code></td>
+<td style="text-align: left;">doctor can't read the minimega version.</td>
+<td style="text-align: left;">Use a minimega build that gives a version, such as <code>minimega 3.4.0</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ui.logs.minimega-path</code></td>
+<td style="text-align: left;"><code>features</code></td>
+<td style="text-align: left;">Missing or unreadable file, or unset while minimega logs to a file.</td>
+<td style="text-align: left;"><a href="../troubleshooting/#no-minimega-logs-on-the-logs-page">Set it to minimega's log file</a>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="other-checks">Other Checks<a class="headerlink" href="#other-checks" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Check</th>
+<th style="text-align: left;">Group</th>
+<th style="text-align: left;">What it reports</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>apps</code></td>
+<td style="text-align: left;"><code>apps</code></td>
+<td style="text-align: left;">The user apps and SCORCH components on <code>PATH</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>webshark</code></td>
+<td style="text-align: left;"><code>features</code></td>
+<td style="text-align: left;">Whether <code>phenix ui</code> serves WebShark (it does when it finds a build).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>minimega-captures</code></td>
+<td style="text-align: left;"><code>features</code></td>
+<td style="text-align: left;">Whether minimega supports experiment captures (3.4.0 or later).</td>
+</tr>
+</tbody>
+</table>
+<h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">¶</a></h2>
+<ul>
+<li><a href="../cli/doctor/">phenix doctor</a>: every flag of the command.</li>
+<li><a href="../troubleshooting/">Troubleshooting</a>: longer fixes for the problems that doctor reports.</li>
+<li><a href="../health/">Health Checks</a>: the checks of a running server.</li>
+<li><a href="../settings/">Settings</a>: where each setting comes from and what it does.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        
+
+<footer class="md-footer">
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-footer-copyright">
+        
+        powered by
+        <a href="https://www.mkdocs.org">MkDocs</a>
+        and
+        <a href="https://squidfunk.github.io/mkdocs-material/">
+          Material for MkDocs</a>
+      </div>
+
+      <!-- Social links -->
+      
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/sandialabs/sceptre-phenix" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="/swagger.html" target="_blank" rel="noopener" title="" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M195.1 9.5c3-14.8 16.1-25.5 31.3-25.5h59.8c15.2 0 28.3 10.7 31.3 25.5l14.5 70c14.1 6 27.3 13.7 39.3 22.8l67.8-22.5c14.4-4.8 30.2 1.2 37.8 14.4l29.9 51.8c7.6 13.2 4.9 29.8-6.5 39.9L447 233.3c.9 7.4 1.3 15 1.3 22.7s-.5 15.3-1.3 22.7l53.4 47.5c11.4 10.1 14 26.8 6.5 39.9L477 417.9c-7.6 13.1-23.4 19.2-37.8 14.4l-67.8-22.5c-12.1 9.1-25.3 16.7-39.3 22.8l-14.4 69.9c-3.1 14.9-16.2 25.5-31.3 25.5h-59.8c-15.2 0-28.3-10.7-31.3-25.5l-14.4-69.9c-14.1-6-27.2-13.7-39.3-22.8l-68.1 22.5c-14.4 4.8-30.2-1.2-37.8-14.4L5.8 366.1c-7.6-13.2-4.9-29.8 6.5-39.9l53.4-47.5c-.9-7.4-1.3-15-1.3-22.7s.5-15.3 1.3-22.7l-53.4-47.5C.9 175.7-1.7 159 5.8 145.9l29.9-51.8c7.6-13.2 23.4-19.2 37.8-14.4l67.8 22.5c12.1-9.1 25.3-16.7 39.3-22.8zM256.3 336a80 80 0 1 0-.6-160 80 80 0 1 0 .6 160"></path></svg>
+    </a>
+  
+</div>
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+    
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>

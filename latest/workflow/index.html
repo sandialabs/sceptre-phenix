@@ -1,7 +1,4 @@
-
-<!doctype html>
-<html lang="en" class="no-js">
-  <head>
+<!DOCTYPE html><html lang="en" class="no-js"><head>
     
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -13,10 +10,10 @@
       
       
       
-        <link rel="prev" href="../api/">
+        <link rel="prev" href="../web-ui/">
       
       
-        <link rel="next" href="../user-administration/">
+        <link rel="next" href="../experiments/">
       
       
         
@@ -47,8 +44,8 @@
       
         
         
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback">
         <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
       
     
@@ -61,7 +58,17 @@
 
     
     
-  </head>
+  <link href="../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
   
   
     
@@ -89,7 +96,7 @@
       
     </div>
     
-      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden="">
         
       </div>
     
@@ -107,7 +114,7 @@
     </a>
     <label class="md-header__button md-icon" for="__drawer">
       
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
     </label>
     <div class="md-header__title" data-md-component="header-title">
       <div class="md-header__ellipsis">
@@ -132,20 +139,20 @@
     
     
     
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="brown"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="brown" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
     
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"></path></svg>
       </label>
     
   
     
     
     
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-orange" data-md-color-accent="brown"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-orange" data-md-color-accent="brown" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
     
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9 2c-1.05 0-2.05.16-3 .46 4.06 1.27 7 5.04 7 9.54s-2.94 8.27-7 9.54c.95.3 1.95.46 3 .46a10 10 0 0 0 10-10A10 10 0 0 0 9 2"/></svg>
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9 2c-1.05 0-2.05.16-3 .46 4.06 1.27 7 5.04 7 9.54s-2.94 8.27-7 9.54c.95.3 1.95.46 3 .46a10 10 0 0 0 10-10A10 10 0 0 0 9 2"></path></svg>
       </label>
     
   
@@ -161,30 +168,30 @@
       
         <label class="md-header__button md-icon" for="__search">
           
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
         </label>
         <div class="md-search" data-md-component="search" role="dialog">
   <label class="md-search__overlay" for="__search"></label>
   <div class="md-search__inner" role="search">
     <form class="md-search__form" name="search">
-      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
       <label class="md-search__icon md-icon" for="__search">
         
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
         
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
       </label>
       <nav class="md-search__options" aria-label="Search">
         
         <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
           
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
         </button>
       </nav>
       
     </form>
     <div class="md-search__output">
-      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
         <div class="md-search-result" data-md-component="search-result">
           <div class="md-search-result__meta">
             Initializing search
@@ -202,7 +209,7 @@
         <a href="https://github.com/sandialabs/sceptre-phenix" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
   </div>
   <div class="md-source__repository">
     sandialabs/sceptre-phenix
@@ -226,7 +233,7 @@
           
             
               
-              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
                     
@@ -247,7 +254,7 @@
       <a href="https://github.com/sandialabs/sceptre-phenix" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
   </div>
   <div class="md-source__repository">
     sandialabs/sceptre-phenix
@@ -255,7 +262,7 @@
 </a>
     </div>
   
-  <ul class="md-nav__list" data-md-scrollfix>
+  <ul class="md-nav__list" data-md-scrollfix="">
     
       
       
@@ -288,6 +295,622 @@
       
   
   
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked="">
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Usage
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Usage
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflow
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#topology-directory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Topology Directory
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Topology Directory">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#branch-name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Branch Name
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-phenix-workflow-apply-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The phenix workflow apply Command
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The phenix workflow apply Command">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Variables
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Variables">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#included-topology-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Included Topology Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#show-the-result" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Show the Result
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow Config
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Workflow Config">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Actions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dry-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dry Run
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validation-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation Errors
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#docker-compose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docker Compose
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limitations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See Also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VMs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vm-multi-action/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VM Actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../disks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Disks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../image/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../jobs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Background Jobs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../accessibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Accessibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
   
   
     
@@ -299,10 +922,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3">
         
           
-          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
             
   
   
@@ -320,8 +943,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -329,7 +952,7 @@
   
 
           </label>
-          <ul class="md-nav__list" data-md-scrollfix>
+          <ul class="md-nav__list" data-md-scrollfix="">
             
               
                 
@@ -437,173 +1060,7 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
-        
-          
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Experiments
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Experiments
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../experiments/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Overview
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../vms/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    VMs
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../vm-multi-action/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    VM Actions
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../image/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Images
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
         
           
           <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
@@ -633,7 +1090,7 @@
   
 
           </label>
-          <ul class="md-nav__list" data-md-scrollfix>
+          <ul class="md-nav__list" data-md-scrollfix="">
             
               
                 
@@ -930,7 +1387,7 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_11" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_11">
         
           
           <label class="md-nav__link" for="__nav_4_11" id="__nav_4_11_label" tabindex="0">
@@ -960,7 +1417,7 @@
   
 
           </label>
-          <ul class="md-nav__list" data-md-scrollfix>
+          <ul class="md-nav__list" data-md-scrollfix="">
             
               
                 
@@ -1033,7 +1490,7 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_11_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_11_3">
         
           
           <label class="md-nav__link" for="__nav_4_11_3" id="__nav_4_11_3_label" tabindex="0">
@@ -1063,7 +1520,7 @@
   
 
           </label>
-          <ul class="md-nav__list" data-md-scrollfix>
+          <ul class="md-nav__list" data-md-scrollfix="">
             
               
                 
@@ -1439,7 +1896,7 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
         
           
           <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
@@ -1469,7 +1926,7 @@
   
 
           </label>
-          <ul class="md-nav__list" data-md-scrollfix>
+          <ul class="md-nav__list" data-md-scrollfix="">
             
               
                 
@@ -1605,7 +2062,7 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
         
           
           <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
@@ -1635,7 +2092,7 @@
   
 
           </label>
-          <ul class="md-nav__list" data-md-scrollfix>
+          <ul class="md-nav__list" data-md-scrollfix="">
             
               
                 
@@ -1756,6 +2213,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../webshark/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WebShark
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../tunneler/" class="md-nav__link">
         
   
@@ -1777,62 +2262,6 @@
 
               
             
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-    
-  
-  
-  
-    
-    
-    
-    
-    
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Integrations
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Integrations
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
               
                 
   
@@ -1840,14 +2269,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../api/" class="md-nav__link">
+      <a href="../vlans/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    API
+    VLANs
   
 
     
@@ -1856,314 +2285,6 @@
   
 
       </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-    
-  
-  
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Workflow
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Workflow
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#quick-start" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quick Start
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#topology-directory" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Topology Directory
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Topology Directory">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#branch-name" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Branch Name
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#the-phenix-workflow-apply-command" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The phenix workflow apply Command
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="The phenix workflow apply Command">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Examples
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#variables" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Variables
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Variables">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#included-topology-files" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Included Topology Files
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#show-the-result" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Show the Result
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#workflow-config" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Workflow Config
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Workflow Config">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#schema" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Schema
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#actions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Actions
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#dry-run" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Dry Run
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#validation-errors" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Validation Errors
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#rest-api" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        REST API
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#docker-compose" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Docker Compose
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#settings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Settings
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#limitations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Limitations
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#troubleshooting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Troubleshooting
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#how-it-works" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        How It Works
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -2191,10 +2312,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
         
           
-          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
             
   
   
@@ -2212,8 +2333,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2221,7 +2342,7 @@
   
 
           </label>
-          <ul class="md-nav__list" data-md-scrollfix>
+          <ul class="md-nav__list" data-md-scrollfix="">
             
               
                 
@@ -2251,6 +2372,90 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hosts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hosts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../health/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Health Checks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../doctor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Doctor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2273,10 +2478,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8">
         
           
-          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
             
   
   
@@ -2294,8 +2499,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2303,7 +2508,7 @@
   
 
           </label>
-          <ul class="md-nav__list" data-md-scrollfix>
+          <ul class="md-nav__list" data-md-scrollfix="">
             
               
                 
@@ -2320,10 +2525,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_1">
         
           
-          <label class="md-nav__link" for="__nav_9_1" id="__nav_9_1_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8_1" id="__nav_8_1_label" tabindex="0">
             
   
   
@@ -2341,8 +2546,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_1_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9_1">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_1">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2350,7 +2555,7 @@
   
 
           </label>
-          <ul class="md-nav__list" data-md-scrollfix>
+          <ul class="md-nav__list" data-md-scrollfix="">
             
               
                 
@@ -3047,7 +3252,7 @@
             
             
               
-              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
                     
@@ -3063,7 +3268,7 @@
       <span class="md-nav__icon md-icon"></span>
       Table of contents
     </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
       
         <li class="md-nav__item">
   <a href="#quick-start" class="md-nav__link">
@@ -3233,10 +3438,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#rest-api" class="md-nav__link">
+  <a href="#api" class="md-nav__link">
     <span class="md-ellipsis">
       
-        REST API
+        API
       
     </span>
   </a>
@@ -3288,10 +3493,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-it-works" class="md-nav__link">
+  <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How It Works
+        See Also
       
     </span>
   </a>
@@ -3318,19 +3523,15 @@
   
 
 
-<h1 id="workflow">Workflow<a class="headerlink" href="#workflow" title="Permanent link">&para;</a></h1>
+<h1 id="workflow">Workflow<a class="headerlink" href="#workflow" title="Permanent link">¶</a></h1>
 <p>A <strong>topology directory</strong> holds everything phēnix needs to run an experiment:
 its configs, the files to inject into its VMs, and a <strong>workflow config</strong>
 (<code>phenix.yml</code>) that says whether to create, update, start or restart the
-experiment. <code>phenix workflow apply</code> deploys such a directory in one command,
-and CI jobs and scripts can call the same <a href="#rest-api">REST API</a> endpoints.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p><code>phenix workflow apply</code> runs on the phēnix host, or in the phēnix
-container, and talks to the running <code>phenix ui</code> server through its unix
-socket. Use a server from the same phēnix release as the CLI.</p>
-</div>
-<h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
+experiment. <code>phenix workflow apply</code> deploys such a directory in one command.
+It runs on the phēnix host (or in the phēnix container) and talks to the
+running <code>phenix ui</code> server through its unix socket. CI jobs and scripts can
+call the same <a href="#api">REST API</a>.</p>
+<h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">¶</a></h2>
 <p>Create a topology directory with a topology config, a file to inject and a
 workflow config:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>/phenix/topologies/helloworld/phenix-configs<span class="w"> </span>/phenix/topologies/helloworld/phenix-injects
@@ -3375,19 +3576,19 @@ workflow config:</p>
 </span><span id="__span-0-40"><a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="s">  topology: ${BRANCH_NAME}</span>
 </span><span id="__span-0-41"><a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="s">EOF</span>
 </span></code></pre></div>
-<p>Check what phēnix would do, then deploy:</p>
+<p>Do a dry run, then deploy for real:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>helloworld<span class="w"> </span>-n
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>helloworld
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>phenix<span class="w"> </span>experiment<span class="w"> </span>list
 </span></code></pre></div>
 <p>The dry run logs the plan (<code>action=createAndStart</code>, <code>experiment=helloworld</code>)
-and changes nothing. The second command copies <code>phenix-injects/</code> to
+and changes nothing. The real run copies <code>phenix-injects/</code> to
 <code>/phenix/injects/helloworld</code>, creates the <code>helloworld</code> topology, and creates
-and starts the <code>helloworld</code> experiment. After you change the topology, run it
-again with <code>-f</code> to allow restarting the running experiment:</p>
+and starts the <code>helloworld</code> experiment. After you change the topology, add
+<code>-f</code> so phēnix may restart the running experiment:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>helloworld<span class="w"> </span>-f
 </span></code></pre></div>
-<h2 id="topology-directory">Topology Directory<a class="headerlink" href="#topology-directory" title="Permanent link">&para;</a></h2>
+<h2 id="topology-directory">Topology Directory<a class="headerlink" href="#topology-directory" title="Permanent link">¶</a></h2>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>helloworld/
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>├── .env                # variables for the configs (optional)
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>├── phenix.yml          # workflow config
@@ -3397,35 +3598,35 @@ again with <code>-f</code> to allow restarting the running experiment:</p>
 </span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>└── phenix-injects/     # files to inject into VMs
 </span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    └── motd
 </span></code></pre></div>
-<p>Every part is optional, and a missing part is skipped: a directory with only
-<code>phenix-configs/</code> just creates or updates its configs. A directory with none
-of them is an error.</p>
+<p>Each part is optional and a missing part is skipped, but a directory with
+none of them is an error.</p>
 <ul>
 <li><code>.env</code> - the <a href="#variables">variables</a> for the placeholders in the configs
   and in the workflow config, as <code>NAME=value</code> lines.</li>
-<li><code>phenix.yml</code> - the <a href="#workflow-config">workflow config</a>. A file with another
-  name needs <code>-c</code>.</li>
-<li><code>phenix-configs/</code> - one config per <code>.json</code>, <code>.yaml</code> or <code>.yml</code> file, in
-  subdirectories too. Other files and hidden files are skipped. Each file
-  holds one YAML or JSON document. Each config is created, or updated if it
-  already exists.</li>
+<li><code>phenix.yml</code> - the <a href="#workflow-config">workflow config</a>. Use <code>-c</code> for another
+  name, such as <code>phenix.yaml</code>. An older <code>.phenix.yml</code> is read when there's no
+  <code>phenix.yml</code>, and having both is an error.</li>
+<li><code>phenix-configs/</code> - one config per <code>.json</code>, <code>.yaml</code> or <code>.yml</code> file,
+  subdirectories included (hidden files are skipped). Each file holds one
+  document with a <code>kind</code>. Each config is created or updated, topologies first.</li>
 <li><code>phenix-injects/</code> - copied to <code>&lt;base-dir.injects&gt;/&lt;name&gt;</code> on the phēnix
-  host, by default <code>/phenix/injects/&lt;name&gt;</code>, replacing any previous copy.
+  host (by default <code>/phenix/injects/&lt;name&gt;</code>), replacing the previous copy.
   By default, symlinks inside <code>phenix-injects/</code> are copied as symlinks;
   <code>--follow-inject-symlinks</code> follows them and copies targets as regular files
   or directories.</li>
 </ul>
-<h3 id="branch-name">Branch Name<a class="headerlink" href="#branch-name" title="Permanent link">&para;</a></h3>
-<p><code>&lt;name&gt;</code> is the <strong>workflow branch name</strong>: the directory's name, unless <code>-b</code>
-sets another. It must start with a letter or digit and hold only letters,
-digits, <code>.</code>, <code>_</code> and <code>-</code>.</p>
-<p><code>${BRANCH_NAME}</code> in a config or in the workflow config expands to the branch
-name. The server fills it in, and only <code>-b</code> sets it. The command checks
-every other <code>${VAR}</code> placeholder, and the server fills it in (see
-<a href="#variables">Variables</a>). Configs reference injected files as
-<code>/phenix/injects/${BRANCH_NAME}/&lt;file&gt;</code>. Thus you can deploy one directory
-under several names side by side. An experiment that a workflow creates is
-<a href="#actions">mapped</a> to its branch name.</p>
+<h3 id="branch-name">Branch Name<a class="headerlink" href="#branch-name" title="Permanent link">¶</a></h3>
+<p><code>&lt;name&gt;</code> is the <strong>workflow branch name</strong>: the directory's name, or what you
+set with <code>-b</code>. It holds only letters, digits, <code>.</code>, <code>_</code> and <code>-</code>, and starts
+with a letter or digit. <code>phenix.yml</code>, <code>phenix-configs</code> and <code>phenix-injects</code>
+are reserved, in any letter case: not as the branch name, and not in the top
+two levels of <code>phenix-injects/</code>.</p>
+<p>The branch name decides where the injects go, what <code>${BRANCH_NAME}</code> expands
+to in the configs and the workflow config, and which experiment the workflow
+<a href="#actions">acts on</a>. Only <code>-b</code> sets <code>${BRANCH_NAME}</code>; every other <code>${VAR}</code>
+placeholder is a <a href="#variables">variable</a>. Use <code>${BRANCH_NAME}</code> in names and
+inject paths, as the quick start does, and you can deploy one directory under
+several names. A hard-coded <code>/phenix/injects/lab-a/&lt;file&gt;</code> needs <code>-b lab-a</code>.</p>
 <p>The branch name is not the experiment name. The experiment name is
 <code>auto.create</code> in the <a href="#workflow-config">workflow config</a>. With
 <code>auto.create: ${BRANCH_NAME}</code>, as in the examples on this page, <code>-b</code> also
@@ -3433,19 +3634,11 @@ names the experiment, and each branch name is a separate deployment. A fixed
 <code>auto.create</code> ignores <code>-b</code>. phēnix reads <code>auto.create</code> only when no experiment
 is mapped to the branch, so <code>-b</code> and <code>auto.create</code> do not rename an
 experiment that exists.</p>
-<p>Configs that hard-code the injects path need <code>-b</code> set to the name they use:
-a topology that references <code>/phenix/injects/lab-a/&lt;file&gt;</code> is deployed with
-<code>phenix workflow apply ./site -b lab-a</code>.</p>
-<p>The names <code>phenix.yml</code>, <code>phenix-configs</code> and <code>phenix-injects</code> are reserved, in
-any letter case. A branch name can't be one of them, and they can't appear at
-the top level of <code>phenix-injects/</code> or directly inside one of its top-level
-directories.</p>
-<h2 id="the-phenix-workflow-apply-command">The <code>phenix workflow apply</code> Command<a class="headerlink" href="#the-phenix-workflow-apply-command" title="Permanent link">&para;</a></h2>
+<h2 id="the-phenix-workflow-apply-command">The <code>phenix workflow apply</code> Command<a class="headerlink" href="#the-phenix-workflow-apply-command" title="Permanent link">¶</a></h2>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>&lt;DIR<span class="p">|</span>NAME&gt;<span class="w"> </span><span class="o">[</span>flags<span class="o">]</span>
 </span></code></pre></div>
-<p><code>DIR</code> is the path of a topology directory; use <code>.</code> for the current directory.
-A <code>NAME</code> that isn't an existing path is looked up under <code>base-dir.topologies</code>,
-by default <code>/phenix/topologies/NAME</code>, so the command works from any directory.</p>
+<p>A <code>NAME</code> that isn't an existing path is looked up under <code>base-dir.topologies</code>
+(by default <code>/phenix/topologies/NAME</code>).</p>
 <table>
 <thead>
 <tr>
@@ -3456,9 +3649,9 @@ by default <code>/phenix/topologies/NAME</code>, so the command works from any d
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><code>-b, --branch-name</code></td>
+<td style="text-align: left;"><code>-b, --branch-name</code>, <code>--name</code></td>
 <td style="text-align: left;">the directory's name</td>
-<td style="text-align: left;">The workflow <a href="#branch-name">branch name</a>. It does not rename an experiment.</td>
+<td style="text-align: left;">The workflow <a href="#branch-name">branch name</a>. It does not rename an experiment. <code>--name</code> is an alias; if you give both, use the same value.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>-c, --config</code></td>
@@ -3478,7 +3671,7 @@ by default <code>/phenix/topologies/NAME</code>, so the command works from any d
 <tr>
 <td style="text-align: left;"><code>-n, --dry-run</code></td>
 <td style="text-align: left;"><code>false</code></td>
-<td style="text-align: left;">Validate everything, log the server's plan, and change nothing.</td>
+<td style="text-align: left;">Check everything, log the server's plan, and change nothing.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>-f, --force</code></td>
@@ -3493,38 +3686,29 @@ by default <code>/phenix/topologies/NAME</code>, so the command works from any d
 </tbody>
 </table>
 <p>The global flags <code>--unix-socket</code>, <code>--base-dir.injects</code>, <code>--base-dir.topologies</code>
-and <code>--log.level</code> also apply; see <a href="../settings/#global-flags">Global Flags</a>.</p>
-<p>The command never prompts. It reports through the phēnix logger and runs five
-steps, named in the <code>step</code> field of its log lines. Nothing changes before
-<code>injects</code>:</p>
+and <code>--log.level</code> also apply (see <a href="../settings/#global-flags">Global Flags</a>).</p>
+<p>The command never prompts. It runs five steps, and each log line names its
+step in the <code>step</code> field:</p>
 <ol>
-<li><strong><code>preflight</code></strong> - checks that the server answers, fills in the
-   <a href="#variables">variables</a>, and checks that every file can be read and
-   parsed.</li>
-<li><strong><code>plan</code></strong> - the server <a href="#dry-run">dry-runs</a> every config and the workflow
-   config, and the plan is logged. <code>-n</code> stops here. Without <code>-f</code>, so does a
-   plan that would restart a running experiment.</li>
-<li><strong><code>injects</code></strong> - copies <code>phenix-injects/</code> into place.</li>
-<li><strong><code>configs</code></strong> - creates or updates each config, topologies first.</li>
-<li><strong><code>apply</code></strong> - applies the workflow config: the server creates, updates,
-   starts or restarts the experiment (see <a href="#actions">Actions</a>).</li>
+<li><code>preflight</code> - checks that the server answers, fills in the
+   <a href="#variables">variables</a>, and checks that every file parses.</li>
+<li><code>plan</code> - the server <a href="#dry-run">dry-runs</a> everything, and the plan is
+   logged. <code>-n</code> stops here, and so does a restart without <code>-f</code>.</li>
+<li><code>injects</code> - copies <code>phenix-injects/</code> into place. Nothing changes before
+   this step.</li>
+<li><code>configs</code> - creates or updates each config.</li>
+<li><code>apply</code> - applies the workflow config (see <a href="#actions">Actions</a>).</li>
 </ol>
-<p>The exit status is 0 when the run completed or a dry run passed, and non-zero
-otherwise.</p>
-<p>The apply records where it came from in the experiment's
-<code>phenix.workflow/tags</code> annotation: <code>method=workflow</code>, the directory (<code>dir</code>),
-the branch name (<code>branch</code>), the time (<code>workflow_date</code>) and, when the directory
-is in a git work tree, the short <code>commit</code>, with a <code>-dirty</code> suffix for
-uncommitted changes.</p>
+<p>The exit status is 0 when the run completed or the dry run passed. Each apply
+tags the experiment, in its <code>phenix.workflow/tags</code> annotation, with
+<code>method=workflow</code>, <code>dir</code>, <code>branch</code>, <code>workflow_date</code> and the git <code>commit</code>.</p>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p>Run the command from outside a topology directory you didn't write.
+<p>Don't run the command from inside a topology directory you didn't write:
 phēnix reads its settings files (<code>config.*</code> and <code>users.*</code>) from the
-current directory first, so such a file in the directory could change the
-settings of the run.</p>
+current directory first.</p>
 </div>
-<h3 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">&para;</a></h3>
-<p>The <a href="../cli/workflow/#phenix-workflow-apply">CLI reference</a> has the full list.</p>
+<h3 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">¶</a></h3>
 <table>
 <thead>
 <tr>
@@ -3544,14 +3728,6 @@ settings of the run.</p>
 <tr>
 <td style="text-align: left;"><code>phenix workflow apply .</code></td>
 <td style="text-align: left;">Deploy the current directory.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><code>phenix workflow apply helloworld -n</code></td>
-<td style="text-align: left;">Validate everything and log the plan.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><code>phenix workflow apply helloworld -f</code></td>
-<td style="text-align: left;">Allow restarting the running experiment.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>phenix workflow apply helloworld -b helloworld-2</code></td>
@@ -3578,25 +3754,12 @@ settings of the run.</p>
 <td style="text-align: left;">Follow symlinks in <code>phenix-injects/</code> and copy targets as regular files or directories.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>phenix workflow apply helloworld -c alt.yml</code></td>
-<td style="text-align: left;">Use another workflow config from the directory.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><code>docker exec phenix phenix workflow apply helloworld -f</code></td>
-<td style="text-align: left;">Run it in a <a href="#docker-compose">Docker Compose</a> deployment.</td>
+<td style="text-align: left;"><code>: "${BRANCH:?}" &amp;&amp; phenix workflow apply ./site -b "${BRANCH//\//-}" -f</code></td>
+<td style="text-align: left;">In CI, deploy a checkout under its git branch name (<code>/</code> isn't allowed in a branch name).</td>
 </tr>
 </tbody>
 </table>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># In CI, deploy a checkout under its git branch name. "/" isn't allowed in a</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># workflow branch name, and the guard stops the command when BRANCH is unset</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>:<span class="w"> </span><span class="s2">"</span><span class="si">${</span><span class="nv">BRANCH</span><span class="p">:?</span><span class="si">}</span><span class="s2">"</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>./site<span class="w"> </span>-b<span class="w"> </span><span class="s2">"</span><span class="si">${</span><span class="nv">BRANCH</span><span class="p">//</span><span class="se">\/</span><span class="p">/-</span><span class="si">}</span><span class="s2">"</span><span class="w"> </span>-f
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="c1"># Check every topology directory without changing anything</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="k">for</span><span class="w"> </span>dir<span class="w"> </span><span class="k">in</span><span class="w"> </span>/phenix/topologies/*/<span class="p">;</span><span class="w"> </span><span class="k">do</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span><span class="s2">"</span><span class="nv">$dir</span><span class="s2">"</span><span class="w"> </span>-n<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"check </span><span class="nv">$dir</span><span class="s2">"</span>
-</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="k">done</span>
-</span></code></pre></div>
-<h2 id="variables">Variables<a class="headerlink" href="#variables" title="Permanent link">&para;</a></h2>
+<h2 id="variables">Variables<a class="headerlink" href="#variables" title="Permanent link">¶</a></h2>
 <p><code>phenix workflow apply</code> fills in the <code>${NAME}</code> and <code>${NAME:default}</code>
 placeholders of each file in <code>phenix-configs/</code> and of the workflow config to
 check them. Then it sends each file as written, with the variables, and the
@@ -3618,22 +3781,22 @@ has it:</p>
 <p>The command sends only the shell variables whose names are valid variable
 names, and stops when the variables are larger than 1 MiB as JSON.</p>
 <p>For example, a topology directory can hold its defaults in <code>.env</code>:</p>
-<div class="language-text highlight"><span class="filename">helloworld/.env</span><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>SITE=lab
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>MEMORY=2048
+<div class="language-text highlight"><span class="filename">helloworld/.env</span><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>SITE=lab
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>MEMORY=2048
 </span></code></pre></div>
 <p>A config uses the variables, and gives a default to a variable that is
 optional:</p>
-<div class="language-yaml highlight"><span class="filename">helloworld/phenix-configs/topology.yml (part)</span><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="w">    </span><span class="nt">general</span><span class="p">:</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">      </span><span class="nt">hostname</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${SITE}-host-01</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="nt">hardware</span><span class="p">:</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">      </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${MEMORY}</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">      </span><span class="nt">drives</span><span class="p">:</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${IMAGE:ubuntu.qc2}</span>
+<div class="language-yaml highlight"><span class="filename">helloworld/phenix-configs/topology.yml (part)</span><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="w">    </span><span class="nt">general</span><span class="p">:</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">      </span><span class="nt">hostname</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${SITE}-host-01</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="nt">hardware</span><span class="p">:</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">      </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${MEMORY}</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">      </span><span class="nt">drives</span><span class="p">:</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${IMAGE:ubuntu.qc2}</span>
 </span></code></pre></div>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>helloworld<span class="w">                      </span><span class="c1"># lab-host-01, 2048, ubuntu.qc2</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>helloworld<span class="w"> </span>-e<span class="w"> </span><span class="nv">MEMORY</span><span class="o">=</span><span class="m">4096</span><span class="w">       </span><span class="c1"># lab-host-01, 4096, ubuntu.qc2</span>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="nv">MEMORY</span><span class="o">=</span><span class="m">8192</span><span class="w"> </span>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>helloworld<span class="w">          </span><span class="c1"># 2048: .env overrides the shell</span>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="nv">MEMORY</span><span class="o">=</span><span class="m">8192</span><span class="w"> </span>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>helloworld<span class="w"> </span>-e<span class="w"> </span>MEMORY<span class="w">  </span><span class="c1"># 8192: -e copies it from the shell</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>helloworld<span class="w">                      </span><span class="c1"># lab-host-01, 2048, ubuntu.qc2</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>helloworld<span class="w"> </span>-e<span class="w"> </span><span class="nv">MEMORY</span><span class="o">=</span><span class="m">4096</span><span class="w">       </span><span class="c1"># lab-host-01, 4096, ubuntu.qc2</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nv">MEMORY</span><span class="o">=</span><span class="m">8192</span><span class="w"> </span>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>helloworld<span class="w">          </span><span class="c1"># 2048: .env overrides the shell</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="nv">MEMORY</span><span class="o">=</span><span class="m">8192</span><span class="w"> </span>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>helloworld<span class="w"> </span>-e<span class="w"> </span>MEMORY<span class="w">  </span><span class="c1"># 8192: -e copies it from the shell</span>
 </span></code></pre></div>
 <p>The command checks every variable in the <code>preflight</code> step, before it changes
 anything:</p>
@@ -3658,7 +3821,7 @@ removes most of that environment, and with <code>docker exec</code> the shell is
 of the container. Use <code>-e</code>, an env file, or <code>docker exec -e NAME=value</code> in
 these cases.</p>
 </div>
-<h3 id="included-topology-files">Included Topology Files<a class="headerlink" href="#included-topology-files" title="Permanent link">&para;</a></h3>
+<h3 id="included-topology-files">Included Topology Files<a class="headerlink" href="#included-topology-files" title="Permanent link">¶</a></h3>
 <p>The server reads a topology file that <code>includeTopologies</code> names by a path, so
 the command can't check its placeholders. The server fills them in with the
 variables of the command. It gives a placeholder that no variable sets the
@@ -3670,7 +3833,7 @@ first of these values:</p>
 </ol>
 <p>The server logs each warning with the file, the line and the variable, and the
 command logs it in the <code>plan</code> step:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>/phenix/topologies/common/net.yml line 3: no variable SITE in the request or in the server environment, and the placeholder has no default; phenix used an empty string
+<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>/phenix/topologies/common/net.yml line 3: no variable SITE in the request or in the server environment, and the placeholder has no default; phenix used an empty string
 </span></code></pre></div>
 <p>A warning is for one file, variable and kind. It gives the first line and the
 count of the other lines, for example <code>line 3 (and 2 other lines)</code>. The server
@@ -3681,53 +3844,53 @@ server fills in the variables and the branch name. A larger text is an error.</p
 <p>The dry run reads each topology file that the topology of the workflow config
 includes, for every plan. So the <code>plan</code> step reports a line break in an
 included file.</p>
-<h3 id="show-the-result">Show the Result<a class="headerlink" href="#show-the-result" title="Permanent link">&para;</a></h3>
+<h3 id="show-the-result">Show the Result<a class="headerlink" href="#show-the-result" title="Permanent link">¶</a></h3>
 <p><code>phenix workflow render</code> prints each config, and then the workflow config,
 with the variables and the branch name filled in. The text is what the server
 has after an apply. The command does not contact the server and changes
 nothing. It does not read the topology files that <code>includeTopologies</code> names,
 so a <code>-e</code> variable that only such a file uses is an error in <code>render</code>.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>phenix<span class="w"> </span>workflow<span class="w"> </span>render<span class="w"> </span>helloworld<span class="w"> </span>-b<span class="w"> </span>helloworld-2<span class="w"> </span>-e<span class="w"> </span><span class="nv">MEMORY</span><span class="o">=</span><span class="m">4096</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>phenix<span class="w"> </span>workflow<span class="w"> </span>render<span class="w"> </span>helloworld<span class="w"> </span>-b<span class="w"> </span>helloworld-2<span class="w"> </span>-e<span class="w"> </span><span class="nv">MEMORY</span><span class="o">=</span><span class="m">4096</span>
 </span></code></pre></div>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a># phenix-configs/topology.yml
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>apiVersion: phenix.sandia.gov/v1
-</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>kind: Topology
-</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>metadata:
-</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>  name: helloworld-2
-</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>...
-</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>---
-</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a># phenix.yml
-</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>apiVersion: phenix.sandia.gov/v0
-</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>kind: Workflow
-</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>...
+<div class="language-text highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a># phenix-configs/topology.yml
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>apiVersion: phenix.sandia.gov/v1
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>kind: Topology
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>metadata:
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>  name: helloworld-2
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>...
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>---
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a># phenix.yml
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>apiVersion: phenix.sandia.gov/v0
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>kind: Workflow
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>...
 </span></code></pre></div>
 <p>The command takes <code>-b</code>, <code>-c</code>, <code>-e</code> and <code>--env-file</code>, and gives the same
 variable errors as <code>phenix workflow apply</code>, except that a <code>-e</code> variable that
 only an included topology file uses is an error. Its output can hold secrets: it
 shows the value of each variable that a file uses.</p>
-<h2 id="workflow-config">Workflow Config<a class="headerlink" href="#workflow-config" title="Permanent link">&para;</a></h2>
+<h2 id="workflow-config">Workflow Config<a class="headerlink" href="#workflow-config" title="Permanent link">¶</a></h2>
 <p>The workflow config is a phēnix config of kind <code>Workflow</code>. It isn't stored in
-phēnix; it's sent with each apply.</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">phenix.sandia.gov/v0</span>
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Workflow</span>
-</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="nt">metadata</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
-</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">  </span><span class="nt">auto</span><span class="p">:</span>
-</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="w">    </span><span class="nt">create</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${BRANCH_NAME}</span>
-</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">    </span><span class="nt">update</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">    </span><span class="nt">restart</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${BRANCH_NAME}</span>
-</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="w">  </span><span class="nt">scenario</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${BRANCH_NAME}</span>
-</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="w">  </span><span class="nt">vlans</span><span class="p">:</span>
-</span><span id="__span-12-12"><a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="w">    </span><span class="nt">EXP</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">101</span>
-</span><span id="__span-12-13"><a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a><span class="w">  </span><span class="nt">schedules</span><span class="p">:</span>
-</span><span id="__span-12-14"><a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a><span class="w">    </span><span class="nt">host-01</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">compute1</span>
-</span><span id="__span-12-15"><a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a><span class="w">  </span><span class="nt">deployMode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">all</span>
-</span><span id="__span-12-16"><a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a><span class="w">  </span><span class="nt">useGREMesh</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
-</span><span id="__span-12-17"><a id="__codelineno-12-17" name="__codelineno-12-17" href="#__codelineno-12-17"></a><span class="w">  </span><span class="nt">vlanRange</span><span class="p">:</span>
-</span><span id="__span-12-18"><a id="__codelineno-12-18" name="__codelineno-12-18" href="#__codelineno-12-18"></a><span class="w">    </span><span class="nt">min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
-</span><span id="__span-12-19"><a id="__codelineno-12-19" name="__codelineno-12-19" href="#__codelineno-12-19"></a><span class="w">    </span><span class="nt">max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">200</span>
-</span><span id="__span-12-20"><a id="__codelineno-12-20" name="__codelineno-12-20" href="#__codelineno-12-20"></a><span class="w">  </span><span class="nt">defaultBridge</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">phenix</span>
+phēnix; it's sent with each apply. <code>spec: {}</code> applies every default.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">phenix.sandia.gov/v0</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Workflow</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="nt">metadata</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">  </span><span class="nt">auto</span><span class="p">:</span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">    </span><span class="nt">create</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${BRANCH_NAME}</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">    </span><span class="nt">update</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">    </span><span class="nt">restart</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${BRANCH_NAME}</span>
+</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="w">  </span><span class="nt">scenario</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${BRANCH_NAME}</span>
+</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="w">  </span><span class="nt">vlans</span><span class="p">:</span>
+</span><span id="__span-11-12"><a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a><span class="w">    </span><span class="nt">EXP</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">101</span>
+</span><span id="__span-11-13"><a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="w">  </span><span class="nt">schedules</span><span class="p">:</span>
+</span><span id="__span-11-14"><a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a><span class="w">    </span><span class="nt">host-01</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">compute1</span>
+</span><span id="__span-11-15"><a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="w">  </span><span class="nt">deployMode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">all</span>
+</span><span id="__span-11-16"><a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a><span class="w">  </span><span class="nt">useGREMesh</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-11-17"><a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a><span class="w">  </span><span class="nt">vlanRange</span><span class="p">:</span>
+</span><span id="__span-11-18"><a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a><span class="w">    </span><span class="nt">min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+</span><span id="__span-11-19"><a id="__codelineno-11-19" name="__codelineno-11-19" href="#__codelineno-11-19"></a><span class="w">    </span><span class="nt">max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">200</span>
+</span><span id="__span-11-20"><a id="__codelineno-11-20" name="__codelineno-11-20" href="#__codelineno-11-20"></a><span class="w">  </span><span class="nt">defaultBridge</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">phenix</span>
 </span></code></pre></div>
 <table>
 <thead>
@@ -3739,49 +3902,29 @@ phēnix; it's sent with each apply.</p>
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><code>apiVersion</code></td>
-<td style="text-align: left;">required</td>
-<td style="text-align: left;"><code>phenix.sandia.gov/v0</code>.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><code>kind</code></td>
-<td style="text-align: left;">required</td>
-<td style="text-align: left;"><code>Workflow</code>.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><code>metadata</code></td>
-<td style="text-align: left;"></td>
-<td style="text-align: left;">Not used today. It is accepted so a workflow config has the same top-level keys as every other phēnix config, and so a later version can add a name or annotations without a breaking change.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><code>spec</code></td>
-<td style="text-align: left;">required</td>
-<td style="text-align: left;">Holds the fields below; <code>spec: {}</code> applies every default.</td>
-</tr>
-<tr>
 <td style="text-align: left;"><code>auto.create</code></td>
 <td style="text-align: left;">unset</td>
-<td style="text-align: left;">The name of the experiment to create when none is mapped to the branch. Unset never creates one. phēnix does not read it when an experiment is mapped to the branch.</td>
+<td style="text-align: left;">The experiment to create when none is mapped to the branch. Unset, none is created.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>auto.update</code></td>
 <td style="text-align: left;"><code>true</code></td>
-<td style="text-align: left;">Update the experiment mapped to the branch. A running experiment is only updated if <code>auto.restart</code> is also true.</td>
+<td style="text-align: left;">Update the mapped experiment. A running one is only updated if <code>auto.restart</code> is true too.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>auto.restart</code></td>
 <td style="text-align: left;"><code>true</code></td>
-<td style="text-align: left;">Restart a running experiment to update it, and start an experiment that was just created or updated.</td>
+<td style="text-align: left;">Restart a running experiment to update it, and start a new or updated one.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>topology</code></td>
 <td style="text-align: left;">the experiment's topology</td>
-<td style="text-align: left;">The topology config to use. Required to create an experiment.</td>
+<td style="text-align: left;">The topology config. Required to create an experiment.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>scenario</code></td>
 <td style="text-align: left;">the experiment's scenario</td>
-<td style="text-align: left;">The scenario config to use, if any.</td>
+<td style="text-align: left;">The scenario config, if any.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>vlans</code></td>
@@ -3796,7 +3939,7 @@ phēnix; it's sent with each apply.</p>
 <tr>
 <td style="text-align: left;"><code>deployMode</code></td>
 <td style="text-align: left;">the server's <code>deploy-mode</code></td>
-<td style="text-align: left;">Which minimega VMs to deploy: <code>all</code>, <code>no-headnode</code> or <code>only-headnode</code>.</td>
+<td style="text-align: left;"><code>all</code>, <code>no-headnode</code> or <code>only-headnode</code>.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>useGREMesh</code></td>
@@ -3811,20 +3954,19 @@ phēnix; it's sent with each apply.</p>
 <tr>
 <td style="text-align: left;"><code>defaultBridge</code></td>
 <td style="text-align: left;"><code>phenix</code></td>
-<td style="text-align: left;">The bridge VMs connect to by default: at most 15 ASCII letters, digits, <code>_</code>, <code>@</code>, <code>.</code>, or <code>-</code> and, unless it's <code>phenix</code>, used by no other experiment.</td>
+<td style="text-align: left;">The bridge VMs connect to by default: at most 15 ASCII letters, digits, <code>_</code>, <code>@</code>, <code>.</code> or <code>-</code>. Unless it's <code>phenix</code>, no other experiment may use it.</td>
 </tr>
 </tbody>
 </table>
-<h3 id="schema">Schema<a class="headerlink" href="#schema" title="Permanent link">&para;</a></h3>
-<p>The config is validated against the <code>Workflow</code> schema in
+<h3 id="schema">Schema<a class="headerlink" href="#schema" title="Permanent link">¶</a></h3>
+<p>The config must match the <code>Workflow</code> schema in
 <a href="https://github.com/sandialabs/sceptre-phenix/blob/main/src/go/types/version/schemas/v0.yaml"><code>v0.yaml</code></a>,
-which a running server serves at <code>GET /api/v1/schemas/workflow/v0</code>. An unknown
-or misspelled key, a value of the wrong type or a missing <code>spec</code> is rejected
-with a <a href="#validation-errors">validation error</a> and changes nothing.</p>
-<h3 id="actions">Actions<a class="headerlink" href="#actions" title="Permanent link">&para;</a></h3>
+also served at <code>GET /api/v1/schemas/workflow/v0</code>. An unknown key or a wrong
+type gets a <a href="#validation-errors">validation error</a>.</p>
+<h3 id="actions">Actions<a class="headerlink" href="#actions" title="Permanent link">¶</a></h3>
 <p>An experiment is <strong>mapped</strong> to a branch when its <code>phenix.workflow/branch</code>
-annotation is the branch name. phēnix sets it on the experiments a workflow
-creates. The server plans one action from the experiments mapped to the
+annotation is the branch name; phēnix sets it on each experiment a workflow
+creates. The server picks one action from the experiments mapped to the
 branch:</p>
 <table>
 <thead>
@@ -3882,87 +4024,87 @@ branch:</p>
 </tr>
 </tbody>
 </table>
-<p>It is also an error when <code>auto.create</code> names an existing experiment that
-isn't mapped to the branch.</p>
-<p>A <code>restart</code> checks the disks of its start before it stops the experiment. If
-the start would fail, the apply fails, and the experiment continues to run.</p>
-<h2 id="dry-run">Dry Run<a class="headerlink" href="#dry-run" title="Permanent link">&para;</a></h2>
-<p><code>phenix workflow apply -n</code> asks the server to check everything the command
-would send, and changes nothing. A real apply runs the same checks before it
-changes anything, so a mistake in a config never stops a running experiment.
-The server checks that:</p>
-<ul>
-<li>each config passes its schema, and each topology's nodes pass the checks an
-  experiment start makes, such as duplicate or reserved hostnames;</li>
-<li>the workflow config passes its <a href="#schema">schema</a>;</li>
-<li>the topology and scenario the workflow config names exist and, to create an
-  experiment, that the scenario is annotated for the topology;</li>
-<li>the plan has no conflict (see <a href="#actions">Actions</a>).</li>
-</ul>
-<p>A first deploy can be checked too: the topology and scenario may come from
-the directory's <code>phenix-configs/</code> before they are stored in phēnix.</p>
-<h2 id="validation-errors">Validation Errors<a class="headerlink" href="#validation-errors" title="Permanent link">&para;</a></h2>
+<p><code>auto.create</code> is only read when no experiment is mapped, so changing it later
+doesn't rename the experiment. It's an error when it names an existing
+experiment that isn't mapped, so don't put an <code>Experiment</code> config by that name
+in <code>phenix-configs/</code>.</p>
+<p>A <code>restart</code> runs the start's
+<a href="../experiments/#disk-check-before-a-start">disk check</a> first: if the start
+would fail, the apply fails and the experiment keeps running. After a start,
+the scenario's <code>runPeriodically</code> apps run in an <code>experiments.periodic</code>
+<a href="../jobs/">background job</a>.</p>
+<h2 id="dry-run">Dry Run<a class="headerlink" href="#dry-run" title="Permanent link">¶</a></h2>
+<p>A dry run (<code>-n</code>) runs every check and changes nothing. A real apply runs the
+same checks first, so a broken config never stops a running experiment. The
+server checks each config's schema and each topology's nodes (such as
+duplicate or reserved hostnames), the workflow config's <a href="#schema">schema</a>,
+that the topology and scenario exist (stored or in <code>phenix-configs/</code>) and go
+together, and that the plan has no conflict.</p>
+<p>If the plan starts the experiment, the dry run also runs the
+<a href="../experiments/#disk-check-before-a-start">disk check</a>. It reports problems as
+warnings (in <code>warnings</code> in the REST response) without failing; a problem that
+would stop the start begins with <code>the start would fail:</code>.</p>
+<p>A dry run doesn't merge the topologies that an unstored topology includes,
+and only checks the schema of an <code>Experiment</code> config. So the real apply can
+still fail after the injects and configs are in place, but before the
+experiment changes.</p>
+<h2 id="validation-errors">Validation Errors<a class="headerlink" href="#validation-errors" title="Permanent link">¶</a></h2>
 <p>When a config fails schema validation, phēnix explains each error in one line:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>&lt;item&gt; "&lt;hostname|name&gt;" (line N): &lt;what&gt; (at &lt;sub-path&gt;)
+<div class="language-text highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>&lt;item&gt; "&lt;hostname|name&gt;" (line N): &lt;what&gt; (at &lt;sub-path&gt;)
 </span></code></pre></div>
-<p><code>&lt;item&gt;</code> is the list element that holds the error, such as <code>nodes[1]</code>, with
-its hostname or name, and <code>&lt;sub-path&gt;</code> is the path inside it. When a missing
-key exists elsewhere in the same item, usually because it's indented at the
-wrong level, a <code>hint:</code> line follows.</p>
-<p>For example, a topology where the second node's <code>image</code> is one level too high:</p>
-<div class="language-yaml highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-14-1"> 1</a></span>
-<span class="normal"><a href="#__codelineno-14-2"> 2</a></span>
-<span class="normal"><a href="#__codelineno-14-3"> 3</a></span>
-<span class="normal"><a href="#__codelineno-14-4"> 4</a></span>
-<span class="normal"><a href="#__codelineno-14-5"> 5</a></span>
-<span class="normal"><a href="#__codelineno-14-6"> 6</a></span>
-<span class="normal"><a href="#__codelineno-14-7"> 7</a></span>
-<span class="normal"><a href="#__codelineno-14-8"> 8</a></span>
-<span class="normal"><a href="#__codelineno-14-9"> 9</a></span>
-<span class="normal"><a href="#__codelineno-14-10">10</a></span>
-<span class="normal"><a href="#__codelineno-14-11">11</a></span>
-<span class="normal"><a href="#__codelineno-14-12">12</a></span>
-<span class="normal"><a href="#__codelineno-14-13">13</a></span>
-<span class="normal"><a href="#__codelineno-14-14">14</a></span>
-<span class="normal"><a href="#__codelineno-14-15">15</a></span>
-<span class="normal"><a href="#__codelineno-14-16">16</a></span>
-<span class="normal"><a href="#__codelineno-14-17">17</a></span>
-<span class="normal"><a href="#__codelineno-14-18">18</a></span>
-<span class="normal"><a href="#__codelineno-14-19">19</a></span>
-<span class="normal"><a href="#__codelineno-14-20">20</a></span>
-<span class="normal"><a href="#__codelineno-14-21">21</a></span></pre></div></td><td class="code"><div><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">phenix.sandia.gov/v1</span>
-</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Topology</span>
-</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">helloworld</span>
-</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-14-6"><a id="__codelineno-14-6" name="__codelineno-14-6"></a><span class="w">  </span><span class="nt">nodes</span><span class="p">:</span>
-</span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">VirtualMachine</span>
-</span><span id="__span-14-8"><a id="__codelineno-14-8" name="__codelineno-14-8"></a><span class="w">    </span><span class="nt">general</span><span class="p">:</span>
-</span><span id="__span-14-9"><a id="__codelineno-14-9" name="__codelineno-14-9"></a><span class="w">      </span><span class="nt">hostname</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">host-01</span>
-</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10"></a><span class="w">    </span><span class="nt">hardware</span><span class="p">:</span>
-</span><span id="__span-14-11"><a id="__codelineno-14-11" name="__codelineno-14-11"></a><span class="w">      </span><span class="nt">os_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">linux</span>
-</span><span id="__span-14-12"><a id="__codelineno-14-12" name="__codelineno-14-12"></a><span class="w">      </span><span class="nt">drives</span><span class="p">:</span>
-</span><span id="__span-14-13"><a id="__codelineno-14-13" name="__codelineno-14-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu.qc2</span>
-</span><span id="__span-14-14"><a id="__codelineno-14-14" name="__codelineno-14-14"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">VirtualMachine</span>
-</span><span id="__span-14-15"><a id="__codelineno-14-15" name="__codelineno-14-15"></a><span class="w">    </span><span class="nt">general</span><span class="p">:</span>
-</span><span id="__span-14-16"><a id="__codelineno-14-16" name="__codelineno-14-16"></a><span class="w">      </span><span class="nt">hostname</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">host-02</span>
-</span><span id="__span-14-17"><a id="__codelineno-14-17" name="__codelineno-14-17"></a><span class="w">    </span><span class="nt">hardware</span><span class="p">:</span>
-</span><span id="__span-14-18"><a id="__codelineno-14-18" name="__codelineno-14-18"></a><span class="w">      </span><span class="nt">os_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">linux</span>
-</span><span id="__span-14-19"><a id="__codelineno-14-19" name="__codelineno-14-19"></a><span class="w">      </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu.qc2</span>
-</span><span id="__span-14-20"><a id="__codelineno-14-20" name="__codelineno-14-20"></a><span class="w">      </span><span class="nt">drives</span><span class="p">:</span>
-</span><span id="__span-14-21"><a id="__codelineno-14-21" name="__codelineno-14-21"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">interface</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">virtio</span>
-</span></code></pre></div></td></tr></table></div>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>nodes[1] "host-02" (line 21): property "image" is missing (at hardware.drives[0].image)
-</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>  hint: "image:" is on line 19 under nodes[1].hardware, but the schema expects it at nodes[1].hardware.drives[0].image
+<p>When the missing key is somewhere else in the same item (usually indented at
+the wrong level), a <code>hint:</code> line follows. For example, here the second node's
+<code>image</code> is one level too high:</p>
+<div class="language-yaml highlight"><table class="highlighttable"><tbody><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-13-1"> 1</a></span>
+<span class="normal"><a href="#__codelineno-13-2"> 2</a></span>
+<span class="normal"><a href="#__codelineno-13-3"> 3</a></span>
+<span class="normal"><a href="#__codelineno-13-4"> 4</a></span>
+<span class="normal"><a href="#__codelineno-13-5"> 5</a></span>
+<span class="normal"><a href="#__codelineno-13-6"> 6</a></span>
+<span class="normal"><a href="#__codelineno-13-7"> 7</a></span>
+<span class="normal"><a href="#__codelineno-13-8"> 8</a></span>
+<span class="normal"><a href="#__codelineno-13-9"> 9</a></span>
+<span class="normal"><a href="#__codelineno-13-10">10</a></span>
+<span class="normal"><a href="#__codelineno-13-11">11</a></span>
+<span class="normal"><a href="#__codelineno-13-12">12</a></span>
+<span class="normal"><a href="#__codelineno-13-13">13</a></span>
+<span class="normal"><a href="#__codelineno-13-14">14</a></span>
+<span class="normal"><a href="#__codelineno-13-15">15</a></span>
+<span class="normal"><a href="#__codelineno-13-16">16</a></span>
+<span class="normal"><a href="#__codelineno-13-17">17</a></span>
+<span class="normal"><a href="#__codelineno-13-18">18</a></span>
+<span class="normal"><a href="#__codelineno-13-19">19</a></span>
+<span class="normal"><a href="#__codelineno-13-20">20</a></span>
+<span class="normal"><a href="#__codelineno-13-21">21</a></span></pre></div></td><td class="code"><div><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">phenix.sandia.gov/v1</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Topology</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">helloworld</span>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6"></a><span class="w">  </span><span class="nt">nodes</span><span class="p">:</span>
+</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">VirtualMachine</span>
+</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8"></a><span class="w">    </span><span class="nt">general</span><span class="p">:</span>
+</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9"></a><span class="w">      </span><span class="nt">hostname</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">host-01</span>
+</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10"></a><span class="w">    </span><span class="nt">hardware</span><span class="p">:</span>
+</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11"></a><span class="w">      </span><span class="nt">os_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">linux</span>
+</span><span id="__span-13-12"><a id="__codelineno-13-12" name="__codelineno-13-12"></a><span class="w">      </span><span class="nt">drives</span><span class="p">:</span>
+</span><span id="__span-13-13"><a id="__codelineno-13-13" name="__codelineno-13-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu.qc2</span>
+</span><span id="__span-13-14"><a id="__codelineno-13-14" name="__codelineno-13-14"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">VirtualMachine</span>
+</span><span id="__span-13-15"><a id="__codelineno-13-15" name="__codelineno-13-15"></a><span class="w">    </span><span class="nt">general</span><span class="p">:</span>
+</span><span id="__span-13-16"><a id="__codelineno-13-16" name="__codelineno-13-16"></a><span class="w">      </span><span class="nt">hostname</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">host-02</span>
+</span><span id="__span-13-17"><a id="__codelineno-13-17" name="__codelineno-13-17"></a><span class="w">    </span><span class="nt">hardware</span><span class="p">:</span>
+</span><span id="__span-13-18"><a id="__codelineno-13-18" name="__codelineno-13-18"></a><span class="w">      </span><span class="nt">os_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">linux</span>
+</span><span id="__span-13-19"><a id="__codelineno-13-19" name="__codelineno-13-19"></a><span class="w">      </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu.qc2</span>
+</span><span id="__span-13-20"><a id="__codelineno-13-20" name="__codelineno-13-20"></a><span class="w">      </span><span class="nt">drives</span><span class="p">:</span>
+</span><span id="__span-13-21"><a id="__codelineno-13-21" name="__codelineno-13-21"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">interface</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">virtio</span>
+</span></code></pre></div></td></tr></tbody></table></div>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>nodes[1] "host-02" (line 21): property "image" is missing (at hardware.drives[0].image)
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>  hint: "image:" is on line 19 under nodes[1].hardware, but the schema expects it at nodes[1].hardware.drives[0].image
 </span></code></pre></div>
-<p>These lines appear in the output of <code>phenix workflow apply</code> and
-<code>phenix config create</code>, in the web UI's config editor and upload dialog, and
-in the <code>metadata.validation</code> field of API errors. The validator's original
-text is in <code>metadata.validation-raw</code>.</p>
-<h2 id="rest-api">REST API<a class="headerlink" href="#rest-api" title="Permanent link">&para;</a></h2>
-<p>The command is a client of two endpoints, which CI jobs and scripts can call
-directly. The <a href="../api/">API docs</a> list every parameter and status under the
-<code>Workflow</code> tag.</p>
+<p><code>phenix config create</code>, the web UI's config editor and API errors (in
+<code>metadata.validation</code>) show the same lines.</p>
+<h2 id="api">API<a class="headerlink" href="#api" title="Permanent link">¶</a></h2>
+<p>The command uses two endpoints, listed under the <code>Workflow</code> tag in the
+<a href="../api/">API docs</a>.</p>
 <table>
 <thead>
 <tr>
@@ -3981,10 +4123,9 @@ directly. The <a href="../api/">API docs</a> list every parameter and status und
 </tr>
 </tbody>
 </table>
-<p>Send the file as the body, with <code>Content-Type: application/x-yaml</code> or
-<code>application/json</code>. When authentication is enabled, add the
-<code>X-phenix-auth-token: Bearer &lt;token&gt;</code> header (see
-<a href="../api/#authentication">API</a>).</p>
+<p>Send the file as the body with <code>Content-Type: application/x-yaml</code> or
+<code>application/json</code>, plus an
+<a href="../api/#authentication">auth token</a> when authentication is enabled.</p>
 <p>The server fills in <code>${BRANCH_NAME}</code> with the branch of the URL and keeps
 every other placeholder as written. A client fills in the other placeholders
 before it sends a file, or sends <a href="#variables">variables</a> with it.</p>
@@ -4006,10 +4147,10 @@ The server logs each warning. The audit records name the used variables, but
 never their values. An apply dry run reads each topology file that the
 topology of the workflow config includes, for every plan, so it reports a line
 break in an included file.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nv">API</span><span class="o">=</span>http://localhost:3000/api/v1/workflow
-</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">'{"SITE": "lab"}'</span><span class="w"> </span>&gt;<span class="w"> </span>vars.json
-</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>curl<span class="w"> </span>-sS<span class="w"> </span>--fail-with-body<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-F<span class="w"> </span><span class="s1">'config=@phenix.yml;type=application/x-yaml'</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">  </span>-F<span class="w"> </span><span class="s1">'variables=&lt;vars.json;type=application/json'</span><span class="w"> </span><span class="s2">"</span><span class="nv">$API</span><span class="s2">/apply/helloworld?dryRun=true"</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nv">API</span><span class="o">=</span>http://localhost:3000/api/v1/workflow
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">'{"SITE": "lab"}'</span><span class="w"> </span>&gt;<span class="w"> </span>vars.json
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>curl<span class="w"> </span>-sS<span class="w"> </span>--fail-with-body<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-F<span class="w"> </span><span class="s1">'config=@phenix.yml;type=application/x-yaml'</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">  </span>-F<span class="w"> </span><span class="s1">'variables=&lt;vars.json;type=application/json'</span><span class="w"> </span><span class="s2">"</span><span class="nv">$API</span><span class="s2">/apply/helloworld?dryRun=true"</span>
 </span></code></pre></div>
 <p>A config's <code>kind</code> and <code>metadata.name</code> can use no placeholder but
 <code>${BRANCH_NAME}</code> and the variables that the request sends.</p>
@@ -4030,7 +4171,7 @@ break in an included file.</p>
 <tr>
 <td style="text-align: left;"><code>pending=&lt;ref&gt;</code></td>
 <td style="text-align: left;">apply, dry run only</td>
-<td style="text-align: left;">A config you will store before the real apply; <code>&lt;ref&gt;</code> is the <code>pending</code> value its config dry run returned. Repeat it for more configs.</td>
+<td style="text-align: left;">A config you'll store before the real apply. <code>&lt;ref&gt;</code> is the <code>pending</code> value its config dry run returned. Repeatable.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>expect=&lt;action&gt;</code></td>
@@ -4040,145 +4181,101 @@ break in an included file.</p>
 <tr>
 <td style="text-align: left;"><code>tag=&lt;key&gt;=&lt;value&gt;</code></td>
 <td style="text-align: left;">apply</td>
-<td style="text-align: left;">A tag to store on the experiment. Repeat it for more tags.</td>
+<td style="text-align: left;">A tag to store on the experiment. Repeatable.</td>
 </tr>
 </tbody>
 </table>
-<p>This is what <code>phenix workflow apply</code> does, without the injects, for a
-directory with one topology config:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nv">API</span><span class="o">=</span>http://localhost:3000/api/v1/workflow
-</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="nv">YAML</span><span class="o">=</span><span class="s1">'Content-Type: application/x-yaml'</span>
-</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>
-</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="c1"># 1. Check the config</span>
-</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>curl<span class="w"> </span>-sS<span class="w"> </span>--fail-with-body<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-H<span class="w"> </span><span class="s2">"</span><span class="nv">$YAML</span><span class="s2">"</span><span class="w"> </span>--data-binary<span class="w"> </span>@phenix-configs/topology.yml<span class="w"> </span><span class="s2">"</span><span class="nv">$API</span><span class="s2">/configs/helloworld?dryRun=true"</span>
-</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>
-</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="c1"># 2. Plan the apply, naming the config that step 3 stores</span>
-</span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>curl<span class="w"> </span>-sS<span class="w"> </span>--fail-with-body<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-H<span class="w"> </span><span class="s2">"</span><span class="nv">$YAML</span><span class="s2">"</span><span class="w"> </span>--data-binary<span class="w"> </span>@phenix.yml<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-17-9"><a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="w">  </span><span class="s2">"</span><span class="nv">$API</span><span class="s2">/apply/helloworld?dryRun=true&amp;pending=Topology/helloworld"</span>
-</span><span id="__span-17-10"><a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a>
-</span><span id="__span-17-11"><a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="c1"># 3. Store the config</span>
-</span><span id="__span-17-12"><a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a>curl<span class="w"> </span>-sS<span class="w"> </span>--fail-with-body<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-H<span class="w"> </span><span class="s2">"</span><span class="nv">$YAML</span><span class="s2">"</span><span class="w"> </span>--data-binary<span class="w"> </span>@phenix-configs/topology.yml<span class="w"> </span><span class="s2">"</span><span class="nv">$API</span><span class="s2">/configs/helloworld"</span>
-</span><span id="__span-17-13"><a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a>
-</span><span id="__span-17-14"><a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a><span class="c1"># 4. Apply, only if the plan is still the one step 2 returned</span>
-</span><span id="__span-17-15"><a id="__codelineno-17-15" name="__codelineno-17-15" href="#__codelineno-17-15"></a>curl<span class="w"> </span>-sS<span class="w"> </span>--fail-with-body<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-H<span class="w"> </span><span class="s2">"</span><span class="nv">$YAML</span><span class="s2">"</span><span class="w"> </span>--data-binary<span class="w"> </span>@phenix.yml<span class="w"> </span><span class="s2">"</span><span class="nv">$API</span><span class="s2">/apply/helloworld?expect=createAndStart"</span>
+<p>This is what the command does, minus the injects, for one topology config:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nv">API</span><span class="o">=</span>http://localhost:3000/api/v1/workflow
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="nv">YAML</span><span class="o">=</span><span class="s1">'Content-Type: application/x-yaml'</span>
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
+</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="c1"># 1. Check the config</span>
+</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>curl<span class="w"> </span>-sS<span class="w"> </span>--fail-with-body<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-H<span class="w"> </span><span class="s2">"</span><span class="nv">$YAML</span><span class="s2">"</span><span class="w"> </span>--data-binary<span class="w"> </span>@phenix-configs/topology.yml<span class="w"> </span><span class="s2">"</span><span class="nv">$API</span><span class="s2">/configs/helloworld?dryRun=true"</span>
+</span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>
+</span><span id="__span-16-7"><a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="c1"># 2. Plan the apply, naming the config that step 3 stores</span>
+</span><span id="__span-16-8"><a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>curl<span class="w"> </span>-sS<span class="w"> </span>--fail-with-body<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-H<span class="w"> </span><span class="s2">"</span><span class="nv">$YAML</span><span class="s2">"</span><span class="w"> </span>--data-binary<span class="w"> </span>@phenix.yml<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-16-9"><a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a><span class="w">  </span><span class="s2">"</span><span class="nv">$API</span><span class="s2">/apply/helloworld?dryRun=true&amp;pending=Topology/helloworld"</span>
+</span><span id="__span-16-10"><a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a>
+</span><span id="__span-16-11"><a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a><span class="c1"># 3. Store the config</span>
+</span><span id="__span-16-12"><a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a>curl<span class="w"> </span>-sS<span class="w"> </span>--fail-with-body<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-H<span class="w"> </span><span class="s2">"</span><span class="nv">$YAML</span><span class="s2">"</span><span class="w"> </span>--data-binary<span class="w"> </span>@phenix-configs/topology.yml<span class="w"> </span><span class="s2">"</span><span class="nv">$API</span><span class="s2">/configs/helloworld"</span>
+</span><span id="__span-16-13"><a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a>
+</span><span id="__span-16-14"><a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a><span class="c1"># 4. Apply, only if the plan is still the one step 2 returned</span>
+</span><span id="__span-16-15"><a id="__codelineno-16-15" name="__codelineno-16-15" href="#__codelineno-16-15"></a>curl<span class="w"> </span>-sS<span class="w"> </span>--fail-with-body<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-H<span class="w"> </span><span class="s2">"</span><span class="nv">$YAML</span><span class="s2">"</span><span class="w"> </span>--data-binary<span class="w"> </span>@phenix.yml<span class="w"> </span><span class="s2">"</span><span class="nv">$API</span><span class="s2">/apply/helloworld?expect=createAndStart"</span>
 </span></code></pre></div>
-<p>The apply answers with its plan:</p>
-<div class="language-json highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="p">{</span><span class="nt">"action"</span><span class="p">:</span><span class="s2">"createAndStart"</span><span class="p">,</span><span class="nt">"experiment"</span><span class="p">:</span><span class="s2">"helloworld"</span><span class="p">,</span><span class="nt">"reason"</span><span class="p">:</span><span class="s2">""</span><span class="p">,</span><span class="nt">"dryRun"</span><span class="p">:</span><span class="kc">false</span><span class="p">}</span>
+<p>The apply returns its plan:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="p">{</span><span class="nt">"action"</span><span class="p">:</span><span class="s2">"createAndStart"</span><span class="p">,</span><span class="nt">"experiment"</span><span class="p">:</span><span class="s2">"helloworld"</span><span class="p">,</span><span class="nt">"reason"</span><span class="p">:</span><span class="s2">""</span><span class="p">,</span><span class="nt">"dryRun"</span><span class="p">:</span><span class="kc">false</span><span class="p">}</span>
 </span></code></pre></div>
-<p>On the phēnix host, the same endpoints are served on the unix socket without
-authentication:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>curl<span class="w"> </span>-sS<span class="w"> </span>--unix-socket<span class="w"> </span>/tmp/phenix.sock<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/x-yaml'</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="w">  </span>--data-binary<span class="w"> </span>@phenix.yml<span class="w"> </span><span class="s1">'http://unix/api/v1/workflow/apply/helloworld?dryRun=true'</span>
+<p>On the phēnix host, the unix socket needs no authentication:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>curl<span class="w"> </span>-sS<span class="w"> </span>--unix-socket<span class="w"> </span>/tmp/phenix.sock<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/x-yaml'</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">  </span>--data-binary<span class="w"> </span>@phenix.yml<span class="w"> </span><span class="s1">'http://unix/api/v1/workflow/apply/helloworld?dryRun=true'</span>
 </span></code></pre></div>
-<h2 id="docker-compose">Docker Compose<a class="headerlink" href="#docker-compose" title="Permanent link">&para;</a></h2>
-<p>With Docker Compose, the unix socket is inside the <code>phenix</code> container, so run
-the command there:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>phenix<span class="w"> </span>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>helloworld<span class="w"> </span>-n
-</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>phenix<span class="w"> </span>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>/phenix/topologies/helloworld<span class="w"> </span>-f
+<h2 id="docker-compose">Docker Compose<a class="headerlink" href="#docker-compose" title="Permanent link">¶</a></h2>
+<p>With Docker Compose, run the command inside the <code>phenix</code> container, where the
+socket is:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>phenix<span class="w"> </span>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>helloworld<span class="w"> </span>-n
+</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>phenix<span class="w"> </span>phenix<span class="w"> </span>workflow<span class="w"> </span>apply<span class="w"> </span>/phenix/topologies/helloworld<span class="w"> </span>-f
 </span></code></pre></div>
-<p>Keep topology directories under <code>/phenix</code>, which is mounted at the same path
-in the container, and pass an absolute path or a bare name: a relative path
-resolves inside the container. To change a <a href="#settings">setting</a>, set its
-environment variable in the <code>phenix</code> service and recreate the container.</p>
-<h2 id="settings">Settings<a class="headerlink" href="#settings" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th style="text-align: left;">Setting</th>
-<th style="text-align: left;">Default</th>
-<th style="text-align: left;">Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align: left;"><code>base-dir.injects</code></td>
-<td style="text-align: left;"><code>&lt;base-dir.phenix&gt;/injects</code></td>
-<td style="text-align: left;">Where injects are copied to. The server's value is used unless <code>--base-dir.injects</code> is given on the command line.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><code>base-dir.topologies</code></td>
-<td style="text-align: left;"><code>&lt;base-dir.phenix&gt;/topologies</code></td>
-<td style="text-align: left;">Where <code>phenix workflow apply NAME</code> looks for <code>NAME</code>.</td>
-</tr>
-</tbody>
-</table>
-<p>Use absolute paths for both. See the
-<a href="../settings/#settings-reference">Settings Reference</a> for how to set them.</p>
-<h2 id="limitations">Limitations<a class="headerlink" href="#limitations" title="Permanent link">&para;</a></h2>
+<p>Keep topology directories under <code>/phenix</code> (the same path in the container)
+and pass an absolute path or a bare name. To change a <a href="#settings">setting</a>,
+set its environment variable in the <code>phenix</code> service and recreate the
+container.</p>
+<h2 id="settings">Settings<a class="headerlink" href="#settings" title="Permanent link">¶</a></h2>
+<p>Two <a href="../settings/#settings-reference">settings</a> apply; use absolute paths for
+both. <code>base-dir.injects</code> (default <code>&lt;base-dir.phenix&gt;/injects</code>) is where
+injects go, and the server's value wins unless you give <code>--base-dir.injects</code>.
+<code>base-dir.topologies</code> (default <code>&lt;base-dir.phenix&gt;/topologies</code>) is where a
+<code>NAME</code> is looked up.</p>
+<h2 id="limitations">Limitations<a class="headerlink" href="#limitations" title="Permanent link">¶</a></h2>
 <ul>
-<li>The command only works on the phēnix host or in the phēnix container. A CI
-  job on another machine can call the REST API, but has to get the injects
-  onto the phēnix host itself.</li>
-<li>There is no web UI for workflow apply.</li>
+<li>There's no web UI for workflow apply. A CI job on another machine can call
+  the REST API, but must get the injects onto the phēnix host itself.</li>
 <li>Of the REST API, only the two workflow endpoints take
-  <a href="#rest-api">variables</a>. <code>POST /api/v1/configs</code>,
-  <code>PUT /api/v1/configs/{kind}/{name}</code> and the web UI do not.</li>
-<li>A dry run can't find every error. It doesn't merge the topologies that a
-  not yet stored topology includes, and it checks only the schema of an
-  <code>Experiment</code> config. The real apply can then fail after the injects are
-  copied and the configs stored, but before any experiment has changed.</li>
-<li>Don't add an <code>Experiment</code> config named like the workflow's <code>auto.create</code> to
-  <code>phenix-configs/</code>; let <code>auto.create</code> create the experiment.</li>
-<li>Grant the <code>workflow:create</code> permission only to trusted roles: an apply dry
-  run can reveal whether a file exists on the server.</li>
+  <a href="#api">variables</a>. <code>POST /api/v1/configs</code>,
+  <code>PUT /api/v1/configs/{kind}/{name}</code> and the web UI don't.</li>
+<li>An apply dry run can reveal whether a file exists on the server; grant
+  <code>workflow:create</code> only to trusted roles.</li>
 </ul>
-<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">¶</a></h2>
 <ul>
-<li><strong>Permission denied.</strong> Your user may not write to the unix socket or to the
-  injects directory. Run the command as the user that runs <code>phenix ui</code>,
-  usually root (with Docker Compose, through <code>docker exec</code>), or start
-  <code>phenix ui</code> with <code>--unix-socket-gid</code> set to the ID of a group you are in.</li>
-<li><strong>The server doesn't answer.</strong> Check that <code>phenix ui</code> is running and
-  listens on the socket that <code>--unix-socket</code> names, <code>/tmp/phenix.sock</code> by
-  default.</li>
-<li><strong>The server is refused.</strong> The server is from another phēnix release than
-  the CLI; use the same release for both.</li>
+<li><strong>Permission denied.</strong> Your user may not have write access to the socket
+  or the injects directory. Run as the user that runs <code>phenix ui</code> (usually
+  root), or start <code>phenix ui</code> with <code>--unix-socket-gid</code> set to your group.</li>
+<li><strong>The server doesn't answer.</strong> Check that <code>phenix ui</code> is running on the
+  <code>--unix-socket</code> path (<code>/tmp/phenix.sock</code> by default).</li>
+<li><strong>The server doesn't support workflow dry runs or workflow variables.</strong>
+  Upgrade the server.</li>
 <li><strong>A variable is not set.</strong> A file has a <code>${NAME}</code> placeholder with no value
   and no default. The error records name the variable, the file and the line.
   Set it with <code>-e NAME=value</code> or in an env file, write <code>${NAME:default}</code>, or
-  write <code>$${NAME}</code> to keep the text <code>${NAME}</code>. Nothing was changed.</li>
-<li><strong>A variable from the shell is not used.</strong> <code>sudo</code> and <code>docker exec</code> do not
+  write <code>$${NAME}</code> to keep the text <code>${NAME}</code>. Nothing changed.</li>
+<li><strong>A variable from the shell is not used.</strong> <code>sudo</code> and <code>docker exec</code> don't
   pass your shell environment, an env file overrides the shell, and a
   variable whose name starts with <code>PHENIX_</code> needs <code>-e NAME</code>. Run
   <code>phenix workflow render</code> to see the values.</li>
-<li><strong>The run stops and asks for <code>-f</code>.</strong> The plan would restart a running
-  experiment. Nothing was changed; run it again with <code>-f</code> to allow it.</li>
+<li><strong>The run asks for <code>-f</code>.</strong> The plan would restart a running experiment.
+  Nothing changed; run it again with <code>-f</code>.</li>
 <li><strong>The plan changed (409).</strong> The experiment was started or stopped between
-  the <code>plan</code> and <code>apply</code> steps. Run the command again.</li>
-<li><strong>The injects destination is refused.</strong> The destination overlaps a topology
-  directory, or the server reports a relative <code>base-dir.injects</code>. Check
+  the <code>plan</code> and <code>apply</code> steps. Run it again.</li>
+<li><strong>The injects destination is refused.</strong> It overlaps a topology directory,
+  or the server reports a relative <code>base-dir.injects</code>. Check
   <code>base-dir.injects</code> and <code>-b</code>.</li>
-<li><strong>A run stopped after it changed something.</strong> A run that stops in or after
-  <code>injects</code> leaves the injects and the configs it stored in place, and its
-  error says what was changed. Fix the cause and run the command again. Only
-  a run that stops in <code>apply</code> can have changed the experiment.</li>
-<li><strong>Leftovers next to the injects.</strong> Hidden <code>.&lt;name&gt;.tmp-*</code> and
-  <code>.&lt;name&gt;.old-*</code> entries in <code>&lt;base-dir.injects&gt;</code> are left by an interrupted
-  run. Remove them by hand when no other run is active.</li>
-<li><strong>No <code>commit</code> tag.</strong> Git refuses a repository that another user owns, which
-  is common under <code>docker exec</code>. Add the directory to git's <code>safe.directory</code>
-  for the user that runs the command.</li>
-<li><strong>No output.</strong> With <code>log.level</code> at <code>warn</code> or higher, the plan and the result
-  aren't printed; rely on the exit status.</li>
+<li><strong>A run stopped partway.</strong> The injects and stored configs stay in place,
+  and the error says what changed. Fix the cause and run it again. Only a run
+  that stops in <code>apply</code> can have changed the experiment.</li>
+<li><strong>Hidden <code>.&lt;name&gt;.tmp-*</code> or <code>.&lt;name&gt;.old-*</code> entries in
+  <code>&lt;base-dir.injects&gt;</code>.</strong> An interrupted run left them. Remove them when no
+  other run is active.</li>
+<li><strong>No <code>commit</code> tag.</strong> Git refuses a repository another user owns (common
+  under <code>docker exec</code>). Add the directory to git's <code>safe.directory</code>.</li>
+<li><strong>No output.</strong> <code>--log.level</code> at <code>warn</code> or higher hides the plan and result;
+  rely on the exit status.</li>
 </ul>
-<h2 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
+<h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">¶</a></h2>
 <ul>
-<li><strong>Server check.</strong> In <code>preflight</code> the command reads <code>GET /api/v1/options</code>
-  from the unix socket. The server must report <code>"workflow-dry-run": true</code>: an
-  older server would store configs during a dry run. It must also report
-  <code>"workflow-variables": true</code>: an older server does not read the variables
-  that the command sends. The answer also carries the server's
-  <code>base-dir.injects</code>.</li>
-<li><strong>Pending configs.</strong> In <code>plan</code>, each config's dry run returns a <code>pending</code>
-  ref such as <code>Topology/helloworld</code>. The workflow config's dry run sends these
-  refs, so the server plans as if the configs were stored and checks the
-  references between them.</li>
-<li><strong>Injects.</strong> <code>phenix-injects/</code> is copied to a temporary directory next to
-  <code>&lt;base-dir.injects&gt;/&lt;name&gt;</code> and swapped into place, so a failed copy leaves
-  the previous copy intact. Symbolic links are copied as links, and only
-  permission bits are kept.</li>
-<li><strong>Apply.</strong> The real apply sends <code>expect=&lt;the planned action&gt;</code>, so the
-  server changes nothing when the plan differs from the one that was checked.</li>
+<li><a href="../cli/workflow/">phenix workflow</a>: every flag of the command.</li>
+<li><a href="../configuration/">Configuration</a>: the config kinds you put in
+  <code>phenix-configs/</code>.</li>
+<li><a href="../experiments/">Experiments</a>: managing the experiments a workflow creates.</li>
 </ul>
 
 
@@ -4228,7 +4325,7 @@ environment variable in the <code>phenix</code> service and recreate the contain
       
     
     <a href="https://github.com/sandialabs/sceptre-phenix" target="_blank" rel="noopener" title="github.com" class="md-social__link">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
     </a>
   
     
@@ -4236,7 +4333,7 @@ environment variable in the <code>phenix</code> service and recreate the contain
     
     
     <a href="/swagger.html" target="_blank" rel="noopener" title="" class="md-social__link">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M195.1 9.5c3-14.8 16.1-25.5 31.3-25.5h59.8c15.2 0 28.3 10.7 31.3 25.5l14.5 70c14.1 6 27.3 13.7 39.3 22.8l67.8-22.5c14.4-4.8 30.2 1.2 37.8 14.4l29.9 51.8c7.6 13.2 4.9 29.8-6.5 39.9L447 233.3c.9 7.4 1.3 15 1.3 22.7s-.5 15.3-1.3 22.7l53.4 47.5c11.4 10.1 14 26.8 6.5 39.9L477 417.9c-7.6 13.1-23.4 19.2-37.8 14.4l-67.8-22.5c-12.1 9.1-25.3 16.7-39.3 22.8l-14.4 69.9c-3.1 14.9-16.2 25.5-31.3 25.5h-59.8c-15.2 0-28.3-10.7-31.3-25.5l-14.4-69.9c-14.1-6-27.2-13.7-39.3-22.8l-68.1 22.5c-14.4 4.8-30.2-1.2-37.8-14.4L5.8 366.1c-7.6-13.2-4.9-29.8 6.5-39.9l53.4-47.5c-.9-7.4-1.3-15-1.3-22.7s.5-15.3 1.3-22.7l-53.4-47.5C.9 175.7-1.7 159 5.8 145.9l29.9-51.8c7.6-13.2 23.4-19.2 37.8-14.4l67.8 22.5c12.1-9.1 25.3-16.7 39.3-22.8zM256.3 336a80 80 0 1 0-.6-160 80 80 0 1 0 .6 160"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M195.1 9.5c3-14.8 16.1-25.5 31.3-25.5h59.8c15.2 0 28.3 10.7 31.3 25.5l14.5 70c14.1 6 27.3 13.7 39.3 22.8l67.8-22.5c14.4-4.8 30.2 1.2 37.8 14.4l29.9 51.8c7.6 13.2 4.9 29.8-6.5 39.9L447 233.3c.9 7.4 1.3 15 1.3 22.7s-.5 15.3-1.3 22.7l53.4 47.5c11.4 10.1 14 26.8 6.5 39.9L477 417.9c-7.6 13.1-23.4 19.2-37.8 14.4l-67.8-22.5c-12.1 9.1-25.3 16.7-39.3 22.8l-14.4 69.9c-3.1 14.9-16.2 25.5-31.3 25.5h-59.8c-15.2 0-28.3-10.7-31.3-25.5l-14.4-69.9c-14.1-6-27.2-13.7-39.3-22.8l-68.1 22.5c-14.4 4.8-30.2-1.2-37.8-14.4L5.8 366.1c-7.6-13.2-4.9-29.8 6.5-39.9l53.4-47.5c-.9-7.4-1.3-15-1.3-22.7s.5-15.3 1.3-22.7l-53.4-47.5C.9 175.7-1.7 159 5.8 145.9l29.9-51.8c7.6-13.2 23.4-19.2 37.8-14.4l67.8 22.5c12.1-9.1 25.3-16.7 39.3-22.8zM256.3 336a80 80 0 1 0-.6-160 80 80 0 1 0 .6 160"></path></svg>
     </a>
   
 </div>
@@ -4259,5 +4356,7 @@ environment variable in the <code>phenix</code> service and recreate the contain
       <script src="../assets/javascripts/bundle.c21346df.min.js"></script>
       
     
-  </body>
-</html>
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>
