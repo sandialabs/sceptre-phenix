@@ -395,7 +395,9 @@ func newRouter(assets http.FileSystem, builderOpts ...builderOption) (*routing.M
 }
 
 // rootRoutes are the routes outside /api/v1: downloads, WebShark, features,
-// version, health probes, and the UI's assets, as the server options say.
+// version, health probes, and the UI's assets, as the server options say. In
+// these tables, a GET route WithoutHead changes state, starts a stream or
+// upgrades to a websocket.
 func rootRoutes(assets http.FileSystem) []routing.Route {
 	var routes []routing.Route
 
@@ -405,7 +407,6 @@ func rootRoutes(assets http.FileSystem) []routing.Route {
 		routes = append(routes,
 			routing.Row(http.MethodGet, "/downloads/tunneler", weberror.ErrorHandler(forward.ListTunnelers)),
 			routing.Row(http.MethodGet, "/downloads/tunneler/{name}", weberror.ErrorHandler(forward.GetTunneler)),
-			routing.Row(http.MethodHead, "/downloads/tunneler/{name}", weberror.ErrorHandler(forward.GetTunneler)),
 		)
 	}
 
@@ -414,16 +415,17 @@ func rootRoutes(assets http.FileSystem) []routing.Route {
 
 	// streams a capture into a command outside the browser, with or without
 	// WebShark, under the /webshark/ that proxies already pass on
-	routes = append(routes, routing.Row(http.MethodGet, "/webshark/streams/{token}", weberror.ErrorHandler(grants.GetCaptureStreamByToken)))
+	routes = append(routes,
+		routing.Row(http.MethodGet, "/webshark/streams/{token}", weberror.ErrorHandler(grants.GetCaptureStreamByToken)).WithoutHead(),
+	)
 
 	if o.featured(FeatureWebShark) {
 		plog.Info(plog.TypeSystem, "Serving WebShark", "dir", o.websharkDir)
 
 		routes = append(routes,
-			routing.Row(http.MethodGet, "/webshark/json", http.HandlerFunc(grants.GetWebSharkJSON)),
+			routing.Row(http.MethodGet, "/webshark/json", http.HandlerFunc(grants.GetWebSharkJSON)).WithoutHead(),
 			routing.Row(http.MethodGet, "/webshark/captures/{name}", http.HandlerFunc(grants.GetWebSharkCaptureFile)),
-			routing.Row(http.MethodHead, "/webshark/captures/{name}", http.HandlerFunc(grants.GetWebSharkCaptureFile)),
-			routing.Row(http.MethodGet, "/webshark/watch", http.HandlerFunc(grants.GetWebSharkWatch)),
+			routing.Row(http.MethodGet, "/webshark/watch", http.HandlerFunc(grants.GetWebSharkWatch)).WithoutHead(),
 			routing.Row("", "/webshark/", WebSharkHandler(o.websharkDir, o.basePath)),
 		)
 	} else {
@@ -444,9 +446,7 @@ func rootRoutes(assets http.FileSystem) []routing.Route {
 		routing.Row(http.MethodGet, "/features", http.HandlerFunc(GetFeatures)),
 		routing.Row(http.MethodGet, "/version", http.HandlerFunc(GetVersion)),
 		routing.Row(http.MethodGet, "/healthz", probes.live),
-		routing.Row(http.MethodHead, "/healthz", probes.live),
 		routing.Row(http.MethodGet, "/readyz", probes.ready),
-		routing.Row(http.MethodHead, "/readyz", probes.ready),
 	)
 
 	plog.Info(plog.TypeSystem, "setting up assets")
@@ -455,7 +455,6 @@ func rootRoutes(assets http.FileSystem) []routing.Route {
 
 	return append(routes,
 		routing.Row(http.MethodGet, openAPIPath, spec),
-		routing.Row(http.MethodHead, openAPIPath, spec),
 		routing.Row("", "/docs/", StaticHandler(assets, false)),
 		routing.Row("", "/assets/", builderAssetHandler(assets, StaticHandler(assets, true))),
 		routing.Row("", "/favicon.ico", StaticHandler(assets, false)),
@@ -499,7 +498,8 @@ func apiRoutes() []routing.Route {
 		routing.Row(http.MethodPost, "/experiments/{name}/start", weberror.ErrorHandler(StartExperiment)),
 		routing.Row(http.MethodPost, "/experiments/{name}/stop", weberror.ErrorHandler(StopExperiment)),
 		routing.Row(http.MethodPost, "/experiments/{name}/restart", weberror.ErrorHandler(RestartExperiment)),
-		routing.Row(http.MethodGet, "/experiments/{exp}/netflow/ws", weberror.ErrorHandler(GetNetflowWebSocket)),
+		// a GET route WithoutHead changes state, starts a stream or upgrades to a websocket
+		routing.Row(http.MethodGet, "/experiments/{exp}/netflow/ws", weberror.ErrorHandler(GetNetflowWebSocket)).WithoutHead(),
 		routing.Row(http.MethodGet, "/experiments/{name}/topology", weberror.ErrorHandler(GetExperimentTopology)),
 		routing.Row(http.MethodGet, "/experiments/{name}/topology/search", weberror.ErrorHandler(SearchExperimentTopology)),
 		// canceling triggered apps is a socket route
@@ -511,7 +511,9 @@ func apiRoutes() []routing.Route {
 		routing.Row(http.MethodPost, "/experiments/{name}/captures", weberror.ErrorHandler(StartExperimentCapture)),
 		routing.Row(http.MethodGet, "/experiments/{name}/captures/{id}", weberror.ErrorHandler(GetExperimentCapture)),
 		routing.Row(http.MethodDelete, "/experiments/{name}/captures/{id}", weberror.ErrorHandler(StopExperimentCapture)),
-		routing.Row(http.MethodGet, "/experiments/{name}/captures/{id}/stream", weberror.ErrorHandler(GetExperimentCaptureStream)),
+		routing.Row(
+			http.MethodGet, "/experiments/{name}/captures/{id}/stream", weberror.ErrorHandler(GetExperimentCaptureStream),
+		).WithoutHead(),
 		routing.Row(http.MethodPost, "/experiments/{exp}/captureSubnet", weberror.ErrorHandler(StartCaptureSubnet)),
 		routing.Row(http.MethodPost, "/experiments/{exp}/stopCaptureSubnet", weberror.ErrorHandler(StopCaptureSubnet)),
 		routing.Row(http.MethodPost, "/experiments/{exp}/captureVlan", weberror.ErrorHandler(StartCaptureVLAN)),
@@ -526,7 +528,6 @@ func apiRoutes() []routing.Route {
 		routing.Row(http.MethodPost, "/experiments/{name}/files/archive", idempotent.Wrap(weberror.ErrorHandler(ArchiveExperimentFiles))),
 		routing.Row(http.MethodPost, "/experiments/{name}/files/delete", weberror.ErrorHandler(DeleteExperimentFiles)),
 		routing.Row(http.MethodGet, "/experiments/{name}/files/{filename}", weberror.ErrorHandler(GetExperimentFile)),
-		routing.Row(http.MethodHead, "/experiments/{name}/files/{filename}", weberror.ErrorHandler(GetExperimentFile)),
 		routing.Row(http.MethodGet, "/experiments/{name}/files/{filename}/checksum", weberror.ErrorHandler(GetExperimentFileChecksum)),
 		routing.Row(http.MethodDelete, "/experiments/{name}/files/{filename}", weberror.ErrorHandler(DeleteExperimentFile)),
 	}
@@ -557,11 +558,13 @@ func apiRoutes() []routing.Route {
 		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/screenshot.png", weberror.ErrorHandler(GetScreenshot)),
 		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/screenshots", weberror.ErrorHandler(SaveScreenshot)),
 		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/vnc", weberror.ErrorHandler(GetVNC)),
-		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/vnc/ws", weberror.ErrorHandler(GetVNCWebSocket)),
+		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/vnc/ws", weberror.ErrorHandler(GetVNCWebSocket)).WithoutHead(),
 		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/captures", weberror.ErrorHandler(GetVMCaptures)),
 		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/captures", weberror.ErrorHandler(StartVMCapture)),
 		routing.Row(http.MethodDelete, "/experiments/{exp}/vms/{name}/captures", weberror.ErrorHandler(StopVMCaptures)),
-		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/captures/{iface}/stream", weberror.ErrorHandler(GetVMCaptureStream)),
+		routing.Row(
+			http.MethodGet, "/experiments/{exp}/vms/{name}/captures/{iface}/stream", weberror.ErrorHandler(GetVMCaptureStream),
+		).WithoutHead(),
 		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/snapshots", weberror.ErrorHandler(GetVMSnapshots)),
 		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/snapshots", weberror.ErrorHandler(SnapshotVM)),
 		routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/snapshots/{snapshot}", weberror.ErrorHandler(RestoreVM)),
@@ -573,7 +576,7 @@ func apiRoutes() []routing.Route {
 			http.MethodGet,
 			"/experiments/{exp}/vms/{name}/forwards/{host}/{port}/ws",
 			weberror.ErrorHandler(forward.GetPortForwardWebSocket),
-		),
+		).WithoutHead(),
 	)
 
 	if o.featured(FeatureVMMount) {
@@ -584,7 +587,6 @@ func apiRoutes() []routing.Route {
 			// the handlers of the mount files read path from the query and answer 400 without it
 			routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/files", weberror.ErrorHandler(GetMountFiles)),
 			routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/files/download", weberror.ErrorHandler(DownloadMountFile)),
-			routing.Row(http.MethodHead, "/experiments/{exp}/vms/{name}/files/download", weberror.ErrorHandler(DownloadMountFile)),
 			routing.Row(http.MethodPut, "/experiments/{exp}/vms/{name}/files/upload", weberror.ErrorHandler(UploadMountFile)),
 			routing.Row(http.MethodPost, "/experiments/{exp}/vms/{name}/files/copy", weberror.ErrorHandler(CopyExperimentFileToMount)),
 		)
@@ -604,7 +606,6 @@ func apiRoutes() []routing.Route {
 		routing.Row(http.MethodPost, "/disks/rename", weberror.ErrorHandler(RenameDisk)),
 		routing.Row(http.MethodPost, "/disks", weberror.ErrorHandler(UploadDisk)),
 		routing.Row(http.MethodGet, "/disks/download", weberror.ErrorHandler(DownloadDisk)),
-		routing.Row(http.MethodHead, "/disks/download", weberror.ErrorHandler(DownloadDisk)),
 		routing.Row(http.MethodGet, "/disks/checksum", weberror.ErrorHandler(GetDiskChecksum)),
 		routing.Row(http.MethodGet, "/disks/details", weberror.ErrorHandler(GetDiskDetails)),
 		routing.Row(http.MethodGet, "/vms", weberror.ErrorHandler(GetAllVMs)),
@@ -632,19 +633,18 @@ func apiRoutes() []routing.Route {
 		routing.Row(http.MethodGet, "/roles", weberror.ErrorHandler(GetRoles)),
 		routing.Row(http.MethodGet, "/roles/{name}", weberror.ErrorHandler(GetRole)),
 		routing.Row(http.MethodPost, "/signup", weberror.ErrorHandler(Signup)),
-		routing.Row(http.MethodGet, "/login", weberror.ErrorHandler(Login)),
+		routing.Row(http.MethodGet, "/login", weberror.ErrorHandler(Login)).WithoutHead(),
 		routing.Row(http.MethodPost, "/login", weberror.ErrorHandler(Login)),
 		routing.Row(http.MethodPost, "/logout", weberror.ErrorHandler(Logout)),
-		routing.Row(http.MethodGet, "/ws", http.HandlerFunc(broker.ServeWS)),
+		routing.Row(http.MethodGet, "/ws", http.HandlerFunc(broker.ServeWS)).WithoutHead(),
 		routing.Row(http.MethodPost, "/console", weberror.ErrorHandler(CreateConsole)),
 		routing.Row(http.MethodGet, "/console/{pid}", weberror.ErrorHandler(GetConsole)),
 		routing.Row(http.MethodDelete, "/console/{pid}", weberror.ErrorHandler(DeleteConsole)),
-		routing.Row(http.MethodGet, "/console/{pid}/ws", weberror.ErrorHandler(WsConsole)),
+		routing.Row(http.MethodGet, "/console/{pid}/ws", weberror.ErrorHandler(WsConsole)).WithoutHead(),
 		routing.Row(http.MethodPost, "/console/{pid}/size", weberror.ErrorHandler(ResizeConsole)),
 		// background jobs; listing, reading and canceling them are socket routes
 		routing.Row(http.MethodDelete, "/jobs/{id}", weberror.ErrorHandler(DeleteJob)),
 		routing.Row(http.MethodGet, "/jobs/{id}/artifact", weberror.ErrorHandler(GetJobArtifact)),
-		routing.Row(http.MethodHead, "/jobs/{id}/artifact", weberror.ErrorHandler(GetJobArtifact)),
 		routing.Row(http.MethodGet, "/settings", weberror.ErrorHandler(webSettings.GetSettings)),
 		routing.Row(http.MethodPost, "/settings", weberror.ErrorHandler(webSettings.SetSettings)),
 		routing.Row(http.MethodGet, "/settings/password", weberror.ErrorHandler(GetPasswordRequirements)),
@@ -711,11 +711,9 @@ func socketRoutes() []routing.Route {
 		routing.Row(http.MethodDelete, "/experiments/{exp}/netflow", weberror.ErrorHandler(StopNetflow)),
 		routing.Row(http.MethodGet, "/experiments/{exp}/netflow/captures", weberror.ErrorHandler(GetNetflowCaptures)),
 		routing.Row(http.MethodGet, "/experiments/{exp}/netflow/captures/{id}", weberror.ErrorHandler(DownloadNetflowCapture)),
-		routing.Row(http.MethodHead, "/experiments/{exp}/netflow/captures/{id}", weberror.ErrorHandler(DownloadNetflowCapture)),
 		routing.Row(http.MethodGet, "/logs", weberror.ErrorHandler(GetLogs)),
 		routing.Row(http.MethodGet, "/logs/files", weberror.ErrorHandler(GetLogFiles)),
 		routing.Row(http.MethodGet, "/logs/files/{name}", weberror.ErrorHandler(DownloadLogFile)),
-		routing.Row(http.MethodHead, "/logs/files/{name}", weberror.ErrorHandler(DownloadLogFile)),
 		// the server holds the port forwards, and its websockets and capture
 		// grants follow the changes of users and roles
 		routing.Row(http.MethodGet, "/experiments/{exp}/vms/{name}/forwards", weberror.ErrorHandler(forward.GetPortForwards)),

@@ -754,3 +754,106 @@ func TestBodyAllowed(t *testing.T) {
 		}
 	}
 }
+
+// A HEAD answer carries the status and headers of the GET answer, with or
+// without gzip. It can omit Content-Length, as when the handler writes no
+// body for HEAD, as ServeContent does, but never has that of an empty gzip
+// stream.
+func TestCompressResponsesHead(t *testing.T) {
+	body, small := strings.Repeat("hello world\n", 200), "hello\n"
+
+	serveContent := func(contentType, content string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", contentType)
+			http.ServeContent(w, r, "", time.Time{}, strings.NewReader(content))
+		})
+	}
+
+	// write writes content for HEAD too, with header pairs set first
+	write := func(content string, header ...string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			for i := 0; i+1 < len(header); i += 2 {
+				w.Header().Set(header[i], header[i+1])
+			}
+
+			_, _ = io.WriteString(w, content)
+		})
+	}
+
+	handlers := map[string]http.Handler{
+		"ServeContent":                      serveContent("text/plain", body),
+		"ServeContent below the threshold":  serveContent("text/plain", small),
+		"Write":                             write(body, "Content-Type", mimeJSON),
+		"Write below the threshold":         write(small, "Content-Type", mimeJSON),
+		"Write with its Content-Length":     write(body, "Content-Type", mimeJSON, "Content-Length", strconv.Itoa(len(body))),
+		"Write without Content-Type":        write(body),
+		"Write without Content-Type, small": write(small),
+		"Flush without a body": http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", mimeJSON)
+			w.WriteHeader(http.StatusOK)
+			w.(http.Flusher).Flush()
+		}),
+	}
+
+	var empty bytes.Buffer
+
+	zw, _ := gzip.NewWriterLevel(&empty, gzip.BestSpeed)
+	_ = zw.Close()
+
+	type answer struct {
+		Status                                            int
+		ContentType, ContentEncoding, Vary, ContentLength string
+	}
+
+	// answerOf sends a request without the client's own Accept-Encoding, which
+	// a GET would otherwise get and take off the answer
+	answerOf := func(t *testing.T, server *httptest.Server, method, coding string) answer {
+		t.Helper()
+
+		req := httptest.NewRequestWithContext(t.Context(), method, server.URL, nil)
+		req.RequestURI = ""
+
+		if coding != "" {
+			req.Header.Set("Accept-Encoding", coding)
+		}
+
+		client := server.Client()
+		client.Transport.(*http.Transport).DisableCompression = true
+
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s error = %v", method, server.URL, err)
+		}
+
+		_ = resp.Body.Close()
+
+		return answer{
+			resp.StatusCode, resp.Header.Get("Content-Type"), resp.Header.Get("Content-Encoding"),
+			resp.Header.Get("Vary"), resp.Header.Get("Content-Length"),
+		}
+	}
+
+	for name, h := range handlers {
+		for label, coding := range map[string]string{"gzip": gzipCoding, "no Accept-Encoding": ""} {
+			t.Run(name+", "+label, func(t *testing.T) {
+				server := httptest.NewServer(CompressResponses(h))
+				t.Cleanup(server.Close)
+
+				want := answerOf(t, server, http.MethodGet, coding)
+				got := answerOf(t, server, http.MethodHead, coding)
+
+				if got.ContentLength == strconv.Itoa(empty.Len()) {
+					t.Errorf("HEAD Content-Length = %s, the length of an empty gzip stream", got.ContentLength)
+				}
+
+				if got.ContentLength == "" {
+					want.ContentLength = ""
+				}
+
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("HEAD mismatch with the GET answer (-want +got):\n%s", diff)
+				}
+			})
+		}
+	}
+}

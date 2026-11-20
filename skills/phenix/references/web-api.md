@@ -38,7 +38,10 @@ signed-out token, or a `--proxy-auth-header` user other than the token's,
 `401`. A missing permission is `403`, but jobs, consoles and capture tokens of
 other users answer `404`. Unknown `/api/v1` paths answer `404` and wrong methods
 `405`, before auth; `OPTIONS` answers `204`, also before auth, without
-running the route. Under `proxy-jwt` the token is read only from the header, and
+running the route. `HEAD` on a `GET` route runs the route and answers as `GET`
+without a body, except on routes that change state, stream or open a websocket
+(`.WithoutHead()` in the route table), which answer it as a method they do
+not take. Under `proxy-jwt` the token is read only from the header, and
 a missing or malformed one is `400`. Behind a proxy with `--base-path` the proxy
 strips it, and job and config `Location` headers include it.
 `src/go/web/contract_test.go` pins these per route.

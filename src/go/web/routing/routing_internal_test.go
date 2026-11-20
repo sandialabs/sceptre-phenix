@@ -41,3 +41,20 @@ func TestNewMuxRefusesBadText(t *testing.T) {
 		})
 	}
 }
+
+// NewMux returns errHeadOfAnotherMethod for a route WithoutHead whose method
+// is not GET.
+func TestNewMuxRefusesWithoutHeadOfAnotherMethod(t *testing.T) {
+	t.Parallel()
+
+	for _, method := range []string{"", http.MethodHead, http.MethodPost, http.MethodOptions} {
+		g := Group{
+			Prefix: "", Routes: []Route{Row(method, "/x", http.NotFoundHandler()).WithoutHead()},
+			Middleware: nil, Options: nil, NotFound: nil, MethodNotAllowed: nil,
+		}
+
+		if m, err := NewMux(g); !errors.Is(err, errHeadOfAnotherMethod) || m != nil {
+			t.Errorf("NewMux(%q route WithoutHead) = %v, %v, want nil and %v", method, m, err, errHeadOfAnotherMethod)
+		}
+	}
+}

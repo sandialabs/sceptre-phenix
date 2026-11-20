@@ -91,7 +91,11 @@ func LogFull(h http.Handler) http.Handler {
 			return
 		}
 
-		res, err := httputil.DumpResponse(rec.Result(), true)
+		result := rec.Result()
+		// a HEAD answer has no body, whatever its Content-Length says
+		result.Request = r
+
+		res, err := httputil.DumpResponse(result, true)
 		if err != nil {
 			plog.Error(plog.TypeSystem, "error parsing http res", "err", err)
 		} else {

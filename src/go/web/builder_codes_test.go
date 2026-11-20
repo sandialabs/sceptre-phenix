@@ -125,7 +125,7 @@ func TestBuilderMethodNotAllowedCarriesCode(t *testing.T) {
 		ContentType: recorder.Header().Get("Content-Type"),
 	}
 	want := builderAnswer{
-		Status: http.StatusMethodNotAllowed, Code: string(bdoc.CodeRequestMethodNotAllowed), Allow: "GET, POST, OPTIONS",
+		Status: http.StatusMethodNotAllowed, Code: string(bdoc.CodeRequestMethodNotAllowed), Allow: "GET, HEAD, POST, OPTIONS",
 		ContentType: mimeJSON,
 	}
 
@@ -144,7 +144,7 @@ func TestBuilderMethodNotAllowedCarriesCode(t *testing.T) {
 	harness.decode(other, &otherBody)
 
 	got = builderAnswer{Status: other.Code, Code: otherBody.Code, Allow: other.Header().Get("Allow")}
-	want = builderAnswer{Status: http.StatusMethodNotAllowed, Code: string(weberror.CodeInvalidRequest), Allow: "GET, OPTIONS"}
+	want = builderAnswer{Status: http.StatusMethodNotAllowed, Code: string(weberror.CodeInvalidRequest), Allow: "GET, HEAD, OPTIONS"}
 
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("PATCH /configs/x/x mismatch (-want +got):\n%s", diff)

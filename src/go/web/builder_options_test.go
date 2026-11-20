@@ -78,7 +78,7 @@ func (c *builderCountingRecords) RecordTxn(fn func(store.RecordTx) error) error 
 
 // builderRouteMethods returns, for each path template of the routes, the
 // methods of every route whose path matches that path with "x" for each
-// variable, as the router matches it.
+// variable, as the router matches it, and HEAD for a GET route that serves it.
 func builderRouteMethods(routes []routing.Route) map[string][]string {
 	type route struct {
 		template string
@@ -99,6 +99,10 @@ func builderRouteMethods(routes []routing.Route) map[string][]string {
 
 		pattern := regexp.MustCompile("^" + strings.Join(parts, "[^/]+") + "$")
 		matched = append(matched, route{template: r.Path, pattern: pattern, method: r.Method})
+
+		if r.Method == http.MethodGet && !r.RefusesHead() {
+			matched = append(matched, route{template: r.Path, pattern: pattern, method: http.MethodHead})
+		}
 	}
 
 	order := []string{

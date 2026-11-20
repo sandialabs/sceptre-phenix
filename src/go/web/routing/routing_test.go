@@ -2,6 +2,8 @@ package routing_test
 
 import (
 	"bufio"
+	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,12 +14,13 @@ import (
 	"phenix/web/routing"
 )
 
-// named answers with its name in X-Handler and the template of the matched
-// route in X-Template.
+// named answers with its name in X-Handler, the template of the matched
+// route in X-Template and the method of the request in X-Method.
 func named(name string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Handler", name)
 		w.Header().Set("X-Template", routing.Template(r))
+		w.Header().Set("X-Method", r.Method)
 		w.WriteHeader(http.StatusOK)
 	})
 }
@@ -66,6 +69,7 @@ func testMux(t *testing.T) *routing.Mux {
 				routing.Row("", "/any/", named("any")),
 				routing.Row(http.MethodGet, "/vlans/{id}", named("vlan")),
 				routing.Row(http.MethodGet, "/vlans/free", named("free")),
+				routing.Row(http.MethodGet, "/stream", named("stream")).WithoutHead(),
 			},
 			Middleware:       []func(http.Handler) http.Handler{trail("a"), trail("b")},
 			Options:          named("options"),
@@ -106,10 +110,11 @@ func TestMuxServeHTTP(t *testing.T) {
 	}{
 		{http.MethodGet, "/api/v1/items", answer{200, "list", "/api/v1/items", []string{"a", "b"}, ""}},
 		{http.MethodPost, "/api/v1/items", answer{200, "create", "/api/v1/items", []string{"a", "b"}, ""}},
-		{http.MethodDelete, "/api/v1/items", answer{200, "api-405", "", nil, "GET, POST, OPTIONS"}},
-		{http.MethodOptions, "/api/v1/items", answer{200, "options", "/api/v1/items", []string{"a", "b"}, "GET, POST, OPTIONS"}},
+		{http.MethodHead, "/api/v1/items", answer{200, "list", "/api/v1/items", []string{"a", "b"}, ""}},
+		{http.MethodDelete, "/api/v1/items", answer{200, "api-405", "", nil, "GET, HEAD, POST, OPTIONS"}},
+		{http.MethodOptions, "/api/v1/items", answer{200, "options", "/api/v1/items", []string{"a", "b"}, "GET, HEAD, POST, OPTIONS"}},
 		{http.MethodGet, "/api/v1/items?q=x", answer{200, "list", "/api/v1/items", []string{"a", "b"}, ""}},
-		{http.MethodTrace, "/api/v1/items", answer{200, "api-405", "", nil, "GET, POST, OPTIONS"}},
+		{http.MethodTrace, "/api/v1/items", answer{200, "api-405", "", nil, "GET, HEAD, POST, OPTIONS"}},
 		{http.MethodGet, "/api/v1/items/7", answer{200, "item", "/api/v1/items/{id}", []string{"a", "b"}, ""}},
 		{http.MethodHead, "/api/v1/items/7", answer{200, "item-head", "/api/v1/items/{id}", []string{"a", "b"}, ""}},
 		{http.MethodPut, "/api/v1/items/7", answer{200, "api-405", "", nil, "GET, HEAD, OPTIONS"}},
@@ -117,21 +122,29 @@ func TestMuxServeHTTP(t *testing.T) {
 		{http.MethodOptions, "/api/v1/any/x", answer{200, "any", "/api/v1/any/", []string{"a", "b"}, ""}},
 		{http.MethodGet, "/api/v1/any/json", answer{200, "any-json", "/api/v1/any/json", []string{"a", "b"}, ""}},
 		{http.MethodPost, "/api/v1/any/json", answer{200, "any", "/api/v1/any/", []string{"a", "b"}, ""}},
-		{http.MethodHead, "/api/v1/any/json", answer{200, "any", "/api/v1/any/", []string{"a", "b"}, ""}},
+		{http.MethodHead, "/api/v1/any/json", answer{200, "any-json", "/api/v1/any/json", []string{"a", "b"}, ""}},
+		{http.MethodHead, "/api/v1/any/x", answer{200, "any", "/api/v1/any/", []string{"a", "b"}, ""}},
 		{http.MethodGet, "/api/v1/any", answer{200, "api-404", "", nil, ""}},
 		{http.MethodGet, "/api/v1/vlans/free", answer{200, "free", "/api/v1/vlans/free", []string{"a", "b"}, ""}},
 		{http.MethodGet, "/api/v1/vlans/7", answer{200, "vlan", "/api/v1/vlans/{id}", []string{"a", "b"}, ""}},
+		{http.MethodHead, "/api/v1/vlans/free", answer{200, "free", "/api/v1/vlans/free", []string{"a", "b"}, ""}},
+		{http.MethodHead, "/api/v1/vlans/7", answer{200, "vlan", "/api/v1/vlans/{id}", []string{"a", "b"}, ""}},
+		{http.MethodGet, "/api/v1/stream", answer{200, "stream", "/api/v1/stream", []string{"a", "b"}, ""}},
+		{http.MethodHead, "/api/v1/stream", answer{200, "api-405", "", nil, "GET, OPTIONS"}},
+		{http.MethodOptions, "/api/v1/stream", answer{200, "options", "/api/v1/stream", []string{"a", "b"}, "GET, OPTIONS"}},
 		{http.MethodGet, "/api/v1/missing", answer{200, "api-404", "", nil, ""}},
 		{http.MethodGet, "/api/v1", answer{200, "api-404", "", nil, ""}},
 		{http.MethodGet, "/api/v1x", answer{200, "api-404", "", nil, ""}},
 		{http.MethodGet, "/bare", answer{200, "root-404", "", nil, ""}},
 		{http.MethodGet, "/page", answer{200, "page", "/page", []string{"root"}, ""}},
-		{http.MethodPost, "/page", answer{http.StatusMethodNotAllowed, "", "", nil, "GET"}},
+		{http.MethodHead, "/page", answer{200, "page", "/page", []string{"root"}, ""}},
+		{http.MethodPost, "/page", answer{http.StatusMethodNotAllowed, "", "", nil, "GET, HEAD"}},
 		{http.MethodGet, "/files/a/b", answer{200, "files", "/files/", []string{"root"}, ""}},
 		{http.MethodPatch, "/files/a", answer{200, "files", "/files/", []string{"root"}, ""}},
 		{http.MethodGet, "/missing", answer{200, "root-404", "", nil, ""}},
 		{http.MethodGet, "/bare/x", answer{200, "bare", "/bare/x", []string{"c"}, ""}},
-		{http.MethodPost, "/bare/x", answer{http.StatusMethodNotAllowed, "", "", nil, "GET"}},
+		{http.MethodHead, "/bare/x", answer{200, "bare", "/bare/x", []string{"c"}, ""}},
+		{http.MethodPost, "/bare/x", answer{http.StatusMethodNotAllowed, "", "", nil, "GET, HEAD"}},
 		{http.MethodGet, "/bare/missing", answer{200, "root-404", "", nil, ""}},
 	}
 
@@ -427,8 +440,8 @@ func TestMuxSetsAllowBeforeMiddleware(t *testing.T) {
 	rec := httptest.NewRecorder()
 	m.ServeHTTP(rec, httptest.NewRequest(http.MethodOptions, "/x", nil))
 
-	if got := []any{rec.Code, sent(rec).Get("Allow")}; !cmp.Equal(got, []any{http.StatusNoContent, "GET, OPTIONS"}) {
-		t.Errorf("OPTIONS /x = %v, want 204 and Allow GET, OPTIONS", got)
+	if got := []any{rec.Code, sent(rec).Get("Allow")}; !cmp.Equal(got, []any{http.StatusNoContent, "GET, HEAD, OPTIONS"}) {
+		t.Errorf("OPTIONS /x = %v, want 204 and Allow GET, HEAD, OPTIONS", got)
 	}
 }
 
@@ -577,8 +590,8 @@ func TestMuxOptionsOfEachPath(t *testing.T) {
 				routing.Row(http.MethodGet, "/x/{id}", named("id")),
 			},
 			targets: map[string]answer{
-				"/x/":    {http.StatusOK, "options", "/x/{$}", nil, "GET, OPTIONS"},
-				"/x/abc": {http.StatusOK, "options", "/x/{id}", nil, "GET, OPTIONS"},
+				"/x/":    {http.StatusOK, "options", "/x/{$}", nil, "GET, HEAD, OPTIONS"},
+				"/x/abc": {http.StatusOK, "options", "/x/{id}", nil, "GET, HEAD, OPTIONS"},
 			},
 		},
 		"{id} and {rest...}": {
@@ -587,9 +600,9 @@ func TestMuxOptionsOfEachPath(t *testing.T) {
 				routing.Row(http.MethodGet, "/x/{rest...}", named("rest")),
 			},
 			targets: map[string]answer{
-				"/x/abc":     {http.StatusOK, "options", "/x/{id}", nil, "GET, OPTIONS"},
-				"/x/abc/def": {http.StatusOK, "options", "/x/{rest...}", nil, "GET, OPTIONS"},
-				"/x/":        {http.StatusOK, "options", "/x/{rest...}", nil, "GET, OPTIONS"},
+				"/x/abc":     {http.StatusOK, "options", "/x/{id}", nil, "GET, HEAD, OPTIONS"},
+				"/x/abc/def": {http.StatusOK, "options", "/x/{rest...}", nil, "GET, HEAD, OPTIONS"},
+				"/x/":        {http.StatusOK, "options", "/x/{rest...}", nil, "GET, HEAD, OPTIONS"},
 			},
 		},
 		"{a} and {b} of two methods": {
@@ -598,7 +611,7 @@ func TestMuxOptionsOfEachPath(t *testing.T) {
 				routing.Row(http.MethodPost, "/x/{b}", named("post")),
 			},
 			targets: map[string]answer{
-				"/x/1": {http.StatusOK, "options", "/x/{a}", nil, "GET, POST, OPTIONS"},
+				"/x/1": {http.StatusOK, "options", "/x/{a}", nil, "GET, HEAD, POST, OPTIONS"},
 			},
 		},
 		"{a} and an OPTIONS route of {b}": {
@@ -647,12 +660,13 @@ func TestMuxAllowed(t *testing.T) {
 	m := testMux(t)
 
 	tests := map[string][]string{
-		"/api/v1/items":     {http.MethodGet, http.MethodPost, http.MethodOptions},
+		"/api/v1/items":     {http.MethodGet, http.MethodHead, http.MethodPost, http.MethodOptions},
+		"/api/v1/stream":    {http.MethodGet, http.MethodOptions},
 		"/api/v1/items/1":   {http.MethodGet, http.MethodHead, http.MethodOptions},
 		"/api/v1/items/":    nil,
 		"/api/v1/items%2F1": {http.MethodGet, http.MethodHead, http.MethodOptions},
 		"/api/v1/missing":   nil,
-		"/page":             {http.MethodGet},
+		"/page":             {http.MethodGet, http.MethodHead},
 		"/missing":          nil,
 		"/files/x": {
 			http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
@@ -681,7 +695,7 @@ func TestMuxRoutes(t *testing.T) {
 	want := []string{
 		"GET /page", " /files/",
 		"GET /api/v1/items", "POST /api/v1/items", "GET /api/v1/items/{id}", "HEAD /api/v1/items/{id}",
-		"GET /api/v1/any/json", " /api/v1/any/", "GET /api/v1/vlans/{id}", "GET /api/v1/vlans/free",
+		"GET /api/v1/any/json", " /api/v1/any/", "GET /api/v1/vlans/{id}", "GET /api/v1/vlans/free", "GET /api/v1/stream",
 		"GET /bare/x",
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
@@ -723,6 +737,12 @@ func TestNewMuxRefusesABadTable(t *testing.T) {
 		},
 		"routes of the same paths": {
 			group("", routing.Row(http.MethodGet, "/x/{a}", named("x")), routing.Row(http.MethodGet, "/x/{b}", named("y"))),
+		},
+		"routes of the same paths, one WithoutHead": {
+			group("", routing.Row(http.MethodGet, "/x/{a}", named("x")).WithoutHead(), routing.Row(http.MethodGet, "/x/{b}", named("y"))),
+		},
+		"a HEAD route that overlaps a GET route": {
+			group("", routing.Row(http.MethodHead, "/a/b/{y}", named("x")), routing.Row(http.MethodGet, "/a/{x}/b", named("y"))),
 		},
 		"routes that overlap": {
 			group("", routing.Row(http.MethodGet, "/x/{a}", named("x")), routing.Row("", "/x/y", named("y"))),
@@ -831,5 +851,280 @@ func TestMuxAllowedKeepsTheMethod(t *testing.T) {
 
 	if refused != http.MethodPatch {
 		t.Errorf("method in MethodNotAllowed of PATCH /x = %q, want PATCH", refused)
+	}
+}
+
+// headCase is a table of one group, and the answers to requests of each
+// method and target: to the group without Options, and with Options where
+// that answer differs.
+type headCase struct {
+	routes           []routing.Route
+	answers, options map[string]answer
+}
+
+// headCases are the tables of TestMuxHeadOfGetRoutes.
+func headCases() map[string]headCase {
+	m := []string{"m"}
+	every := "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"
+
+	// headAndGet is a GET route of /x/{a}, WithoutHead when without is set,
+	// and a HEAD route of /x/{b}, in the order the HEAD route is first or not
+	headAndGet := func(without, headFirst bool) headCase {
+		get := routing.Row(http.MethodGet, "/x/{a}", named("get"))
+		if without {
+			get = get.WithoutHead()
+		}
+
+		routes, template := []routing.Route{get, routing.Row(http.MethodHead, "/x/{b}", named("head"))}, "/x/{a}"
+		if headFirst {
+			routes, template = []routing.Route{routes[1], routes[0]}, "/x/{b}"
+		}
+
+		return headCase{
+			routes: routes,
+			answers: map[string]answer{
+				"HEAD /x/1": {200, "head", "/x/{b}", m, ""},
+				"GET /x/1":  {200, "get", "/x/{a}", m, ""},
+				"POST /x/1": {200, "405", "", nil, "GET, HEAD"},
+			},
+			options: map[string]answer{
+				"POST /x/1":    {200, "405", "", nil, "GET, HEAD, OPTIONS"},
+				"OPTIONS /x/1": {200, "options", template, m, "GET, HEAD, OPTIONS"},
+			},
+		}
+	}
+
+	return map[string]headCase{
+		"a HEAD route after the GET route":            headAndGet(false, false),
+		"a HEAD route before the GET route":           headAndGet(false, true),
+		"a HEAD route after a GET route WithoutHead":  headAndGet(true, false),
+		"a HEAD route before a GET route WithoutHead": headAndGet(true, true),
+		"a HEAD route of a literal path": {
+			routes: []routing.Route{
+				routing.Row(http.MethodGet, "/x/{a}", named("get")),
+				routing.Row(http.MethodHead, "/x/y", named("head")),
+			},
+			answers: map[string]answer{
+				"HEAD /x/y": {200, "head", "/x/y", m, ""},
+				"HEAD /x/z": {200, "get", "/x/{a}", m, ""},
+			},
+			options: nil,
+		},
+		"a HEAD route of a variable and a GET route of a literal path": {
+			routes: []routing.Route{
+				routing.Row(http.MethodHead, "/a/{x}", named("head")),
+				routing.Row(http.MethodGet, "/a/b", named("b")),
+			},
+			answers: map[string]answer{
+				"HEAD /a/b": {200, "b", "/a/b", m, ""},
+				"HEAD /a/c": {200, "head", "/a/{x}", m, ""},
+				"GET /a/c":  {200, "405", "", nil, "HEAD"},
+			},
+			options: map[string]answer{
+				"GET /a/c":     {200, "405", "", nil, "HEAD, OPTIONS"},
+				"OPTIONS /a/b": {200, "options", "/a/b", m, "GET, HEAD, OPTIONS"},
+				"OPTIONS /a/c": {200, "options", "/a/{x}", m, "HEAD, OPTIONS"},
+			},
+		},
+		"a GET route WithoutHead": {
+			routes:  []routing.Route{routing.Row(http.MethodGet, "/x", named("get")).WithoutHead()},
+			answers: map[string]answer{"HEAD /x": {200, "405", "", nil, "GET"}},
+			options: map[string]answer{
+				"HEAD /x":    {200, "405", "", nil, "GET, OPTIONS"},
+				"OPTIONS /x": {200, "options", "/x", m, "GET, OPTIONS"},
+			},
+		},
+		"a GET route WithoutHead next to a variable": {
+			routes: []routing.Route{
+				routing.Row(http.MethodGet, "/a/b", named("b")).WithoutHead(),
+				routing.Row(http.MethodGet, "/a/{x}", named("x")),
+			},
+			answers: map[string]answer{
+				"HEAD /a/b": {200, "405", "", nil, "GET"},
+				"POST /a/b": {200, "405", "", nil, "GET"},
+				"GET /a/b":  {200, "b", "/a/b", m, ""},
+				"HEAD /a/c": {200, "x", "/a/{x}", m, ""},
+			},
+			options: map[string]answer{
+				"HEAD /a/b":    {200, "405", "", nil, "GET, OPTIONS"},
+				"POST /a/b":    {200, "405", "", nil, "GET, OPTIONS"},
+				"OPTIONS /a/b": {200, "options", "/a/b", m, "GET, OPTIONS"},
+				"OPTIONS /a/c": {200, "options", "/a/{x}", m, "GET, HEAD, OPTIONS"},
+			},
+		},
+		"a GET route WithoutHead below a subtree": {
+			routes: []routing.Route{
+				routing.Row(http.MethodGet, "/a/b", named("b")).WithoutHead(),
+				routing.Row(http.MethodGet, "/a/", named("tree")),
+			},
+			answers: map[string]answer{
+				"HEAD /a/b":   {200, "405", "", nil, "GET"},
+				"HEAD /a/":    {200, "tree", "/a/", m, ""},
+				"HEAD /a/z/y": {200, "tree", "/a/", m, ""},
+			},
+			options: map[string]answer{
+				"HEAD /a/b":      {200, "405", "", nil, "GET, OPTIONS"},
+				"OPTIONS /a/b":   {200, "options", "/a/b", m, "GET, OPTIONS"},
+				"OPTIONS /a/z/y": {200, "options", "/a/", m, "GET, HEAD, OPTIONS"},
+			},
+		},
+		"a GET route of {$} WithoutHead and a subtree": {
+			routes: []routing.Route{
+				routing.Row(http.MethodGet, "/a/{$}", named("end")).WithoutHead(),
+				routing.Row(http.MethodGet, "/a/", named("tree")),
+			},
+			answers: map[string]answer{
+				"HEAD /a/":  {200, "405", "", nil, "GET"},
+				"GET /a/":   {200, "end", "/a/{$}", m, ""},
+				"HEAD /a/b": {200, "tree", "/a/", m, ""},
+			},
+			options: map[string]answer{
+				"HEAD /a/":     {200, "405", "", nil, "GET, OPTIONS"},
+				"OPTIONS /a/":  {200, "options", "/a/{$}", m, "GET, OPTIONS"},
+				"OPTIONS /a/b": {200, "options", "/a/", m, "GET, HEAD, OPTIONS"},
+			},
+		},
+		"a GET route WithoutHead below a route of every method": {
+			routes: []routing.Route{
+				routing.Row(http.MethodGet, "/w/json", named("json")).WithoutHead(),
+				routing.Row("", "/w/", named("every")),
+			},
+			answers: map[string]answer{
+				"HEAD /w/json": {200, "every", "/w/", m, ""},
+				"GET /w/json":  {200, "json", "/w/json", m, ""},
+			},
+			options: map[string]answer{
+				"OPTIONS /w/json": {200, "options", "/w/json", m, every},
+				"OPTIONS /w/x":    {200, "every", "/w/", m, ""},
+			},
+		},
+		"a GET route WithoutHead and a route of every method of its path": {
+			routes: []routing.Route{
+				routing.Row(http.MethodGet, "/x", named("get")).WithoutHead(),
+				routing.Row("", "/x", named("every")),
+			},
+			answers: map[string]answer{
+				"HEAD /x": {200, "every", "/x", m, ""},
+				"GET /x":  {200, "get", "/x", m, ""},
+			},
+			options: map[string]answer{"OPTIONS /x": {200, "options", "/x", m, every}},
+		},
+		"a GET route and a route of every method of its path": {
+			routes: []routing.Route{
+				routing.Row(http.MethodGet, "/x", named("get")),
+				routing.Row("", "/x", named("every")),
+			},
+			answers: map[string]answer{
+				"HEAD /x": {200, "get", "/x", m, ""},
+				"POST /x": {200, "every", "/x", m, ""},
+			},
+			options: map[string]answer{"OPTIONS /x": {200, "options", "/x", m, every}},
+		},
+	}
+}
+
+// A HEAD request goes to the route that a GET request of its path goes to,
+// or to a HEAD route of the same path, in either order of the routes. A GET
+// route WithoutHead serves no HEAD, and no other GET route serves it there: a
+// route of every method does, else MethodNotAllowed without the middleware.
+func TestMuxHeadOfGetRoutes(t *testing.T) {
+	t.Parallel()
+
+	for name, tt := range headCases() {
+		for _, options := range []http.Handler{nil, named("options")} {
+			want := tt.answers
+			if options != nil {
+				want = maps.Clone(tt.answers)
+				maps.Copy(want, tt.options)
+			}
+
+			t.Run(fmt.Sprintf("%s, Options %t", name, options != nil), func(t *testing.T) {
+				t.Parallel()
+
+				m, err := routing.NewMux(routing.Group{
+					Prefix: "", Routes: tt.routes, Middleware: []func(http.Handler) http.Handler{trail("m")},
+					Options: options, NotFound: named("404"), MethodNotAllowed: named("405"),
+				})
+				if err != nil {
+					t.Fatalf("NewMux() error = %v", err)
+				}
+
+				for request, want := range want {
+					method, target, _ := strings.Cut(request, " ")
+
+					rec := httptest.NewRecorder()
+					m.ServeHTTP(rec, httptest.NewRequest(method, target, nil))
+
+					header := sent(rec)
+
+					got := answer{
+						Status: rec.Code, Handler: header.Get("X-Handler"), Template: header.Get("X-Template"),
+						Trail: header.Values("X-Trail"), Allow: header.Get("Allow"),
+					}
+					if diff := cmp.Diff(want, got); diff != "" {
+						t.Errorf("%s mismatch (-want +got):\n%s", request, diff)
+					}
+
+					if got := header.Get("X-Method"); got != method {
+						t.Errorf("%s method in the handler = %q, want %q", request, got, method)
+					}
+				}
+			})
+		}
+	}
+}
+
+// Allowed names HEAD for a path whose GET route serves it or that has a HEAD
+// route, and not for a GET route WithoutHead.
+func TestMuxAllowedHead(t *testing.T) {
+	t.Parallel()
+
+	m, err := routing.NewMux(routing.Group{
+		Prefix: "",
+		Routes: []routing.Route{
+			routing.Row(http.MethodGet, "/get", named("get")),
+			routing.Row(http.MethodGet, "/without", named("without")).WithoutHead(),
+			routing.Row(http.MethodPost, "/without", named("post")),
+			routing.Row(http.MethodHead, "/head", named("head")),
+		},
+		Middleware: nil, Options: nil, NotFound: nil, MethodNotAllowed: nil,
+	})
+	if err != nil {
+		t.Fatalf("NewMux() error = %v", err)
+	}
+
+	tests := map[string][]string{
+		"/get":     {http.MethodGet, http.MethodHead},
+		"/without": {http.MethodGet, http.MethodPost},
+		"/head":    {http.MethodHead},
+	}
+
+	for target, want := range tests {
+		if diff := cmp.Diff(want, m.Allowed(httptest.NewRequest(http.MethodHead, target, nil))); diff != "" {
+			t.Errorf("Allowed(%s) mismatch (-want +got):\n%s", target, diff)
+		}
+	}
+}
+
+// WithoutHead changes a copy of the route, and Routes keeps it.
+func TestRouteWithoutHead(t *testing.T) {
+	t.Parallel()
+
+	row := routing.Row(http.MethodGet, "/x", named("x"))
+	without := row.WithoutHead()
+
+	if got := []bool{row.RefusesHead(), without.RefusesHead()}; !cmp.Equal(got, []bool{false, true}) {
+		t.Errorf("RefusesHead() of the row and of its WithoutHead = %v, want [false true]", got)
+	}
+
+	m, err := routing.NewMux(routing.Group{
+		Prefix: "/api", Routes: []routing.Route{without}, Middleware: nil, Options: nil, NotFound: nil, MethodNotAllowed: nil,
+	})
+	if err != nil {
+		t.Fatalf("NewMux() error = %v", err)
+	}
+
+	if routes := m.Routes(); len(routes) != 1 || !routes[0].RefusesHead() {
+		t.Errorf("Routes() = %v, want one route that RefusesHead", routes)
 	}
 }
