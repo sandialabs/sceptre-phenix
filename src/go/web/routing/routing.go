@@ -31,6 +31,9 @@ var (
 	// errBadPath is the error of a row whose path does not start with "/", or
 	// that has a space or a tab.
 	errBadPath = errors.New("the path does not start with / or has a space or a tab")
+	// errHeadOfAnotherMethod is the error of a row WithoutHead whose method is
+	// not GET.
+	errHeadOfAnotherMethod = errors.New("only a GET route can be without HEAD")
 )
 
 // variable matches a {name} variable of a path.
@@ -47,7 +50,10 @@ func methods() []string {
 // Route is one row of a route table.
 type Route struct {
 	// Method is one of the methods that Allowed names, in upper case, or ""
-	// for every method.
+	// for every method. A GET route also serves HEAD for its path, unless it
+	// is WithoutHead or a HEAD route has the same path. A HEAD route whose
+	// path overlaps the path of another route, but is not the same, can make
+	// NewMux return an error, as two such GET routes do.
 	Method string
 	// Path is the path below the group prefix, with {name} variables. It
 	// starts with "/". A variable has a name only, with no pattern, and holds
@@ -55,12 +61,30 @@ type Route struct {
 	// hold "/". A trailing "/" also matches every path below it.
 	Path    string
 	Handler http.Handler
+	// noHead is set by WithoutHead.
+	noHead bool
 }
 
 // Row returns the route of one method and path. Rows are written with Row,
 // not with struct literals: the exhaustruct linter is on.
 func Row(method, path string, handler http.Handler) Route {
-	return Route{Method: method, Path: path, Handler: handler}
+	return Route{Method: method, Path: path, Handler: handler, noHead: false}
+}
+
+// WithoutHead returns r as a GET route that does not serve HEAD, for a
+// handler that changes state, starts a stream or upgrades to a websocket. A
+// HEAD request to its path is served by a HEAD route of the same path, else
+// by a route of every method that matches the path, else by
+// MethodNotAllowed. No other GET route serves it.
+func (r Route) WithoutHead() Route {
+	r.noHead = true
+
+	return r
+}
+
+// RefusesHead reports whether r is WithoutHead.
+func (r Route) RefusesHead() bool {
+	return r.noHead
 }
 
 // Group is a set of routes below one path prefix, with shared middleware and
@@ -91,27 +115,33 @@ type Group struct {
 
 // Mux serves requests by the routes of its groups. A request goes to the
 // group with the longest prefix of its path, and only the routes of that
-// group can serve it. A literal path segment wins over a variable. Routes
-// match the decoded path, so an escaped "/" (%2F) separates segments.
+// group can serve it. A literal path segment wins over a variable. A HEAD
+// request goes to the route that a GET request of its path goes to, or to a
+// HEAD route of the same path. Routes match the decoded path, so an escaped
+// "/" (%2F) separates segments.
 type Mux struct {
 	// groups are longest prefix first, and the last has prefix "".
 	groups []*group
 	routes []Route
 }
 
-// group is a registered Group. HEAD requests match in head, and all other
-// requests in rows, where a GET route does not take HEAD.
+// group is a registered Group. HEAD requests match in head, where each GET
+// route is one of HEAD unless a HEAD route has its path, and all other
+// requests in rows. every has the routes of every method only, for the HEAD
+// of a route WithoutHead.
 type group struct {
-	prefix           string
-	rows, head       *http.ServeMux
-	middleware       []func(http.Handler) http.Handler
-	notFound         http.Handler
-	methodNotAllowed http.Handler
+	prefix            string
+	rows, head, every *http.ServeMux
+	middleware        []func(http.Handler) http.Handler
+	notFound          http.Handler
+	methodNotAllowed  http.Handler
 }
 
 // NewMux returns the Mux of the groups. It returns an error for a group or a
-// route that breaks the rules of [Group] and [Route], and for a table the
-// router refuses, such as a repeated route.
+// route that breaks the rules of [Group] and [Route], for a route
+// WithoutHead whose method is not GET, and for a table the router refuses,
+// such as a repeated route or two routes whose paths overlap and neither is
+// more specific.
 func NewMux(groups ...Group) (*Mux, error) {
 	m := &Mux{groups: nil, routes: nil}
 
@@ -202,7 +232,9 @@ func (m *Mux) Routes() []Route {
 }
 
 // Allowed returns the methods that a route takes at the path of r, in the
-// order GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS.
+// order GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS. HEAD is among them
+// where a route serves it: not at the path of a GET route WithoutHead, unless
+// a route of every method takes that path.
 func (m *Mux) Allowed(r *http.Request) []string {
 	r = decoded(r)
 
@@ -261,13 +293,23 @@ func (m *Mux) group(r *http.Request) *group {
 }
 
 // lookup returns the route that serves r with method, and the ServeMux that
-// has it, or nil.
+// has it, or nil. HEAD goes to the route that GET goes to, and from a route
+// WithoutHead on to a route of every method, as a method that no route of
+// the path takes.
 func (g *group) lookup(r *http.Request, method string) (*http.ServeMux, *entry) {
-	rows := g.rows
-	if method == http.MethodHead {
-		rows = g.head
+	if method != http.MethodHead {
+		return match(g.rows, r, method)
 	}
 
+	if rows, e := match(g.head, r, method); e == nil || !e.refusesHead {
+		return rows, e
+	}
+
+	return match(g.every, r, method)
+}
+
+// match returns the route of rows that serves r with method, and rows, or nil.
+func match(rows *http.ServeMux, r *http.Request, method string) (*http.ServeMux, *entry) {
 	probe := r
 	if method != r.Method {
 		probe = r.Clone(r.Context())
@@ -288,12 +330,20 @@ func (g *group) lookup(r *http.Request, method string) (*http.ServeMux, *entry) 
 // add registers the routes of g. notFound answers in place of a nil NotFound.
 func (m *Mux) add(g Group, notFound http.Handler) error {
 	reg := &group{
-		prefix: g.Prefix, rows: http.NewServeMux(), head: http.NewServeMux(), middleware: slices.Clone(g.Middleware),
-		notFound: g.NotFound, methodNotAllowed: g.MethodNotAllowed,
+		prefix: g.Prefix, rows: http.NewServeMux(), head: http.NewServeMux(), every: http.NewServeMux(),
+		middleware: slices.Clone(g.Middleware), notFound: g.NotFound, methodNotAllowed: g.MethodNotAllowed,
 	}
 
 	if reg.notFound == nil {
 		reg.notFound = notFound
+	}
+
+	ownHead := map[string]bool{}
+
+	for _, row := range g.Routes {
+		if row.Method == http.MethodHead {
+			ownHead[shape(g.Prefix+row.Path)] = true
+		}
 	}
 
 	for _, row := range g.Routes {
@@ -303,21 +353,7 @@ func (m *Mux) add(g Group, notFound http.Handler) error {
 
 		row.Path = g.Prefix + row.Path
 
-		e := m.entry(reg, row.Path, row.Handler, false)
-
-		var err error
-
-		// a path answers HEAD only by a route of every method or of HEAD
-		switch row.Method {
-		case "":
-			err = errors.Join(handle(reg.rows, row.Path, e), handle(reg.head, row.Path, e))
-		case http.MethodHead:
-			err = handle(reg.head, http.MethodHead+" "+row.Path, e)
-		default:
-			err = handle(reg.rows, row.Method+" "+row.Path, e)
-		}
-
-		if err != nil {
+		if err := reg.register(row, m.entry(reg, row.Path, row.Handler, false), ownHead[shape(row.Path)]); err != nil {
 			return err
 		}
 
@@ -339,6 +375,31 @@ func (m *Mux) add(g Group, notFound http.Handler) error {
 	return nil
 }
 
+// register enters the entry e of row in the ServeMuxes of g. ownHead is set
+// when a HEAD route of g has the path of row.
+func (g *group) register(row Route, e *entry, ownHead bool) error {
+	switch row.Method {
+	case "":
+		return errors.Join(handle(g.rows, row.Path, e), handle(g.head, row.Path, e), handle(g.every, row.Path, e))
+	case http.MethodHead:
+		return handle(g.head, http.MethodHead+" "+row.Path, e)
+	case http.MethodGet:
+		if err := handle(g.rows, http.MethodGet+" "+row.Path, e); err != nil || ownHead {
+			return err
+		}
+
+		if row.noHead {
+			refusal := *e
+			refusal.refusesHead = true
+			e = &refusal
+		}
+
+		return handle(g.head, http.MethodHead+" "+row.Path, e)
+	default:
+		return handle(g.rows, row.Method+" "+row.Path, e)
+	}
+}
+
 // checkRow returns an error for row when it breaks a rule of [Route].
 func checkRow(row Route) error {
 	switch {
@@ -348,6 +409,8 @@ func checkRow(row Route) error {
 		return errBadPath
 	case row.Handler == nil:
 		return errNoHandler
+	case row.noHead && row.Method != http.MethodGet:
+		return errHeadOfAnotherMethod
 	}
 
 	return nil
@@ -421,12 +484,15 @@ type entry struct {
 	handler  http.Handler
 	// options is set for the route of an OPTIONS request that Options serves.
 	options bool
+	// refusesHead is set for the HEAD of a route WithoutHead, which lookup
+	// never returns.
+	refusesHead bool
 }
 
 // entry returns the entry of a route of g at the path template, prefix
 // included.
 func (m *Mux) entry(g *group, template string, handler http.Handler, options bool) *entry {
-	return &entry{mux: m, group: g, template: template, handler: handler, options: options}
+	return &entry{mux: m, group: g, template: template, handler: handler, options: options, refusesHead: false}
 }
 
 // ServeHTTP gives r the template of its route, and an OPTIONS request that

@@ -80,6 +80,10 @@ the root target does.
   tests. Keep CLI, REST, websocket, and UI authorization equivalent.
 - API route changes require domain behavior, `web/server.go`, RBAC,
   `web/public/docs/openapi.yml`, consumers, and tests.
+- A `GET` route also answers `HEAD` with the same handler. Give a `GET` route
+  whose handler changes state, starts a stream or upgrades to a websocket
+  `.WithoutHead()`. The `openapi.yml` description lists these routes, and
+  `TestOpenAPIListsTheRoutesWithoutHead` compares that list with the tables.
 
 ## Go Conventions
 

@@ -64,14 +64,17 @@ func Routes() []routing.Route {
 	const base = routeBase
 
 	return []routing.Route{
-		routing.Row(http.MethodGet, base+"components/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(GetComponentOutput)),
-		routing.Row(http.MethodGet, base+"components/{run}/{loop}/{stage}/{cmp}/ws", weberror.ErrorHandler(StreamComponentOutput)),
+		// a GET route WithoutHead changes state, starts a stream or upgrades to a websocket
+		routing.Row(http.MethodGet, base+"components/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(GetComponentOutput)).WithoutHead(),
+		routing.Row(
+			http.MethodGet, base+"components/{run}/{loop}/{stage}/{cmp}/ws", weberror.ErrorHandler(StreamComponentOutput),
+		).WithoutHead(),
 		routing.Row(http.MethodGet, base+"pipelines/{run}/{loop}", weberror.ErrorHandler(GetPipeline)),
 		routing.Row(http.MethodGet, base+"terminals", weberror.ErrorHandler(GetTerminals)),
-		routing.Row(http.MethodGet, base+"terminals/{pid}", weberror.ErrorHandler(ConnectTerminalByPID)),
+		routing.Row(http.MethodGet, base+"terminals/{pid}", weberror.ErrorHandler(ConnectTerminalByPID)).WithoutHead(),
 		routing.Row(http.MethodPost, base+"terminals/{pid}/exit/{id}", weberror.ErrorHandler(ExitTerminal)),
-		routing.Row(http.MethodGet, base+"terminals/{pid}/ws/{id}", weberror.ErrorHandler(StreamTerminal)),
-		routing.Row(http.MethodGet, base+"terminals/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(ConnectTerminal)),
+		routing.Row(http.MethodGet, base+"terminals/{pid}/ws/{id}", weberror.ErrorHandler(StreamTerminal)).WithoutHead(),
+		routing.Row(http.MethodGet, base+"terminals/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(ConnectTerminal)).WithoutHead(),
 	}
 }
 

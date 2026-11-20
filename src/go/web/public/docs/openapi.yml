@@ -81,6 +81,21 @@ info:
     phenix under a base path (`ui.base-path`), the proxy strips it, and the
     `Location` headers of jobs and configs carry it.
 
+    A `HEAD` request to the path of a `GET` operation answers with the status
+    and headers of the `GET` answer, except that it can omit
+    `Content-Length`, and without a body. The operations that change state,
+    start a stream or open a websocket do not take `HEAD`. They answer it as
+    a method that their path does not take: a 405 with `Allow`, or a 404
+    below `/webshark/`. These are each `GET` that can answer `101` and:
+
+    - `GET /login`
+    - `GET /experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}`
+    - `GET /experiments/{name}/scorch/terminals/{pid}`
+    - `GET /experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}`
+    - `GET /webshark/json`
+    - `GET /webshark/streams/{token}`
+    - `GET /webshark/watch`
+
     Every error, refusals by authentication, RBAC and routing included,
     answers with the `Error` schema as `application/json`. The schema has a
     `message`, the `cause`, sometimes `metadata`, and a `code` to match on

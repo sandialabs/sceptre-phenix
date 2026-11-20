@@ -132,6 +132,13 @@ func (s openAPISpec) documents(method, path string, status int) bool {
 func routerOperations(t *testing.T) (map[string]bool, []string) {
 	t.Helper()
 
+	return walkOperations(routerRoutes(t))
+}
+
+// routerRoutes are the router's routes, with all features on.
+func routerRoutes(t *testing.T) []routing.Route {
+	t.Helper()
+
 	server := serveContract(t, func(o *serverOptions) {
 		o.features = map[string]bool{"webshark": true, "vm-mount": true, "tunneler-download": true}
 	})
@@ -141,7 +148,7 @@ func routerOperations(t *testing.T) (map[string]bool, []string) {
 		t.Fatalf("contract server handler = %T, want *routing.Mux", server.Config.Handler)
 	}
 
-	return walkOperations(router.Routes())
+	return router.Routes()
 }
 
 // walkOperations are the operations of routes, as routerOperations returns them.
@@ -169,6 +176,31 @@ func walkOperations(routes []routing.Route) (map[string]bool, []string) {
 	}
 
 	return ops, anyMethod
+}
+
+// headOperations are the HEAD operations that the GET routes serve, and the
+// GET operations of the routes WithoutHead, keyed as in an openAPISpec.
+func headOperations(routes []routing.Route) (map[string]bool, map[string]bool) {
+	heads, withoutHead := map[string]bool{}, map[string]bool{}
+
+	for _, route := range routes {
+		if route.Method != http.MethodGet {
+			continue
+		}
+
+		scope, path := "root", route.Path
+		if rest, ok := strings.CutPrefix(path, "/api/v1"); ok {
+			scope, path = "api", rest
+		}
+
+		if route.RefusesHead() {
+			withoutHead[openAPIKey(scope, http.MethodGet, path)] = true
+		} else {
+			heads[openAPIKey(scope, http.MethodHead, path)] = true
+		}
+	}
+
+	return heads, withoutHead
 }
 
 // routesOfAnyMethod are routes taking any method: UI files openapi.yml omits.
@@ -229,10 +261,13 @@ func TestOpenAPIVNCSessionIsJSON(t *testing.T) {
 }
 
 // Every router operation is in openapi.yml and vice versa, except any-method routes;
-// the Unix socket's routes are among the router's.
+// the Unix socket's routes are among the router's. openapi.yml may document the
+// HEAD that a GET route serves, and never one of a route WithoutHead.
 func TestRouterMatchesOpenAPI(t *testing.T) {
 	spec := loadOpenAPI(t)
-	router, anyMethod := routerOperations(t)
+	routes := routerRoutes(t)
+	router, anyMethod := walkOperations(routes)
+	heads, _ := headOperations(routes)
 
 	// an API route must name its methods to be compared with openapi.yml
 	for _, path := range anyMethod {
@@ -262,7 +297,7 @@ func TestRouterMatchesOpenAPI(t *testing.T) {
 	}
 
 	for key := range spec {
-		if _, ok := router[key]; !ok {
+		if _, ok := router[key]; !ok && !heads[key] {
 			extra = append(extra, key)
 		}
 	}
@@ -276,6 +311,49 @@ func TestRouterMatchesOpenAPI(t *testing.T) {
 
 	for _, key := range extra {
 		t.Errorf("openapi.yml describes %s, which the router does not serve", key)
+	}
+}
+
+// withoutHeadListed matches an item of the list in the description of
+// openapi.yml of the GET operations that do not take HEAD.
+var withoutHeadListed = regexp.MustCompile("(?m)^- `GET (/[^`]+)`$")
+
+// The routes WithoutHead are those that openapi.yml says do not take HEAD:
+// each GET that can answer 101, and the list in its description.
+func TestOpenAPIListsTheRoutesWithoutHead(t *testing.T) {
+	doc := loadOpenAPIDocument(t)
+
+	scope := func(item *openapi3.PathItem) string {
+		if len(item.Servers) > 0 && !strings.HasSuffix(item.Servers[0].URL, "/api/v1") {
+			return "root"
+		}
+
+		return "api"
+	}
+
+	documented := map[string]bool{}
+
+	for path, item := range doc.Paths {
+		if item.Get != nil && item.Get.Responses.Get(http.StatusSwitchingProtocols) != nil {
+			documented[openAPIKey(scope(item), http.MethodGet, path)] = true
+		}
+	}
+
+	for _, match := range withoutHeadListed.FindAllStringSubmatch(doc.Info.Description, -1) {
+		item := doc.Paths.Find(match[1])
+		if item == nil || item.Get == nil {
+			t.Errorf("openapi.yml lists GET %s as without HEAD, but has no such operation", match[1])
+
+			continue
+		}
+
+		documented[openAPIKey(scope(item), http.MethodGet, match[1])] = true
+	}
+
+	_, withoutHead := headOperations(routerRoutes(t))
+
+	if diff := cmp.Diff(withoutHead, documented); diff != "" {
+		t.Errorf("routes WithoutHead mismatch with openapi.yml (-router +openapi.yml):\n%s", diff)
 	}
 }
 
@@ -527,11 +605,19 @@ func TestHandlerQueriesAreRequiredParameters(t *testing.T) {
 			scope, path = "api", rest
 		}
 
-		key := openAPIKey(scope, method, path)
+		keys := []string{openAPIKey(scope, method, path)}
 
-		for _, name := range queries {
-			if !slices.Contains(required[key], name) {
-				t.Errorf("openapi.yml does not make %s query parameter %q required, which the handler needs", key, name)
+		// the HEAD of a GET route needs them too, where openapi.yml describes it
+		head := openAPIKey(scope, http.MethodHead, path)
+		if _, ok := required[head]; ok && method == http.MethodGet {
+			keys = append(keys, head)
+		}
+
+		for _, key := range keys {
+			for _, name := range queries {
+				if !slices.Contains(required[key], name) {
+					t.Errorf("openapi.yml does not make %s query parameter %q required, which the handler needs", key, name)
+				}
 			}
 		}
 	}
