@@ -6,10 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
-
-	"github.com/gorilla/mux"
 
 	bapi "phenix/api/builder"
 	"phenix/api/config"
@@ -21,6 +20,7 @@ import (
 	"phenix/util/plog"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/routing"
 	"phenix/web/weberror"
 )
 
@@ -139,16 +139,26 @@ func builderDocumentFiles() (string, []string) {
 	return common.PhenixBase, []string{common.MountDir()}
 }
 
-// registerBuilderRoutes adds the Builder routes to the given API router.
-// The router must already have a NotFoundHandler. This function adds the
-// Builder response headers to that handler (see [builderResponseHeaders]).
-func registerBuilderRoutes(router *mux.Router, opts ...builderOption) error {
-	api, err := newBuilderAPI(opts...)
+// registerBuilderRoutes adds the Builder routes to the given API group, after
+// the routes it has. It also adds the Builder response headers (see
+// [builderResponseHeaders]) as the next middleware of the group, and to its
+// NotFound and MethodNotAllowed handlers.
+func registerBuilderRoutes(api *routing.Group, opts ...builderOption) error {
+	b, err := newBuilderAPI(opts...)
 	if err != nil {
 		return err
 	}
 
-	api.routes(router)
+	api.Routes = append(api.Routes, b.routes()...)
+	api.Middleware = append(api.Middleware, builderResponseHeaders)
+
+	// The router answers a request that matches no route, or no method of
+	// one, with these handlers, without running its middleware.
+	if api.NotFound != nil {
+		api.NotFound = builderResponseHeaders(api.NotFound)
+	}
+
+	api.MethodNotAllowed = builderResponseHeaders(builderMethodNotAllowed(api.MethodNotAllowed))
 
 	return nil
 }
@@ -550,8 +560,9 @@ func builderPath(path string) bool {
 }
 
 // builderMethodNotAllowed answers a request that matches a route path but none of its methods.
-// Under the Builder paths it answers 405 with Allow and a refusal code. Other paths go to other, or get the status alone.
-func builderMethodNotAllowed(router *mux.Router, other http.Handler) http.HandlerFunc {
+// Under the Builder paths it answers 405 with a refusal code. Other paths go to other, or get the status alone.
+// The router has set the Allow header.
+func builderMethodNotAllowed(other http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !builderPath(r.URL.Path) {
 			if other != nil {
@@ -563,10 +574,6 @@ func builderMethodNotAllowed(router *mux.Router, other http.Handler) http.Handle
 			return
 		}
 
-		if allowed := builderAllowedMethods(router, r); len(allowed) > 0 {
-			w.Header().Set("Allow", strings.Join(allowed, ", "))
-		}
-
 		refusal := weberror.NewWebError(nil, "this path does not allow the %s method", r.Method).
 			WithCode(weberror.Code(bdoc.CodeRequestMethodNotAllowed))
 
@@ -574,92 +581,30 @@ func builderMethodNotAllowed(router *mux.Router, other http.Handler) http.Handle
 	}
 }
 
-// builderAllowedMethods returns the methods router has a route for at the
-// path of r, in the order Allow names them. When there is one, it also
-// returns OPTIONS, which [builderOptions] answers for every such path.
-func builderAllowedMethods(router *mux.Router, r *http.Request) []string {
-	methods := []string{
-		http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
-		http.MethodPatch, http.MethodDelete,
-	}
-	allowed := make([]string, 0, len(methods)+1)
-
-	for _, method := range methods {
-		probe := r.Clone(r.Context())
-		probe.Method = method
-
-		var match mux.RouteMatch
-
-		if router.Match(probe, &match) && match.MatchErr == nil {
-			allowed = append(allowed, method)
-		}
-	}
-
-	if len(allowed) == 0 {
-		return allowed
-	}
-
-	return append(allowed, http.MethodOptions)
-}
-
-// builderOptionsRequest returns the matcher of the one route that answers
-// OPTIONS under the Builder paths: an OPTIONS request for a path that router
-// has a route for. It checks the method first, so other requests cost
-// nothing more.
-func builderOptionsRequest(router *mux.Router) mux.MatcherFunc {
-	return func(r *http.Request, _ *mux.RouteMatch) bool {
-		return r.Method == http.MethodOptions && builderPath(r.URL.Path) &&
-			len(builderAllowedMethods(router, r)) > 0
-	}
-}
-
-// builderOptions answers OPTIONS for a Builder path with 204 and the Allow
-// header of the path. No Builder route has OPTIONS among its methods, so no
-// handler runs for an OPTIONS request: it reads nothing, writes nothing, and
-// checks no permission.
-func builderOptions(router *mux.Router) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Allow", strings.Join(builderAllowedMethods(router, r), ", "))
-		w.WriteHeader(http.StatusNoContent)
-	}
-}
-
 // builderDraftPath is the path of one draft. It is also the start of the
 // paths of its snapshots, cursor, publication and preflight checks.
 const builderDraftPath = "/builder/drafts/{draft}"
 
-// routes registers every Builder route on the given router, one family of
-// routes at a time. Each route is also described in
-// web/public/docs/openapi.yml, which TestBuilderRoutesDocumented checks.
-func (b *builderAPI) routes(router *mux.Router) {
-	router.Use(builderResponseHeaders)
-
-	// The router answers a request that matches no route, or no method of
-	// one, with these handlers, without running its middleware.
-	if router.NotFoundHandler != nil {
-		router.NotFoundHandler = builderResponseHeaders(router.NotFoundHandler)
-	}
-
-	router.MethodNotAllowedHandler = builderResponseHeaders(builderMethodNotAllowed(router, router.MethodNotAllowedHandler))
-
-	// It comes first, so OPTIONS never reaches a route registered after it,
-	// such as /schemas/{kind}/{version} for /schemas/builder/v1.
-	router.MatcherFunc(builderOptionsRequest(router)).Handler(builderOptions(router))
-
-	b.schemaRoutes(router)
-	b.draftRoutes(router)
-	b.publishingRoutes(router)
-	b.sourceRoutes(router)
-	b.documentRoutes(router)
-	b.iconRoutes(router)
-	b.templateRoutes(router)
-	b.layerSetRoutes(router)
-	b.storageRoutes(router)
+// routes returns every Builder route, one family of routes at a time. Each
+// route is also described in web/public/docs/openapi.yml, which
+// TestBuilderRoutesDocumented checks.
+func (b *builderAPI) routes() []routing.Route {
+	return slices.Concat(
+		b.schemaRoutes(),
+		b.draftRoutes(),
+		b.publishingRoutes(),
+		b.sourceRoutes(),
+		b.documentRoutes(),
+		b.iconRoutes(),
+		b.templateRoutes(),
+		b.layerSetRoutes(),
+		b.storageRoutes(),
+	)
 }
 
-// schemaRoutes registers the schema routes of the document, template file,
+// schemaRoutes are the schema routes of the document, template file,
 // package and layer set file formats.
-func (b *builderAPI) schemaRoutes(router *mux.Router) {
+func (b *builderAPI) schemaRoutes() []routing.Route {
 	schemas := []struct {
 		path, handler, name string
 		schema              func() ([]byte, error)
@@ -670,10 +615,13 @@ func (b *builderAPI) schemaRoutes(router *mux.Router) {
 		{builderLayerSetSchemaPath, "BuilderGetLayerSetSchema", "schema of Builder layer set files", bdoc.LayerSetFileSchemaJSON},
 	}
 
+	routes := make([]routing.Route, 0, len(schemas))
+
 	for _, s := range schemas {
-		router.Handle(s.path, builderHandler(builderSchemaHandler(s.handler, s.name, s.schema))).
-			Methods("GET")
+		routes = append(routes, routing.Row(http.MethodGet, s.path, builderHandler(builderSchemaHandler(s.handler, s.name, s.schema))))
 	}
+
+	return routes
 }
 
 // builderSchemaHandler returns the handler of a GET route that sends the
@@ -700,99 +648,78 @@ func builderSchemaHandler(handler, name string, schema func() ([]byte, error)) f
 	}
 }
 
-// draftRoutes registers the routes of drafts, their snapshots and their
-// cursor.
-func (b *builderAPI) draftRoutes(router *mux.Router) {
+// draftRoutes are the routes of drafts, their snapshots and their cursor.
+func (b *builderAPI) draftRoutes() []routing.Route {
 	const snapshotsPath = builderDraftPath + "/snapshots"
 
-	router.Handle("/builder/drafts", builderHandler(b.listDrafts)).
-		Methods("GET")
-	router.Handle("/builder/drafts", builderHandler(b.createDraft)).
-		Methods("POST")
-	router.Handle(builderDraftPath, builderHandler(b.getDraft)).
-		Methods("GET")
-	router.Handle(builderDraftPath, builderHandler(b.deleteDraft)).
-		Methods("DELETE")
-	router.Handle(snapshotsPath, builderHandler(b.listSnapshots)).
-		Methods("GET")
-	router.Handle(snapshotsPath, builderHandler(b.createSnapshot)).
-		Methods("POST")
-	router.Handle(snapshotsPath+"/{snapshot}", builderHandler(b.getSnapshot)).
-		Methods("GET")
-	router.Handle(snapshotsPath+"/{snapshot}", builderHandler(b.deleteSnapshot)).
-		Methods("DELETE")
-	router.Handle(builderDraftPath+"/cursor", builderHandler(b.updateCursor)).
-		Methods("PATCH")
+	return []routing.Route{
+		routing.Row(http.MethodGet, "/builder/drafts", builderHandler(b.listDrafts)),
+		routing.Row(http.MethodPost, "/builder/drafts", builderHandler(b.createDraft)),
+		routing.Row(http.MethodGet, builderDraftPath, builderHandler(b.getDraft)),
+		routing.Row(http.MethodDelete, builderDraftPath, builderHandler(b.deleteDraft)),
+		routing.Row(http.MethodGet, snapshotsPath, builderHandler(b.listSnapshots)),
+		routing.Row(http.MethodPost, snapshotsPath, builderHandler(b.createSnapshot)),
+		routing.Row(http.MethodGet, snapshotsPath+"/{snapshot}", builderHandler(b.getSnapshot)),
+		routing.Row(http.MethodDelete, snapshotsPath+"/{snapshot}", builderHandler(b.deleteSnapshot)),
+		routing.Row(http.MethodPatch, builderDraftPath+"/cursor", builderHandler(b.updateCursor)),
+	}
 }
 
-// publishingRoutes registers the routes that publish a draft, show what a
-// publish changes (the same route, with dryRun), and run the preflight
-// checks of a draft.
-func (b *builderAPI) publishingRoutes(router *mux.Router) {
-	router.Handle(builderDraftPath+"/publish", builderHandler(b.publishDraft)).
-		Methods("POST")
-	router.Handle(builderDraftPath+"/preflight", builderHandler(b.preflightDraft)).
-		Methods("POST")
+// publishingRoutes are the routes that publish a draft, show what a publish
+// changes (the same route, with dryRun), and run the preflight checks of a
+// draft.
+func (b *builderAPI) publishingRoutes() []routing.Route {
+	return []routing.Route{
+		routing.Row(http.MethodPost, builderDraftPath+"/publish", builderHandler(b.publishDraft)),
+		routing.Row(http.MethodPost, builderDraftPath+"/preflight", builderHandler(b.preflightDraft)),
+	}
 }
 
-// sourceRoutes registers the routes that list the source configs of a
-// document, generate a document, convert a legacy diagram, export a
-// topology, and build or resolve a package.
-func (b *builderAPI) sourceRoutes(router *mux.Router) {
-	router.Handle("/builder/sources", builderHandler(b.listSources)).
-		Methods("GET")
-	router.Handle("/builder/generate", builderHandler(b.generateDocument)).
-		Methods("POST")
-	router.Handle("/builder/legacy", builderHandler(b.convertLegacy)).
-		Methods("POST")
-	router.Handle("/builder/export/topology", builderHandler(b.exportTopology)).
-		Methods("POST")
-	router.Handle("/builder/package", builderHandler(b.buildPackage)).
-		Methods("POST")
-	router.Handle("/builder/package/resolve", builderHandler(b.resolvePackage)).
-		Methods("POST")
+// sourceRoutes are the routes that list the source configs of a document,
+// generate a document, convert a legacy diagram, export a topology, and
+// build or resolve a package.
+func (b *builderAPI) sourceRoutes() []routing.Route {
+	return []routing.Route{
+		routing.Row(http.MethodGet, "/builder/sources", builderHandler(b.listSources)),
+		routing.Row(http.MethodPost, "/builder/generate", builderHandler(b.generateDocument)),
+		routing.Row(http.MethodPost, "/builder/legacy", builderHandler(b.convertLegacy)),
+		routing.Row(http.MethodPost, "/builder/export/topology", builderHandler(b.exportTopology)),
+		routing.Row(http.MethodPost, "/builder/package", builderHandler(b.buildPackage)),
+		routing.Row(http.MethodPost, "/builder/package/resolve", builderHandler(b.resolvePackage)),
+	}
 }
 
-// documentRoutes registers the routes of published documents.
-func (b *builderAPI) documentRoutes(router *mux.Router) {
-	router.Handle("/builder/documents", builderHandler(b.listDocuments)).
-		Methods("GET")
-	router.Handle("/builder/documents/{document}", builderHandler(b.getDocument)).
-		Methods("GET")
-	router.Handle("/builder/documents/{document}", builderHandler(b.deleteDocument)).
-		Methods("DELETE")
-	router.Handle("/builder/topologies/{topology}/document", builderHandler(b.getTopologyDocument)).
-		Methods("GET")
+// documentRoutes are the routes of published documents.
+func (b *builderAPI) documentRoutes() []routing.Route {
+	return []routing.Route{
+		routing.Row(http.MethodGet, "/builder/documents", builderHandler(b.listDocuments)),
+		routing.Row(http.MethodGet, "/builder/documents/{document}", builderHandler(b.getDocument)),
+		routing.Row(http.MethodDelete, "/builder/documents/{document}", builderHandler(b.deleteDocument)),
+		routing.Row(http.MethodGet, "/builder/topologies/{topology}/document", builderHandler(b.getTopologyDocument)),
+	}
 }
 
-// iconRoutes registers the routes of the icon library.
-func (b *builderAPI) iconRoutes(router *mux.Router) {
-	router.Handle(builderIconsPath, builderHandler(b.listIcons)).
-		Methods("GET")
-	router.Handle(builderIconsPath, builderHandler(b.createIcon)).
-		Methods("POST")
-	router.Handle(builderIconsPath+"/{icon}", builderHandler(b.getIcon)).
-		Methods("GET")
-	router.Handle(builderIconsPath+"/{icon}", builderHandler(b.renameIcon)).
-		Methods("PUT")
-	router.Handle(builderIconsPath+"/{icon}", builderHandler(b.deleteIcon)).
-		Methods("DELETE")
+// iconRoutes are the routes of the icon library.
+func (b *builderAPI) iconRoutes() []routing.Route {
+	return []routing.Route{
+		routing.Row(http.MethodGet, builderIconsPath, builderHandler(b.listIcons)),
+		routing.Row(http.MethodPost, builderIconsPath, builderHandler(b.createIcon)),
+		routing.Row(http.MethodGet, builderIconsPath+"/{icon}", builderHandler(b.getIcon)),
+		routing.Row(http.MethodPut, builderIconsPath+"/{icon}", builderHandler(b.renameIcon)),
+		routing.Row(http.MethodDelete, builderIconsPath+"/{icon}", builderHandler(b.deleteIcon)),
+	}
 }
 
-// templateRoutes registers the routes of the template library of the server.
-func (b *builderAPI) templateRoutes(router *mux.Router) {
-	router.Handle(builderTemplatesPath, builderHandler(b.listTemplates)).
-		Methods("GET")
-	router.Handle(builderTemplatesPath+"/items", builderHandler(b.createTemplates)).
-		Methods("POST")
-	router.Handle(builderTemplatesPath+"/items/{template}", builderHandler(b.putTemplate)).
-		Methods("PUT")
-	router.Handle(builderTemplatesPath+"/collections", builderHandler(b.createTemplateCollection)).
-		Methods("POST")
-	router.Handle(builderTemplatesPath+"/collections/{collection}", builderHandler(b.putTemplateCollection)).
-		Methods("PUT")
-	router.Handle(builderTemplatesPath+"/delete", builderHandler(b.deleteTemplates)).
-		Methods("POST")
+// templateRoutes are the routes of the template library of the server.
+func (b *builderAPI) templateRoutes() []routing.Route {
+	return []routing.Route{
+		routing.Row(http.MethodGet, builderTemplatesPath, builderHandler(b.listTemplates)),
+		routing.Row(http.MethodPost, builderTemplatesPath+"/items", builderHandler(b.createTemplates)),
+		routing.Row(http.MethodPut, builderTemplatesPath+"/items/{template}", builderHandler(b.putTemplate)),
+		routing.Row(http.MethodPost, builderTemplatesPath+"/collections", builderHandler(b.createTemplateCollection)),
+		routing.Row(http.MethodPut, builderTemplatesPath+"/collections/{collection}", builderHandler(b.putTemplateCollection)),
+		routing.Row(http.MethodPost, builderTemplatesPath+"/delete", builderHandler(b.deleteTemplates)),
+	}
 }
 
 // draftFor returns the request's actor and the draft its path names. Every
@@ -812,7 +739,7 @@ func (b *builderAPI) draftFor(r *http.Request, action string) (builderActor, *ba
 // pathDraft loads the draft that the request path names (see
 // [builderAPI.namedDraft]).
 func (b *builderAPI) pathDraft(r *http.Request, damaged bool) (*bapi.DraftMetadata, error) {
-	return b.namedDraft(r.Context(), mux.Vars(r)["draft"], damaged)
+	return b.namedDraft(r.Context(), r.PathValue("draft"), damaged)
 }
 
 // namedDraft loads the draft with the given ID. When damaged is set, it also

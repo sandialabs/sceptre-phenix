@@ -81,6 +81,21 @@ info:
     phenix under a base path (`ui.base-path`), the proxy strips it, and the
     `Location` headers of jobs and configs carry it.
 
+    A `HEAD` request to the path of a `GET` operation answers with the status
+    and headers of the `GET` answer, except that it can omit
+    `Content-Length`, and without a body. The operations that change state,
+    start a stream or open a websocket do not take `HEAD`. They answer it as
+    a method that their path does not take: a 405 with `Allow`, or a 404
+    below `/webshark/`. These are each `GET` that can answer `101` and:
+
+    - `GET /login`
+    - `GET /experiments/{name}/scorch/components/{run}/{loop}/{stage}/{cmp}`
+    - `GET /experiments/{name}/scorch/terminals/{pid}`
+    - `GET /experiments/{name}/scorch/terminals/{run}/{loop}/{stage}/{cmp}`
+    - `GET /webshark/json`
+    - `GET /webshark/streams/{token}`
+    - `GET /webshark/watch`
+
     Every error, refusals by authentication, RBAC and routing included,
     answers with the `Error` schema as `application/json`. The schema has a
     `message`, the `cause`, sometimes `metadata`, and a `code` to match on
@@ -7324,7 +7339,9 @@ paths:
                     items:
                       $ref: "#/components/schemas/File"
         "400":
-          description: the VM is not mounted, or the path is a file or outside the mount
+          description: >-
+            the path query parameter is missing, the VM is not mounted, or the
+            path is a file or outside the mount
           content:
             application/json:
               schema:
@@ -7452,7 +7469,9 @@ paths:
         "304":
           $ref: "#/components/responses/NotModified"
         "400":
-          description: the VM is not mounted, or the path is a folder or outside the mount
+          description: >-
+            the path query parameter is missing, the VM is not mounted, or the
+            path is a folder or outside the mount
           content:
             application/json:
               schema:
@@ -7522,7 +7541,9 @@ paths:
             Last-Modified:
               $ref: "#/components/headers/LastModified"
         "400":
-          description: the VM is not mounted, or the path is a folder or outside the mount
+          description: >-
+            the path query parameter is missing, the VM is not mounted, or the
+            path is a folder or outside the mount
           content:
             application/json:
               schema:
@@ -8050,7 +8071,9 @@ paths:
         "200":
           description: the file was written
         "400":
-          description: the VM is not mounted, or the path is outside the mount
+          description: >-
+            the path query parameter is missing, the VM is not mounted, or the
+            path is outside the mount
           content:
             application/json:
               schema:
@@ -13219,9 +13242,8 @@ paths:
       summary: Set a console's terminal size
       description: >-
         Both query parameters are required and must be unsigned integers. A
-        request without them, or with a value that is not all digits, does not
-        match this route at all. A console starts at 80 columns and 24 rows.
-        A resize sends no input to the console.
+        console starts at 80 columns and 24 rows. A resize sends no input to
+        the console.
       operationId: postConsoleSize
       parameters:
         - name: pid
@@ -13252,7 +13274,9 @@ paths:
         "200":
           description: successful operation
         "400":
-          description: the pid is not a number, or rows or cols is above 65535
+          description: >-
+            the pid is not a number, or rows or cols is missing, is not all
+            digits or is above 65535
           content:
             application/json:
               schema:

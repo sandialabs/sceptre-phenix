@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v3"
 
 	"phenix/api/config"
@@ -50,7 +49,7 @@ func ApplyWorkflow(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		branch  = mux.Vars(r)["branch"]
+		branch  = r.PathValue("branch")
 		applied = audit.Fields{Extra: []any{"phenix.workflow.branch", branch}}
 	)
 
@@ -657,8 +656,7 @@ func WorkflowUpsertConfig(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		scope   = vars["branch"]
+		scope   = r.PathValue("branch")
 	)
 
 	// A parse error quotes the text it failed on, so a caller who may not

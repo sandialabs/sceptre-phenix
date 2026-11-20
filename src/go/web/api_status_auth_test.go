@@ -375,7 +375,7 @@ func TestMethodsAllowed(t *testing.T) {
 
 	var (
 		server = serveRouter(t, testPublic(), testJWTKey)
-		socket = httptest.NewServer(newSocketRouter())
+		socket = httptest.NewServer(socketRouter(t))
 	)
 
 	t.Cleanup(socket.Close)
@@ -392,20 +392,43 @@ func TestMethodsAllowed(t *testing.T) {
 		base, method, path string
 		want               methodAnswer
 	}{
-		"DELETE /configs":        {server.URL, http.MethodDelete, "/api/v1/configs", refused("GET, POST, OPTIONS")},
-		"PUT /configs":           {server.URL, http.MethodPut, "/api/v1/configs", refused("GET, POST, OPTIONS")},
-		"DELETE /settings":       {server.URL, http.MethodDelete, "/api/v1/settings", refused("GET, POST, OPTIONS")},
-		"PUT /users/x":           {server.URL, http.MethodPut, "/api/v1/users/x", refused("GET, PATCH, DELETE, OPTIONS")},
-		"POST /jobs":             {server.URL, http.MethodPost, "/api/v1/jobs", refused("GET, OPTIONS")},
-		"OPTIONS /configs":       {server.URL, http.MethodOptions, "/api/v1/configs", options("GET, POST, OPTIONS")},
-		"OPTIONS /users/x":       {server.URL, http.MethodOptions, "/api/v1/users/x", options("GET, PATCH, DELETE, OPTIONS")},
-		"OPTIONS builder drafts": {server.URL, http.MethodOptions, "/api/v1/builder/drafts", options("GET, POST, OPTIONS")},
-		"POST /version":          {server.URL, http.MethodPost, "/version", refused("GET")},
-		"POST /features":         {server.URL, http.MethodPost, "/features", refused("GET")},
+		"DELETE /configs":        {server.URL, http.MethodDelete, "/api/v1/configs", refused("GET, HEAD, POST, OPTIONS")},
+		"PUT /configs":           {server.URL, http.MethodPut, "/api/v1/configs", refused("GET, HEAD, POST, OPTIONS")},
+		"DELETE /settings":       {server.URL, http.MethodDelete, "/api/v1/settings", refused("GET, HEAD, POST, OPTIONS")},
+		"PUT /users/x":           {server.URL, http.MethodPut, "/api/v1/users/x", refused("GET, HEAD, PATCH, DELETE, OPTIONS")},
+		"POST /jobs":             {server.URL, http.MethodPost, "/api/v1/jobs", refused("GET, HEAD, OPTIONS")},
+		"OPTIONS /configs":       {server.URL, http.MethodOptions, "/api/v1/configs", options("GET, HEAD, POST, OPTIONS")},
+		"OPTIONS /users/x":       {server.URL, http.MethodOptions, "/api/v1/users/x", options("GET, HEAD, PATCH, DELETE, OPTIONS")},
+		"OPTIONS builder drafts": {server.URL, http.MethodOptions, "/api/v1/builder/drafts", options("GET, HEAD, POST, OPTIONS")},
+		"OPTIONS /ws":            {server.URL, http.MethodOptions, "/api/v1/ws", options("GET, OPTIONS")},
+		"POST /version":          {server.URL, http.MethodPost, "/version", refused("GET, HEAD")},
+		"POST /features":         {server.URL, http.MethodPost, "/features", refused("GET, HEAD")},
 		"DELETE /healthz":        {server.URL, http.MethodDelete, "/healthz", refused("GET, HEAD")},
 		"PUT /readyz":            {server.URL, http.MethodPut, "/readyz", refused("GET, HEAD")},
-		"socket DELETE /jobs/x":  {socket.URL, http.MethodDelete, "/api/v1/jobs/x", refused("GET")},
-		"socket OPTIONS /jobs":   {socket.URL, http.MethodOptions, "/api/v1/jobs", refused("GET")},
+		"socket DELETE /jobs/x":  {socket.URL, http.MethodDelete, "/api/v1/jobs/x", refused("GET, HEAD")},
+		"socket OPTIONS /jobs":   {socket.URL, http.MethodOptions, "/api/v1/jobs", refused("GET, HEAD")},
+		// a path with a trailing "/" gets the JSON 404, not a redirect
+		"OPTIONS layer set schema/": {
+			server.URL, http.MethodOptions, "/api/v1/schemas/builder/layersets/v1/",
+			methodAnswer{Status: http.StatusNotFound, Code: weberror.CodeNotFound},
+		},
+		"GET /configs/": {
+			server.URL, http.MethodGet, "/api/v1/configs/", methodAnswer{Status: http.StatusNotFound, Code: weberror.CodeNotFound},
+		},
+		// an escaped "/" separates segments: no route has experiments/a/b, and
+		// experiments/a/apps reaches the route of the apps, whose Auth refuses
+		"GET /experiments/a%2Fb": {
+			server.URL, http.MethodGet, "/api/v1/experiments/a%2Fb",
+			methodAnswer{Status: http.StatusNotFound, Code: weberror.CodeNotFound},
+		},
+		"GET /experiments/a%2Fapps": {
+			server.URL, http.MethodGet, "/api/v1/experiments/a%2Fapps",
+			methodAnswer{Status: http.StatusForbidden, Code: weberror.CodeForbidden},
+		},
+		"OPTIONS /experiments/a%2Fapps": {server.URL, http.MethodOptions, "/api/v1/experiments/a%2Fapps", options("GET, HEAD, OPTIONS")},
+		"PUT /experiments%2Fa": {
+			server.URL, http.MethodPut, "/api/v1/experiments%2Fa", refused("GET, HEAD, PATCH, DELETE, OPTIONS"),
+		},
 	}
 
 	for name, tc := range tests {

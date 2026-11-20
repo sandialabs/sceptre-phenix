@@ -6,8 +6,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	bapi "phenix/api/builder"
 	bdoc "phenix/types/builder"
 	"phenix/util/plog"
@@ -572,7 +570,7 @@ func (b *builderAPI) putTemplate(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	id := mux.Vars(r)[builderKindTemplate]
+	id := r.PathValue(builderKindTemplate)
 
 	if !bapi.ValidID(id) {
 		return builderNotFound(builderKindTemplate, id)
@@ -669,7 +667,7 @@ func (b *builderAPI) putTemplateCollection(w http.ResponseWriter, r *http.Reques
 		return err
 	}
 
-	id := mux.Vars(r)[builderKindCollection]
+	id := r.PathValue(builderKindCollection)
 
 	if !bapi.ValidID(id) {
 		return builderNotFound(builderKindCollection, id)

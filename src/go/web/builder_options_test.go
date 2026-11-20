@@ -9,12 +9,12 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/gorilla/mux"
 
 	bapi "phenix/api/builder"
 	"phenix/api/disk"
 	"phenix/store"
 	"phenix/store/recordtest/memrecord"
+	"phenix/web/routing"
 )
 
 // builderCountingRecords is a record store that counts every call made to it.
@@ -76,50 +76,47 @@ func (c *builderCountingRecords) RecordTxn(fn func(store.RecordTx) error) error 
 	return c.RecordStore.RecordTxn(fn)
 }
 
-// builderRouteMethods returns, for each path template of the Builder
-// routes, the methods of every route whose path matches that path with "x"
-// for each variable, as the router matches it.
-func builderRouteMethods(t *testing.T, api *mux.Router) map[string][]string {
-	t.Helper()
-
+// builderRouteMethods returns, for each path template of the routes, the
+// methods of every route whose path matches that path with "x" for each
+// variable, as the router matches it, and HEAD for a GET route that serves it.
+func builderRouteMethods(routes []routing.Route) map[string][]string {
 	type route struct {
 		template string
 		pattern  *regexp.Regexp
-		methods  []string
+		method   string
 	}
 
-	var routes []route
+	var (
+		variable = regexp.MustCompile(`\{[^}]+\}`)
+		matched  = make([]route, 0, len(routes))
+	)
 
-	err := api.Walk(func(r *mux.Route, _ *mux.Router, _ []*mux.Route) error {
-		template, templateErr := r.GetPathTemplate()
-		pattern, patternErr := r.GetPathRegexp()
-		methods, methodsErr := r.GetMethods()
-
-		if templateErr != nil || patternErr != nil || methodsErr != nil {
-			return nil //nolint:nilerr // routes without a path or methods are not operations
+	for _, r := range routes {
+		parts := variable.Split(r.Path, -1)
+		for i, part := range parts {
+			parts[i] = regexp.QuoteMeta(part)
 		}
 
-		routes = append(routes, route{template: template, pattern: regexp.MustCompile(pattern), methods: methods})
+		pattern := regexp.MustCompile("^" + strings.Join(parts, "[^/]+") + "$")
+		matched = append(matched, route{template: r.Path, pattern: pattern, method: r.Method})
 
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking the routes: %v", err)
+		if r.Method == http.MethodGet && !r.RefusesHead() {
+			matched = append(matched, route{template: r.Path, pattern: pattern, method: http.MethodHead})
+		}
 	}
 
-	variable := regexp.MustCompile(`\{[^}]+\}`)
 	order := []string{
 		http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
 		http.MethodPatch, http.MethodDelete, http.MethodOptions,
 	}
 	allowed := map[string][]string{}
 
-	for _, r := range routes {
+	for _, r := range matched {
 		path := variable.ReplaceAllString(r.template, "x")
 
-		for _, other := range routes {
+		for _, other := range matched {
 			if other.pattern.MatchString(path) {
-				allowed[r.template] = append(allowed[r.template], other.methods...)
+				allowed[r.template] = append(allowed[r.template], other.method)
 			}
 		}
 	}
@@ -159,14 +156,13 @@ func TestBuilderOptionsRunNoHandler(t *testing.T) {
 		withBuilderPreflightSources(preflightSources(&hostReads)),
 	})
 
-	// The generic schema route that /schemas/builder/v1 also matches,
-	// registered after the Builder routes as [Start] registers it.
-	harness.api.Handle("/schemas/{kind}/{version}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	// The generic schema route, which /schemas/builder/v1 also matches.
+	harness.handle(routing.Row(http.MethodGet, "/schemas/{kind}/{version}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("OPTIONS reached the generic schema route")
 		w.WriteHeader(http.StatusTeapot)
-	})).Methods("GET", "OPTIONS")
+	})))
 
-	routes := builderRouteMethods(t, harness.api)
+	routes := builderRouteMethods(harness.router.Routes())
 	records.calls.Store(0)
 
 	var (

@@ -1052,9 +1052,16 @@ func TestResizeConsoleRefuses(t *testing.T) {
 	}{
 		"pid not a number": {"/console/abc/size?cols=80&rows=24", "invalid pid", http.StatusBadRequest},
 		"unknown pid":      {"/console/0/size?cols=80&rows=24", "console not found", http.StatusNotFound},
-		"bad query":        {"/console/" + pid + "/size?cols=80;rows=24", "invalid form", http.StatusBadRequest},
+		"bad query":        {"/console/" + pid + "/size?cols=80;rows=24", "invalid rows", http.StatusBadRequest},
 		"rows too many":    {"/console/" + pid + "/size?cols=80&rows=65536", "invalid rows", http.StatusBadRequest},
 		"cols too many":    {"/console/" + pid + "/size?cols=99999999999&rows=24", "invalid cols", http.StatusBadRequest},
+		"no rows":          {"/console/" + pid + "/size?cols=80", "invalid rows", http.StatusBadRequest},
+		"empty rows":       {"/console/" + pid + "/size?cols=80&rows=", "invalid rows", http.StatusBadRequest},
+		"rows not digits":  {"/console/" + pid + "/size?cols=80&rows=ab", "invalid rows", http.StatusBadRequest},
+		"cols not digits":  {"/console/" + pid + "/size?cols=a&rows=1", "invalid cols", http.StatusBadRequest},
+		"no cols":          {"/console/" + pid + "/size?rows=24", "invalid cols", http.StatusBadRequest},
+		"negative cols":    {"/console/" + pid + "/size?rows=24&cols=-1", "invalid cols", http.StatusBadRequest},
+		"no query":         {"/console/" + pid + "/size", "invalid rows", http.StatusBadRequest},
 		"not a terminal":   {"/console/" + notTTY + "/size?cols=80&rows=24", "set winsize failed", http.StatusInternalServerError},
 		"closed pty":       {"/console/" + closed + "/size?cols=80&rows=24", "set winsize failed", http.StatusInternalServerError},
 	} {
@@ -1066,7 +1073,19 @@ func TestResizeConsoleRefuses(t *testing.T) {
 		})
 	}
 
-	// sizes the router's patterns would not route here
+	// the sizes come from the query only, not from a form body
+	t.Run("form body", func(t *testing.T) {
+		path := "/console/" + pid + "/size"
+
+		resp := do(t, http.MethodPost, api+path, "cols=80&rows=24", "Content-Type", "application/x-www-form-urlencoded")
+
+		got := errorMessage(t, resp.StatusCode, readBody(t, resp))
+		if resp.StatusCode != http.StatusBadRequest || got != "invalid rows" {
+			t.Errorf("POST %s with a form body = %d %q, want 400 %q", path, resp.StatusCode, got, "invalid rows")
+		}
+	})
+
+	// the handler itself refuses a size that is missing or not all digits
 	console := consoleStuckSession(t, registry, "test-user", consoleTempFile(t))
 
 	for query, msg := range map[string]string{

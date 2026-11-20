@@ -12,8 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/experiment"
 	"phenix/store"
 	"phenix/util/common"
@@ -82,7 +80,7 @@ func serveBaseDirTest(
 	req.Header.Set("Content-Type", mimeJSON)
 
 	if vars != nil {
-		req = mux.SetURLVars(req, vars)
+		req = withPathValues(req, vars)
 	}
 
 	ctx := context.WithValue(req.Context(), middleware.ContextKeyRole, testRole("*", "*", "*", "*/*"))

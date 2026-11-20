@@ -14,7 +14,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/gorilla/mux"
 	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
 
 	"phenix/api/job"
@@ -162,7 +161,7 @@ func TestReadsGiveUpWhenTheClientLeaves(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.WithValue(t.Context(), middleware.ContextKeyRole, tc.role))
 
 			req := httptest.NewRequestWithContext(ctx, http.MethodGet, tc.path, nil)
-			req = mux.SetURLVars(req, tc.vars)
+			req = withPathValues(req, tc.vars)
 
 			var (
 				rec  = httptest.NewRecorder()

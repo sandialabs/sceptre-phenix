@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/gorilla/mux"
 
 	"phenix/api/config"
 	"phenix/store"
@@ -353,7 +352,7 @@ func useDefaultRoles(t *testing.T) {
 func roleRequest(method, target, body string, vars map[string]string, role rbac.Role) *http.Request {
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
 	req.Header.Set("Content-Type", mimeJSON)
-	req = mux.SetURLVars(req, vars)
+	req = withPathValues(req, vars)
 
 	ctx := context.WithValue(req.Context(), middleware.ContextKeyRole, role)
 	ctx = context.WithValue(ctx, middleware.ContextKeyUser, "test-user")

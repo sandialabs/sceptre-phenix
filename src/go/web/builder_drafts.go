@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	bapi "phenix/api/builder"
 	bdoc "phenix/types/builder"
 	"phenix/util/plog"
@@ -496,7 +494,7 @@ func (b *builderAPI) getSnapshot(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	requested := mux.Vars(r)["snapshot"]
+	requested := r.PathValue("snapshot")
 	manifest := meta.Snapshot(requested)
 
 	if requested == builderCurrentSnapshot {
@@ -547,7 +545,7 @@ func (b *builderAPI) deleteSnapshot(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 
-	requested := mux.Vars(r)["snapshot"]
+	requested := r.PathValue("snapshot")
 	manifest := meta.Snapshot(requested)
 
 	if requested == builderCurrentSnapshot {

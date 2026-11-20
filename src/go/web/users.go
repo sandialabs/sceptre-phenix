@@ -6,8 +6,6 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/config"
 	"phenix/api/settings"
 	"phenix/store"
@@ -204,8 +202,7 @@ func GetUser(w http.ResponseWriter, r *http.Request) error {
 		ctx      = r.Context()
 		uname, _ = ctx.Value(middleware.ContextKeyUser).(string)
 		role, _  = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars     = mux.Vars(r)
-		username = vars["username"]
+		username = r.PathValue("username")
 	)
 
 	if !role.Allowed(resourceUsers, verbGet, username) {
@@ -253,8 +250,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		uname   = vars["username"]
+		uname   = r.PathValue("username")
 	)
 
 	target := audit.Fields{TargetUser: uname}
@@ -461,8 +457,7 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) error {
 		ctx     = r.Context()
 		user, _ = ctx.Value(middleware.ContextKeyUser).(string)
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		uname   = vars["username"]
+		uname   = r.PathValue("username")
 	)
 
 	deleted := audit.Fields{TargetUser: uname}

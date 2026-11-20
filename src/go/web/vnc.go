@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/mitchellh/mapstructure"
 	"golang.org/x/net/websocket"
 
@@ -80,9 +79,8 @@ func GetVNC(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
-		name = vars["name"]
+		exp  = r.PathValue("exp")
+		name = r.PathValue("name")
 	)
 
 	if !role.Allowed("vms/vnc", "get", exp+"/"+name) {
@@ -184,9 +182,8 @@ func serveVNCWebSocket(w http.ResponseWriter, r *http.Request, attaches *audit.R
 
 	var (
 		role = middleware.RoleFromContext(r.Context())
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
-		name = vars["name"]
+		exp  = r.PathValue("exp")
+		name = r.PathValue("name")
 	)
 
 	fields := audit.Fields{Experiment: exp, VM: name}

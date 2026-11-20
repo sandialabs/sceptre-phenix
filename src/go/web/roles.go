@@ -13,8 +13,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/config"
 	"phenix/store"
 	"phenix/types"
@@ -471,7 +469,7 @@ func UpdateRole(w http.ResponseWriter, r *http.Request) error {
 
 	var (
 		role   = middleware.RoleFromContext(r.Context())
-		name   = mux.Vars(r)["name"]
+		name   = r.PathValue("name")
 		fields = roleFields(name)
 	)
 
@@ -676,7 +674,7 @@ func DeleteRole(w http.ResponseWriter, r *http.Request) error {
 
 	var (
 		role   = middleware.RoleFromContext(r.Context())
-		name   = mux.Vars(r)["name"]
+		name   = r.PathValue("name")
 		fields = roleFields(name)
 	)
 

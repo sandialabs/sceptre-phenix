@@ -10,6 +10,7 @@ import (
 
 	bapi "phenix/api/builder"
 	bdoc "phenix/types/builder"
+	"phenix/web/routing"
 	"phenix/web/weberror"
 )
 
@@ -109,9 +110,9 @@ type builderAnswer struct {
 // takes with 405, Allow and a code. Another route gets the server's own 405.
 func TestBuilderMethodNotAllowedCarriesCode(t *testing.T) {
 	harness := newBuilderHarness(t)
-	harness.api.Handle("/configs/{kind}/{name}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	harness.handle(routing.Row(http.MethodGet, "/configs/{kind}/{name}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	})).Methods(http.MethodGet)
+	})))
 
 	recorder := harness.do(builderRequest{method: http.MethodPatch, path: "/builder/drafts", user: builderAlice})
 
@@ -124,7 +125,7 @@ func TestBuilderMethodNotAllowedCarriesCode(t *testing.T) {
 		ContentType: recorder.Header().Get("Content-Type"),
 	}
 	want := builderAnswer{
-		Status: http.StatusMethodNotAllowed, Code: string(bdoc.CodeRequestMethodNotAllowed), Allow: "GET, POST, OPTIONS",
+		Status: http.StatusMethodNotAllowed, Code: string(bdoc.CodeRequestMethodNotAllowed), Allow: "GET, HEAD, POST, OPTIONS",
 		ContentType: mimeJSON,
 	}
 
@@ -132,8 +133,8 @@ func TestBuilderMethodNotAllowedCarriesCode(t *testing.T) {
 		t.Errorf("PATCH /builder/drafts mismatch (-want +got):\n%s", diff)
 	}
 
-	if body.Message == "" {
-		t.Errorf("PATCH /builder/drafts message = %q, want one", body.Message)
+	if want := "this path does not allow the PATCH method"; body.Message != want {
+		t.Errorf("PATCH /builder/drafts message = %q, want %q", body.Message, want)
 	}
 
 	other := harness.do(builderRequest{method: http.MethodPatch, path: "/configs/x/x", user: builderAlice})
@@ -143,10 +144,14 @@ func TestBuilderMethodNotAllowedCarriesCode(t *testing.T) {
 	harness.decode(other, &otherBody)
 
 	got = builderAnswer{Status: other.Code, Code: otherBody.Code, Allow: other.Header().Get("Allow")}
-	want = builderAnswer{Status: http.StatusMethodNotAllowed, Code: string(weberror.CodeInvalidRequest)}
+	want = builderAnswer{Status: http.StatusMethodNotAllowed, Code: string(weberror.CodeInvalidRequest), Allow: "GET, HEAD, OPTIONS"}
 
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("PATCH /configs/x/x mismatch (-want +got):\n%s", diff)
+	}
+
+	if want := "method not allowed"; otherBody.Message != want {
+		t.Errorf("PATCH /configs/x/x message = %q, want %q", otherBody.Message, want)
 	}
 }
 

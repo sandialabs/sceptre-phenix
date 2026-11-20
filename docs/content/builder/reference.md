@@ -356,7 +356,8 @@ gets the `request.*` or `server.*` code of its status.
 | 503 | `server.busy` |
 
 `OPTIONS` on a Builder route gets 204 and the same `Allow` header as a 405
-answer for that path, and does nothing else.
+answer for that path, and does nothing else. `HEAD` on a Builder `GET` route
+gets the status and headers of the `GET` answer, without a body.
 
 Where else issues show up in answers:
 

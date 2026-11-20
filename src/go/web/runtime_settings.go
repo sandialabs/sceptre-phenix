@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/gorilla/mux"
 	"github.com/spf13/viper"
 
 	"phenix/api/runtimesettings"
@@ -71,7 +70,7 @@ func settingText(raw json.RawMessage) (string, error) {
 // runtimeSettingVars returns the setting key of the request, or a 400 for a
 // key that is not one.
 func runtimeSettingVars(r *http.Request) (string, error) {
-	key := mux.Vars(r)["key"]
+	key := r.PathValue("key")
 	if !runtimeSettingKey.MatchString(key) {
 		return "", weberror.New(http.StatusBadRequest, fmt.Sprintf("%q is not a setting key, such as log.level", key))
 	}
@@ -116,7 +115,7 @@ func (rs runtimeSettingsRoutes) GetRuntimeSetting(w http.ResponseWriter, r *http
 // It writes the value to the config file of phenix ui, as phenix settings set
 // does. The audit event names the key, never the value.
 func (rs runtimeSettingsRoutes) SetRuntimeSetting(w http.ResponseWriter, r *http.Request) error {
-	key := mux.Vars(r)["key"]
+	key := r.PathValue("key")
 	changed := audit.Fields{Extra: []any{"phenix.setting.key", key}}
 
 	if !middleware.RoleFromContext(r.Context()).Allowed(resourceRuntimeSettings, "update") {
@@ -157,7 +156,7 @@ func (rs runtimeSettingsRoutes) SetRuntimeSetting(w http.ResponseWriter, r *http
 // It removes the key from the config file of phenix ui, as phenix settings
 // unset does, so a PHENIX_ variable or the default applies.
 func (rs runtimeSettingsRoutes) UnsetRuntimeSetting(w http.ResponseWriter, r *http.Request) error {
-	key := mux.Vars(r)["key"]
+	key := r.PathValue("key")
 	changed := audit.Fields{Extra: []any{"phenix.setting.key", key}}
 
 	if !middleware.RoleFromContext(r.Context()).Allowed(resourceRuntimeSettings, "update") {

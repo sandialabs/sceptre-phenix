@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid/v5"
-	"github.com/gorilla/mux"
 	"golang.org/x/net/websocket"
 
 	"phenix/api/experiment"
@@ -31,6 +30,7 @@ import (
 	"phenix/web/lifecycle"
 	"phenix/web/middleware"
 	"phenix/web/rbac"
+	"phenix/web/routing"
 	"phenix/web/util"
 	"phenix/web/weberror"
 )
@@ -45,42 +45,37 @@ func init() { //nolint:gochecknoinits // hook registration
 
 const routeBase = "/experiments/{name}/scorch/"
 
-// Route is a SCORCH API route: its path under /api/v1, its handler and its
-// methods, OPTIONS left out.
-type Route struct {
-	Path    string
-	Handler http.Handler
-	Methods []string
-}
-
 // SocketRoutes are the SCORCH routes that the Unix socket serves as well, so
 // that phenix experiment scorch can start, follow, cancel and clear a run
-// that the server executes. RegisterRoutes does not register them.
-func SocketRoutes() []Route {
-	return []Route{
-		{routeBase + "pipelines", weberror.ErrorHandler(GetPipelines), []string{"GET"}},
-		{routeBase + "pipelines/{run}/cleanup", weberror.ErrorHandler(CleanupPipeline), []string{"POST"}},
-		{routeBase + "pipelines/{run}/clear", weberror.ErrorHandler(ClearPipeline), []string{"POST"}},
-		{routeBase + "pipelines/{run}", weberror.ErrorHandler(StartPipeline), []string{"POST"}},
-		{routeBase + "pipelines/{run}", weberror.ErrorHandler(CancelPipeline), []string{"DELETE"}},
+// that the server executes. Routes does not return them.
+func SocketRoutes() []routing.Route {
+	return []routing.Route{
+		routing.Row(http.MethodGet, routeBase+"pipelines", weberror.ErrorHandler(GetPipelines)),
+		routing.Row(http.MethodPost, routeBase+"pipelines/{run}/cleanup", weberror.ErrorHandler(CleanupPipeline)),
+		routing.Row(http.MethodPost, routeBase+"pipelines/{run}/clear", weberror.ErrorHandler(ClearPipeline)),
+		routing.Row(http.MethodPost, routeBase+"pipelines/{run}", weberror.ErrorHandler(StartPipeline)),
+		routing.Row(http.MethodDelete, routeBase+"pipelines/{run}", weberror.ErrorHandler(CancelPipeline)),
 	}
 }
 
-// RegisterRoutes serves the SCORCH API from api, the router of the /api/v1
-// paths, except SocketRoutes, which the caller registers.
-func RegisterRoutes(api *mux.Router) {
+// Routes are the SCORCH API routes below /api/v1, except SocketRoutes, which
+// the caller adds.
+func Routes() []routing.Route {
 	const base = routeBase
 
-	api.Handle(base+"components/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(GetComponentOutput)).
-		Methods("GET", "OPTIONS")
-	api.Handle(base+"components/{run}/{loop}/{stage}/{cmp}/ws", weberror.ErrorHandler(StreamComponentOutput)).
-		Methods("GET", "OPTIONS")
-	api.Handle(base+"pipelines/{run}/{loop}", weberror.ErrorHandler(GetPipeline)).Methods("GET", "OPTIONS")
-	api.Handle(base+"terminals", weberror.ErrorHandler(GetTerminals)).Methods("GET", "OPTIONS")
-	api.Handle(base+"terminals/{pid}", weberror.ErrorHandler(ConnectTerminalByPID)).Methods("GET", "OPTIONS")
-	api.Handle(base+"terminals/{pid}/exit/{id}", weberror.ErrorHandler(ExitTerminal)).Methods("POST", "OPTIONS")
-	api.Handle(base+"terminals/{pid}/ws/{id}", weberror.ErrorHandler(StreamTerminal)).Methods("GET", "OPTIONS")
-	api.Handle(base+"terminals/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(ConnectTerminal)).Methods("GET", "OPTIONS")
+	return []routing.Route{
+		// a GET route WithoutHead changes state, starts a stream or upgrades to a websocket
+		routing.Row(http.MethodGet, base+"components/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(GetComponentOutput)).WithoutHead(),
+		routing.Row(
+			http.MethodGet, base+"components/{run}/{loop}/{stage}/{cmp}/ws", weberror.ErrorHandler(StreamComponentOutput),
+		).WithoutHead(),
+		routing.Row(http.MethodGet, base+"pipelines/{run}/{loop}", weberror.ErrorHandler(GetPipeline)),
+		routing.Row(http.MethodGet, base+"terminals", weberror.ErrorHandler(GetTerminals)),
+		routing.Row(http.MethodGet, base+"terminals/{pid}", weberror.ErrorHandler(ConnectTerminalByPID)).WithoutHead(),
+		routing.Row(http.MethodPost, base+"terminals/{pid}/exit/{id}", weberror.ErrorHandler(ExitTerminal)),
+		routing.Row(http.MethodGet, base+"terminals/{pid}/ws/{id}", weberror.ErrorHandler(StreamTerminal)).WithoutHead(),
+		routing.Row(http.MethodGet, base+"terminals/{run}/{loop}/{stage}/{cmp}", weberror.ErrorHandler(ConnectTerminal)).WithoutHead(),
+	}
 }
 
 const (
@@ -139,8 +134,7 @@ func GetTerminals(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetTerminal")
 
 	var (
-		vars = mux.Vars(r)
-		exp  = vars["name"]
+		exp = r.PathValue("name")
 	)
 
 	// a wildcard name such as "a*" matches the whole list, so check each name
@@ -164,22 +158,21 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ConnectTerminal")
 
 	var (
-		vars  = mux.Vars(r)
-		exp   = vars["name"]
-		stage = vars["stage"]
-		cmp   = vars["cmp"]
+		exp   = r.PathValue("name")
+		stage = r.PathValue("stage")
+		cmp   = r.PathValue("cmp")
 	)
 
 	if err := canView(r, exp); err != nil {
 		return err
 	}
 
-	run, err := strconv.Atoi(vars["run"])
+	run, err := strconv.Atoi(r.PathValue("run"))
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, "invalid run ID provided")
 	}
 
-	loop, err := strconv.Atoi(vars["loop"])
+	loop, err := strconv.Atoi(r.PathValue("loop"))
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, "invalid loop number provided")
 	}
@@ -203,12 +196,12 @@ func ConnectTerminal(w http.ResponseWriter, r *http.Request) error {
 func ConnectTerminalByPID(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ConnectTerminalByPID")
 
-	exp := mux.Vars(r)["name"]
+	exp := r.PathValue("name")
 	if err := canView(r, exp); err != nil {
 		return err
 	}
 
-	pid, err := strconv.Atoi(mux.Vars(r)["pid"])
+	pid, err := strconv.Atoi(r.PathValue("pid"))
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, "invalid terminal PID provided")
 	}
@@ -234,12 +227,12 @@ func ConnectTerminalByPID(w http.ResponseWriter, r *http.Request) error {
 func StreamTerminal(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StreamTerminal")
 
-	exp := mux.Vars(r)["name"]
+	exp := r.PathValue("name")
 	if err := canView(r, exp); err != nil {
 		return err
 	}
 
-	pid, _ := strconv.Atoi(mux.Vars(r)["pid"])
+	pid, _ := strconv.Atoi(r.PathValue("pid"))
 
 	t, err := GetTerminalByPID(pid)
 	if err != nil {
@@ -254,7 +247,7 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	readOnly, status := claimTerminalClient(pid, mux.Vars(r)["id"], mayWrite(r, exp))
+	readOnly, status := claimTerminalClient(pid, r.PathValue("id"), mayWrite(r, exp))
 
 	switch status {
 	case http.StatusNotFound:
@@ -276,14 +269,14 @@ func StreamTerminal(w http.ResponseWriter, r *http.Request) error {
 func ExitTerminal(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "ExitTerminal")
 
-	exp := mux.Vars(r)["name"]
-	id := mux.Vars(r)["id"]
+	exp := r.PathValue("name")
+	id := r.PathValue("id")
 
 	if err := canView(r, exp); err != nil {
 		return err
 	}
 
-	pid, err := strconv.Atoi(mux.Vars(r)["pid"])
+	pid, err := strconv.Atoi(r.PathValue("pid"))
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, "invalid terminal PID provided")
 	}
@@ -574,22 +567,21 @@ func GetComponentOutput(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "GetScorchComponentOutput")
 
 	var (
-		vars  = mux.Vars(r)
-		exp   = vars["name"]
-		stage = vars["stage"]
-		cmp   = vars["cmp"]
+		exp   = r.PathValue("name")
+		stage = r.PathValue("stage")
+		cmp   = r.PathValue("cmp")
 	)
 
 	if err := canView(r, exp); err != nil {
 		return err
 	}
 
-	run, err := strconv.Atoi(vars["run"])
+	run, err := strconv.Atoi(r.PathValue("run"))
 	if err != nil {
-		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
+		return weberror.NewWebError(err, "invalid run ID '%s' provided", r.PathValue("run"))
 	}
 
-	loop, err := strconv.Atoi(vars["loop"])
+	loop, err := strconv.Atoi(r.PathValue("loop"))
 	if err != nil {
 		return weberror.NewWebError(err, "invalid loop number provided")
 	}
@@ -660,22 +652,21 @@ func StreamComponentOutput(w http.ResponseWriter, r *http.Request) error {
 	plog.Debug(plog.TypeSystem, "HTTP handler called", "handler", "StreamScorchComponentOutput")
 
 	var (
-		vars  = mux.Vars(r)
-		exp   = vars["name"]
-		stage = vars["stage"]
-		cmp   = vars["cmp"]
+		exp   = r.PathValue("name")
+		stage = r.PathValue("stage")
+		cmp   = r.PathValue("cmp")
 	)
 
 	if err := canView(r, exp); err != nil {
 		return err
 	}
 
-	run, err := strconv.Atoi(vars["run"])
+	run, err := strconv.Atoi(r.PathValue("run"))
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, "invalid run ID provided")
 	}
 
-	loop, err := strconv.Atoi(vars["loop"])
+	loop, err := strconv.Atoi(r.PathValue("loop"))
 	if err != nil {
 		return weberror.New(http.StatusBadRequest, "invalid loop number provided")
 	}
@@ -715,8 +706,7 @@ func GetPipelines(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		name    = vars["name"]
+		name    = r.PathValue("name")
 	)
 
 	if !role.Allowed("experiments", "get", name) {
@@ -818,18 +808,17 @@ func GetPipeline(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		exp     = vars["name"]
+		exp     = r.PathValue("name")
 	)
 
-	run, err := strconv.Atoi(vars["run"])
+	run, err := strconv.Atoi(r.PathValue("run"))
 	if err != nil {
-		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
+		return weberror.NewWebError(err, "invalid run ID '%s' provided", r.PathValue("run"))
 	}
 
-	loop, err := strconv.Atoi(vars["loop"])
+	loop, err := strconv.Atoi(r.PathValue("loop"))
 	if err != nil {
-		return weberror.NewWebError(err, "invalid loop number '%s' provided", vars["loop"])
+		return weberror.NewWebError(err, "invalid loop number '%s' provided", r.PathValue("loop"))
 	}
 
 	if !role.Allowed("experiments", "get", exp) {
@@ -876,13 +865,12 @@ func ClearPipeline(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		name    = vars["name"]
+		name    = r.PathValue("name")
 	)
 
-	run, err := strconv.Atoi(vars["run"])
+	run, err := strconv.Atoi(r.PathValue("run"))
 	if err != nil {
-		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
+		return weberror.NewWebError(err, "invalid run ID '%s' provided", r.PathValue("run"))
 	}
 
 	cleared := runFields(name, run)
@@ -1043,13 +1031,12 @@ func startPipeline(w http.ResponseWriter, r *http.Request, cleanupOnly bool) err
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		name    = vars["name"]
+		name    = r.PathValue("name")
 	)
 
-	run, err := strconv.Atoi(vars["run"])
+	run, err := strconv.Atoi(r.PathValue("run"))
 	if err != nil {
-		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
+		return weberror.NewWebError(err, "invalid run ID '%s' provided", r.PathValue("run"))
 	}
 
 	started := runFields(name, run)
@@ -1177,13 +1164,12 @@ func CancelPipeline(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		name    = vars["name"]
+		name    = r.PathValue("name")
 	)
 
-	run, err := strconv.Atoi(vars["run"])
+	run, err := strconv.Atoi(r.PathValue("run"))
 	if err != nil {
-		return weberror.NewWebError(err, "invalid run ID '%s' provided", vars["run"])
+		return weberror.NewWebError(err, "invalid run ID '%s' provided", r.PathValue("run"))
 	}
 
 	canceled := runFields(name, run)

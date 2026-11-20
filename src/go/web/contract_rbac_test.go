@@ -2,85 +2,89 @@ package web
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
 
-	"github.com/gorilla/mux"
+	"github.com/google/go-cmp/cmp"
+
+	"phenix/web/routing"
 )
 
 // servedRoute is one method of a route the router serves: its path template
-// and its query templates.
+// and the query parameters its handler requires.
 type servedRoute struct {
 	method, path string
 	queries      []string
+	// ofGet is set for the HEAD that a GET route serves
+	ofGet bool
 }
 
 func (r servedRoute) String() string { return r.method + " " + r.path }
 
-// servedRoutes are the router's operations that name their methods, with
-// every feature on, OPTIONS left out.
+// key is the route's key in handlerQueries, rbacExempt and rbacHidden: a HEAD
+// that a GET route serves takes the entries of the GET.
+func (r servedRoute) key() string {
+	if r.ofGet {
+		return http.MethodGet + " " + r.path
+	}
+
+	return r.String()
+}
+
+// servedRoutes are the router's operations that name their methods, and the
+// HEAD of each GET route that serves it, with every feature on, OPTIONS left
+// out.
 func servedRoutes(t *testing.T) []servedRoute {
 	t.Helper()
 
 	server := serveContract(t, nil)
 
-	router, ok := server.Config.Handler.(*mux.Router)
+	router, ok := server.Config.Handler.(*routing.Mux)
 	if !ok {
-		t.Fatalf("contract server handler = %T, want *mux.Router", server.Config.Handler)
+		t.Fatalf("contract server handler = %T, want *routing.Mux", server.Config.Handler)
 	}
 
 	var routes []servedRoute
 
-	err := router.Walk(func(route *mux.Route, _ *mux.Router, _ []*mux.Route) error {
-		path, err := route.GetPathTemplate()
-		if err != nil {
-			return nil //nolint:nilerr // a route of no path
+	for _, route := range router.Routes() {
+		// a route of any method, which TestRouterMatchesOpenAPI checks
+		if route.Method == "" {
+			continue
 		}
 
-		methods, err := route.GetMethods()
-		if err != nil {
-			return nil //nolint:nilerr // a route of any method, which TestRouterMatchesOpenAPI checks
+		queries := handlerQueries[route.Method+" "+route.Path]
+		routes = append(routes, servedRoute{method: route.Method, path: route.Path, queries: queries, ofGet: false})
+
+		if route.Method == http.MethodGet && !route.RefusesHead() {
+			routes = append(routes, servedRoute{method: http.MethodHead, path: route.Path, queries: queries, ofGet: true})
 		}
-
-		templates, _ := route.GetQueriesTemplates()
-
-		for _, method := range methods {
-			queries := templates
-			if len(queries) == 0 {
-				queries = handlerQueries[method+" "+path]
-			}
-
-			if method != http.MethodOptions {
-				routes = append(routes, servedRoute{method: method, path: path, queries: queries})
-			}
-		}
-
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("Router.Walk() error = %v", err)
 	}
 
 	return routes
 }
 
-// handlerQueries are the query parameters that a route's handler, not the router, requires.
+// handlerQueries are the query parameters that a route's handler requires,
+// for the HEAD of a GET route too.
 //
 //nolint:gochecknoglobals // constant table
 var handlerQueries = map[string][]string{
-	"POST /api/v1/disks/snapshot":   {"disk", "new"},
-	"POST /api/v1/disks/rebase":     {"disk", "backing", "unsafe"},
-	"POST /api/v1/disks/resize":     {"disk", "size"},
-	"POST /api/v1/disks/commit":     {"disk"},
-	"POST /api/v1/disks/clone":      {"disk", "new"},
-	"POST /api/v1/disks/clone/jobs": {"disk", "new"},
-	"DELETE /api/v1/disks":          {"disk"},
-	"POST /api/v1/disks/rename":     {"disk", "new"},
-	"GET /api/v1/disks/download":    {"disk"},
-	"HEAD /api/v1/disks/download":   {"disk"},
-	"GET /api/v1/disks/checksum":    {"disk"},
-	"GET /api/v1/disks/details":     {"disk"},
+	"POST /api/v1/disks/snapshot":                             {"disk", "new"},
+	"POST /api/v1/disks/rebase":                               {"disk", "backing", "unsafe"},
+	"POST /api/v1/disks/resize":                               {"disk", "size"},
+	"POST /api/v1/disks/commit":                               {"disk"},
+	"POST /api/v1/disks/clone":                                {"disk", "new"},
+	"POST /api/v1/disks/clone/jobs":                           {"disk", "new"},
+	"DELETE /api/v1/disks":                                    {"disk"},
+	"POST /api/v1/disks/rename":                               {"disk", "new"},
+	"GET /api/v1/disks/download":                              {"disk"},
+	"GET /api/v1/disks/checksum":                              {"disk"},
+	"GET /api/v1/disks/details":                               {"disk"},
+	"GET /api/v1/experiments/{exp}/vms/{name}/files":          {"path"},
+	"GET /api/v1/experiments/{exp}/vms/{name}/files/download": {"path"},
+	"PUT /api/v1/experiments/{exp}/vms/{name}/files/upload":   {"path"},
+	"POST /api/v1/console/{pid}/size":                         {"cols", "rows"},
 }
 
 // routeParams are the contract fixture's value of each path and query
@@ -111,7 +115,7 @@ func (r servedRoute) concrete() string {
 			continue
 		}
 
-		name, _, _ := strings.Cut(strings.Trim(segment, "{}"), ":")
+		name := strings.Trim(segment, "{}")
 
 		value, ok := routeParams[segments[i-1]+"/{"+name+"}"]
 		if !ok {
@@ -122,8 +126,7 @@ func (r servedRoute) concrete() string {
 	}
 
 	query := make([]string, 0, len(r.queries))
-	for _, q := range r.queries {
-		name, _, _ := strings.Cut(q, "=")
+	for _, name := range r.queries {
 		query = append(query, name+"="+routeParams[name])
 	}
 
@@ -136,25 +139,20 @@ func (r servedRoute) concrete() string {
 }
 
 // rbacExempt are the routes a role of no permissions may call, with why: those outside /api/v1 and its auth,
-// and API routes every signed-in user may call or that act only on what the role may see.
+// and API routes every signed-in user may call or that act only on what the role may see, for the HEAD of a GET route too.
 //
 //nolint:gochecknoglobals // constant table
 var rbacExempt = map[string]string{
 	"GET /features":                                       "outside API auth: the features the UI offers",
 	"GET /version":                                        "outside API auth: the server's build",
 	"GET /healthz":                                        "outside API auth: liveness probe",
-	"HEAD /healthz":                                       "outside API auth: liveness probe",
 	"GET /readyz":                                         "outside API auth: readiness probe",
-	"HEAD /readyz":                                        "outside API auth: readiness probe",
 	"GET /docs/openapi.yml":                               "outside API auth: this API's description",
-	"HEAD /docs/openapi.yml":                              "outside API auth: this API's description",
 	"GET /downloads/tunneler":                             "outside API auth: tunneler builds to download",
 	"GET /downloads/tunneler/{name}":                      "outside API auth: a tunneler build",
-	"HEAD /downloads/tunneler/{name}":                     "outside API auth: a tunneler build",
 	"GET /webshark/streams/{token}":                       "outside API auth: the capture grant in the path is the credential",
 	"GET /webshark/json":                                  "outside API auth: the capture grant in the query is the credential",
 	"GET /webshark/captures/{name}":                       "outside API auth: the capture grant in the path is the credential",
-	"HEAD /webshark/captures/{name}":                      "outside API auth: the capture grant in the path is the credential",
 	"GET /webshark/watch":                                 "outside API auth: the capture grant in the query is the credential",
 	"POST /api/v1/signup":                                 "creates an account, before the caller has a role",
 	"GET /api/v1/login":                                   "signs in, before the caller has a role",
@@ -171,7 +169,7 @@ var rbacExempt = map[string]string{
 }
 
 // rbacHidden are the routes that refuse with 404, so as not to reveal
-// another user's job.
+// another user's job, for the HEAD of a GET route too.
 //
 //nolint:gochecknoglobals // constant table
 var rbacHidden = []string{
@@ -179,11 +177,10 @@ var rbacHidden = []string{
 	"POST /api/v1/jobs/{id}/cancel",
 	"DELETE /api/v1/jobs/{id}",
 	"GET /api/v1/jobs/{id}/artifact",
-	"HEAD /api/v1/jobs/{id}/artifact",
 }
 
-// Every route refuses a role of no permissions with 401 or 403 (404 if rbacHidden) unless rbacExempt lists it;
-// requests carry contractRoutes' body, so the refusal is RBAC's rather than the body's.
+// Every route, and the HEAD of each GET route, refuses a role of no permissions with 401 or 403 (404 if rbacHidden)
+// unless rbacExempt lists it; requests carry contractRoutes' body, so the refusal is RBAC's rather than the body's.
 func TestEveryRouteChecksPermissions(t *testing.T) {
 	routes := servedRoutes(t)
 
@@ -195,9 +192,9 @@ func TestEveryRouteChecksPermissions(t *testing.T) {
 	served := map[string]bool{}
 
 	for _, route := range routes {
-		served[route.String()] = true
+		served[route.key()] = true
 
-		if rbacExempt[route.String()] != "" {
+		if rbacExempt[route.key()] != "" {
 			continue
 		}
 
@@ -208,12 +205,14 @@ func TestEveryRouteChecksPermissions(t *testing.T) {
 			c := contractRoute{method: route.method, path: route.concrete(), body: "{}"}
 			if known, ok := bodies[c.String()]; ok {
 				c = known
+			} else if known, ok := bodies[http.MethodGet+" "+c.path]; ok && route.ofGet {
+				c, c.method = known, http.MethodHead
 			}
 
 			resp := do(t, c.method, c.url(t, server, f, "alice"), c.body, c.header...)
 
 			want := []int{http.StatusUnauthorized, http.StatusForbidden}
-			if slices.Contains(rbacHidden, route.String()) {
+			if slices.Contains(rbacHidden, route.key()) {
 				want = []int{http.StatusNotFound}
 			}
 
@@ -261,10 +260,9 @@ func TestServedRouteConcrete(t *testing.T) {
 		},
 		"after a filled parameter": {servedRoute{path: "/api/v1/configs/{kind}/{name}"}, "/api/v1/configs/topology/" + contractTopo},
 		"unknown segment":          {servedRoute{path: "/api/v1/hosts/{name}"}, "/api/v1/hosts/none"},
-		"pattern dropped":          {servedRoute{path: "/api/v1/console/{pid:[0-9]+}"}, "/api/v1/console/1"},
 		"job":                      {servedRoute{path: "/api/v1/jobs/{id}"}, "/api/v1/jobs/{job}"},
 		"queries": {
-			servedRoute{path: "/api/v1/console/{pid}/size", queries: []string{"cols={cols:[0-9]+}", "rows={rows:[0-9]+}"}},
+			servedRoute{path: "/api/v1/console/{pid}/size", queries: []string{"cols", "rows"}},
 			"/api/v1/console/1/size?cols=80&rows=24",
 		},
 	}
@@ -277,5 +275,170 @@ func TestServedRouteConcrete(t *testing.T) {
 				t.Errorf("servedRoute{%s %v}.concrete() = %q, want %q", tc.route.path, tc.route.queries, got, tc.want)
 			}
 		})
+	}
+}
+
+// stubAnswer is what TestEveryGetRouteAnswersHead reads of an answer of a
+// stubMux.
+type stubAnswer struct {
+	// row is the method and path of the row that answered, or "options",
+	// "404" or "405"
+	row, method, allow string
+}
+
+// stubMux is a Mux of the rows of mux, each WithoutHead as in mux, in a group
+// of prefix "" and one of /api/v1 with Options when apiOptions is set. Each
+// row answers with its method and path, and the method of the request.
+func stubMux(t *testing.T, mux *routing.Mux, apiOptions bool) *routing.Mux {
+	t.Helper()
+
+	stub := func(row string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Row", row)
+			w.Header().Set("X-Method", r.Method)
+		})
+	}
+
+	root := routing.Group{Prefix: "", NotFound: stub("404"), MethodNotAllowed: stub("405")}
+	api := routing.Group{Prefix: "/api/v1", NotFound: stub("404"), MethodNotAllowed: stub("405")}
+
+	if apiOptions {
+		api.Options = stub("options")
+	}
+
+	for _, row := range mux.Routes() {
+		group, path := &root, row.Path
+		if rest, ok := strings.CutPrefix(row.Path, api.Prefix); ok {
+			group, path = &api, rest
+		}
+
+		copied := routing.Row(row.Method, path, stub(row.Method+" "+row.Path))
+		if row.RefusesHead() {
+			copied = copied.WithoutHead()
+		}
+
+		group.Routes = append(group.Routes, copied)
+	}
+
+	stubs, err := routing.NewMux(root, api)
+	if err != nil {
+		t.Fatalf("NewMux() of the stubs error = %v", err)
+	}
+
+	return stubs
+}
+
+// answerOf is the answer of stubs to a request with method to target.
+func answerOf(stubs *routing.Mux, method, target string) stubAnswer {
+	rec := httptest.NewRecorder()
+	stubs.ServeHTTP(rec, httptest.NewRequest(method, target, nil))
+
+	return stubAnswer{row: rec.Header().Get("X-Row"), method: rec.Header().Get("X-Method"), allow: rec.Header().Get("Allow")}
+}
+
+// namesHead reports whether the value of an Allow header names HEAD.
+func namesHead(allow string) bool {
+	return slices.Contains(strings.Split(allow, ", "), http.MethodHead)
+}
+
+// Each GET route of the router and of the Unix socket serves HEAD, except a
+// route WithoutHead. A Mux of the same rows with a stub for each shows
+// where a HEAD request goes: to its GET route, with the method HEAD, or for a
+// route WithoutHead to MethodNotAllowed or a route of every method, with an
+// Allow that names HEAD only where a route serves it. The router answers HEAD
+// with the status of GET.
+func TestEveryGetRouteAnswersHead(t *testing.T) {
+	useContractFixture(t)
+
+	// as a role that allows everything, so that each handler runs
+	server := serveContractAs(t, adminRole(), nil)
+
+	socketMux, ok := socketRouter(t).(*routing.Mux)
+	if !ok {
+		t.Fatal("socketRouter() is not a *routing.Mux")
+	}
+
+	socket := httptest.NewServer(socketMux)
+	t.Cleanup(socket.Close)
+
+	router, ok := server.Config.Handler.(*routing.Mux)
+	if !ok {
+		t.Fatalf("contract server handler = %T, want *routing.Mux", server.Config.Handler)
+	}
+
+	// the router's API group has Options, and the Unix socket's has none
+	for _, tt := range []struct {
+		base       string
+		mux        *routing.Mux
+		apiOptions bool
+	}{{server.URL, router, true}, {socket.URL, socketMux, false}} {
+		stubs := stubMux(t, tt.mux, tt.apiOptions)
+
+		for _, row := range tt.mux.Routes() {
+			if row.Method != http.MethodGet {
+				continue
+			}
+
+			t.Run(tt.base+" "+row.Path, func(t *testing.T) {
+				testHeadOfRow(t, tt.base, tt.mux, stubs, row)
+			})
+		}
+	}
+}
+
+// testHeadOfRow tests the HEAD of the GET route row of mux, served at base,
+// through stubs, a stubMux of mux.
+func testHeadOfRow(t *testing.T, base string, mux, stubs *routing.Mux, row routing.Route) {
+	t.Helper()
+
+	var (
+		self   = row.Method + " " + row.Path
+		route  = servedRoute{method: http.MethodHead, path: row.Path, queries: handlerQueries[self], ofGet: true}
+		target = route.concrete()
+		req    = httptest.NewRequest(http.MethodGet, target, nil)
+	)
+
+	if got := answerOf(stubs, http.MethodGet, target).row; got != self {
+		t.Fatalf("GET %s reaches %q, want %q", target, got, self)
+	}
+
+	if diff := cmp.Diff(mux.Allowed(req), stubs.Allowed(req)); diff != "" {
+		t.Fatalf("Allowed(%s) of the stubs mismatch (-router +stubs):\n%s", target, diff)
+	}
+
+	head := answerOf(stubs, http.MethodHead, target)
+	options := answerOf(stubs, http.MethodOptions, target)
+	served := head.row != "405"
+
+	if head.method != http.MethodHead {
+		t.Errorf("HEAD %s reaches %q with the method %q, want HEAD", target, head.row, head.method)
+	}
+
+	if allowed := strings.Join(stubs.Allowed(req), ", "); namesHead(allowed) != served {
+		t.Errorf("Allowed(%s) = %q, and HEAD reaches %q", target, allowed, head.row)
+	}
+
+	for _, answer := range []stubAnswer{head, options} {
+		if answer.allow != "" && namesHead(answer.allow) != served {
+			t.Errorf("%s %s Allow = %q, and HEAD reaches %q", answer.method, target, answer.allow, head.row)
+		}
+	}
+
+	if row.RefusesHead() {
+		// a route of every method has no method in its row
+		if served && !strings.HasPrefix(head.row, " ") {
+			t.Errorf("HEAD %s of a route WithoutHead reaches %q, want 405 or a route of every method", target, head.row)
+		}
+
+		return
+	}
+
+	if head.row != self {
+		t.Errorf("HEAD %s reaches %q, want %q", target, head.row, self)
+	}
+
+	headStatus := do(t, http.MethodHead, base+target, "").StatusCode
+	if getStatus := do(t, http.MethodGet, base+target, "").StatusCode; headStatus != getStatus {
+		t.Errorf("HEAD %s = %d, want the status of GET %d", target, headStatus, getStatus)
 	}
 }

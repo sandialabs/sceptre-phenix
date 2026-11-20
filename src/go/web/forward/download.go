@@ -10,8 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gorilla/mux"
-
 	"phenix/util/plog"
 	"phenix/web/util"
 	"phenix/web/weberror"
@@ -61,7 +59,7 @@ func isBuild(path string) bool {
 
 // GetTunneler - GET /downloads/tunneler/{name}.
 func GetTunneler(w http.ResponseWriter, r *http.Request) error {
-	name := mux.Vars(r)["name"]
+	name := r.PathValue("name")
 
 	// a name directly in the downloads directory, and not a hidden file
 	if name == "" || filepath.Base(name) != name || name[0] == '.' {

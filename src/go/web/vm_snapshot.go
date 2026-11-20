@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/disk"
 	"phenix/api/experiment"
 	"phenix/api/vm"
@@ -32,9 +30,8 @@ func GetVMSnapshots(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		exp  = vars["exp"]
-		name = vars["name"]
+		exp  = r.PathValue("exp")
+		name = r.PathValue("name")
 	)
 
 	if !role.Allowed("vms/snapshots", "list", fmt.Sprintf("%s/%s", exp, name)) {
@@ -95,9 +92,8 @@ func SnapshotVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
-		vars     = mux.Vars(r)
-		exp      = vars["exp"]
-		name     = vars["name"]
+		exp      = r.PathValue("exp")
+		name     = r.PathValue("name")
 		fullName = exp + "/" + name
 	)
 
@@ -230,11 +226,10 @@ func RestoreVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
-		vars     = mux.Vars(r)
-		exp      = vars["exp"]
-		name     = vars["name"]
+		exp      = r.PathValue("exp")
+		name     = r.PathValue("name")
 		fullName = exp + "/" + name
-		snap     = vars["snapshot"]
+		snap     = r.PathValue("snapshot")
 	)
 
 	restored := audit.Fields{Experiment: exp, VM: name, File: snap}
@@ -326,9 +321,8 @@ func CommitVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
-		vars     = mux.Vars(r)
-		expName  = vars["exp"]
-		name     = vars["name"]
+		expName  = r.PathValue("exp")
+		name     = r.PathValue("name")
 		fullName = expName + "/" + name
 	)
 
@@ -530,9 +524,8 @@ func CreateVMMemorySnapshot(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
-		vars     = mux.Vars(r)
-		exp      = vars["exp"]
-		name     = vars["name"]
+		exp      = r.PathValue("exp")
+		name     = r.PathValue("name")
 		fullName = exp + "/" + name
 	)
 

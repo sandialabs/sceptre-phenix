@@ -18,7 +18,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/gorilla/mux"
 
 	bapi "phenix/api/builder"
 	"phenix/store"
@@ -26,6 +25,7 @@ import (
 	bdoc "phenix/types/builder"
 	"phenix/util/plog/plogtest"
 	"phenix/web/rbac"
+	"phenix/web/routing"
 )
 
 const (
@@ -690,32 +690,19 @@ func TestBuilderResponseHeaders(t *testing.T) {
 
 	// A route of the same router that is not a Builder route, registered
 	// after the Builder routes as [Start] registers the rest.
-	harness.api.Handle("/configs/{kind}/{name}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	harness.handle(routing.Row(http.MethodGet, "/configs/{kind}/{name}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	})).Methods("GET")
+	})))
 
 	type operation struct {
 		method, template string
 	}
 
-	var operations []operation
+	routes := harness.router.Routes()
+	operations := make([]operation, 0, len(routes))
 
-	err := harness.api.Walk(func(route *mux.Route, _ *mux.Router, _ []*mux.Route) error {
-		template, templateErr := route.GetPathTemplate()
-		methods, methodsErr := route.GetMethods()
-
-		if templateErr != nil || methodsErr != nil {
-			return nil //nolint:nilerr // routes without a path or methods are not operations
-		}
-
-		for _, method := range methods {
-			operations = append(operations, operation{method: method, template: strings.TrimPrefix(template, "/api/v1")})
-		}
-
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking the routes: %v", err)
+	for _, route := range routes {
+		operations = append(operations, operation{method: route.Method, template: strings.TrimPrefix(route.Path, "/api/v1")})
 	}
 
 	var (
@@ -820,9 +807,9 @@ func TestBuilderRouterAnswerHeaders(t *testing.T) {
 
 	// A route of the same router that is not a Builder route, registered
 	// after the Builder routes as [Start] registers the rest.
-	harness.api.Handle("/configs/{kind}/{name}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	harness.handle(routing.Row(http.MethodGet, "/configs/{kind}/{name}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	})).Methods("GET")
+	})))
 
 	for _, tt := range []struct {
 		method, path      string
@@ -862,7 +849,7 @@ func TestBuilderRouterAnswerHeaders(t *testing.T) {
 
 	// The headers are also on what a later middleware, such as
 	// authentication, answers in place of the route.
-	harness.api.Use(func(http.Handler) http.Handler {
+	harness.use(func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, "missing phenix auth token header", http.StatusUnauthorized)
 		})

@@ -20,7 +20,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/gorilla/mux"
 	gwebsocket "github.com/gorilla/websocket"
 	"github.com/sandia-minimega/minimega/v2/pkg/minicli"
 
@@ -93,7 +92,7 @@ func vmSnapshotServe(t *testing.T, change vmChange, role rbac.Role) *httptest.Re
 
 	body := change.body
 	req := httptest.NewRequestWithContext(ctx, change.method, change.path, strings.NewReader(body))
-	req = mux.SetURLVars(req, map[string]string{"exp": "exp", "name": "a", "snapshot": change.snapshot})
+	req = withPathValues(req, map[string]string{"exp": "exp", "name": "a", "snapshot": change.snapshot})
 
 	rec := httptest.NewRecorder()
 	change.handler.ServeHTTP(rec, req)
@@ -396,7 +395,7 @@ func TestVMSnapshotRoutesRejectBadBodies(t *testing.T) {
 			}
 
 			req := httptest.NewRequestWithContext(ctx, change.method, change.path, body)
-			req = mux.SetURLVars(req, map[string]string{"exp": "exp", "name": "a"})
+			req = withPathValues(req, map[string]string{"exp": "exp", "name": "a"})
 
 			rec := httptest.NewRecorder()
 			change.handler.ServeHTTP(rec, req)
@@ -481,7 +480,7 @@ func TestGetVMSnapshots(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.WithValue(t.Context(), middleware.ContextKeyRole, adminRole()))
 	cancel()
 
-	req := mux.SetURLVars(httptest.NewRequestWithContext(ctx, http.MethodGet, list.path, nil),
+	req := withPathValues(httptest.NewRequestWithContext(ctx, http.MethodGet, list.path, nil),
 		map[string]string{"exp": "exp", "name": "a"})
 
 	left := httptest.NewRecorder()

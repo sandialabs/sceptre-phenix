@@ -7,20 +7,18 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gorilla/mux"
-
 	"phenix/web/middleware"
 	"phenix/web/weberror"
 )
 
 // schemaTestRequest serves a GET request for the schema handler with the
-// given mux vars, as a user whose role allows everything, and returns the
+// given path values, as a user whose role allows everything, and returns the
 // recorded response.
 func schemaTestRequest(t *testing.T, handler weberror.ErrorHandler, vars map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/schemas", nil)
-	req = mux.SetURLVars(req, vars)
+	req = withPathValues(req, vars)
 	req = req.WithContext(context.WithValue(req.Context(), middleware.ContextKeyRole, workflowTestRole(true)))
 
 	rec := httptest.NewRecorder()

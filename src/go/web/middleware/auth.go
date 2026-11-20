@@ -11,7 +11,6 @@ import (
 
 	jwtmiddleware "github.com/cescoferraro/go-jwt-middleware"
 	"github.com/dgrijalva/jwt-go"
-	"github.com/gorilla/mux"
 
 	"phenix/util/plog"
 	"phenix/web/rbac"
@@ -209,7 +208,7 @@ func NoAuth(h http.Handler) http.Handler {
 }
 
 //nolint:funlen // middleware
-func Auth(jwtKey, proxyAuthHeader string, opts ...AuthOption) mux.MiddlewareFunc {
+func Auth(jwtKey, proxyAuthHeader string, opts ...AuthOption) func(http.Handler) http.Handler {
 	var ao authOptions
 	for _, opt := range opts {
 		opt(&ao)
@@ -413,7 +412,7 @@ func DevAuthCredentials(jwtKey string) (string, string, bool) {
 }
 
 // devAuth treats every request as coming from user with role, for testing.
-func devAuth(user, roleName string) mux.MiddlewareFunc {
+func devAuth(user, roleName string) func(http.Handler) http.Handler {
 	return func(h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			role, err := fixedRole(roleName)

@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gorilla/mux"
-
 	"phenix/web/weberror"
 )
 
@@ -24,7 +22,8 @@ func FuzzGetTunnelerName(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, name string) {
-		req := mux.SetURLVars(httptest.NewRequest(http.MethodGet, "/downloads/tunneler/x", nil), map[string]string{"name": name})
+		req := httptest.NewRequest(http.MethodGet, "/downloads/tunneler/x", nil)
+		req.SetPathValue("name", name)
 		rec := httptest.NewRecorder()
 
 		var webErr *weberror.WebError

@@ -267,8 +267,8 @@ func TestConfigsStatusDiskRoutes(t *testing.T) {
 	}
 }
 
-// The disk action handlers read their parameters from the query string, so a
-// route without query matchers gets a 400 that names a missing parameter.
+// The disk action handlers read their parameters from the query string and
+// answer 400 for a missing one, with its name.
 func TestConfigsStatusDiskQueryParameters(t *testing.T) {
 	for name, tc := range map[string]struct {
 		handler func(http.ResponseWriter, *http.Request) error
