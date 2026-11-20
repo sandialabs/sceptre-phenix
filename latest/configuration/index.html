@@ -734,6 +734,28 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#variable-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Variable Sources
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#env-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Env Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#environment-variables-using-docker" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3517,6 +3539,28 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#variable-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Variable Sources
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#env-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Env Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#environment-variables-using-docker" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3594,9 +3638,16 @@ begin with a capital letter.</p>
 <p>Throughout the documentation, we mention <code>creating configurations manually</code>.
 When we say this, we mean passing a YAML or JSON configuration file of any
 type to the <code>phenix config create</code> command.</p>
-<p><code>phenix config create</code> also takes a directory, and creates every
-configuration file below it. It skips a <a href="../builder/">Builder</a>
-document in a directory, and refuses one named on the command line (see
+<p><code>phenix config create</code>, <code>phenix config apply</code> and <code>phenix config diff</code>
+take files only: each argument is a <code>.json</code>, <code>.yaml</code> or <code>.yml</code> file, and
+a directory is an error. To read every file of a directory, give <code>dir/*</code>
+in a shell, such as <code>phenix config create configs/*</code>. The shell replaces
+<code>dir/*</code> with the files of the directory before phēnix starts. A
+subdirectory in the match is an error, so use <code>dir/*.yml</code> when the
+directory has one. Use <code>dir/*.yml</code> when the directory also holds files
+that are not configurations. The commands refuse a
+<a href="../builder/">Builder</a>
+document (see
 <a href="../builder/details/import-upload-download/#builder-documents-and-phenix-config-create">Builder documents and phenix config create</a>).</p>
 </div>
 <p>The <code>metadata</code> section can also hold <code>annotations</code>: text values by key, such
@@ -4340,15 +4391,27 @@ replaces each environment variable placeholder with the value of that
 variable. Placeholders can be in the format <code>${VAR}</code> or
 <code>${VAR:default}</code>, where <code>VAR</code> is the environment variable name, and <code>default</code>
 is an optional default value to use if the variable is not set. If the
-environment variable is not found and no default is provided, the placeholder
-is replaced with an empty string. A <code>$VAR</code> without braces is not a placeholder.</p>
+variable is not set and no default is provided, the command stops with an
+error and changes nothing. Write <code>${VAR:}</code> for a variable that can be empty.
+A <code>$VAR</code> without braces is not a placeholder. Write <code>$${VAR}</code> to keep the
+text <code>${VAR}</code> in the config.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>For a config sent to the REST API or the web UI (<code>POST /configs</code>,
-<code>PUT /configs/{kind}/{name}</code> and the workflow endpoints), the server fills
-in only <code>${BRANCH_NAME}</code>. It stores every other placeholder as written, so
-a client cannot read the server environment through a config. The Builder
-fills in no placeholders.</p>
+<code>PUT /configs/{kind}/{name}</code> and the workflow endpoints), with a JSON or
+YAML body the server fills in only <code>${BRANCH_NAME}</code>. It stores every other
+placeholder as written, so a client cannot read the server environment
+through a config. Of these, only the workflow endpoints take variables, in
+the <code>variables</code> part of a <code>multipart/form-data</code> request; the server then
+also fills in the placeholders from the variables and their defaults (see
+<a href="../workflow/#rest-api">REST API</a>).
+<code>POST /configs</code> and <code>PUT /configs/{kind}/{name}</code> do not: a client fills in
+the other placeholders before it sends a config. The Builder fills in no
+placeholders. A
+<code>${BRANCH_NAME}</code> in these requests is filled in also when the stored config
+holds it as text. For <code>POST /configs</code> and <code>PUT /configs/{kind}/{name}</code>,
+the value is the <code>BRANCH_NAME</code> variable of the server, or empty text when
+it is not set. Write <code>$${BRANCH_NAME}</code> to keep the text.</p>
 </div>
 <p>Example config before parsing environment variables:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">foobar</span>
@@ -4368,22 +4431,103 @@ fills in no placeholders.</p>
 </span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">      </span><span class="nt">baz</span><span class="p">:</span>
 </span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">        </span><span class="nt">ip</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">localhost</span>
 </span></code></pre></div>
+<h3 id="variable-sources">Variable Sources<a class="headerlink" href="#variable-sources" title="Permanent link">&para;</a></h3>
+<p>These commands read config files and fill in their placeholders:
+<code>phenix config create</code>, <code>phenix config apply</code>, <code>phenix config diff</code>,
+<code>phenix experiment create</code> with a file for <code>-t</code> or <code>-s</code>, and
+<code>phenix workflow apply</code>. <code>phenix experiment create</code> also fills in a topology
+file that <code>includeTopologies</code> names by a path, and so does the server for
+<code>phenix workflow apply</code>. A command gets the value of a
+variable from the first of these sources that has it:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Source</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>-e</code>, <code>--env</code></td>
+<td style="text-align: left;"><code>-e NAME=value</code> sets a variable. <code>-e NAME</code> copies the value of <code>NAME</code> from the shell. Repeat the flag for more variables. If a name is given more than once, the last value is used.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>--env-file</code></td>
+<td style="text-align: left;">An <a href="#env-files">env file</a> of <code>NAME=value</code> lines. Repeat the flag for more files. A later file overrides an earlier file. A relative path starts at the working directory. <code>phenix workflow apply</code> reads <code>.env</code> in the topology directory when no <code>--env-file</code> is given.</td>
+</tr>
+<tr>
+<td style="text-align: left;">The shell</td>
+<td style="text-align: left;">The environment of the command, without the variables whose names start with <code>PHENIX_</code>. Those variables hold the settings of phēnix. Name one with <code>-e NAME</code> to use it. A variable whose name is not a valid variable name, for example <code>1A</code>, is not used.</td>
+</tr>
+</tbody>
+</table>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>phenix<span class="w"> </span>config<span class="w"> </span>create<span class="w"> </span>topology.yml<span class="w"> </span>-e<span class="w"> </span><span class="nv">HOST</span><span class="o">=</span><span class="m">172</span>.1.3.37
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>phenix<span class="w"> </span>config<span class="w"> </span>apply<span class="w"> </span>configs/*<span class="w"> </span>--env-file<span class="w"> </span>site.env<span class="w"> </span>-e<span class="w"> </span><span class="nv">NODES</span><span class="o">=</span><span class="m">3</span>
+</span></code></pre></div>
+<p>A command reads every file and checks every variable before it changes
+anything. It stops, and changes nothing, in these cases:</p>
+<ul>
+<li>A placeholder has no value and no default.</li>
+<li>No file uses a variable that <code>-e</code> sets. This is usually a typing mistake.</li>
+<li>A value or a default contains a line break.</li>
+</ul>
+<p>The command replaces the text of a placeholder before it reads the YAML or
+JSON. Thus a placeholder in a comment is also filled in, and a value can
+change how YAML reads a line. Put a placeholder in quotes when its value can
+contain <code>:</code> or <code>#</code>.</p>
+<p>phēnix does not have the Docker Compose forms <code>${VAR:-default}</code> and
+<code>${VAR:?error}</code>. For phēnix, the default of <code>${VAR:-3}</code> is the text <code>-3</code>.
+The command logs a warning for a default that starts with <code>-</code> or <code>?</code>.</p>
+<p>The log shows the name and the source of each variable that a file uses. It
+shows the values only with <code>--log.level debug</code>. Debug records can thus hold
+secrets, also in the log file.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>In earlier releases, a variable that was not set became an empty string,
+and the CLI used every shell variable. A config that relied on this now
+stops the command. Give the placeholder a default, such as <code>${VAR:}</code>, or
+name a <code>PHENIX_</code> variable with <code>-e</code>.</p>
+</div>
+<h3 id="env-files">Env Files<a class="headerlink" href="#env-files" title="Permanent link">&para;</a></h3>
+<p>An env file holds one variable on each line:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a># Blank lines and lines that start with "#" are skipped.
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>SITE=lab
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>NODES=3
+</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>export IMAGE=ubuntu.qc2
+</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>MOTD="  the quotes keep the spaces  "
+</span></code></pre></div>
+<ul>
+<li>A line is <code>NAME=value</code>, with no space before the <code>=</code>. A name starts with a
+  letter or <code>_</code>, and continues with letters, digits and <code>_</code>.</li>
+<li><code>export</code> before the name is permitted.</li>
+<li>A value in single or double quotes is the text between the quotes. The
+  closing quote must be the last character of the line.</li>
+<li>Any other value is the text as written, a <code>#</code> included, without the spaces
+  and tabs at the end of the line.</li>
+<li>Nothing in the file is expanded: <code>${OTHER}</code> and <code>\n</code> stay as written. For a
+  workflow, the server fills in a <code>${BRANCH_NAME}</code> that a value carries.</li>
+<li>When a name is on more than one line, the last line is used.</li>
+<li>Any other line is an error that names the file and the line.</li>
+</ul>
 <h3 id="environment-variables-using-docker">Environment variables using Docker<a class="headerlink" href="#environment-variables-using-docker" title="Permanent link">&para;</a></h3>
 <p>If phēnix is running in a docker container (or docker compose), environment
 variables can be passed into the compose file and/or via args in any CLI calls
 to phēnix, e.g.</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
-</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">      </span><span class="nt">HOST</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${HOST}</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">      </span><span class="nt">HOST</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${HOST}</span>
 </span></code></pre></div>
 <p>or</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>-e<span class="w"> </span><span class="nv">BRANCH_NAME</span><span class="o">=</span>foobar<span class="w"> </span>phenix<span class="w"> </span>phenix<span class="w"> </span>exp<span class="w"> </span>create<span class="w"> </span>foobar<span class="w"> </span>-t<span class="w"> </span>topo<span class="w"> </span>-s<span class="w"> </span>scenario
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>-e<span class="w"> </span><span class="nv">BRANCH_NAME</span><span class="o">=</span>foobar<span class="w"> </span>phenix<span class="w"> </span>phenix<span class="w"> </span>exp<span class="w"> </span>create<span class="w"> </span>foobar<span class="w"> </span>-t<span class="w"> </span>topo<span class="w"> </span>-s<span class="w"> </span>scenario
 </span></code></pre></div>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
 <p>Configs sent by <code>phenix workflow apply</code>, or to the
 <code>/workflow/configs/{branch}</code> and <code>/workflow/apply/{branch}</code> API endpoints,
 don't need <code>-e BRANCH_NAME</code>: phēnix sets <code>BRANCH_NAME</code> to the workflow
-branch name itself. It keeps their other placeholders as written. The
+branch name itself. The API endpoints keep their other placeholders as
+written unless the request sends variables, and <code>phenix workflow apply</code>
+sends its variables with each config (see
+<a href="../workflow/#variables">Variables</a>). The
 command also copies the topology directory's
 <code>phenix-injects/</code> to <code>&lt;base-dir.injects&gt;/&lt;name&gt;</code> (by default
 <code>/phenix/injects/&lt;name&gt;</code>), so configs can reference injected files as

@@ -4223,17 +4223,17 @@ If an icon cannot go there, Builder adds the set and gives the reason.</p>
 problem and its location in the file. <strong>Upload</strong> on the drafts page and in
 the editor refuses a layer set file.</p>
 <h2 id="builder-documents-and-phenix-config-create">Builder documents and phenix config create<a class="headerlink" href="#builder-documents-and-phenix-config-create" title="Permanent link">&para;</a></h2>
-<p>A Builder document is not a config. <code>phenix config create</code> refuses one
-named on the command line, and skips one in a directory:</p>
+<p>A Builder document is not a config. <code>phenix config create</code>,
+<code>phenix config apply</code> and <code>phenix config diff</code> refuse one:</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="gp">$ </span>phenix<span class="w"> </span>config<span class="w"> </span>create<span class="w"> </span>pump-station.builder.json
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="go">Error: pump-station.builder.json is a Builder document, not a configuration. Upload it in the Builder or send it to the Builder REST API (/api/v1/builder/drafts). Then publish it to create its topology</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="gp">$ </span>phenix<span class="w"> </span>config<span class="w"> </span>create<span class="w"> </span>examples
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="go">2026-10-01 21:51:05.962 INF skipped Builder document. Upload it in the Builder to publish it type=SYSTEM path=examples/pump-station.builder.json</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="go">2026-10-01 21:51:05.994 INF configuration created type=SYSTEM kind=Topology name=pump-station</span>
 </span></code></pre></div>
+<p>These commands take files only, so <code>examples/*</code> in a shell gives them each
+file of a directory, and a subdirectory in the match is an error. Use a
+pattern that leaves out the Builder files, such as
+<code>examples/*.topology.yaml</code>.</p>
 <p>The same is true for a template file, a Builder package and a layer set
-file. <code>phenix config create</code> skips one in a directory, with a debug log
-line. It refuses one named on the command line:</p>
+file. The commands refuse one:</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="gp">$ </span>phenix<span class="w"> </span>config<span class="w"> </span>create<span class="w"> </span>node-templates.yaml
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="go">Error: node-templates.yaml is a Builder template file, not a configuration. To add its Node Templates, use Import templates in the Builder or the Builder REST API (POST /api/v1/builder/templates/items)</span>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="gp">$ </span>phenix<span class="w"> </span>config<span class="w"> </span>create<span class="w"> </span>pump-station.package.yaml
@@ -4241,7 +4241,7 @@ line. It refuses one named on the command line:</p>
 </span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="gp">$ </span>phenix<span class="w"> </span>config<span class="w"> </span>create<span class="w"> </span>purdue-model.layers.yaml
 </span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="go">Error: purdue-model.layers.yaml is a Builder layer set file, not a configuration. Use Upload layer set on the Layers tab of the Builder to add its layer set</span>
 </span></code></pre></div>
-<p>In the <code>phenix config create examples</code> command above, <code>examples</code> holds the
+<p>In <code>examples/*</code>, <code>examples</code> holds the
 <a href="../../tutorial/#the-example-lab">example configs</a>. From a script, use
 the Builder <a href="../administration/#rest-api">REST API</a>.</p>
 <h2 id="a-builder-file-beside-a-topology">A Builder file beside a topology<a class="headerlink" href="#a-builder-file-beside-a-topology" title="Permanent link">&para;</a></h2>

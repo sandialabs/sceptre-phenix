@@ -6310,6 +6310,14 @@
 </span><span id="__span-22-4"><a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a>  topology, or topology and scenario, or paths to topology/scenario
 </span><span id="__span-22-5"><a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>  configuration files (YAML or JSON). (Optional are the arguments for
 </span><span id="__span-22-6"><a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a>  scenario or base directory.)
+</span><span id="__span-22-7"><a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a>
+</span><span id="__span-22-8"><a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a>  The command fills in the ${NAME} and ${NAME:default} placeholders of each
+</span><span id="__span-22-9"><a id="__codelineno-22-9" name="__codelineno-22-9" href="#__codelineno-22-9"></a>  file before it reads the file. A value comes from -e, else from an env
+</span><span id="__span-22-10"><a id="__codelineno-22-10" name="__codelineno-22-10" href="#__codelineno-22-10"></a>  file of --env-file, else from the shell. The shell gives no PHENIX_
+</span><span id="__span-22-11"><a id="__codelineno-22-11" name="__codelineno-22-11" href="#__codelineno-22-11"></a>  variable unless -e NAME names it. A placeholder with no value and no
+</span><span id="__span-22-12"><a id="__codelineno-22-12" name="__codelineno-22-12" href="#__codelineno-22-12"></a>  default is an error, and so is a -e variable that no file uses: the
+</span><span id="__span-22-13"><a id="__codelineno-22-13" name="__codelineno-22-13" href="#__codelineno-22-13"></a>  command then changes nothing. Write ${NAME:} for an optional variable and
+</span><span id="__span-22-14"><a id="__codelineno-22-14" name="__codelineno-22-14" href="#__codelineno-22-14"></a>  $${NAME} for the literal text ${NAME}.
 </span></code></pre></div>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>phenix experiment create &lt;experiment name&gt; [flags]
 </span></code></pre></div>
@@ -6319,18 +6327,21 @@
 </span><span id="__span-24-3"><a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>phenix experiment create &lt;experiment name&gt; -t &lt;topology name or /path/to/filename&gt; -s &lt;scenario name or /path/to/filename&gt; -d &lt;/path/to/dir/&gt;
 </span><span id="__span-24-4"><a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a>phenix experiment create &lt;experiment name&gt; -t &lt;topology name or /path/to/filename&gt; -s &lt;scenario name or /path/to/filename&gt; --disabled-apps "app1,app2"
 </span><span id="__span-24-5"><a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a>phenix experiment create &lt;experiment name&gt; -t &lt;topology name&gt; --node-annotation phenix/default-apps=false --annotation phenix.workflow/tags=nightly
+</span><span id="__span-24-6"><a id="__codelineno-24-6" name="__codelineno-24-6" href="#__codelineno-24-6"></a>phenix experiment create &lt;experiment name&gt; -t &lt;/path/to/filename&gt; -e NODES=3 --env-file site.env
 </span></code></pre></div>
 <h3 id="options_7">Options<a class="headerlink" href="#options_7" title="Permanent link">&para;</a></h3>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>      --annotation stringArray        Experiment annotation as key=value; may be repeated
 </span><span id="__span-25-2"><a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>  -d, --base-dir string               Base directory to use for experiment (optional)
 </span><span id="__span-25-3"><a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>  -b, --default-bridge string         Default bridge name to use for experiment (optional) (default "phenix")
 </span><span id="__span-25-4"><a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a>      --disabled-apps strings         Comma separated list of apps to disable
-</span><span id="__span-25-5"><a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a>  -h, --help                          help for create
-</span><span id="__span-25-6"><a id="__codelineno-25-6" name="__codelineno-25-6" href="#__codelineno-25-6"></a>      --node-annotation stringArray   Annotation for every VM as key=value; true, false and JSON lists or objects keep their type; may be repeated
-</span><span id="__span-25-7"><a id="__codelineno-25-7" name="__codelineno-25-7" href="#__codelineno-25-7"></a>  -s, --scenario string               Name of an existing scenario to use (optional)
-</span><span id="__span-25-8"><a id="__codelineno-25-8" name="__codelineno-25-8" href="#__codelineno-25-8"></a>  -t, --topology string               Name of an existing topology to use
-</span><span id="__span-25-9"><a id="__codelineno-25-9" name="__codelineno-25-9" href="#__codelineno-25-9"></a>      --vlan-max int                  VLAN pool maximum
-</span><span id="__span-25-10"><a id="__codelineno-25-10" name="__codelineno-25-10" href="#__codelineno-25-10"></a>      --vlan-min int                  VLAN pool minimum
+</span><span id="__span-25-5"><a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a>  -e, --env stringArray               set a variable for the ${NAME} placeholders: NAME=value, or NAME to copy the value from the shell (repeatable)
+</span><span id="__span-25-6"><a id="__codelineno-25-6" name="__codelineno-25-6" href="#__codelineno-25-6"></a>      --env-file stringArray          read variables from an env file of NAME=value lines; a relative path starts at the working directory (repeatable)
+</span><span id="__span-25-7"><a id="__codelineno-25-7" name="__codelineno-25-7" href="#__codelineno-25-7"></a>  -h, --help                          help for create
+</span><span id="__span-25-8"><a id="__codelineno-25-8" name="__codelineno-25-8" href="#__codelineno-25-8"></a>      --node-annotation stringArray   Annotation for every VM as key=value; true, false and JSON lists or objects keep their type; may be repeated
+</span><span id="__span-25-9"><a id="__codelineno-25-9" name="__codelineno-25-9" href="#__codelineno-25-9"></a>  -s, --scenario string               Name of an existing scenario to use (optional)
+</span><span id="__span-25-10"><a id="__codelineno-25-10" name="__codelineno-25-10" href="#__codelineno-25-10"></a>  -t, --topology string               Name of an existing topology to use
+</span><span id="__span-25-11"><a id="__codelineno-25-11" name="__codelineno-25-11" href="#__codelineno-25-11"></a>      --vlan-max int                  VLAN pool maximum
+</span><span id="__span-25-12"><a id="__codelineno-25-12" name="__codelineno-25-12" href="#__codelineno-25-12"></a>      --vlan-min int                  VLAN pool minimum
 </span></code></pre></div>
 <h3 id="see-also_7">SEE ALSO<a class="headerlink" href="#see-also_7" title="Permanent link">&para;</a></h3>
 <ul>

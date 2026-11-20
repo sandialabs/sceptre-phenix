@@ -3387,13 +3387,13 @@ security-relevant action.</p>
 <td style="text-align: left;"><code>config-create</code></td>
 <td style="text-align: left;"><code>configuration</code></td>
 <td style="text-align: left;"><code>creation</code></td>
-<td style="text-align: left;"><code>POST /configs</code>, <code>POST /workflow/configs/{branch}</code> for a new config (and its refusal by a role that may neither create nor update configs), and <code>PUT /configs/{kind}/{name}</code> refusals of the new name it renames a config to</td>
+<td style="text-align: left;"><code>POST /configs</code>, <code>POST /workflow/configs/{branch}</code> for a new config (and its refusal by a role that may neither create nor update configs; <code>phenix.workflow.variables</code> when the request used a variable, also in a refusal for the config name: the sorted names, never values), and <code>PUT /configs/{kind}/{name}</code> refusals of the new name it renames a config to</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>config-update</code></td>
 <td style="text-align: left;"><code>configuration</code></td>
 <td style="text-align: left;"><code>change</code></td>
-<td style="text-align: left;"><code>PUT /configs/{kind}/{name}</code>, <code>POST /workflow/configs/{branch}</code> for a stored config</td>
+<td style="text-align: left;"><code>PUT /configs/{kind}/{name}</code>, <code>POST /workflow/configs/{branch}</code> for a stored config (<code>phenix.workflow.variables</code> when the request used a variable, also in a refusal for the config name: the sorted names, never values)</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>config-delete</code></td>
@@ -3405,7 +3405,7 @@ security-relevant action.</p>
 <td style="text-align: left;"><code>workflow-apply</code></td>
 <td style="text-align: left;"><code>configuration</code></td>
 <td style="text-align: left;"><code>change</code></td>
-<td style="text-align: left;"><code>POST /workflow/apply/{branch}</code> (<code>phenix.workflow.branch</code>, <code>phenix.workflow.action</code>)</td>
+<td style="text-align: left;"><code>POST /workflow/apply/{branch}</code> (<code>phenix.workflow.branch</code>, <code>phenix.workflow.action</code>, and <code>phenix.workflow.variables</code> when the request used a variable: the sorted names of the variables that the workflow config or an included topology file used, never their values)</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>settings-update</code></td>
