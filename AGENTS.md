@@ -292,8 +292,14 @@ image, documentation, or topology details.
   `feat-add-user-authentication`.
 - Use rebase workflow and one commit per logical feature; PRs normally contain
   one commit. Squash work-in-progress commits and update the message.
-- Update `CHANGELOG.md` for code or behavior changes and `CODEOWNERS` for new
-  areas or ownership changes.
+- Do not edit `CHANGELOG.md`. Releasaurus (`releasaurus.toml`,
+  `.github/workflows/release.yml`) generates it from the Conventional Commit
+  subjects on `main`, which `.github/workflows/commits.yml` checks on pull
+  requests, and keeps a release pull request open. Merging that pull request
+  tags a `vYYYY.MM.DD` release, publishes GitHub release notes, and invokes
+  `packages.yml` to publish release images, the `.deb` package, and SBOMs.
+  Write each commit subject for the changelog reader.
+- Update `CODEOWNERS` for new areas or ownership changes.
 - New user-facing features need a minimal README example and documentation in
   [`docs/`](docs/).
 - Keep API docs, schemas, examples, and the phēnix skill (`SKILL.md` and its
@@ -329,10 +335,19 @@ Most GitHub Actions workflows are path-scoped:
   deadcode for Go (`src/go/prek.toml`) and knip for the UI
   (`src/js/prek.toml`). It restores the prek hook environments and the
   golangci-lint cache, which only `main` saves.
+- `commits.yml` runs on every pull request and verifies that each commit
+  subject follows Conventional Commits.
+- `release.yml` runs Releasaurus on pushes to `main` (on
+  `sandialabs/sceptre-phenix`, or manually via `workflow_dispatch` dry-run): it
+  tags and publishes any merged release PR, calls `packages.yml` to build and
+  attach the release artifacts, and opens or updates the next release PR.
 - `packages.yml` builds the Docker image (Buildx with the GHA layer cache),
   the JIT UI image, and the Debian package. It scans the phenix image with
   grype and makes SPDX SBOMs of both images and the `.deb` with syft. It keeps
-  the SBOMs as an artifact and attaches them to a release.
+  the SBOMs as an artifact; when called by `release.yml` via `workflow_call`,
+  it publishes the release and `latest` images and uploads the `.deb` and SBOMs
+  to Releasaurus's GitHub release (a manual `workflow_dispatch` with a tag
+  rebuilds and re-attaches them without moving `latest`).
 - `podman.yml` builds the same `docker/Dockerfile` with Podman on each push to
   `main` and on pull requests that change the container files.
 - `stress.yml` repeats the concurrency-heavy Go packages under `-race` weekly,
