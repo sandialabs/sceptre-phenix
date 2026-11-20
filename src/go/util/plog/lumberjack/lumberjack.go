@@ -323,9 +323,11 @@ func (l *Logger) openNew() error {
 
 	// we use truncate here because this should only get called when we've moved
 	// the file ourselves. if someone else creates the file in the meantime,
-	// just wipe out the contents.
+	// just wipe out the contents. O_APPEND is required: other phenix processes
+	// append to the same file, and without it this fd keeps a private offset and
+	// overwrites their lines.
 	var f *os.File
-	f, err = os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	f, err = os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_TRUNC, mode)
 	if err != nil {
 		return fmt.Errorf("can't open new logfile: %w", err)
 	}
