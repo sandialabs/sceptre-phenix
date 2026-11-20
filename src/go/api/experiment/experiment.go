@@ -21,6 +21,7 @@ import (
 	"phenix/types"
 	ifaces "phenix/types/interfaces"
 	"phenix/types/version"
+	v1 "phenix/types/version/v1"
 	"phenix/util/common"
 	"phenix/util/file"
 	"phenix/util/freshness"
@@ -1574,12 +1575,14 @@ func deleteSnapshots(exp *types.Experiment) error {
 	// experiments by this headnode get deleted. This is important when multiple
 	// headnodes exist for a single minimega cluster.
 	//
-	// The snapshots are deleted together, by their exact names (see
-	// file.DeleteExistingFiles).
+	// The snapshots are deleted together, by their exact names. The numbered
+	// snapshots of drives removed since the VM ran are deleted too (see
+	// file.DeleteNumberedFiles).
 	var (
 		expName   = exp.Metadata.Name
 		headnode  = mm.Headnode()
 		snapshots []string
+		prefixes  []string
 	)
 
 	for _, node := range exp.Spec.Topology().Nodes() {
@@ -1588,10 +1591,16 @@ func deleteSnapshots(exp *types.Experiment) error {
 		}
 
 		hostname := node.General().Hostname()
-		snapshots = append(snapshots, fmt.Sprintf("%s_%s_%s_snapshot", headnode, expName, hostname))
+		snapshot := fmt.Sprintf("%s_%s_%s_snapshot", headnode, expName, hostname)
+		prefixes = append(prefixes, snapshot)
+
+		// Each drive gets its own snapshot; always delete the first drive's.
+		for i := range max(1, len(node.Hardware().Drives())) {
+			snapshots = append(snapshots, v1.DriveSnapshotName(snapshot, i))
+		}
 	}
 
-	err := file.DeleteExistingFiles(snapshots)
+	err := file.DeleteNumberedFiles(snapshots, prefixes)
 	if err != nil {
 		return fmt.Errorf("deleting snapshot files for experiment %s: %w", expName, err)
 	}

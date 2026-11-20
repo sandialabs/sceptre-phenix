@@ -137,6 +137,18 @@ func TestCheckDisksClassifies(t *testing.T) {
 			wantProblems: []string{"VM a: disk {outside}/a.qc2: disk image {outside}/a.qc2 is missing"},
 		},
 		{
+			name: "a snapshot of a missing second drive is refused, wherever the VM runs",
+			mode: string(common.DeployModeAll), schedules: map[string]string{"a": "c1"}, hosts: []string{"head", "c1"},
+			setup: func(t *testing.T, _, outside string) {
+				t.Helper()
+				dct.WriteFile(t, outside+"/os.img", []byte("raw"))
+			},
+			vms: func(_, outside string) []diskVM {
+				return []diskVM{{name: "a", drives: []string{outside + "/os.img", outside + "/data.qc2"}}}
+			},
+			wantProblems: []string{"VM a: disk {outside}/data.qc2: disk image {outside}/data.qc2 is missing"},
+		},
+		{
 			name: "a missing backing file inside the files directory is refused",
 			setup: func(t *testing.T, images, _ string) {
 				t.Helper()
@@ -970,7 +982,7 @@ func TestCollectDisks(t *testing.T) {
 	wantUses := map[string][]diskUse{
 		"/files/base.qc2": {{vm: "a", drive: driveDisk, image: "base.qc2", index: 0, snapshot: true, readOnly: true}},
 		"/files/tools.ISO": {
-			{vm: "a", drive: driveDisk, image: "tools.ISO", index: 2, snapshot: false, readOnly: true},
+			{vm: "a", drive: driveDisk, image: "tools.ISO", index: 2, snapshot: true, readOnly: true},
 			{vm: "b", drive: driveCDROM, image: "tools.ISO", index: 1, snapshot: false, readOnly: true},
 		},
 		"/files/install.iso": {

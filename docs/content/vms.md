@@ -221,8 +221,8 @@ To delete a snapshot from every cluster node, use
 `phenix vm snapshot delete <experiment-name> <vm-name> <snapshot-name>`. The experiment should be stopped before doing this, since phēnix refuses a snapshot whose disk a running VM uses.
 
 The VM must have its snapshot flag set and only one disk. phēnix refuses a VM
-with more than one disk, because a snapshot holds only the first disk
-([#145](https://github.com/sandialabs/sceptre-phenix/issues/145)).
+with more than one disk, because a snapshot saves and restores only the first
+disk of a VM.
 
 phēnix keeps the snapshot files on the cluster node that runs the VM, in
 `<base-dir.phenix>/images/<experiment-name>/files`. The list shows the
@@ -942,7 +942,7 @@ paused VMs first`.
 
 ### Command Line
 
-To reset the first disk to the initial pre-boot state, run the following command.
+To reset every disk to the initial pre-boot state, run the following command.
 
 ```shell
 phenix vm reset-disk <experiment-name> [vm name] [--label <label>]

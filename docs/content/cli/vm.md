@@ -904,7 +904,7 @@ Resets the disk state for running or powered off VM(s)
 ```text
 Resets the disk state to the initial pre-boot disk state for running or powered off VM(s)
 
-  Used to reset the disk state for the first disk for running or powered off virtual machine(s) for a specific
+  Used to reset the disk state for every disk for running or powered off virtual machine(s) for a specific
   experiment.  The VM's snapshot flag must be set to true in order to use this command.
 ```
 
@@ -1090,7 +1090,7 @@ List, create, restore, and delete the snapshots of a VM
 
   To create or restore a snapshot, the VM must have its snapshot flag set and
   exactly one disk. phenix refuses a VM with more than one disk, because a
-  snapshot holds only the first disk (sandialabs/sceptre-phenix#145).
+  snapshot saves and restores only the first disk of a VM.
 
   phenix keeps the snapshot files on the cluster node that runs the VM, in
   <base-dir.phenix>/images/<experiment name>/files. The list shows the

@@ -367,7 +367,7 @@ func TestHardwareDiskConfig(t *testing.T) {
 		want     string
 	}{
 		{snapshot: "", want: "base.qc2,virtio data.qc2,none extra.qc2"},
-		{snapshot: "snap.qc2", want: "snap.qc2,virtio,writeback data.qc2,none extra.qc2,writeback"},
+		{snapshot: "snap", want: "snap,virtio,writeback snap_1,none snap_2,writeback"},
 	}
 
 	for _, tt := range tests {
@@ -378,5 +378,24 @@ func TestHardwareDiskConfig(t *testing.T) {
 
 	if got := (Hardware{}).DiskConfig("snap"); got != "" {
 		t.Errorf("DiskConfig() with no drives = %q, want empty", got)
+	}
+}
+
+func TestDriveSnapshotName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		drive int
+		want  string
+	}{
+		{drive: 0, want: "snap"},
+		{drive: 1, want: "snap_1"},
+		{drive: 2, want: "snap_2"},
+	}
+
+	for _, tt := range tests {
+		if got := DriveSnapshotName("snap", tt.drive); got != tt.want {
+			t.Errorf("DriveSnapshotName(%q, %d) = %q, want %q", "snap", tt.drive, got, tt.want)
+		}
 	}
 }

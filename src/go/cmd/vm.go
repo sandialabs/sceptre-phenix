@@ -756,7 +756,7 @@ func newVMResetDiskCmd() *cobra.Command {
 
 	desc := `Resets the disk state to the initial pre-boot disk state for running or powered off VM(s)
 
-  Used to reset the disk state for the first disk for running or powered off virtual machine(s) for a specific
+  Used to reset the disk state for every disk for running or powered off virtual machine(s) for a specific
   experiment.  The VM's snapshot flag must be set to true in order to use this command.`
 
 	cmd := &cobra.Command{

@@ -105,6 +105,17 @@ func TestDoctorLeftoverSnapshots(t *testing.T) {
 					"have, 2.0 KiB in all: mm1_gone_vm1_snapshot (2.0 KiB), mm1_gone_vm2_snapshot (10 B)")
 			},
 		},
+		"snapshots of other drives": {
+			files: map[string]int{
+				"mm1_gone_vm1_snapshot_1": 3, "mm1_gone_vm2_snapshot_12": 4, "mm1_kept_vm1_snapshot_1": 1,
+				"mm1_gone_vm3_snapshot_x": 1, "mm1_gone_vm4_snapshot_": 1, "mm1_gone_vm5_snapshot_1x": 1,
+			},
+			host: "mm1",
+			want: func(dir string) doctorCheck {
+				return row("", doctorWarn, "2 snapshot files in "+dir+" belong to experiments that the store does not "+
+					"have, 7 B in all: mm1_gone_vm1_snapshot_1 (3 B), mm1_gone_vm2_snapshot_12 (4 B)")
+			},
+		},
 		"none": {
 			files: map[string]int{"mm1_kept_vm1_snapshot": 1}, host: "mm1",
 			want: func(dir string) doctorCheck {
