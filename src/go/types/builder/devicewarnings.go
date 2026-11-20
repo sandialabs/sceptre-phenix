@@ -23,7 +23,6 @@ const (
 	osTypeLinux      = "linux"
 	osTypeMinirouter = "minirouter"
 	protoOSPF        = "ospf"
-	vlanMgmt         = "mgmt"
 	serialType       = "serial"
 	maxTunnelPort    = 65535
 	tunnelVNC        = "VNC"
@@ -636,7 +635,7 @@ type ntpServer struct {
 }
 
 // ntpIssues returns the errors, then the warnings, about the ntp-server label,
-// which the ntp app reads from the first node with it, and vrouter with mgmt.
+// which the ntp and vrouter apps read from the first node with it.
 func (d *Document) ntpIssues() ([]Issue, []Issue) {
 	var servers []ntpServer
 
@@ -688,59 +687,7 @@ func (d *Document) ntpIssues() ([]Issue, []Issue) {
 		)))
 	}
 
-	if d.hasVyattaRouter() && !slices.ContainsFunc(d.publishedVLANs(first.node), func(vlan string) bool {
-		return strings.EqualFold(vlan, vlanMgmt)
-	}) {
-		warnings = append(warnings, fieldIssue(CodeDeviceNTPServerNoMgmt, first.node, first.index, field, fmt.Sprintf(
-			"routers take their NTP server address from an interface of %q on VLAN mgmt, but the device has no such "+
-				"interface. Thus phenix gives the routers no NTP server, unless an ntp app of the scenario names one. "+
-				"Connect an interface of %q to "+
-				"a network named mgmt",
-			hostname, hostname,
-		)))
-	}
-
 	return errs, warnings
-}
-
-// hasVyattaRouter reports whether the document has a router that phenix's
-// vrouter app configures with its vyatta template.
-func (d *Document) hasVyattaRouter() bool {
-	for i := range d.Nodes {
-		if node := &d.Nodes[i]; ownDevice(node) {
-			if _, osType, ok := routerOf(node); ok && slices.Contains(vyattaOSTypes, osType) {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
-// publishedVLANs returns the VLAN each spec interface of a device is published
-// with (see [connectInterfaces]).
-func (d *Document) publishedVLANs(node *Node) []string {
-	ifaces := specNodeInterfaces(node.Device.Spec)
-	vlans := make([]string, len(ifaces))
-
-	for k, iface := range ifaces {
-		vlans[k] = interfaceVLAN(iface)
-	}
-
-	handleNetworks := d.handleNetworks()
-
-	for _, handle := range node.Device.Interfaces {
-		network := handleNetworks[handle.ID]
-		if network == nil {
-			continue
-		}
-
-		if k := findInterfaceIndex(ifaces, handle.Name); k >= 0 {
-			vlans[k] = network.Name
-		}
-	}
-
-	return vlans
 }
 
 // drivesError is the error about a device with no drive, which the phenix

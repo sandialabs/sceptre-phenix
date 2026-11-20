@@ -75,10 +75,6 @@
     "severity": "error",
     "description": "The ntp-server label names no interface of its device, or one with no IP address, so the experiment fails to start, which blocks publishing."
   },
-  "device.ntp-server.no-mgmt": {
-    "severity": "warning",
-    "description": "Routers get their NTP server from an interface of the ntp-server device on VLAN mgmt, and it has none."
-  },
   "device.ospf-network.unused": {
     "severity": "warning",
     "description": "An OSPF area network of a minirouter holds the address of none of its interfaces with proto ospf, so minirouter does not advertise it."

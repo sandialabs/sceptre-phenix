@@ -514,7 +514,7 @@ func TestVrouterPreStartNTP(t *testing.T) {
 		want     string
 		wantErr  bool
 	}{
-		{name: "labelled NTP server", labelled: true, want: "set service ntp server 172.20.0.5 prefer\n"},
+		{name: "labelled NTP server", labelled: true, want: "set service ntp server 10.0.0.5 prefer\n"},
 		{
 			name:     "ntp app host source",
 			scenario: vrouterScenario(ntpApp(map[string]any{"client": "ntp", "source": map[string]any{"address": "10.1.1.1"}})),
@@ -559,7 +559,7 @@ func TestVrouterPreStartNTP(t *testing.T) {
 			if tt.labelled {
 				nodes = append(nodes, &v1.Node{
 					TypeF:    "VirtualMachine",
-					LabelsF:  map[string]string{"ntp-server": "true"},
+					LabelsF:  map[string]string{"ntp-server": "eth0"},
 					GeneralF: &v1.General{HostnameF: "ntp"},
 					NetworkF: &v1.Network{InterfacesF: []*v1.Interface{
 						{NameF: "eth0", VLANF: "inside", AddressF: "10.0.0.5"},
