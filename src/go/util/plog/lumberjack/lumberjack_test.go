@@ -2,8 +2,10 @@ package lumberjack
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -154,5 +156,60 @@ func TestSetMaxSizeLimitsWrite(t *testing.T) {
 
 	if n, err := l.Write(make([]byte, 50)); err == nil {
 		t.Errorf("Write(50 bytes) after SetMaxSize(10) = %d, nil; want an error", n)
+	}
+}
+
+// Several phenix processes append to one log file. A file created by openNew
+// must be opened O_APPEND, or its writer keeps a private offset and overwrites
+// the lines the other processes appended.
+func TestOpenNewAppendsWithOtherWriter(t *testing.T) {
+	name := filepath.Join(t.TempDir(), "phenix.log")
+
+	server := &Logger{Filename: name} // file does not exist: openNew
+	t.Cleanup(func() { _ = server.Close() })
+
+	if _, err := server.Write([]byte("server 0\n")); err != nil {
+		t.Fatalf("server Write error = %v", err)
+	}
+
+	cli := &Logger{Filename: name} // file exists: openExistingOrNew appends
+	t.Cleanup(func() { _ = cli.Close() })
+
+	want := map[string]bool{"server 0": true}
+
+	for i := range 3 {
+		for _, w := range []struct {
+			l *Logger
+			p string
+		}{{cli, "cli"}, {server, "server"}} {
+			line := fmt.Sprintf("%s %d", w.p, i+1)
+			want[line] = true
+
+			if _, err := w.l.Write([]byte(line + "\n")); err != nil {
+				t.Fatalf("Write(%q) error = %v", line, err)
+			}
+		}
+	}
+
+	data, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	if len(lines) != len(want) {
+		t.Errorf("log has %d lines, want %d:\n%s", len(lines), len(want), data)
+	}
+
+	for _, line := range lines {
+		if !want[line] {
+			t.Errorf("log has torn or unexpected line %q", line)
+		}
+
+		delete(want, line)
+	}
+
+	for line := range want {
+		t.Errorf("log lost line %q", line)
 	}
 }
