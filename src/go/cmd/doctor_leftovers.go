@@ -24,7 +24,8 @@ const (
 	leftoverTapsRow     = "leftovers taps"
 	leftoverMirrorsRow  = "leftovers mirrors"
 
-	// phenix names the snapshot of a VM's first drive <head node>_<experiment>_<VM>_snapshot, in minimega's -filepath.
+	// phenix names the snapshot of a VM's first drive <head node>_<experiment>_<VM>_snapshot, and the snapshot of each
+	// other drive <head node>_<experiment>_<VM>_snapshot_<N>, in minimega's -filepath.
 	snapshotSuffix = "_snapshot"
 	// minimega names its taps mega_tap<N> (TapFmt), and the mirror of a capture tap mirror-<tap>.
 	minimegaTapName = "mega_tap"
@@ -39,6 +40,9 @@ const (
 
 // validNamespace matches a name minimega accepts for a namespace.
 var validNamespace = regexp.MustCompile(`^[a-zA-Z0-9-_.]+$`)
+
+// snapshotEnd matches the end of the name of a drive snapshot: _snapshot or _snapshot_<N>.
+var snapshotEnd = regexp.MustCompile(snapshotSuffix + `(?:_[0-9]+)?$`)
 
 // doctorInventory is what minimega gives about its namespaces, which a run of doctor shares.
 type doctorInventory struct {
@@ -331,11 +335,13 @@ func leftoverSnapshotsCheck(
 		name := entry.Name()
 		middle, ok := strings.CutPrefix(name, head+"_")
 
-		if !ok || entry.IsDir() || !strings.HasSuffix(middle, snapshotSuffix) {
+		end := snapshotEnd.FindStringIndex(middle)
+
+		if !ok || entry.IsDir() || end == nil {
 			continue
 		}
 
-		middle = strings.TrimSuffix(middle, snapshotSuffix)
+		middle = middle[:end[0]]
 		if kept(middle) {
 			continue
 		}

@@ -30,7 +30,7 @@ func vmDiskError(op, vmName string, err error) error {
 		return fmt.Errorf("unable to %s the %s VM: %w (stop the experiment, then run phenix vm set <experiment name> %s --snapshot)",
 			op, vmName, err, vmName)
 	case errors.Is(err, vm.ErrMultipleDisks):
-		return fmt.Errorf("unable to %s the %s VM: %w (see sandialabs/sceptre-phenix#145)", op, vmName, err)
+		return fmt.Errorf("unable to %s the %s VM: %w (a snapshot saves and restores only the first disk of a VM)", op, vmName, err)
 	default:
 		return fmt.Errorf("unable to %s the %s VM: %w", op, vmName, err)
 	}
@@ -45,7 +45,7 @@ func newVMSnapshotCmd() *cobra.Command {
 
   To create or restore a snapshot, the VM must have its snapshot flag set and
   exactly one disk. phenix refuses a VM with more than one disk, because a
-  snapshot holds only the first disk (sandialabs/sceptre-phenix#145).
+  snapshot saves and restores only the first disk of a VM.
 
   phenix keeps the snapshot files on the cluster node that runs the VM, in
   <base-dir.phenix>/images/<experiment name>/files. The list shows the

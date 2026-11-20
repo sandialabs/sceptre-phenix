@@ -249,7 +249,7 @@ func TestVMCmdSnapshotState(t *testing.T) { //nolint:paralleltest // replaces th
 		},
 		{
 			name: "create with two disks", args: []string{"snapshot", "create", "exp", "web", "s1"},
-			mm: twoDisks, wantIs: vm.ErrMultipleDisks, wantHint: "sandialabs/sceptre-phenix#145",
+			mm: twoDisks, wantIs: vm.ErrMultipleDisks, wantHint: "a snapshot saves and restores only the first disk of a VM",
 		},
 		{
 			name: "restore in a stopped experiment", args: []string{"snapshot", "restore", "exp", "web", "web__s1"},

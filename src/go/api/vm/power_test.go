@@ -386,14 +386,17 @@ func TestShutdownRejectsEmptyNames(t *testing.T) {
 	}
 }
 
-// ResetDiskState kills the VM, replaces its disk with a new snapshot of the
-// image it started from (on the VM's node), and starts it again.
+// ResetDiskState kills the VM, replaces each of its disks with a new snapshot
+// of the image it started from (on the VM's node), and starts it again.
 //
 //nolint:paralleltest // replaces minimega
 func TestResetDiskState(t *testing.T) {
 	const (
-		disk    = "/phenix/images/" + testExp + "_vm1_snapshot"
-		tmpSnap = testExp + "_vm1_disk-0.qcow2"
+		disk     = "/phenix/images/" + testExp + "_vm1_snapshot"
+		tmpSnap  = testExp + "_vm1_disk-0.qcow2"
+		disk1    = "/phenix/images/" + testExp + "_vm1_snapshot_1"
+		tmpSnap1 = testExp + "_vm1_disk-1.qcow2"
+		disks    = disk + ",writeback " + disk1 + ",virtio,writeback"
 	)
 
 	columns := []string{"host", "name", "id", "state", "disks", "snapshot"}
@@ -404,16 +407,16 @@ func TestResetDiskState(t *testing.T) {
 		row      []string        // minimega's vm info row, nil for none
 		failOn   string
 		wantErr  error
-		wantSent func(dst string) []string // dst is the VM's disk on its node
+		wantSent func(dir string) []string // dir is the VM's instance directory on its node
 	}{
 		{
 			name: "kills a running VM and resets its disk on its node",
 			row:  []string{"compute1", "vm1", "5", "RUNNING", disk + ",writeback", "true"},
-			wantSent: func(dst string) []string {
+			wantSent: func(dir string) []string {
 				return []string{
 					"vm info", "version", "capture", "vm kill vm1",
 					"mesh send compute1 disk snapshot " + disk + " " + tmpSnap,
-					"mesh send compute1 shell mv /phenix/images/" + tmpSnap + " " + dst,
+					"mesh send compute1 shell mv /phenix/images/" + tmpSnap + " " + dir + "/disk-0.qcow2",
 					"vm start vm1",
 				}
 			},
@@ -421,11 +424,39 @@ func TestResetDiskState(t *testing.T) {
 		{
 			name: "resets the disk of a VM that has quit on the headnode",
 			row:  []string{"head", "vm1", "5", "QUIT", disk, "true"},
-			wantSent: func(dst string) []string {
+			wantSent: func(dir string) []string {
 				// with no mesh prefix, the commands start with a space
 				return []string{
 					"vm info", " disk snapshot " + disk + " " + tmpSnap,
-					" shell mv /phenix/images/" + tmpSnap + " " + dst, "vm start vm1",
+					" shell mv /phenix/images/" + tmpSnap + " " + dir + "/disk-0.qcow2", "vm start vm1",
+				}
+			},
+		},
+		{
+			name: "resets each disk of a running VM on its node",
+			row:  []string{"compute1", "vm1", "5", "RUNNING", disks, "true"},
+			wantSent: func(dir string) []string {
+				return []string{
+					"vm info", "version", "capture", "vm kill vm1",
+					"mesh send compute1 disk snapshot " + disk + " " + tmpSnap,
+					"mesh send compute1 shell mv /phenix/images/" + tmpSnap + " " + dir + "/disk-0.qcow2",
+					"mesh send compute1 disk snapshot " + disk1 + " " + tmpSnap1,
+					"mesh send compute1 shell mv /phenix/images/" + tmpSnap1 + " " + dir + "/disk-1.qcow2",
+					"vm start vm1",
+				}
+			},
+		},
+		{
+			name: "resets each disk of a VM that has quit on the headnode",
+			row:  []string{"head", "vm1", "5", "QUIT", disks, "true"},
+			wantSent: func(dir string) []string {
+				return []string{
+					"vm info",
+					" disk snapshot " + disk + " " + tmpSnap,
+					" shell mv /phenix/images/" + tmpSnap + " " + dir + "/disk-0.qcow2",
+					" disk snapshot " + disk1 + " " + tmpSnap1,
+					" shell mv /phenix/images/" + tmpSnap1 + " " + dir + "/disk-1.qcow2",
+					"vm start vm1",
 				}
 			},
 		},
@@ -454,6 +485,35 @@ func TestResetDiskState(t *testing.T) {
 			wantErr: errAny,
 			wantSent: func(string) []string {
 				return []string{"vm info", "mesh send compute1 disk snapshot " + disk + " " + tmpSnap}
+			},
+		},
+		{
+			name:    "does not start a VM whose second disk it could not snapshot",
+			row:     []string{"compute1", "vm1", "5", "QUIT", disks, "true"},
+			failOn:  "mesh send compute1 disk snapshot " + disk1,
+			wantErr: errAny,
+			wantSent: func(dir string) []string {
+				return []string{
+					"vm info",
+					"mesh send compute1 disk snapshot " + disk + " " + tmpSnap,
+					"mesh send compute1 shell mv /phenix/images/" + tmpSnap + " " + dir + "/disk-0.qcow2",
+					"mesh send compute1 disk snapshot " + disk1 + " " + tmpSnap1,
+				}
+			},
+		},
+		{
+			name:    "does not start a VM whose second disk it could not move",
+			row:     []string{"compute1", "vm1", "5", "QUIT", disks, "true"},
+			failOn:  "mesh send compute1 shell mv /phenix/images/" + tmpSnap1,
+			wantErr: errAny,
+			wantSent: func(dir string) []string {
+				return []string{
+					"vm info",
+					"mesh send compute1 disk snapshot " + disk + " " + tmpSnap,
+					"mesh send compute1 shell mv /phenix/images/" + tmpSnap + " " + dir + "/disk-0.qcow2",
+					"mesh send compute1 disk snapshot " + disk1 + " " + tmpSnap1,
+					"mesh send compute1 shell mv /phenix/images/" + tmpSnap1 + " " + dir + "/disk-1.qcow2",
+				}
 			},
 		},
 		{
@@ -489,7 +549,7 @@ func TestResetDiskState(t *testing.T) {
 				t.Errorf("ResetDiskState(%q, %q) error = %v, want %v", testExp, "vm1", err, test.wantErr)
 			}
 
-			want := test.wantSent(common.MinimegaBase + "/5/disk-0.qcow2")
+			want := test.wantSent(common.MinimegaBase + "/5")
 			if err := checkSent(received(), testExp, want); err != nil {
 				t.Errorf("ResetDiskState(%q, %q) %v", testExp, "vm1", err)
 			}

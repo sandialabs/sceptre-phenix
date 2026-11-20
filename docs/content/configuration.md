@@ -214,6 +214,10 @@ Optional values for a node in the topology configuration can include:
     host needs `lowntfs-3g`; without it, minimega silently falls back to a
     case-sensitive mount.
 
+When `general.snapshot` is `true`, phēnix creates a separate snapshot of every
+drive, so none of the base images are modified. File injections and deletions
+apply only to the first drive.
+
 #### Delay Start
 
 It is possible to delay the start of a VM with the `delay` value. There are

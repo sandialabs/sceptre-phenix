@@ -380,8 +380,8 @@ var (
 	// writes to its image in place, so the VM has no disk snapshot to save or commit.
 	ErrSnapshotDisabled = errors.New("snapshot flag is not set")
 
-	// ErrMultipleDisks is the error of Snapshot and Restore for a VM with more than one disk: a snapshot holds only
-	// the first disk, so it cannot restore such a VM (see sandialabs/sceptre-phenix#145).
+	// ErrMultipleDisks is the error of Snapshot and Restore for a VM with more than one disk: a snapshot saves and
+	// restores only the first disk of a VM, so it cannot restore such a VM.
 	ErrMultipleDisks = errors.New("snapshots support only VMs with one disk")
 )
 
@@ -793,9 +793,7 @@ func ResetDiskState(ctx context.Context, expName, vmName string) error {
 	}
 
 	var (
-		origSnap  = strings.Split(status[0]["disks"], ",")[0]
-		finalDst  = fmt.Sprintf("%s/%s/%s", common.MinimegaBase, status[0]["id"], "disk-0.qcow2")
-		tmpSnap   = fmt.Sprintf("%s_%s_disk-0.qcow2", expName, vmName)
+		disks     = strings.Fields(status[0]["disks"])
 		node      = status[0]["host"]
 		cmdPrefix = ""
 		cmd       = resetDiskInfoCmd(expName, vmName)
@@ -828,32 +826,42 @@ func ResetDiskState(ctx context.Context, expName, vmName string) error {
 		cmdPrefix = "mesh send " + node
 	}
 
-	// Create a snapshot of the original snapshot
-	// to exclude file injections in the new snapshot
-	cmd.Command = fmt.Sprintf("%s disk snapshot %s %s", cmdPrefix, origSnap, tmpSnap)
-
-	err = mmcli.ErrorResponse(mmcli.Run(cmd))
-	if err != nil {
-		return fmt.Errorf(
-			"taking disk snapshot remotely for VM %s in experiment %s: %w",
-			vmName,
-			expName,
-			err,
+	// minimega names the instance snapshot of each disk disk-<index>.qcow2.
+	for i, disk := range disks {
+		var (
+			origSnap = strings.Split(disk, ",")[0]
+			diskName = fmt.Sprintf("disk-%d.qcow2", i)
+			finalDst = fmt.Sprintf("%s/%s/%s", common.MinimegaBase, status[0]["id"], diskName)
+			tmpSnap  = fmt.Sprintf("%s_%s_%s", expName, vmName, diskName)
 		)
-	}
 
-	// Move the snapshot to the vm instance path
-	tmpSnapFullPath := fmt.Sprintf("%s/%s", filepath.Dir(origSnap), tmpSnap)
-	cmd.Command = fmt.Sprintf("%s shell mv %s %s", cmdPrefix, tmpSnapFullPath, finalDst)
+		// Create a snapshot of the original snapshot
+		// to exclude file injections in the new snapshot
+		cmd.Command = fmt.Sprintf("%s disk snapshot %s %s", cmdPrefix, origSnap, tmpSnap)
 
-	err = mmcli.ErrorResponse(mmcli.Run(cmd))
-	if err != nil {
-		return fmt.Errorf(
-			"moving disk snapshot remotely for VM %s in experiment %s: %w",
-			vmName,
-			expName,
-			err,
-		)
+		err = mmcli.ErrorResponse(mmcli.Run(cmd))
+		if err != nil {
+			return fmt.Errorf(
+				"taking disk snapshot remotely for VM %s in experiment %s: %w",
+				vmName,
+				expName,
+				err,
+			)
+		}
+
+		// Move the snapshot to the vm instance path
+		tmpSnapFullPath := fmt.Sprintf("%s/%s", filepath.Dir(origSnap), tmpSnap)
+		cmd.Command = fmt.Sprintf("%s shell mv %s %s", cmdPrefix, tmpSnapFullPath, finalDst)
+
+		err = mmcli.ErrorResponse(mmcli.Run(cmd))
+		if err != nil {
+			return fmt.Errorf(
+				"moving disk snapshot remotely for VM %s in experiment %s: %w",
+				vmName,
+				expName,
+				err,
+			)
+		}
 	}
 
 	// restart the vm

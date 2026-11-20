@@ -354,8 +354,7 @@ test.describe('Builder inspector', () => {
       const label = specGroup(builder, 'General').locator('label', {
         hasText: /^Snapshot$/,
       });
-      const text =
-        /^Run the VM on a copy-on-write snapshot of its first drive\b/;
+      const text = /^Run the VM on copy-on-write snapshots of its drives\b/;
 
       await expect.soft(whole).toHaveCount(0);
       await expect.soft(snapshot).toHaveAccessibleDescription(text);
