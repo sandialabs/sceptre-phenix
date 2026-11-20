@@ -103,6 +103,9 @@ phenix workflow apply helloworld -e MEMORY=4096 --env-file site.env
 # Print the configs with the variables filled in, and send nothing
 phenix workflow render helloworld -e MEMORY=4096
 
+# Delete the experiment and the injects of the branch name helloworld; -f stops it first
+phenix workflow delete helloworld -f
+
 # Docker Compose: the socket is inside the phenix container
 docker exec phenix phenix workflow apply /phenix/topologies/helloworld -f
 ```
@@ -288,7 +291,7 @@ Logging settings are managed via the `phenix settings` command, which modifies t
 | `ui.logs.minimega-path` | `PHENIX_UI_LOGS_MINIMEGA_PATH` | `""` | Path to the minimega log file to display in the UI and offer for download on the Logs page. **(Restart Required)** |
 | `ui.netflow.max-size` | `PHENIX_UI_NETFLOW_MAX_SIZE` | `100` | Maximum size in megabytes of each recorded netflow capture; `0` does not record captures. **(Restart Required)** |
 | `ui.captures.max-size` | `PHENIX_UI_CAPTURES_MAX_SIZE` | `10240` | Maximum size in megabytes of each packet capture file that minimega writes; `0` sets no limit. **(Restart Required)** |
-| `base-dir.injects` | `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Directory that `phenix workflow apply` stages a topology directory's `phenix-injects/` into, as `<base-dir.injects>/<name>`. The `phenix ui` server's value is used unless `--base-dir.injects` is given. Use an absolute path. **(Restart Required)** |
+| `base-dir.injects` | `PHENIX_BASE_DIR_INJECTS` | `<base-dir.phenix>/injects` | Directory that `phenix workflow apply` stages a topology directory's `phenix-injects/` into, as `<base-dir.injects>/<name>`, and that `phenix workflow delete` removes it from. The `phenix ui` server's value is used unless `--base-dir.injects` is given. Use an absolute path. **(Restart Required)** |
 | `base-dir.topologies` | `PHENIX_BASE_DIR_TOPOLOGIES` | `<base-dir.phenix>/topologies` | Directory where `phenix workflow apply NAME` looks for `NAME` when it isn't an existing path. Use an absolute path. |
 | `base-dir.builder-templates` | `PHENIX_BASE_DIR_BUILDER_TEMPLATES` | `<base-dir.phenix>/builder/templates` | Directory of Builder node template files that `phenix ui` reads at start as read-only server collections. Use an absolute path. **(Restart Required)** |
 

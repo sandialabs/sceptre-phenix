@@ -321,6 +321,7 @@ phenix workflow apply <DIR|NAME> --follow-inject-symlinks # follow symlinks in p
 phenix workflow apply <DIR|NAME> -e <NAME=value>    # --env: set a variable for the ${NAME} placeholders. -e <NAME> copies it from the shell
 phenix workflow apply <DIR|NAME> --env-file <file>  # read variables from env files, and not from <DIR>/.env
 phenix workflow render <DIR|NAME> [-b <name>] [-c <file>] [-e ...] [--env-file ...] # print the configs with the variables filled in, with no server
+phenix workflow delete <NAME> [-n] [-f]              # delete the experiment mapped to branch name NAME and <base-dir.injects>/NAME; -f stops it first
 ```
 
 The argument, the directory layout, the variables, the steps, the workflow

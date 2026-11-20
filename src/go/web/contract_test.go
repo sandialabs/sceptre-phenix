@@ -21,6 +21,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"phenix/api/job"
+	"phenix/api/workflow"
 	"phenix/store"
 	v1 "phenix/types/version/v1"
 	"phenix/util/common"
@@ -571,6 +572,12 @@ func contractRoutes() []contractRoute {
 		{
 			method: "DELETE", path: "/api/v1/runtimeSettings/log.level",
 			need: one(testRole("runtimeSettings", "update")), want: running,
+		},
+
+		// the experiment of a workflow branch; no experiment is mapped to main
+		{
+			method: "DELETE", path: "/api/v1/workflow/apply/main?dryRun=true",
+			need: one(testRole("workflow", "delete")), want: ok,
 		},
 
 		// web UI settings; a negative log file limit is refused before any change
@@ -1379,6 +1386,35 @@ func strictQueryErrorCases() map[string]contractErrorCase {
 	}
 }
 
+// workflowDeleteErrorCases are TestContractErrors' DELETE /workflow/apply/{branch} cases.
+func workflowDeleteErrorCases() map[string]contractErrorCase {
+	const path = "/api/v1/workflow/apply/lab"
+
+	// a running experiment lab mapped to the branch lab
+	mapped := func(t *testing.T, _ contractFixture) string {
+		t.Helper()
+
+		exp := namedExperiment(t, "lab", "2024-01-01T00:00:00Z")
+		exp.Metadata.Annotations = store.Annotations{workflow.BranchAnnotation: "lab"}
+		useTestStore(t, exp)
+
+		return path + "?dryRun=true"
+	}
+
+	return map[string]contractErrorCase{
+		"workflow delete of an invalid branch name": {
+			method: "DELETE", path: "/api/v1/workflow/apply/.lab", want: http.StatusBadRequest,
+		},
+		"workflow delete with a relative injects": {
+			method: "DELETE", path: path + "?injects=injects%2Flab", want: http.StatusBadRequest,
+		},
+		"workflow delete with a bare force": {method: "DELETE", path: path + "?force", want: http.StatusBadRequest},
+		"workflow delete of a running experiment without force": {
+			method: "DELETE", prepare: mapped, want: http.StatusConflict,
+		},
+	}
+}
+
 // vlanErrorCases are TestContractErrors' VLAN cases.
 func vlanErrorCases() map[string]contractErrorCase {
 	const (
@@ -1448,7 +1484,7 @@ func TestContractErrors(t *testing.T) {
 
 	for _, cases := range []map[string]contractErrorCase{
 		jobAndCaptureErrorCases(), experimentCaptureErrorCases(), fileAndVMErrorCases(), configAndRouteErrorCases(),
-		vlanErrorCases(), strictQueryErrorCases(),
+		vlanErrorCases(), strictQueryErrorCases(), workflowDeleteErrorCases(),
 	} {
 		for name, tc := range cases {
 			t.Run(name, func(t *testing.T) { checkContractError(t, spec, name, tc) })
@@ -1757,6 +1793,11 @@ func TestContractSocket(t *testing.T) {
 		{
 			method: "POST", path: "/workflow/apply/main?dryRun=true", body: "{}",
 			route: "/workflow/apply/{branch}", want: http.StatusBadRequest,
+		},
+		// no experiment is mapped to main
+		{
+			method: "DELETE", path: "/workflow/apply/main?dryRun=true",
+			route: "/workflow/apply/{branch}", want: http.StatusOK,
 		},
 		// phenix experiment trigger --cancel and phenix experiment scorch
 		{

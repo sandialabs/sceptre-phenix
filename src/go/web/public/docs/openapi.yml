@@ -11091,6 +11091,109 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+    delete:
+      tags:
+        - Workflow
+      summary: Delete the experiment of a workflow branch
+      description: >
+        Finds the experiment mapped to the branch (phenix.workflow/branch
+        annotation) and deletes it. A running experiment is refused with 409
+        unless force is true; then the server stops it first, also when
+        minimega cannot kill its VMs. No mapped experiment is not an error: the
+        response has an empty experiment. The response also names the other
+        experiments with a node injection whose source is in the injects
+        directory. The server does not delete that directory; the client
+        deletes it after the request. With dryRun=true, the server
+        returns the same response after the same checks and changes nothing.
+      operationId: deleteWorkflowApplyBranch
+      parameters:
+        - name: branch
+          in: path
+          description: workflow branch name
+          required: true
+          schema:
+            type: string
+        - name: dryRun
+          in: query
+          description: >
+            Runs every check and returns what the request would do without
+            stopping or deleting anything.
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: force
+          in: query
+          description: >
+            Stops a running mapped experiment before the delete. Without it, a
+            running experiment gets 409 and nothing changes.
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: injects
+          in: query
+          description: >
+            Absolute path of the injects directory that the client deletes
+            after the request. The server only compares it with the injection
+            sources of the other experiments, as written and with symbolic
+            links resolved. The default is the branch's directory in
+            base-dir.injects.
+          required: false
+          example: /phenix/injects/lab
+          schema:
+            type: string
+      responses:
+        "200":
+          description: experiment deleted, no experiment mapped, or only checked when dryRun is true
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowDeleteResult"
+        "400":
+          description: >
+            a query string that cannot be parsed, an invalid branch name, an
+            invalid dryRun or force value, an injects value that is not an
+            absolute path or is given more than once, all with nothing changed;
+            or a failure to stop the experiment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: deleting workflow deployments is not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: >-
+            another request deleted the experiment while the server stops it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: >
+            more than one experiment is mapped to the branch, or the mapped
+            experiment is running and force is not true, with nothing changed,
+            on a dry run too; or another request holds the experiment's lock,
+            or started it while the server deletes it; with force, the server
+            may already have stopped the experiment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: >
+            internal error, such as a store failure; also an experiment that
+            was deleted when its files were not all deleted, or when the server
+            cannot tell which experiments use the injects directory: keep the
+            directory and send the delete again
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   "/options":
     get:
       tags:
@@ -11107,7 +11210,8 @@ paths:
         phenix workflow apply refuses servers without it.
         workflow-variables is true when both routes take a multipart/form-data
         body with variables. phenix workflow apply refuses servers without it
-        too.
+        too. workflow-delete is true when the server has
+        DELETE /workflow/apply/{branch}.
       operationId: getOptions
       responses:
         "200":
@@ -22029,6 +22133,49 @@ components:
             SITE: lab
           additionalProperties:
             type: string
+    WorkflowDeleteResult:
+      title: "Workflow Delete Result"
+      description: >-
+        What DELETE /workflow/apply/{branch} did, or would do with dryRun: the
+        experiment it deleted and the other experiments that inject files from
+        the injects directory.
+      type: object
+      required: [branch, dryRun, experiment, stopped, injectsDir, injectsUsedBy]
+      properties:
+        branch:
+          title: "Branch"
+          example: lab
+          type: string
+          description: workflow branch name of the request
+        dryRun:
+          title: "Dry Run"
+          example: false
+          type: boolean
+          description: true when nothing was changed because dryRun was requested
+        experiment:
+          title: "Experiment"
+          example: lab
+          type: string
+          description: experiment mapped to the branch (empty when no experiment is mapped)
+        stopped:
+          title: "Stopped"
+          example: false
+          type: boolean
+          description: true when this request stopped the experiment, or a dry run would stop it
+        injectsDir:
+          title: "Injects Directory"
+          example: /phenix/injects/lab
+          type: string
+          description: cleaned injects directory that the server compared with the injection sources
+        injectsUsedBy:
+          title: "Injects Used By"
+          description: >-
+            Sorted names of the other experiments with a node injection whose
+            absolute source is the injects directory or is inside it. It is
+            empty when there are none.
+          type: array
+          items:
+            type: string
     Options:
       title: "Options"
       description: "The server-side settings that clients read."
@@ -22068,6 +22215,13 @@ components:
           description: >
             true when POST /workflow/configs/{branch} and POST /workflow/apply/{branch}
             take a multipart/form-data body with a config part and a variables part
+        workflow-delete:
+          title: "Workflow Delete"
+          example: false
+          type: boolean
+          description: >
+            true when the server has DELETE /workflow/apply/{branch}; phenix
+            workflow delete refuses servers without it
     VLANList:
       title: VLAN List
       type: object

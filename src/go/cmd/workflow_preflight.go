@@ -243,7 +243,7 @@ func (r *applyRun) checkServer(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("the phenix server at %s does not support workflow variables: update the server", r.opts.Socket)
 	}
 
-	injectsBase := injectsBaseDir(r.opts, serverOpts)
+	injectsBase := injectsBaseDir(r.opts.InjectsBase, r.opts.InjectsBaseExplicit, serverOpts)
 
 	// A relative directory would be resolved against the working directory.
 	serverDir, _ := serverOpts[optionInjectsBase].(string)
@@ -327,19 +327,19 @@ func resolveWorkflowConfig(dir, config string, explicit bool) (string, error) {
 	}
 }
 
-// injectsBaseDir returns where injects are staged: --base-dir.injects when it
-// was given on the command line, else the server's setting, else the local
-// one.
-func injectsBaseDir(opts applyOptions, serverOpts map[string]any) string {
-	if opts.InjectsBaseExplicit {
-		return opts.InjectsBase
+// injectsBaseDir returns where injects are staged: local when
+// --base-dir.injects was given on the command line (explicit), else the
+// server's setting, else local.
+func injectsBaseDir(local string, explicit bool, serverOpts map[string]any) string {
+	if explicit {
+		return local
 	}
 
 	if dir, _ := serverOpts[optionInjectsBase].(string); dir != "" {
 		return dir
 	}
 
-	return opts.InjectsBase
+	return local
 }
 
 // trimTrailingSeparators removes the trailing path separators from path. The

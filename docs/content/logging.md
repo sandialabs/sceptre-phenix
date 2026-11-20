@@ -245,6 +245,7 @@ token (see [Refused Tokens](#refused-tokens)).
 | `config-update` | `configuration` | `change` | `PUT /configs/{kind}/{name}`, `POST /workflow/configs/{branch}` for a stored config (`phenix.workflow.variables` when the request used a variable, also in a refusal for the config name: the sorted names, never values) |
 | `config-delete` | `configuration` | `deletion` | `DELETE /configs/{kind}/{name}` |
 | `workflow-apply` | `configuration` | `change` | `POST /workflow/apply/{branch}` (`phenix.workflow.branch`, `phenix.workflow.action`, and `phenix.workflow.variables` when the request used a variable: the sorted names of the variables that the workflow config or an included topology file used, never their values) |
+| `workflow-delete` | `configuration` | `deletion` | `DELETE /workflow/apply/{branch}` (`phenix.workflow.branch`, `phenix.workflow.force` when it is set, and `phenix.workflow.stopped` when the request stopped the experiment) |
 | `settings-update` | `configuration` | `change` | `POST /settings` (`phenix.settings.changed`) |
 | `experiment-create` | `configuration` | `creation` | `POST /experiments` |
 | `experiment-update` | `configuration` | `change` | `PATCH /experiments/{name}`, and the VLAN pin and range routes `PUT` and `DELETE .../vlans/aliases/{alias}`, `PUT` and `DELETE .../vlans/range`, `POST .../vlans/pin-live` |
