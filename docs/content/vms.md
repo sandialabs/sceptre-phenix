@@ -352,7 +352,8 @@ and these controls:
   screen, but sends no keyboard or mouse input to the VM.
   `Resize VM` needs a VM with `vga` `virtio`.
   To set it, add `vga: virtio` to the `advanced` settings of the VM in the
-  topology. Linux VMs use `qxl` by default.
+  topology. VMs use the minimega default, `std`, unless the topology sets
+  `vga`.
 * The layout buttons, `Add VM` and `Full screen` for the page. In full
   screen, the same button is `Exit full screen`. `Add VM` shows the list of
   running VMs that it read the last time, and reads the list again. The
@@ -481,17 +482,13 @@ the VM. Click `Take control` to send keys and pointer events to the VM, and
 
 #### VM Settings for VNC
 
-phēnix adds two settings to the minimega script of an experiment:
+phēnix adds one setting to the minimega script of an experiment:
 
 * For each KVM VM, `vm config qemu-override "-vnc unix:" "-vnc
   lossy=on,vnc=unix:"`, before the `overrides` of the topology. With lossy
   updates, the quality level of a console or a tile selects JPEG for regions
   that look like photos. A topology override that matches `-vnc unix:` no
   longer matches, because this override changes that text first.
-* For each Linux VM, `vm config vga qxl`, in place of
-  `vm config qemu-append -vga qxl`. phēnix does not add it when the `advanced`
-  settings of the VM set `vga`. minimega then shows the video card in the
-  `vga` column of `vm info`.
 
 !!! note
 
