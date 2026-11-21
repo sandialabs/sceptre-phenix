@@ -27,8 +27,8 @@ func TestVMCmdResetDisk(t *testing.T) { //nolint:paralleltest // replaces the ph
 			name: "a running VM", snapshot: "true",
 			want: []string{
 				"vm kill web",
-				"mesh send compute1 disk snapshot /phenix/images/web.qc2 exp_web_disk-0.qcow2",
-				"mesh send compute1 shell mv /phenix/images/exp_web_disk-0.qcow2 MINIMEGA/5/disk-0.qcow2",
+				"mesh send compute1 disk snapshot /phenix/images/web.qc2 MINIMEGA/5/reset-disk-0.qcow2",
+				"mesh send compute1 shell mv MINIMEGA/5/reset-disk-0.qcow2 MINIMEGA/5/disk-0.qcow2",
 				"vm start web",
 			},
 		},

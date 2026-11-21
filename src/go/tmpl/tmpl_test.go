@@ -401,3 +401,110 @@ func TestPacketCaptureScriptVNCSettings(t *testing.T) {
 		}
 	}
 }
+
+// With the snapshot flag, the minimega script makes a snapshot of each drive, injects files into the snapshot of the
+// first drive only, and gives the VM the snapshot of each drive.
+func TestMinimegaScriptSnapshotsEveryDrive(t *testing.T) {
+	t.Parallel()
+
+	snapshot := true
+
+	node := scriptNode("multi-disk", "kvm", "linux")
+	node.GeneralF.SnapshotF = &snapshot
+	node.HardwareF.DrivesF = []*v1.Drive{{ImageF: "os.qc2"}, {ImageF: "data.qc2", IfaceF: "virtio"}}
+	node.InjectionsF = []*v1.Injection{{SrcF: "/src/file", DstF: "/dst/file"}}
+
+	spec := &v1.ExperimentSpec{ExperimentNameF: "disk-exp", TopologyF: &v1.TopologySpec{NodesF: []*v1.Node{node}}}
+
+	var script bytes.Buffer
+
+	if err := tmpl.GenerateFromTemplate("minimega_script.tmpl", spec, &script); err != nil {
+		t.Fatalf("GenerateFromTemplate(minimega_script.tmpl) error = %v", err)
+	}
+
+	snap := spec.SnapshotName("multi-disk")
+	lines := scriptBlocks(script.String())["multi-disk"]
+
+	want := []string{
+		"disk snapshot os.qc2 " + snap,
+		"disk snapshot data.qc2 " + snap + "_1",
+		"disk inject " + snap + `:1 files "/src/file":"/dst/file"`,
+		"clear vm config",
+	}
+
+	if len(lines) < len(want) {
+		t.Fatalf("minimega script for multi-disk = %q, want at least %d lines", lines, len(want))
+	}
+
+	if diff := cmp.Diff(want, lines[:len(want)]); diff != "" {
+		t.Errorf("minimega script for multi-disk mismatch (-want +got):\n%s", diff)
+	}
+
+	if disk := "vm config disk " + snap + ",writeback " + snap + "_1,virtio,writeback"; !slices.Contains(lines, disk) {
+		t.Errorf("minimega script for multi-disk = %q, want %q", lines, disk)
+	}
+}
+
+// The packet capture script makes a snapshot of each drive of an Elastic server VM and of a capture VM, injects files
+// into the snapshot of the first drive only, and gives each VM the snapshot of each drive.
+func TestPacketCaptureScriptSnapshotsEveryDrive(t *testing.T) {
+	t.Parallel()
+
+	vms := []struct{ name, label string }{
+		{name: "elastic", label: "soh-elastic-server"},
+		{name: "monitor", label: "soh-monitor-node"},
+	}
+
+	nodes := make([]*v1.Node, 0, len(vms))
+
+	for _, vm := range vms {
+		node := scriptNode(vm.name, "kvm", "linux")
+		node.LabelsF = map[string]string{vm.label: "true"}
+		node.HardwareF.DrivesF = []*v1.Drive{{ImageF: "os.qc2"}, {ImageF: "data.qc2"}}
+		node.InjectionsF = []*v1.Injection{{SrcF: "/src/file", DstF: "/dst/file"}}
+		nodes = append(nodes, node)
+	}
+
+	data := struct {
+		Exp *v1.ExperimentSpec
+		Mon map[string][]string
+	}{
+		Exp: &v1.ExperimentSpec{
+			ExperimentNameF: "soh-exp",
+			TopologyF:       &v1.TopologySpec{NodesF: nodes},
+		},
+		Mon: map[string][]string{},
+	}
+
+	var script bytes.Buffer
+
+	if err := tmpl.GenerateFromTemplate("packet_capture_script.tmpl", data, &script); err != nil {
+		t.Fatalf("GenerateFromTemplate(packet_capture_script.tmpl) error = %v", err)
+	}
+
+	blocks := scriptBlocks(script.String())
+
+	for _, vm := range vms {
+		snap := data.Exp.SnapshotName(vm.name)
+		lines := blocks[vm.name]
+
+		want := []string{
+			"disk snapshot os.qc2 " + snap,
+			"disk snapshot data.qc2 " + snap + "_1",
+			"disk inject " + snap + `:1 files "/src/file":"/dst/file"`,
+			"clear vm config",
+		}
+
+		if len(lines) < len(want) {
+			t.Fatalf("packet capture script for %s = %q, want at least %d lines", vm.name, lines, len(want))
+		}
+
+		if diff := cmp.Diff(want, lines[:len(want)]); diff != "" {
+			t.Errorf("packet capture script for %s mismatch (-want +got):\n%s", vm.name, diff)
+		}
+
+		if disk := "vm config disk " + snap + ",writeback " + snap + "_1,writeback"; !slices.Contains(lines, disk) {
+			t.Errorf("packet capture script for %s = %q, want %q", vm.name, lines, disk)
+		}
+	}
+}

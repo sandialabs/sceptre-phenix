@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 	"unicode"
@@ -46,27 +47,72 @@ func DeleteExistingFiles(names []string) error {
 	return nil
 }
 
+// numberedFilesDeleter is implemented by ClusterFiles that can find the
+// numbered files DeleteNumberedFiles deletes.
+type numberedFilesDeleter interface {
+	DeleteNumberedFiles(names, prefixes []string) error
+}
+
+// DeleteNumberedFiles deletes the named files as DeleteExistingFiles does. When DefaultClusterFiles can tell where files
+// are, it also deletes each existing file named one of prefixes, "_", and one or more ASCII digits. It ignores a prefix
+// that is not CommandSafe.
+func DeleteNumberedFiles(names, prefixes []string) error {
+	d, ok := DefaultClusterFiles.(numberedFilesDeleter)
+	if !ok {
+		return DeleteExistingFiles(names)
+	}
+
+	defer invalidateAllExperimentFiles()
+
+	return d.DeleteNumberedFiles(names, prefixes) //nolint:wrapcheck // passthrough
+}
+
 // DeleteExistingFiles deletes only the copies of the named files that exist, after listing their directories on the mesh
 // and the headnode, rather than sending DeleteFile's two commands per file. Only exact name matches are deleted, so "foo"
 // never deletes "foo_bar"'s files; a directory that cannot be listed everywhere has its files deleted everywhere.
 func (MMClusterFiles) DeleteExistingFiles(names []string) error {
-	byDir := make(map[string][]string)
+	return deleteExisting(names, nil)
+}
+
+// DeleteNumberedFiles is DeleteExistingFiles, also deleting the listed files named a prefix, "_", and digits. A
+// directory that cannot be listed everywhere has only the named files deleted everywhere.
+func (MMClusterFiles) DeleteNumberedFiles(names, prefixes []string) error {
+	return deleteExisting(names, slices.DeleteFunc(slices.Clone(prefixes), func(p string) bool { return !CommandSafe(p) }))
+}
+
+func deleteExisting(names, prefixes []string) error {
+	type group struct{ names, prefixes []string }
+
+	byDir := make(map[string]*group)
 
 	var dirs []string
 
-	for _, name := range names {
+	add := func(name string, numbered bool) {
 		clean := strings.TrimPrefix(path.Clean("/"+name), "/")
 		dir := path.Dir(clean)
 
 		if _, ok := byDir[dir]; !ok {
 			dirs = append(dirs, dir)
+			byDir[dir] = new(group)
 		}
 
-		byDir[dir] = append(byDir[dir], clean)
+		if numbered {
+			byDir[dir].prefixes = append(byDir[dir].prefixes, clean)
+		} else {
+			byDir[dir].names = append(byDir[dir].names, clean)
+		}
+	}
+
+	for _, name := range names {
+		add(name, false)
+	}
+
+	for _, prefix := range prefixes {
+		add(prefix, true)
 	}
 
 	for _, dir := range dirs {
-		err := deleteExistingInDir(dir, byDir[dir])
+		err := deleteExistingInDir(dir, byDir[dir].names, byDir[dir].prefixes)
 		if err != nil {
 			return err
 		}
@@ -75,8 +121,8 @@ func (MMClusterFiles) DeleteExistingFiles(names []string) error {
 	return nil
 }
 
-func deleteExistingInDir(dir string, names []string) error {
-	pattern, ok := listingPattern(dir, names)
+func deleteExistingInDir(dir string, names, prefixes []string) error {
+	pattern, ok := listingPattern(dir, slices.Concat(names, prefixes))
 	if !ok {
 		return deleteEverywhere(names)
 	}
@@ -94,6 +140,8 @@ func deleteExistingInDir(dir string, names []string) error {
 	if err != nil {
 		return deleteEverywhere(names)
 	}
+
+	names = append(slices.Clip(names), numberedNames(prefixes, names, remote, local)...)
 
 	cmd := mmcli.NewCommand()
 
@@ -198,6 +246,37 @@ func listingPattern(dir string, names []string) (string, bool) {
 
 	// joined by hand: path.Join would clean away a prefix of "." or ".."
 	return "/" + dir + prefix + "*", true
+}
+
+// numberedNames returns, sorted, the names in the listings that are one of prefixes, "_", and one or more ASCII digits,
+// leaving out those in names.
+func numberedNames(prefixes, names []string, listings ...map[string]map[string]bool) []string {
+	if len(prefixes) == 0 {
+		return nil
+	}
+
+	quoted := make([]string, len(prefixes))
+	for i, prefix := range prefixes {
+		quoted[i] = regexp.QuoteMeta(prefix)
+	}
+
+	numbered := regexp.MustCompile(`^(?:` + strings.Join(quoted, "|") + `)_[0-9]+$`)
+
+	var found []string
+
+	for _, listing := range listings {
+		for _, listed := range listing {
+			for name := range listed {
+				if numbered.MatchString(name) && !slices.Contains(names, name) && !slices.Contains(found, name) {
+					found = append(found, name)
+				}
+			}
+		}
+	}
+
+	slices.Sort(found)
+
+	return found
 }
 
 // present reports whether a listing shows name: the file itself, or something
