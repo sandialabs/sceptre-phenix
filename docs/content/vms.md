@@ -948,6 +948,9 @@ To reset the first disk to the initial pre-boot state, run the following command
 phenix vm reset-disk <experiment-name> [vm name] [--label <label>]
 ```
 
+The command kills a running or paused VM before it resets the disk, and then
+starts the VM again. The REST API does the same.
+
 ## Restart a VM
 
 ### Web UI

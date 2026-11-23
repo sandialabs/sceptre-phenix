@@ -346,7 +346,7 @@ The CLI's `vm` and disk commands run in-process and are not jobs. See
 ```bash
 phenix vm info <exp> [vm] [--host h] [-o table|json|yaml]  # table of VM(s); --host: only VMs on that host; JSON/YAML as GET /experiments/{exp}/vms
 phenix vm pause|resume|restart|shutdown|kill <exp> [vm]
-phenix vm reset-disk <exp> [vm]
+phenix vm reset-disk <exp> [vm]                     # kills a running or paused VM, resets its disk, starts it again
 phenix vm redeploy <exp> [vm] [flags]                # new CPU, memory or disk; unset -c/-m keep the current value; -d takes a disk spec <path>[,<interface>][,<cache>], replaces only the first disk and keeps the interface and cache mode it does not set; -r recreates the disk snapshot, injections, and deletions
 phenix vm set <exp> [vm] [flags]                     # change VM settings, labels, annotations and interface VLANs
 phenix vm exec <exp> <vm> [--timeout D] [--] <command> [args...]  # run a command through miniccc; exits with its exit code

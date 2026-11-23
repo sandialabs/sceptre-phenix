@@ -897,15 +897,16 @@ phenix vm redeploy <experiment name> [vm name] [flags]
 
 ## phenix vm reset-disk
 
-Resets the disk state for running or powered off VM(s)
+Resets the disk state for running, paused or powered off VM(s)
 
 ### Synopsis
 
 ```text
-Resets the disk state to the initial pre-boot disk state for running or powered off VM(s)
+Resets the disk state to the initial pre-boot disk state for running, paused or powered off VM(s)
 
-  Used to reset the disk state for the first disk for running or powered off virtual machine(s) for a specific
-  experiment.  The VM's snapshot flag must be set to true in order to use this command.
+  Used to reset the disk state for the first disk for running, paused or powered off virtual machine(s) for a specific
+  experiment.  The VM's snapshot flag must be set to true in order to use this command. The command
+  kills a running or paused VM before it resets the disk, and then starts the VM again.
 ```
 
 ```text

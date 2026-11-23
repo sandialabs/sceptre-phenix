@@ -37,6 +37,7 @@ import (
 const (
 	vmStateQuit          = "QUIT"
 	vmStateRunning       = "RUNNING"
+	vmStatePaused        = "PAUSED"
 	vmInfoCmd            = "vm info"
 	statusCompleted      = "completed"
 	statusFailed         = "failed"
@@ -803,8 +804,8 @@ func ResetDiskState(ctx context.Context, expName, vmName string) error {
 
 	// Stop all packet captures for a vm that will be reset to
 	// its original state.  We are going to assume that a vm
-	// that has been shutdown will not have any active packet captures
-	if status[0]["state"] == vmStateRunning {
+	// that has been shutdown will not have any active packet captures.
+	if state := status[0]["state"]; state == vmStateRunning || state == vmStatePaused {
 		err := StopCaptures(context.Background(), expName, vmName)
 		if err != nil && !errors.Is(err, ErrNoCaptures) {
 			return fmt.Errorf(
@@ -815,7 +816,8 @@ func ResetDiskState(ctx context.Context, expName, vmName string) error {
 			)
 		}
 
-		// Kill the vm without a flush to preserve state
+		// Kill the vm without a flush to preserve state. A paused VM keeps
+		// its disk files open, so it is killed too.
 		kill := mmcli.NewNamespacedCommand(expName)
 		kill.Command = "vm kill " + vmName
 
