@@ -345,6 +345,7 @@ func GetOptions(w http.ResponseWriter, r *http.Request) error {
 		"base-dir.injects":   common.InjectsBase,
 		"workflow-dry-run":   true,
 		"workflow-variables": true,
+		"workflow-delete":    true, // the server has DELETE /workflow/apply/{branch}
 	}
 
 	body, err := json.Marshal(options)

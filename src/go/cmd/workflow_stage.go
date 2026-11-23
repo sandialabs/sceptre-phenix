@@ -142,7 +142,7 @@ func isSourcePermissionError(path, injects, injectsBase, cwd string, followSymli
 
 	absBase := absolutePath(injectsBase, cwd)
 
-	return !file.WithinDir(absBase, path) && !file.WithinDir(resolvedPath(absBase), path)
+	return !file.WithinDir(absBase, path) && !file.WithinDir(workflow.ResolvedPath(absBase), path)
 }
 
 // checkDestination refuses to stage into injectsBase, or to replace dest, its
@@ -163,16 +163,16 @@ func (r *applyRun) checkDestination(injectsBase, dest, cwd string) error {
 	absDest := absolutePath(dest, cwd)
 
 	// The path that staging replaces: <resolved base>/<name>.
-	base := resolvedPath(filepath.Dir(absDest))
+	base := workflow.ResolvedPath(filepath.Dir(absDest))
 	replaced := filepath.Join(base, filepath.Base(absDest))
 
-	if file.WithinDir(resolvedPath(r.dir), replaced) {
+	if file.WithinDir(workflow.ResolvedPath(r.dir), replaced) {
 		return fmt.Errorf(
 			"refusing to replace %s: it lies inside the topology directory %s; check --base-dir.injects and -b", dest, r.dir,
 		)
 	}
 
-	if r.topologiesUnder(replaced, cwd) {
+	if topologiesUnder(r.opts.TopologiesBase, replaced, cwd) {
 		return fmt.Errorf(
 			"refusing to replace %s: it is or holds the topologies directory %s; check --base-dir.injects and -b",
 			dest,
@@ -199,14 +199,15 @@ func (r *applyRun) checkDestination(injectsBase, dest, cwd string) error {
 	return nil
 }
 
-// topologiesUnder reports whether the topologies directory exists and, with
-// its symbolic links resolved, is replaced or lies inside it.
-func (r *applyRun) topologiesUnder(replaced, cwd string) bool {
-	if r.opts.TopologiesBase == "" {
+// topologiesUnder reports whether the topologies directory topologiesBase
+// exists and, with its symbolic links resolved, is replaced or lies inside it.
+// cwd resolves a relative topologiesBase.
+func topologiesUnder(topologiesBase, replaced, cwd string) bool {
+	if topologiesBase == "" {
 		return false
 	}
 
-	topologies, err := filepath.EvalSymlinks(absolutePath(r.opts.TopologiesBase, cwd))
+	topologies, err := filepath.EvalSymlinks(absolutePath(topologiesBase, cwd))
 
 	return err == nil && file.WithinDir(replaced, topologies)
 }
@@ -290,21 +291,6 @@ func pathExists(path string) bool {
 	_, err := os.Lstat(path)
 
 	return err == nil
-}
-
-// resolvedPath resolves the symbolic links in the longest leading part of
-// path, which is absolute, that exists; the rest follows as written. Unlike
-// StageInjects, the preflight must handle a base that does not exist yet.
-func resolvedPath(path string) string {
-	dir, rest := path, ""
-
-	resolved, err := filepath.EvalSymlinks(dir)
-	for err != nil && dir != filepath.Dir(dir) {
-		dir, rest = filepath.Dir(dir), filepath.Join(filepath.Base(dir), rest)
-		resolved, err = filepath.EvalSymlinks(dir)
-	}
-
-	return filepath.Join(resolved, rest)
 }
 
 // warnStagingLeftovers warns about each leftover of an earlier staging of

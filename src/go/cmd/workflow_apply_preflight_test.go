@@ -202,9 +202,7 @@ func TestInjectsBaseDir(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := applyOptions{InjectsBase: "/local", InjectsBaseExplicit: tt.explicit}
-
-			if got := injectsBaseDir(opts, tt.server); got != tt.want {
+			if got := injectsBaseDir("/local", tt.explicit, tt.server); got != tt.want {
 				t.Errorf("injectsBaseDir() = %q, want %q", got, tt.want)
 			}
 		})

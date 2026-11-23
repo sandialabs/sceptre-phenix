@@ -39,6 +39,7 @@ func completionFreeText() map[string]string {
 		"phenix image create":             "a new image name",
 		"phenix image inject-miniexe":     "paths of files",
 		"phenix workflow apply":           "a path of a directory, or a name in base-dir.topologies",
+		"phenix workflow delete":          "a workflow branch name, which no list holds",
 		"phenix workflow render":          "a path of a directory, or a name in base-dir.topologies",
 		"phenix vlan blacklist add":       "a new VLAN ID",
 		"phenix vm forward add --host":    "a destination host name or address",

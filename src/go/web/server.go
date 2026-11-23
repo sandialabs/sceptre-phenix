@@ -722,6 +722,7 @@ func newSocketRouter() *mux.Router {
 func socketRoutes() []route {
 	routes := []route{
 		{"/workflow/apply/{branch}", weberror.ErrorHandler(ApplyWorkflow), []string{"POST"}},
+		{"/workflow/apply/{branch}", weberror.ErrorHandler(DeleteWorkflow), []string{"DELETE"}},
 		{
 			"/workflow/configs/{branch}",
 			weberror.ErrorHandler(WorkflowUpsertConfig),

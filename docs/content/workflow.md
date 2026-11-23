@@ -3,7 +3,8 @@
 A **topology directory** holds everything phēnix needs to run an experiment:
 its configs, the files to inject into its VMs, and a **workflow config**
 (`phenix.yml`) that says whether to create, update, start or restart the
-experiment. `phenix workflow apply` deploys such a directory in one command.
+experiment. `phenix workflow apply` deploys such a directory in one command,
+and `phenix workflow delete` removes the deployment again.
 It runs on the phēnix host (or in the phēnix container) and talks to the
 running `phenix ui` server through its unix socket. CI jobs and scripts can
 call the same [REST API](#api).
@@ -184,7 +185,62 @@ tags the experiment, in its `phenix.workflow/tags` annotation, with
 | `phenix workflow apply helloworld --env-file base.env --env-file site.env` | Read the env files, and not `helloworld/.env`. `site.env` overrides `base.env`. |
 | `phenix workflow render helloworld -e MEMORY=4096` | Print the configs with the variables filled in. Nothing is sent. |
 | `phenix workflow apply helloworld --follow-inject-symlinks` | Follow symlinks in `phenix-injects/` and copy targets as regular files or directories. |
+| `phenix workflow delete helloworld -n` | Show what [`phenix workflow delete`](#the-phenix-workflow-delete-command) would remove. Nothing changes. |
+| `phenix workflow delete helloworld -f` | Stop the running `helloworld` deployment and delete it. |
 | `: "${BRANCH:?}" && phenix workflow apply ./site -b "${BRANCH//\//-}" -f` | In CI, deploy a checkout under its git branch name (`/` isn't allowed in a branch name). |
+
+## The `phenix workflow delete` Command
+
+```bash
+phenix workflow delete <NAME> [flags]
+```
+
+`NAME` is the [branch name](#branch-name) of a deployment, not a directory.
+The command removes what `phenix workflow apply` deployed under that name:
+
+1. The experiment [mapped](#actions) to the branch name. The server deletes
+   it as `phenix experiment delete` does.
+2. The injects directory, `<base-dir.injects>/<name>`.
+3. The hidden `.<name>.tmp-*` and `.<name>.old-*` leftovers of interrupted
+   runs next to it.
+
+It doesn't remove the stored configs, such as the topology and the
+scenario. Use `phenix config delete` for them.
+
+| Flag | Default | Description |
+| :--- | :--- | :--- |
+| `-n, --dry-run` | `false` | Show what the command would remove, and change nothing. |
+| `-f, --force` | `false` | Stop a running experiment before the delete. |
+
+The global flags `--unix-socket`, `--base-dir.injects` and `--log.level` also
+apply, as they do for `phenix workflow apply`.
+
+* A running experiment needs `-f`. Without it, the command removes nothing
+  and exits with an error. A dry run gives the same error.
+* When more than one experiment is mapped to the branch name, the command
+  removes nothing and exits with an error.
+* When no experiment is mapped, the command still removes the injects
+  directory and the leftovers. When nothing exists for the name, it logs
+  `nothing to delete for branch name <name>` and exits 0, so you can run it
+  again safely.
+* When the topology of another experiment injects a file from the injects
+  directory, the command keeps the directory and logs a warning that names
+  those experiments. Delete those experiments or change their injections,
+  then run the command again. The server checks only the absolute `src`
+  paths of the injections in the experiments' topologies.
+
+With `-n`, the command writes one line for each item to standard output and
+changes nothing:
+
+```text
+would stop experiment helloworld
+would delete experiment helloworld
+would delete directory /phenix/injects/helloworld
+would delete staging leftover /phenix/injects/.helloworld.tmp-ABCDEFGHIJKLMNOPQRSTUVWXYZ
+```
+
+A kept directory shows as `would keep directory <dir>: the experiments <names>
+inject files from it`.
 
 ## Variables
 
@@ -464,17 +520,20 @@ nodes[1] "host-02" (line 21): property "image" is missing (at hardware.drives[0]
 
 ## API
 
-The command uses two endpoints, listed under the `Workflow` tag in the
-[API docs](api.md).
+`phenix workflow apply` uses the first two endpoints, and
+`phenix workflow delete` the third. The [API docs](api.md) list them under the
+`Workflow` tag.
 
 | Endpoint | Description |
 | :--- | :--- |
 | `POST /api/v1/workflow/configs/{branch}` | Create or update one config. |
 | `POST /api/v1/workflow/apply/{branch}` | Apply the workflow config and return the [action](#actions) as JSON. |
+| `DELETE /api/v1/workflow/apply/{branch}` | Delete the experiment mapped to the branch. Clients remove the injects directory after it. |
 
-Send the file as the body with `Content-Type: application/x-yaml` or
-`application/json`, plus an
-[auth token](api.md#authentication) when authentication is enabled.
+For a POST, send the file as the body with `Content-Type: application/x-yaml`
+or `application/json`. DELETE takes no body. Add an
+[auth token](api.md#authentication) to each request when authentication is
+enabled.
 
 The server fills in `${BRANCH_NAME}` with the branch of the URL and keeps
 every other placeholder as written. A client fills in the other placeholders
@@ -511,10 +570,12 @@ A config's `kind` and `metadata.name` can use no placeholder but
 
 | Query parameter | Endpoint | Description |
 | :--- | :--- | :--- |
-| `dryRun=true` | both | Run every check and change nothing. |
+| `dryRun=true` | all | Run every check and change nothing. |
 | `pending=<ref>` | apply, dry run only | A config you'll store before the real apply. `<ref>` is the `pending` value its config dry run returned. Repeatable. |
 | `expect=<action>` | apply | Return 409 and change nothing when the server plans another action. |
 | `tag=<key>=<value>` | apply | A tag to store on the experiment. Repeatable. |
+| `force=true` | delete | Stop a running experiment before the delete. Without it, a running experiment gets 409. |
+| `injects=<dir>` | delete | The absolute path of the injects directory that you remove after the delete. The default is `<base-dir.injects>/<branch>` of the server. |
 
 This is what the command does, minus the injects, for one topology config:
 
@@ -542,6 +603,18 @@ The apply returns its plan:
 {"action":"createAndStart","experiment":"helloworld","reason":"","dryRun":false}
 ```
 
+The delete returns what it did. `experiment` is empty when no experiment
+is mapped to the branch, and `injectsUsedBy` names the other experiments with
+an injection from `injectsDir`. Keep the directory when that list isn't
+empty:
+
+```json
+{"branch":"helloworld","dryRun":false,"experiment":"helloworld","stopped":true,"injectsDir":"/phenix/injects/helloworld","injectsUsedBy":[]}
+```
+
+It returns 409 and changes nothing when more than one experiment is mapped to
+the branch, or when the experiment runs and `force` isn't set.
+
 On the phēnix host, the unix socket needs no authentication:
 
 ```bash
@@ -557,6 +630,7 @@ socket is:
 ```bash
 docker exec phenix phenix workflow apply helloworld -n
 docker exec phenix phenix workflow apply /phenix/topologies/helloworld -f
+docker exec phenix phenix workflow delete helloworld -f
 ```
 
 Keep topology directories under `/phenix` (the same path in the container)
@@ -568,19 +642,26 @@ container.
 
 Two [settings](settings.md#settings-reference) apply; use absolute paths for
 both. `base-dir.injects` (default `<base-dir.phenix>/injects`) is where
-injects go, and the server's value wins unless you give `--base-dir.injects`.
-`base-dir.topologies` (default `<base-dir.phenix>/topologies`) is where a
+injects go and where `phenix workflow delete` removes them, and the server's
+value wins unless you give `--base-dir.injects`. `base-dir.topologies` (default `<base-dir.phenix>/topologies`) is where a
 `NAME` is looked up.
 
 ## Limitations
 
-* There's no web UI for workflow apply. A CI job on another machine can call
+* There's no web UI for workflow apply or workflow delete. A CI job on another machine can call
   the REST API, but must get the injects onto the phēnix host itself.
 * Of the REST API, only the two workflow endpoints take
   [variables](#api). `POST /api/v1/configs`,
   `PUT /api/v1/configs/{kind}/{name}` and the web UI don't.
 * An apply dry run can reveal whether a file exists on the server; grant
   `workflow:create` only to trusted roles.
+* `phenix workflow delete` finds the other users of an injects directory only
+  through the absolute `src` paths of the injections in the experiments'
+  topologies. It doesn't find a file that an app or a script reads from the
+  directory.
+* Don't run `phenix workflow apply` and `phenix workflow delete` for the same
+  branch name at the same time. The delete removes the injects directory and
+  the staging copies that the apply is writing.
 
 ## Troubleshooting
 
@@ -589,7 +670,8 @@ injects go, and the server's value wins unless you give `--base-dir.injects`.
   root), or start `phenix ui` with `--unix-socket-gid` set to your group.
 * **The server doesn't answer.** Check that `phenix ui` is running on the
   `--unix-socket` path (`/tmp/phenix.sock` by default).
-* **The server doesn't support workflow dry runs or workflow variables.**
+* **The server doesn't support workflow dry runs, workflow variables or
+  workflow delete.**
   Upgrade the server.
 * **A variable is not set.** A file has a `${NAME}` placeholder with no value
   and no default. The error records name the variable, the file and the line.
@@ -611,11 +693,17 @@ injects go, and the server's value wins unless you give `--base-dir.injects`.
   that stops in `apply` can have changed the experiment.
 * **Hidden `.<name>.tmp-*` or `.<name>.old-*` entries in
   `<base-dir.injects>`.** An interrupted run left them. Remove them when no
-  other run is active.
+  other run is active, or run `phenix workflow delete <name>`.
+* **The delete asks for `-f`.** The experiment mapped to the branch name
+  runs. Nothing changed; run it again with `-f` to stop and delete it.
+* **The delete kept the injects directory.** Another experiment injects a
+  file from it, and the warning names it. Delete that experiment or change its
+  injections, then run `phenix workflow delete` again.
 * **No `commit` tag.** Git refuses a repository another user owns (common
   under `docker exec`). Add the directory to git's `safe.directory`.
-* **No output.** `--log.level` at `warn` or higher hides the plan and result;
-  rely on the exit status.
+* **No output.** `--log.level` at `warn` or higher hides the plan and result
+  of `phenix workflow apply`; rely on the exit status. The `would ...` lines of
+  `phenix workflow delete -n` always go to standard output.
 
 ## See Also
 

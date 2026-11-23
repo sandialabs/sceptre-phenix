@@ -39,6 +39,10 @@ var (
 	// one: it says dryRun is false, or its action is not one the command
 	// knows. A server that ignores dryRun there applies the workflow config.
 	errNoWorkflowDryRun = errors.New("the phenix server did not dry-run the workflow config")
+
+	// errNoDeleteDryRun marks an answer to a workflow delete dry run that says
+	// dryRun is false. A server that ignores dryRun deletes the experiment.
+	errNoDeleteDryRun = errors.New("the phenix server did not dry-run the workflow delete")
 )
 
 // unknownActionError is an answer to a workflow dry run that says dryRun but
@@ -256,21 +260,79 @@ func (c *workflowClient) upsertConfig(ctx context.Context, branch string, body [
 	return err
 }
 
-// post sends text, a config file as written whose Content-Type is
-// contentType, to path with the given query, as a multipart/form-data body
-// with the variables of c. It returns the status and body of a 2xx response.
-func (c *workflowClient) post(ctx context.Context, path string, query url.Values, text []byte, contentType string) (int, []byte, error) {
+// delete sends DELETE /api/v1/workflow/apply/{branch} with injects, the
+// directory that the caller removes after the request, and returns the
+// server's result. force lets the server stop a running experiment. Only a dry
+// run is bounded by preflightRequestTimeout. An answer to a dry run that does
+// not say dryRun returns an error that wraps errNoDeleteDryRun.
+func (c *workflowClient) delete(ctx context.Context, branch, injects string, dryRun, force bool) (workflow.DeleteResult, error) {
+	query := url.Values{"injects": {injects}}
+
+	if dryRun {
+		query.Set("dryRun", boolStringTrue)
+
+		var cancel context.CancelFunc
+
+		ctx, cancel = withPreflightTimeout(ctx)
+		defer cancel()
+	}
+
+	if force {
+		query.Set("force", boolStringTrue)
+	}
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodDelete,
+		c.target("/api/v1/workflow/apply/"+url.PathEscape(branch), query),
+		http.NoBody,
+	)
+	if err != nil {
+		return workflow.DeleteResult{}, fmt.Errorf("building request: %w", err)
+	}
+
+	_, body, err := c.do(req)
+	if err != nil {
+		return workflow.DeleteResult{}, err
+	}
+
+	var result workflow.DeleteResult
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return workflow.DeleteResult{}, fmt.Errorf("decoding delete result: %w", err)
+	}
+
+	if dryRun && !result.DryRun {
+		return workflow.DeleteResult{}, fmt.Errorf(
+			"%w; it may have deleted the experiment; use the same phenix version for the command and the server",
+			errNoDeleteDryRun,
+		)
+	}
+
+	return result, nil
+}
+
+// target returns the URL of path on the server, with query when it is not
+// empty.
+func (c *workflowClient) target(path string, query url.Values) string {
 	target := c.base + path
 	if encoded := query.Encode(); encoded != "" {
 		target += "?" + encoded
 	}
 
+	return target
+}
+
+// post sends text, a config file as written whose Content-Type is
+// contentType, to path with the given query, as a multipart/form-data body
+// with the variables of c. It returns the status and body of a 2xx response.
+func (c *workflowClient) post(ctx context.Context, path string, query url.Values, text []byte, contentType string) (int, []byte, error) {
 	body, bodyType, err := variablesBody(text, contentType, c.vars)
 	if err != nil {
 		return 0, nil, fmt.Errorf("building request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.target(path, query), bytes.NewReader(body))
 	if err != nil {
 		return 0, nil, fmt.Errorf("building request: %w", err)
 	}

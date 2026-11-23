@@ -213,6 +213,8 @@ type testStore struct {
 	// fail, when set, returns the error of the operation op ("list", "get",
 	// "create", "update" or "delete") on a config of kind, or nil
 	fail func(op, kind string) error
+	// listed, when set, runs after each List of kinds, without the lock, as another request would
+	listed func(kinds []string)
 }
 
 // failed returns the error fail gives op on kind; the caller holds s.mu.
@@ -272,6 +274,21 @@ func (s *testStore) find(c *store.Config) int {
 }
 
 func (s *testStore) List(kinds ...string) (store.Configs, error) {
+	configs, err := s.list(kinds...)
+
+	s.mu.Lock()
+	listed := s.listed
+	s.mu.Unlock()
+
+	if listed != nil {
+		listed(kinds)
+	}
+
+	return configs, err
+}
+
+// list is List without the listed hook.
+func (s *testStore) list(kinds ...string) (store.Configs, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

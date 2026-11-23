@@ -130,6 +130,82 @@ func TestWorkflowApplyIsAudited(t *testing.T) {
 	}
 }
 
+// Deleting a workflow deployment is audited with its branch, the experiment,
+// the dry-run flag, force and whether the request stopped the experiment: a
+// refusal, a dry run, a real delete, and a running experiment without force.
+func TestWorkflowDeleteIsAudited(t *testing.T) { //nolint:paralleltest // replaces package globals
+	cases := []struct {
+		name    string
+		deny    bool
+		running bool
+		query   string
+		outcome string
+		want    map[string]any
+		wantErr string
+	}{
+		{
+			name: "refused", deny: true, query: "force=true", outcome: "failure",
+			want: map[string]any{
+				"event.reason": "forbidden", "phenix.experiment.name": nil, "phenix.dry_run": nil,
+				"phenix.workflow.force": nil, "phenix.workflow.stopped": nil,
+			},
+		},
+		{
+			name: "dry run", running: true, query: "dryRun=true&force=true", outcome: "success",
+			want: map[string]any{
+				"event.type": []string{"info"}, "msg": "checked phenix workflow deployment",
+				"phenix.experiment.name": "lab", "phenix.dry_run": true,
+				"phenix.workflow.force": true, "phenix.workflow.stopped": nil,
+			},
+		},
+		{
+			name: "real delete", outcome: "success",
+			want: map[string]any{
+				"event.type": []string{"deletion"}, "msg": "deleted phenix workflow deployment",
+				"phenix.experiment.name": "lab", "phenix.dry_run": nil,
+				"phenix.workflow.force": nil, "phenix.workflow.stopped": nil,
+			},
+		},
+		{
+			name: "running without force", running: true, outcome: "failure",
+			want: map[string]any{
+				"phenix.experiment.name": "lab", "phenix.dry_run": nil,
+				"phenix.workflow.force": nil, "phenix.workflow.stopped": nil,
+			},
+			wantErr: "is running",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			useBaseDirTest(t)
+			useInjectsBase(t, "/phenix/injects")
+			createWorkflowTestConfig(t, workflowLabExperiment(tc.running))
+
+			events := captureAudit(t)
+
+			serveDeleteWorkflow(t, deleteWorkflowRequest(workflowTestRole(!tc.deny), "lab", tc.query))
+
+			fields := map[string]any{
+				"user.name": "test-user", "phenix.workflow.branch": "lab", "event.category": "configuration",
+				"url.path": "/api/v1/workflow/apply/lab",
+			}
+
+			maps.Copy(fields, tc.want)
+
+			event := wantAudit(t, events(), "workflow-delete", tc.outcome, fields)
+
+			if tc.wantErr != "" && event != nil {
+				wantErrorMessage(t, event, tc.wantErr)
+			}
+
+			if n := len(events()); n != 1 {
+				t.Errorf("DELETE /workflow/apply/lab (%s) logged %d audit events, want 1", tc.name, n)
+			}
+		})
+	}
+}
+
 // Upserting a workflow config is audited as creating or updating it, with
 // its branch: refusals before and after the config is named, a dry run, and a
 // failed upsert.
