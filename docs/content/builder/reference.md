@@ -466,7 +466,6 @@ and have no codes. The warnings of an import or a legacy diagram conversion
 | `device.ospf-network.unused` | warning | An OSPF area network of a minirouter holds the address of none of its interfaces with proto ospf, so minirouter does not advertise it. |
 | `device.ntp-server.invalid` | error | The ntp-server label names no interface of its device, or one with no IP address, so the experiment fails to start, which blocks publishing. |
 | `device.ntp-server.ignored` | warning | More than one device has the ntp-server label, and phenix uses only the first. |
-| `device.ntp-server.no-mgmt` | warning | Routers get their NTP server from an interface of the ntp-server device on VLAN mgmt, and it has none. |
 | `device.enable-ssh.invalid` | warning | The vrouter/enable-ssh annotation of a Vyatta or VyOS router is neither an IP address nor the name of an interface with an address. |
 | `device.autotunnel.invalid` | warning | The phenix/startup-autotunnel annotation is not a list of "port", "port:dport" or "port:host:dport" texts. |
 | `device.default-apps.invalid` | warning | The phenix/default-apps annotation is not true or false. |

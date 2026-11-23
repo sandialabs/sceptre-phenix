@@ -42,6 +42,8 @@ var (
 	ErrNATInterfaceAddress = errors.New("nat inside interface has no valid address")
 	ErrEmulatorInterface   = errors.New("emulator interface not found")
 	ErrUnsafeVyosPassword  = errors.New("vyos password cannot be written safely")
+
+	ErrNTPServerAddressNotFound = errors.New("ntp server address not found")
 )
 
 type ACLConfig struct {
@@ -196,12 +198,16 @@ func (v *Vrouter) PreStart(ctx context.Context, exp *types.Experiment) error {
 
 	if len(ntpServers) != 0 {
 		// Just take first server if more than one are labeled.
-		for _, iface := range ntpServers[0].Network().Interfaces() {
-			if strings.EqualFold(iface.VLAN(), "mgmt") {
-				ntpAddr = iface.Address()
+		server := ntpServers[0]
+		ifaceName := server.Labels()["ntp-server"]
 
-				break
-			}
+		if ntpAddr = server.Network().InterfaceAddress(ifaceName); ntpAddr == "" {
+			return fmt.Errorf(
+				"interface %q named by ntp-server label on node %s does not exist or has no IP address: %w",
+				ifaceName,
+				server.General().Hostname(),
+				ErrNTPServerAddressNotFound,
+			)
 		}
 	}
 

@@ -134,7 +134,6 @@ const (
 	CodeDeviceOSPFNetworkUnused    Code = "device.ospf-network.unused"
 	CodeDeviceNTPServerInvalid     Code = "device.ntp-server.invalid"
 	CodeDeviceNTPServerIgnored     Code = "device.ntp-server.ignored"
-	CodeDeviceNTPServerNoMgmt      Code = "device.ntp-server.no-mgmt"
 	CodeDeviceEnableSSHInvalid     Code = "device.enable-ssh.invalid"
 	CodeDeviceAutotunnelInvalid    Code = "device.autotunnel.invalid"
 	CodeDeviceDefaultAppsInvalid   Code = "device.default-apps.invalid"
@@ -570,8 +569,6 @@ var codeRegistry = []CodeInfo{
 		"with no IP address, so the experiment fails to start, which blocks publishing."},
 	{CodeDeviceNTPServerIgnored, SeverityWarning, "More than one device has the ntp-server label, and phenix " +
 		"uses only the first."},
-	{CodeDeviceNTPServerNoMgmt, SeverityWarning, "Routers get their NTP server from an interface of the " +
-		"ntp-server device on VLAN mgmt, and it has none."},
 	{CodeDeviceEnableSSHInvalid, SeverityWarning, "The vrouter/enable-ssh annotation of a Vyatta or VyOS router " +
 		"is neither an IP address nor the name of an interface with an address."},
 	{CodeDeviceAutotunnelInvalid, SeverityWarning, "The phenix/startup-autotunnel annotation is not a list of " +

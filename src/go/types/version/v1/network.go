@@ -105,6 +105,10 @@ func (n *Network) AddRuleset(rule ifaces.NodeNetworkRuleset) {
 }
 
 func (n *Network) InterfaceAddress(name string) string {
+	if n == nil {
+		return ""
+	}
+
 	for _, iface := range n.InterfacesF {
 		if strings.EqualFold(iface.NameF, name) {
 			return iface.AddressF
