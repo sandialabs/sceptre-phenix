@@ -4001,7 +4001,7 @@ function drivesFindings(spec, hostname, at) {
 }
 
 /** The ntp-server label checks (ntpIssues). An invalid label blocks publishing. */
-function ntpFindings(doc, connections) {
+function ntpFindings(doc) {
   const nodes = doc.nodes || [];
   const servers = nodes.flatMap((node, index) => {
     const labels = objectAt(node?.device?.spec, 'labels');
@@ -4045,28 +4045,6 @@ function ntpFindings(doc, connections) {
       finding(first, 'device.ntp-server.invalid', problem.issue, {
         blocksPublish: true,
       }),
-    );
-  }
-
-  const vyattaRouter = nodes.some(
-    (node) =>
-      node?.kind === 'device' &&
-      !node.device?.includedFrom &&
-      node.device?.spec?.external == null &&
-      VYATTA_OS_TYPES.includes(routerOS(node.device?.spec)),
-  );
-  const interfaces = specInterfaces(first.node);
-  const onMgmt = publishedVLANs(first.node, interfaces, connections).some(
-    (vlan) => goEqualFold(textOf(vlan), 'mgmt'),
-  );
-
-  if (vyattaRouter && !onMgmt) {
-    findings.push(
-      finding(
-        first,
-        'device.ntp-server.no-mgmt',
-        `routers take their NTP server address from an interface of ${goQuoted(hostname)} on VLAN mgmt, but the device has no such interface. Thus phenix gives the routers no NTP server, unless an ntp app of the scenario names one. Connect an interface of ${goQuoted(hostname)} to a network named mgmt`,
-      ),
     );
   }
 
@@ -4194,7 +4172,7 @@ function collectWarnings(doc, issues, context) {
   // warning too (see deviceFieldWarnings).
   const connections = connectionNetworks(doc);
 
-  ntpFindings(doc, connections).forEach((finding) => {
+  ntpFindings(doc).forEach((finding) => {
     issue(issues, finding.code, finding.path, finding.issue, 'warning', {
       field: finding.field,
       ...(finding.blocksPublish ? { blocksPublish: true } : {}),
