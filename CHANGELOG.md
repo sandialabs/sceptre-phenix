@@ -1,3 +1,80 @@
+# [2026.11.23](https://github.com/sandialabs/sceptre-phenix/compare/v2026.11.12...v2026.11.23) - 2026-11-23
+
+### ❌ Breaking
+
+_(cli)_ [**breaking**]: add variables from flags and env files [_(d4af5860)_](https://github.com/sandialabs/sceptre-phenix/commit/d4af5860d7b614c64ef999950184d5035167e308) ([PR 576](https://github.com/sandialabs/sceptre-phenix/pull/576))
+
+> phenix workflow apply, config create, config apply, config diff and experiment
+> create fill in the ${NAME} placeholders of their files from -e/--env, then
+> from the env files of --env-file, then from the shell without its PHENIX_
+> variables. workflow apply also reads the .env file of the topology directory.
+> experiment create also fills in a topology file that includeTopologies names
+> by a path. The new phenix workflow render prints each config after
+> substitution and does not contact the server. $${NAME} gives the literal text
+> ${NAME}. The server gets the branch name as a parameter, so requests for
+> different branches do not mix their branch names.
+> 
+> A variable with no value and no default, a value or a default with a line
+> break, and a -e variable that no file uses are errors in the CLI. The three
+> config commands take files only: they refuse a directory and a Builder file,
+> and config apply also takes its files as arguments. The API error text
+> "invalid workflow name" is now "invalid branch name", and
+> store.NewConfigFromFile and config.CreateFromPath are removed.
+> 
+> Closes sandialabs/sceptre-phenix#461
+
+> add variables from flags and env files
+
+[**breaking**]: caffeinated phenix [_(15519107)_](https://github.com/sandialabs/sceptre-phenix/commit/155191074c4eff154fc2176a28a50befbe8629a0) ([PR 447](https://github.com/sandialabs/sceptre-phenix/pull/447))
+
+> Make the web UI fast and keep minimega from becoming the bottleneck: pages show cached data at once and refresh in the background, VM listing takes a fixed number of minimega commands, and screenshots are taken only for VMs someone is viewing. Add State of Health, WebShark with live capture streaming, nested and outside disk images, disk backing chain and qcow checks before a start, VM annotation editing, a persistent minimega console, jobs with feedback, audit events, health endpoints, graceful shutdown, JSON errors with stable codes, `phenix doctor` with a redacted `--report`, CLI commands for disks, experiment files, logs, users and runtime settings with `-o` output formats and `--dry-run`, the experiment name in State of Health logs, a generated CLI reference, and CI checks for contracts, performance budgets, vulnerabilities and SBOMs, along with security and bug fixes.
+> 
+> Also add experiment packet captures, a new VNC console with VM tools, live tiles and a split view in place of the vendored noVNC page, the steps and the step times of an experiment start, stop and delete, a pool of read-only minimega connections, schedule warnings, pinned VLANs and ID ranges on the VLANs page, and confirmation of VM actions in the web UI.
+
+> caffeinated phenix
+
+### 🚀 Features
+
+- _(api)_ accept variables in workflow requests [_(7ed8b1aa)_](https://github.com/sandialabs/sceptre-phenix/commit/7ed8b1aad219bc9d6d332c216fc345ca030cb430) ([PR 576](https://github.com/sandialabs/sceptre-phenix/pull/576))
+
+- Adding explicit launchability semantics for topology nodes [_(714c30fc)_](https://github.com/sandialabs/sceptre-phenix/commit/714c30fc8997093b7561f9620e62c17b6620df21) ([PR 589](https://github.com/sandialabs/sceptre-phenix/pull/589))
+
+- _(startup)_ support phenix/startup-set-hostname annotation [_(64dad8d9)_](https://github.com/sandialabs/sceptre-phenix/commit/64dad8d90dc70795dbf7f7abd1b80888cfd25e9b) ([PR 581](https://github.com/sandialabs/sceptre-phenix/pull/581))
+
+### 🐛 Bug Fixes
+
+- _(soh)_ tolerate PowerShell progress output in Windows listener checks [_(0f8f8cac)_](https://github.com/sandialabs/sceptre-phenix/commit/0f8f8cacfa8e049bd562e431a667c5966822378a) ([PR 595](https://github.com/sandialabs/sceptre-phenix/pull/595))
+
+- _(plog)_ append to a new log file so other phenix processes' lines survive [_(8e3bfbe8)_](https://github.com/sandialabs/sceptre-phenix/commit/8e3bfbe860dba3bfd95e545aca50591cc41343ca) ([PR 600](https://github.com/sandialabs/sceptre-phenix/pull/600))
+
+- _(cli)_ remove the response body from the debug log [_(e9e61dae)_](https://github.com/sandialabs/sceptre-phenix/commit/e9e61daefedf5f1566ce9889a559eccb3d95d5c5) ([PR 597](https://github.com/sandialabs/sceptre-phenix/pull/597))
+
+- _(inject)_ match Windows inject paths regardless of case [_(e9202a64)_](https://github.com/sandialabs/sceptre-phenix/commit/e9202a64a4d3600738fb68d1d920406ca4c58387) ([PR 570](https://github.com/sandialabs/sceptre-phenix/pull/570))
+
+- _(topology)_ require external nodes to be explicitly true [_(8e093eb5)_](https://github.com/sandialabs/sceptre-phenix/commit/8e093eb5ab68e5f4d0ff83e25fd8709beef8cb59) ([PR 590](https://github.com/sandialabs/sceptre-phenix/pull/590))
+
+- _(image)_ restore nested template assets into new directories [_(4847da55)_](https://github.com/sandialabs/sceptre-phenix/commit/4847da55706d2a5823ddb8d01713d70d3d0aeccc) ([PR 569](https://github.com/sandialabs/sceptre-phenix/pull/569))
+
+- _(startup)_ stop adding the auto-logon user to Administrators [_(1367f8bd)_](https://github.com/sandialabs/sceptre-phenix/commit/1367f8bd1a95d343aaaf6e40009326419b66a2ba) ([PR 568](https://github.com/sandialabs/sceptre-phenix/pull/568))
+
+- _(startup)_ run the Windows startup task once per boot [_(b3839fa5)_](https://github.com/sandialabs/sceptre-phenix/commit/b3839fa519aceaab10c0fedc21440c336e662792) ([PR 567](https://github.com/sandialabs/sceptre-phenix/pull/567))
+
+- _(soh)_ send Windows listener checks as an encoded command [_(4cc10986)_](https://github.com/sandialabs/sceptre-phenix/commit/4cc1098633489b44fce756532822a6688436d7ea) ([PR 584](https://github.com/sandialabs/sceptre-phenix/pull/584))
+
+- _(vm)_ apply deletions when redeploying with replicated injects [_(a42fb98d)_](https://github.com/sandialabs/sceptre-phenix/commit/a42fb98d08a5afb386f407b72d6e255f419bc23d) ([PR 585](https://github.com/sandialabs/sceptre-phenix/pull/585))
+
+### 📚 Documentation
+
+- document caffeinated phenix and refactor docs [_(86fd7323)_](https://github.com/sandialabs/sceptre-phenix/commit/86fd73236988c7a1f40d672eedb5db2cd42904ad) ([PR 553](https://github.com/sandialabs/sceptre-phenix/pull/553))
+
+### 🧹 Chore
+
+- _(ci)_ add releasaurus to automate releases and changelog [_(d19dfdb9)_](https://github.com/sandialabs/sceptre-phenix/commit/d19dfdb9bacd82aeac221666e08da05dd8b2dc55) ([PR 601](https://github.com/sandialabs/sceptre-phenix/pull/601))
+
+- _(deps)_ bump the npm group deps which are safe [_(f7528604)_](https://github.com/sandialabs/sceptre-phenix/commit/f7528604f8c573d387bfa65100b508c9abaabc58) ([PR 586](https://github.com/sandialabs/sceptre-phenix/pull/586))
+
+- _(deps)_ bump the pip group in /docs with 2 updates [_(58a6ac31)_](https://github.com/sandialabs/sceptre-phenix/commit/58a6ac31147e5216f8f4bd20d952d1f75f8f14db) ([PR 573](https://github.com/sandialabs/sceptre-phenix/pull/573))
+
 ## Before automated releases
 
 Release notes above this section are generated from the Conventional Commit
