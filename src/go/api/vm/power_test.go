@@ -419,6 +419,18 @@ func TestResetDiskState(t *testing.T) {
 			},
 		},
 		{
+			name: "kills a paused VM before it resets its disk",
+			row:  []string{"compute1", "vm1", "5", "PAUSED", disk, "true"},
+			wantSent: func(dst string) []string {
+				return []string{
+					"vm info", "version", "capture", "vm kill vm1",
+					"mesh send compute1 disk snapshot " + disk + " " + tmpSnap,
+					"mesh send compute1 shell mv /phenix/images/" + tmpSnap + " " + dst,
+					"vm start vm1",
+				}
+			},
+		},
+		{
 			name: "resets the disk of a VM that has quit on the headnode",
 			row:  []string{"head", "vm1", "5", "QUIT", disk, "true"},
 			wantSent: func(dst string) []string {

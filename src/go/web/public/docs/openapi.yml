@@ -7655,7 +7655,8 @@ paths:
         - Virtual Machines
       summary: Reset a VM's disk
       description: >-
-        Stops the VM's packet captures and kills the VM. Then it replaces its
+        If the VM is running or paused, stops its packet captures and kills
+        it. Then it replaces its
         disk snapshot with a new one of its image, so the changes the VM made
         are lost. Then it starts the VM again and answers with it. The VM must
         run from
