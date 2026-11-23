@@ -20,8 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/capture"
 	"phenix/api/experiment"
 	"phenix/api/livecapture"
@@ -115,7 +113,7 @@ type sharkCaptureResponse struct {
 // captured is opened live.
 func CreateWebSharkCapture(w http.ResponseWriter, r *http.Request) error {
 	var (
-		exp = mux.Vars(r)["exp"]
+		exp = r.PathValue("exp")
 		req sharkCaptureRequest
 	)
 
@@ -499,7 +497,7 @@ func (c grantChecker) GetWebSharkJSON(w http.ResponseWriter, r *http.Request) {
 
 // GetWebSharkCaptureFile - GET /webshark/captures/{name}.
 func (c grantChecker) GetWebSharkCaptureFile(w http.ResponseWriter, r *http.Request) {
-	c.serveSharkCapture(w, r, mux.Vars(r)["name"], capability.OpView, false)
+	c.serveSharkCapture(w, r, r.PathValue("name"), capability.OpView, false)
 }
 
 // GetWebSharkWatch - GET /webshark/watch?capture=...

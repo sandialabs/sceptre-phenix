@@ -34,6 +34,16 @@ import (
 	"phenix/web/weberror"
 )
 
+// withPathValues sets the values of the path variables of r, as the router
+// sets those of the route that matches r, and returns r.
+func withPathValues(r *http.Request, values map[string]string) *http.Request {
+	for name, value := range values {
+		r.SetPathValue(name, value)
+	}
+
+	return r
+}
+
 // testRole returns a role with one policy.
 func testRole(resource, verb string, names ...string) rbac.Role {
 	return rbac.Role{
@@ -620,6 +630,19 @@ func serveRouter(t *testing.T, public fs.FS, jwtKey string) *httptest.Server {
 	t.Cleanup(server.Close)
 
 	return server
+}
+
+// socketRouter returns the router of the Unix socket, as [newSocketRouter]
+// builds it.
+func socketRouter(t *testing.T) http.Handler {
+	t.Helper()
+
+	router, err := newSocketRouter()
+	if err != nil {
+		t.Fatalf("newSocketRouter() error = %v", err)
+	}
+
+	return router
 }
 
 // do sends a request to the server and returns the response, which is closed

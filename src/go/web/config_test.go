@@ -17,7 +17,6 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/go-cmp/cmp"
-	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v3"
 
 	"phenix/store"
@@ -368,7 +367,7 @@ func TestConfigWritesCheckTheConfigTheyWrite(t *testing.T) {
 			req.Header.Set("Content-Type", mimeJSON)
 
 			if tt.vars != nil {
-				req = mux.SetURLVars(req, tt.vars)
+				req = withPathValues(req, tt.vars)
 			}
 
 			ctx := context.WithValue(req.Context(), middleware.ContextKeyRole, tt.role)
@@ -458,7 +457,7 @@ func TestConfigYAMLKeepsStrings(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/configs/scenario/exact?noupgrade=1", nil)
 	req.Header.Set("Accept", "application/x-yaml")
 
-	got := serve(GetConfig, mux.SetURLVars(req, map[string]string{"kind": "scenario", "name": "exact"}))
+	got := serve(GetConfig, withPathValues(req, map[string]string{"kind": "scenario", "name": "exact"}))
 	if err := loadProblem(got, "exact"); err != nil {
 		t.Errorf("GET /configs/scenario/exact: %v", err)
 	}

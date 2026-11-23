@@ -12,10 +12,10 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/google/go-cmp/cmp"
-	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v3"
 
 	"phenix/version"
+	"phenix/web/routing"
 )
 
 // openAPISpec maps each openapi.yml operation, keyed by scope (api or root), method and path,
@@ -28,8 +28,8 @@ func openAPIKey(scope, method, path string) string {
 	return scope + " " + strings.ToUpper(method) + " " + pathParams.ReplaceAllString(path, "{}")
 }
 
-// pathParams are the parameters of a path template, as OpenAPI and gorilla
-// write them (gorilla's with an optional pattern).
+// pathParams are the parameters of a path template, as OpenAPI and the router
+// write them.
 var pathParams = regexp.MustCompile(`\{[^}]*\}`)
 
 // loadOpenAPI reads the operations of public/docs/openapi.yml.
@@ -128,42 +128,43 @@ func (s openAPISpec) documents(method, path string, status int) bool {
 }
 
 // routerOperations are the router's operations, keyed as in an openAPISpec, with all features on,
-// each with the query parameters it needs, plus the paths of any-method routes (OPTIONS left out).
-func routerOperations(t *testing.T) (map[string][]string, []string) {
+// plus the paths of any-method routes (OPTIONS left out).
+func routerOperations(t *testing.T) (map[string]bool, []string) {
+	t.Helper()
+
+	return walkOperations(routerRoutes(t))
+}
+
+// routerRoutes are the router's routes, with all features on.
+func routerRoutes(t *testing.T) []routing.Route {
 	t.Helper()
 
 	server := serveContract(t, func(o *serverOptions) {
 		o.features = map[string]bool{"webshark": true, "vm-mount": true, "tunneler-download": true}
 	})
 
-	router, ok := server.Config.Handler.(*mux.Router)
+	router, ok := server.Config.Handler.(*routing.Mux)
 	if !ok {
-		t.Fatalf("contract server handler = %T, want *mux.Router", server.Config.Handler)
+		t.Fatalf("contract server handler = %T, want *routing.Mux", server.Config.Handler)
 	}
 
-	return walkOperations(t, router)
+	return router.Routes()
 }
 
-// walkOperations are the operations of router, as routerOperations returns them.
-func walkOperations(t *testing.T, router *mux.Router) (map[string][]string, []string) {
-	t.Helper()
-
+// walkOperations are the operations of routes, as routerOperations returns them.
+func walkOperations(routes []routing.Route) (map[string]bool, []string) {
 	var (
-		ops       = map[string][]string{}
+		ops       = map[string]bool{}
 		anyMethod []string
 	)
 
-	err := router.Walk(func(route *mux.Route, _ *mux.Router, _ []*mux.Route) error {
-		path, err := route.GetPathTemplate()
-		if err != nil {
-			return nil //nolint:nilerr // a route of no path, such as a subrouter's
-		}
+	for _, route := range routes {
+		path := route.Path
 
-		methods, err := route.GetMethods()
-		if err != nil {
+		if route.Method == "" {
 			anyMethod = append(anyMethod, path)
 
-			return nil //nolint:nilerr // a route of any method, which the caller checks
+			continue
 		}
 
 		scope := "root"
@@ -171,61 +172,41 @@ func walkOperations(t *testing.T, router *mux.Router) (map[string][]string, []st
 			scope, path = "api", rest
 		}
 
-		// a route of no query templates gives an error
-		queries, _ := route.GetQueriesTemplates()
-		names := make([]string, 0, len(queries))
-
-		for _, query := range queries {
-			name, _, _ := strings.Cut(query, "=")
-			names = append(names, name)
-		}
-
-		for _, method := range methods {
-			if method == http.MethodOptions {
-				continue
-			}
-
-			key := openAPIKey(scope, method, path)
-
-			cur := slices.Clone(names)
-
-			// two routes of one key need only the queries that both need
-			if prior, ok := ops[key]; ok {
-				cur = slices.DeleteFunc(cur, func(n string) bool { return !slices.Contains(prior, n) })
-			}
-
-			ops[key] = cur
-		}
-
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("Router.Walk() error = %v", err)
+		ops[openAPIKey(scope, route.Method, path)] = true
 	}
 
 	return ops, anyMethod
 }
 
-// Each method of a route gets its own queries, cut only by an earlier route of
-// that method and path.
-func TestWalkOperationsQueriesPerMethod(t *testing.T) {
-	router := mux.NewRouter()
-	router.Methods(http.MethodGet).Path("/x").Queries("a", "{a}")
-	router.Methods(http.MethodGet, http.MethodPost).Path("/x").Queries("a", "{a}", "b", "{b}")
+// headOperations are the HEAD operations that the GET routes serve, and the
+// GET operations of the routes WithoutHead, keyed as in an openAPISpec.
+func headOperations(routes []routing.Route) (map[string]bool, map[string]bool) {
+	heads, withoutHead := map[string]bool{}, map[string]bool{}
 
-	ops, _ := walkOperations(t, router)
+	for _, route := range routes {
+		if route.Method != http.MethodGet {
+			continue
+		}
 
-	want := map[string][]string{"root GET /x": {"a"}, "root POST /x": {"a", "b"}}
-	if diff := cmp.Diff(want, ops); diff != "" {
-		t.Errorf("walkOperations() mismatch (-want +got):\n%s", diff)
+		scope, path := "root", route.Path
+		if rest, ok := strings.CutPrefix(path, "/api/v1"); ok {
+			scope, path = "api", rest
+		}
+
+		if route.RefusesHead() {
+			withoutHead[openAPIKey(scope, http.MethodGet, path)] = true
+		} else {
+			heads[openAPIKey(scope, http.MethodHead, path)] = true
+		}
 	}
+
+	return heads, withoutHead
 }
 
-// routesOfAnyMethod are routes taking any method: UI files openapi.yml omits, and the API subrouter.
+// routesOfAnyMethod are routes taking any method: UI files openapi.yml omits.
 //
 //nolint:gochecknoglobals // constant table
 var routesOfAnyMethod = map[string]string{
-	"/api/v1":      "the API's subrouter; its routes are walked one by one",
 	"/webshark/":   "WebShark's pages and scripts, behind its own routes",
 	"/docs/":       "the documentation site",
 	"/assets/":     "the UI's hashed scripts, styles and images",
@@ -280,15 +261,18 @@ func TestOpenAPIVNCSessionIsJSON(t *testing.T) {
 }
 
 // Every router operation is in openapi.yml and vice versa, except any-method routes;
-// the Unix socket's routes are among the router's.
+// the Unix socket's routes are among the router's. openapi.yml may document the
+// HEAD that a GET route serves, and never one of a route WithoutHead.
 func TestRouterMatchesOpenAPI(t *testing.T) {
 	spec := loadOpenAPI(t)
-	router, anyMethod := routerOperations(t)
+	routes := routerRoutes(t)
+	router, anyMethod := walkOperations(routes)
+	heads, _ := headOperations(routes)
 
 	// an API route must name its methods to be compared with openapi.yml
 	for _, path := range anyMethod {
 		if routesOfAnyMethod[path] == "" {
-			t.Errorf("route %s takes any method: give it Methods(), or add it to routesOfAnyMethod", path)
+			t.Errorf("route %s takes any method: give it a method, or add it to routesOfAnyMethod", path)
 		}
 	}
 
@@ -299,10 +283,8 @@ func TestRouterMatchesOpenAPI(t *testing.T) {
 	}
 
 	for _, r := range socketRoutes() {
-		for _, method := range r.methods {
-			if key := openAPIKey("api", method, r.path); router[key] == nil {
-				t.Errorf("socket route %s is not an HTTP API route", key)
-			}
+		if key := openAPIKey("api", r.Method, r.Path); !router[key] {
+			t.Errorf("socket route %s is not an HTTP API route", key)
 		}
 	}
 
@@ -315,7 +297,7 @@ func TestRouterMatchesOpenAPI(t *testing.T) {
 	}
 
 	for key := range spec {
-		if _, ok := router[key]; !ok {
+		if _, ok := router[key]; !ok && !heads[key] {
 			extra = append(extra, key)
 		}
 	}
@@ -329,6 +311,49 @@ func TestRouterMatchesOpenAPI(t *testing.T) {
 
 	for _, key := range extra {
 		t.Errorf("openapi.yml describes %s, which the router does not serve", key)
+	}
+}
+
+// withoutHeadListed matches an item of the list in the description of
+// openapi.yml of the GET operations that do not take HEAD.
+var withoutHeadListed = regexp.MustCompile("(?m)^- `GET (/[^`]+)`$")
+
+// The routes WithoutHead are those that openapi.yml says do not take HEAD:
+// each GET that can answer 101, and the list in its description.
+func TestOpenAPIListsTheRoutesWithoutHead(t *testing.T) {
+	doc := loadOpenAPIDocument(t)
+
+	scope := func(item *openapi3.PathItem) string {
+		if len(item.Servers) > 0 && !strings.HasSuffix(item.Servers[0].URL, "/api/v1") {
+			return "root"
+		}
+
+		return "api"
+	}
+
+	documented := map[string]bool{}
+
+	for path, item := range doc.Paths {
+		if item.Get != nil && item.Get.Responses.Get(http.StatusSwitchingProtocols) != nil {
+			documented[openAPIKey(scope(item), http.MethodGet, path)] = true
+		}
+	}
+
+	for _, match := range withoutHeadListed.FindAllStringSubmatch(doc.Info.Description, -1) {
+		item := doc.Paths.Find(match[1])
+		if item == nil || item.Get == nil {
+			t.Errorf("openapi.yml lists GET %s as without HEAD, but has no such operation", match[1])
+
+			continue
+		}
+
+		documented[openAPIKey(scope(item), http.MethodGet, match[1])] = true
+	}
+
+	_, withoutHead := headOperations(routerRoutes(t))
+
+	if diff := cmp.Diff(withoutHead, documented); diff != "" {
+		t.Errorf("routes WithoutHead mismatch with openapi.yml (-router +openapi.yml):\n%s", diff)
 	}
 }
 
@@ -346,44 +371,32 @@ func TestRouterPathParametersMatchOpenAPI(t *testing.T) {
 		o.features = map[string]bool{"webshark": true, "vm-mount": true, "tunneler-download": true}
 	})
 
-	router, ok := server.Config.Handler.(*mux.Router)
+	router, ok := server.Config.Handler.(*routing.Mux)
 	if !ok {
-		t.Fatalf("contract server handler = %T, want *mux.Router", server.Config.Handler)
+		t.Fatalf("contract server handler = %T, want *routing.Mux", server.Config.Handler)
 	}
 
-	err := router.Walk(func(route *mux.Route, _ *mux.Router, _ []*mux.Route) error {
-		path, err := route.GetPathTemplate()
-		if err != nil {
-			return nil //nolint:nilerr // a route of no path, such as a subrouter's
-		}
-
-		path = strings.TrimPrefix(path, "/api/v1")
+	for _, route := range router.Routes() {
+		path := strings.TrimPrefix(route.Path, "/api/v1")
 
 		want, ok := spec[pathParams.ReplaceAllString(path, "{}")]
 		if !ok {
-			return nil
+			continue
 		}
 
 		if got := templateNames(path); !slices.Equal(got, want) {
 			t.Errorf("route %s path parameters = %v, openapi.yml names them %v", path, got, want)
 		}
-
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("Router.Walk() error = %v", err)
 	}
 }
 
-// templateNames are the names of the variables of a path template, in order,
-// without a gorilla pattern such as {id:[0-9]+}.
+// templateNames are the names of the variables of a path template, in order.
 func templateNames(path string) []string {
 	matches := pathParams.FindAllString(path, -1)
 	names := make([]string, 0, len(matches))
 
 	for _, match := range matches {
-		name, _, _ := strings.Cut(strings.Trim(match, "{}"), ":")
-		names = append(names, name)
+		names = append(names, strings.Trim(match, "{}"))
 	}
 
 	return names
@@ -557,11 +570,10 @@ func TestOpenAPIOperationsAreDescribed(t *testing.T) {
 	}
 }
 
-// TestRouterQueriesAreRequiredParameters asserts openapi.yml makes each query
-// parameter that a route needs (gorilla's Queries) a required parameter, since
-// the router answers 404 without it.
-func TestRouterQueriesAreRequiredParameters(t *testing.T) {
-	router, _ := routerOperations(t)
+// TestHandlerQueriesAreRequiredParameters asserts openapi.yml makes each query
+// parameter that a handler requires (handlerQueries) a required parameter,
+// since the handler answers 400 without it.
+func TestHandlerQueriesAreRequiredParameters(t *testing.T) {
 	required := map[string][]string{}
 
 	for path, item := range loadOpenAPIDocument(t).Paths {
@@ -585,10 +597,27 @@ func TestRouterQueriesAreRequiredParameters(t *testing.T) {
 		}
 	}
 
-	for key, queries := range router {
-		for _, name := range queries {
-			if !slices.Contains(required[key], name) {
-				t.Errorf("openapi.yml does not make %s query parameter %q required, which the router needs", key, name)
+	for route, queries := range handlerQueries {
+		method, path, _ := strings.Cut(route, " ")
+
+		scope := "root"
+		if rest, ok := strings.CutPrefix(path, "/api/v1"); ok {
+			scope, path = "api", rest
+		}
+
+		keys := []string{openAPIKey(scope, method, path)}
+
+		// the HEAD of a GET route needs them too, where openapi.yml describes it
+		head := openAPIKey(scope, http.MethodHead, path)
+		if _, ok := required[head]; ok && method == http.MethodGet {
+			keys = append(keys, head)
+		}
+
+		for _, key := range keys {
+			for _, name := range queries {
+				if !slices.Contains(required[key], name) {
+					t.Errorf("openapi.yml does not make %s query parameter %q required, which the handler needs", key, name)
+				}
 			}
 		}
 	}

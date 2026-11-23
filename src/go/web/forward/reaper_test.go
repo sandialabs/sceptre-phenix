@@ -13,7 +13,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/gorilla/mux"
 	"pgregory.net/rapid"
 
 	"phenix/store"
@@ -90,7 +89,7 @@ func useForwards(t *testing.T, running []string, tunnels []map[string]string, fo
 func listForwards(t *testing.T, exp, vm string) []string {
 	t.Helper()
 
-	router := mux.NewRouter()
+	router := http.NewServeMux()
 	router.Handle("/experiments/{exp}/vms/{name}/forwards", weberror.ErrorHandler(GetPortForwards))
 
 	role := rbac.Role{Spec: &v1.RoleSpec{Policies: []*v1.PolicySpec{

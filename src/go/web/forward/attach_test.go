@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/gorilla/mux"
 	"golang.org/x/net/websocket"
 
 	v1 "phenix/types/version/v1"
@@ -60,7 +59,7 @@ func echoListener(t *testing.T) int {
 func forwardAPI(t *testing.T, user string, role rbac.Role) string {
 	t.Helper()
 
-	router := mux.NewRouter()
+	router := http.NewServeMux()
 	router.Handle("/experiments/{exp}/vms/{name}/forwards/{host}/{port}/ws", weberror.ErrorHandler(GetPortForwardWebSocket))
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

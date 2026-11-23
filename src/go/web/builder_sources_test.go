@@ -24,6 +24,7 @@ import (
 	"phenix/store/storetest"
 	bdoc "phenix/types/builder"
 	"phenix/web/rbac"
+	"phenix/web/routing"
 	"phenix/web/weberror"
 )
 
@@ -1394,20 +1395,27 @@ func newBuilderStoreHarness(t *testing.T, records *memrecord.Store) *builderHarn
 		t.Fatalf("bapi.New returned error: %v", err)
 	}
 
-	router, api := newBuilderRouter()
-	api.Handle("/configs", weberror.ErrorHandler(GetConfigs)).Methods(http.MethodGet)
-	api.Handle("/configs", weberror.ErrorHandler(CreateConfig)).Methods(http.MethodPost)
-	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(GetConfig)).Methods(http.MethodGet)
-	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(UpdateConfig)).Methods(http.MethodPut)
-	api.Handle("/configs/{kind}/{name}", weberror.ErrorHandler(DeleteConfig)).Methods(http.MethodDelete)
+	api := newBuilderAPIGroup()
+	api.Routes = []routing.Route{
+		routing.Row(http.MethodGet, "/configs", weberror.ErrorHandler(GetConfigs)),
+		routing.Row(http.MethodPost, "/configs", weberror.ErrorHandler(CreateConfig)),
+		routing.Row(http.MethodGet, "/configs/{kind}/{name}", weberror.ErrorHandler(GetConfig)),
+		routing.Row(http.MethodPut, "/configs/{kind}/{name}", weberror.ErrorHandler(UpdateConfig)),
+		routing.Row(http.MethodDelete, "/configs/{kind}/{name}", weberror.ErrorHandler(DeleteConfig)),
+	}
 
 	files := filepath.Join(t.TempDir(), "phenix")
 
-	if err := registerBuilderRoutes(api, withBuilderDocumentFiles(files, filepath.Join(files, "mounts"))); err != nil {
+	if err := registerBuilderRoutes(&api, withBuilderDocumentFiles(files, filepath.Join(files, "mounts"))); err != nil {
 		t.Fatalf("registerBuilderRoutes returned error: %v", err)
 	}
 
-	return &builderHarness{t: t, router: router, service: service, store: records, files: files}
+	router, err := newBuilderRouter(api)
+	if err != nil {
+		t.Fatalf("newBuilderRouter() error = %v", err)
+	}
+
+	return &builderHarness{t: t, router: router, api: api, service: service, store: records, files: files}
 }
 
 // publishTopology stores two documents of target in the phenix store and the

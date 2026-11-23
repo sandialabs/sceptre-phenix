@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/gorilla/mux"
 
 	"phenix/app"
 	"phenix/util/polltest"
@@ -40,7 +39,7 @@ func TestCancelTriggeredAppsPublishesCanceled(t *testing.T) {
 	t.Cleanup(func() { pubsub.Unsubscribe("trigger-app", ch) })
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/experiments/exp/trigger?apps=one,two", nil)
-	req = mux.SetURLVars(req, map[string]string{"name": "exp"})
+	req = withPathValues(req, map[string]string{"name": "exp"})
 	req = req.WithContext(context.WithValue(req.Context(), middleware.ContextKeyRole,
 		testRole("experiments/trigger", "delete", "exp")))
 
@@ -72,7 +71,7 @@ func experimentAppsCancelRequest(t *testing.T, apps string, role rbac.Role) *htt
 	t.Helper()
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/experiments/exp/trigger?apps="+apps, nil)
-	req = mux.SetURLVars(req, map[string]string{"name": "exp"})
+	req = withPathValues(req, map[string]string{"name": "exp"})
 
 	return req.WithContext(context.WithValue(req.Context(), middleware.ContextKeyRole, role))
 }
@@ -181,7 +180,7 @@ func TestCancelTriggeredAppsWithoutAppsCancelsEveryApp(t *testing.T) {
 	})
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, "/experiments/every/trigger", nil)
-	req = mux.SetURLVars(req, map[string]string{"name": "every"})
+	req = withPathValues(req, map[string]string{"name": "every"})
 	req = req.WithContext(context.WithValue(req.Context(), middleware.ContextKeyRole,
 		testRole("experiments/trigger", "delete", "every")))
 

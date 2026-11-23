@@ -10,8 +10,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/disk"
 	"phenix/api/experiment"
 	"phenix/api/job"
@@ -38,8 +36,7 @@ func GetVMs(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role    = middleware.RoleFromContext(ctx)
-		vars    = mux.Vars(r)
-		expName = vars["exp"]
+		expName = r.PathValue("exp")
 		query   = r.URL.Query()
 		size    = query.Get("screenshot")
 		pageNum = query.Get("pageNum")
@@ -113,9 +110,8 @@ func GetVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role    = middleware.RoleFromContext(ctx)
-		vars    = mux.Vars(r)
-		expName = vars["exp"]
-		name    = vars["name"]
+		expName = r.PathValue("exp")
+		name    = r.PathValue("name")
 		query   = r.URL.Query()
 		size    = query.Get("screenshot")
 	)
@@ -297,9 +293,8 @@ func UpdateVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role    = middleware.RoleFromContext(ctx)
-		vars    = mux.Vars(r)
-		expName = vars["exp"]
-		name    = vars["name"]
+		expName = r.PathValue("exp")
+		name    = r.PathValue("name")
 	)
 
 	if !role.Allowed("vms", "patch", fmt.Sprintf("%s/%s", expName, name)) {
@@ -413,8 +408,7 @@ func UpdateVMs(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role    = middleware.RoleFromContext(ctx)
-		vars    = mux.Vars(r)
-		expName = vars["exp"]
+		expName = r.PathValue("exp")
 	)
 
 	body, err := io.ReadAll(r.Body)
@@ -657,9 +651,8 @@ func RedeployVM(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
-		vars     = mux.Vars(r)
-		expName  = vars["exp"]
-		name     = vars["name"]
+		expName  = r.PathValue("exp")
+		name     = r.PathValue("name")
 		fullName = expName + "/" + name
 	)
 
@@ -822,9 +815,8 @@ func GetScreenshot(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx   = r.Context()
 		role  = middleware.RoleFromContext(ctx)
-		vars  = mux.Vars(r)
-		exp   = vars["exp"]
-		name  = vars["name"]
+		exp   = r.PathValue("exp")
+		name  = r.PathValue("name")
 		query = r.URL.Query()
 		size  = query.Get("size")
 	)
@@ -886,9 +878,8 @@ func SaveScreenshot(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx   = r.Context()
 		role  = middleware.RoleFromContext(ctx)
-		vars  = mux.Vars(r)
-		exp   = vars["exp"]
-		name  = vars["name"]
+		exp   = r.PathValue("exp")
+		name  = r.PathValue("name")
 		saved = audit.Fields{Experiment: exp, VM: name}
 	)
 
@@ -1048,9 +1039,8 @@ func ChangeOpticalDisc(w http.ResponseWriter, r *http.Request) error {
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
 		query    = r.URL.Query()
-		vars     = mux.Vars(r)
-		exp      = vars["exp"]
-		name     = vars["name"]
+		exp      = r.PathValue("exp")
+		name     = r.PathValue("name")
 		isoPath  = query.Get("isoPath")
 		fullName = exp + "/" + name
 	)
@@ -1112,9 +1102,8 @@ func EjectOpticalDisc(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx      = r.Context()
 		role     = middleware.RoleFromContext(ctx)
-		vars     = mux.Vars(r)
-		exp      = vars["exp"]
-		name     = vars["name"]
+		exp      = r.PathValue("exp")
+		name     = r.PathValue("name")
 		fullName = exp + "/" + name
 	)
 

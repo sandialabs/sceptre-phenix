@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"net/http"
 
-	"github.com/gorilla/mux"
 	jsoniter "github.com/json-iterator/go"
 	"gopkg.in/yaml.v2"
 
@@ -29,8 +28,7 @@ func GetSchemaSpec(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		ver     = vars["version"]
+		ver     = r.PathValue("version")
 	)
 
 	if !role.Allowed("schemas", "get") {
@@ -113,9 +111,8 @@ func GetSchema(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		kind    = vars["kind"]
-		ver     = vars["version"]
+		kind    = r.PathValue("kind")
+		ver     = r.PathValue("version")
 	)
 
 	if !role.Allowed("schemas", "get", kind) {

@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/gorilla/mux"
 	"golang.org/x/net/websocket"
 	"pgregory.net/rapid"
 
@@ -267,7 +266,7 @@ func vncServe(
 	ctx = context.WithValue(ctx, middleware.ContextKeyUser, "alice")
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, vncPath+query, nil)
-	req = mux.SetURLVars(req, map[string]string{"exp": "test-experiment", "name": "test-vm"})
+	req = withPathValues(req, map[string]string{"exp": "test-experiment", "name": "test-vm"})
 
 	rec := httptest.NewRecorder()
 	weberror.ErrorHandler(h).ServeHTTP(rec, req)
@@ -624,7 +623,7 @@ func attachVNC(t *testing.T, attaches *audit.Repeats, user, vm string) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), middleware.ContextKeyRole, role)
 		ctx = context.WithValue(ctx, middleware.ContextKeyUser, user)
-		r = mux.SetURLVars(r.WithContext(ctx), map[string]string{"exp": "test-experiment", "name": vm})
+		r = withPathValues(r.WithContext(ctx), map[string]string{"exp": "test-experiment", "name": vm})
 
 		_ = serveVNCWebSocket(w, r, attaches)
 	}))

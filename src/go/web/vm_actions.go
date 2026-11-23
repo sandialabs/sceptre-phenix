@@ -10,8 +10,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/experiment"
 	"phenix/api/job"
 	"phenix/api/vm"
@@ -387,15 +385,13 @@ func serveVMAction(w http.ResponseWriter, r *http.Request, action string) error 
 	ctx, cancel := changeContext(r, vmChangeTimeout)
 	defer cancel()
 
-	vars := mux.Vars(r)
-
 	body, err := runVMAction(vmRequest{
 		ctx:   ctx,
 		r:     r,
 		role:  middleware.RoleFromContext(ctx),
 		user:  middleware.UserFromContext(ctx),
-		exp:   vars["exp"],
-		name:  vars["name"],
+		exp:   r.PathValue("exp"),
+		name:  r.PathValue("name"),
 		jobID: "",
 	}, vmActions[action])
 
@@ -439,7 +435,7 @@ func RunVMActions(w http.ResponseWriter, r *http.Request) error {
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
 		user = middleware.UserFromContext(ctx)
-		exp  = mux.Vars(r)["exp"]
+		exp  = r.PathValue("exp")
 		req  vmActionsRequest
 	)
 

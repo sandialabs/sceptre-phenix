@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	bapi "phenix/api/builder"
 	"phenix/store"
 	"phenix/util/plog"
@@ -103,7 +101,7 @@ func (b *builderAPI) getDocument(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	documentID := mux.Vars(r)["document"]
+	documentID := r.PathValue("document")
 
 	document, err := b.readableDocument(r, actor, documentID)
 	if err != nil {
@@ -145,7 +143,7 @@ func (b *builderAPI) getTopologyDocument(w http.ResponseWriter, r *http.Request)
 		return err
 	}
 
-	name := mux.Vars(r)["topology"]
+	name := r.PathValue("topology")
 
 	topology, resolved, err := b.readableTopologyDocument(r.Context(), actor, name)
 	if err != nil {
@@ -294,7 +292,7 @@ func (b *builderAPI) deleteDocument(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 
-	documentID := mux.Vars(r)["document"]
+	documentID := r.PathValue("document")
 
 	document, err := b.readableDocument(r, actor, documentID)
 	if err != nil {

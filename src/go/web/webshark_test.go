@@ -23,7 +23,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/gorilla/mux"
 	"pgregory.net/rapid"
 
 	"phenix/api/livecapture"
@@ -934,7 +933,7 @@ func websharkGrant(t *testing.T, target capability.Target, ops ...capability.Op)
 // capture name in the route.
 func websharkServe(h http.HandlerFunc, method, target, name string, header ...string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, target, nil)
-	req = mux.SetURLVars(req, map[string]string{"name": name})
+	req = withPathValues(req, map[string]string{"name": name})
 
 	for i := 0; i+1 < len(header); i += 2 {
 		req.Header.Set(header[i], header[i+1])

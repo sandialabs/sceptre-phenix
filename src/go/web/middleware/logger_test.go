@@ -209,6 +209,35 @@ func TestLogFullCopiesTheResponse(t *testing.T) {
 	}
 }
 
+// LogFull logs the answer to a HEAD request whose handler set a
+// Content-Length and wrote no body, as [http.ServeContent] does.
+//
+//nolint:paralleltest // captures the process-wide log
+func TestLogFullLogsAHeadAnswer(t *testing.T) {
+	logs := plogtest.Capture(t)
+
+	h := LogFull(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "2400")
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodHead, "/api/v1/logs/files/phenix", nil))
+
+	if n := len(httpRecords(t, logs, "error parsing http res")); n != 0 {
+		t.Errorf("LogFull logged %d response parse errors for HEAD, want 0", n)
+	}
+
+	res := httpRecords(t, logs, "HTTP response")
+	if len(res) != 1 || !strings.Contains(res[0]["response"].(string), "Content-Length: 2400") {
+		t.Errorf("LogFull response records = %v, want one with the Content-Length", res)
+	}
+
+	if got := rec.Header().Get("Content-Length"); got != "2400" {
+		t.Errorf("LogFull: Content-Length = %q, want 2400", got)
+	}
+}
+
 // failingBody is a request body whose reads fail.
 type failingBody struct{}
 
@@ -324,15 +353,15 @@ func TestAnswerOptions(t *testing.T) {
 
 			var reached bool
 
-			allowed := func(*http.Request) []string { return []string{http.MethodGet, http.MethodOptions} }
-
-			h := AnswerOptions(allowed)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			h := AnswerOptions(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				reached = true
 
 				_, _ = w.Write([]byte("ran"))
 			}))
 
+			// the router sets Allow before the middleware runs
 			rec := httptest.NewRecorder()
+			rec.Header().Set("Allow", "GET, OPTIONS")
 			h.ServeHTTP(rec, httptest.NewRequest(method, "/api/v1/experiments/exp", nil))
 
 			options := method == http.MethodOptions

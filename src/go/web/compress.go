@@ -64,6 +64,7 @@ func CompressResponses(h http.Handler) http.Handler {
 
 		cw := &compressWriter{
 			ResponseWriter: w, zw: nil, decided: false, code: 0, sniff: nil, stateETag: builderPath(r.URL.Path),
+			head: r.Method == http.MethodHead, wrote: false,
 		}
 		defer cw.close()
 
@@ -87,6 +88,9 @@ type compressWriter struct {
 	// stateETag is set for the Builder routes, whose every ETag names a
 	// stored revision or state, never the bytes of the response.
 	stateETag bool
+
+	// head is set for a HEAD request, and wrote once the handler writes to zw.
+	head, wrote bool
 }
 
 func (cw *compressWriter) WriteHeader(code int) {
@@ -178,6 +182,12 @@ func (cw *compressWriter) close() {
 		return
 	}
 
+	// a HEAD answer the handler gave no body, as ServeContent does, has no
+	// compressed size to report, not that of an empty gzip stream
+	if cw.head && !cw.wrote {
+		cw.zw.Reset(io.Discard)
+	}
+
 	_ = cw.zw.Close()
 	cw.zw.Reset(nil)
 	gzipWriters.Put(cw.zw)
@@ -250,6 +260,8 @@ func (cw *compressWriter) flushSniffed() error {
 
 func (cw *compressWriter) write(b []byte) (int, error) {
 	if cw.zw != nil {
+		cw.wrote = true
+
 		return cw.zw.Write(b)
 	}
 

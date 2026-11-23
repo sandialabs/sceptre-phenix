@@ -19,7 +19,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v3"
 
 	"phenix/api/config"
@@ -554,8 +553,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		name    = store.ConfigFullName(vars["kind"], vars["name"])
+		name    = store.ConfigFullName(r.PathValue("kind"), r.PathValue("name"))
 	)
 
 	if !role.Allowed("configs", "get", name) {
@@ -579,7 +577,7 @@ func GetConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if name == "" {
-		return unknownConfigKind(vars["kind"])
+		return unknownConfigKind(r.PathValue("kind"))
 	}
 
 	cfg, err := config.Get(name)
@@ -651,8 +649,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		name    = store.ConfigFullName(vars["kind"], vars["name"])
+		name    = store.ConfigFullName(r.PathValue("kind"), r.PathValue("name"))
 	)
 
 	if !role.Allowed("configs", "update", name) {
@@ -669,7 +666,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if name == "" {
-		return unknownConfigKind(vars["kind"])
+		return unknownConfigKind(r.PathValue("kind"))
 	}
 
 	ifRevision, err := ifMatchRevision(r, name)
@@ -701,7 +698,7 @@ func UpdateConfig(w http.ResponseWriter, r *http.Request) error {
 	// Reset experiment name in spec since we removed it before sending. A
 	// config without a spec fails validation in config.Update.
 	if c.Kind == kindExperiment && c.Spec != nil {
-		c.Spec["experimentName"] = vars["name"]
+		c.Spec["experimentName"] = r.PathValue("name")
 	}
 
 	c.IfRevision = ifRevision
@@ -828,8 +825,7 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx     = r.Context()
 		role, _ = ctx.Value(middleware.ContextKeyRole).(rbac.Role)
-		vars    = mux.Vars(r)
-		name    = store.ConfigFullName(vars["kind"], vars["name"])
+		name    = store.ConfigFullName(r.PathValue("kind"), r.PathValue("name"))
 	)
 
 	if !role.Allowed("configs", "delete", name) {
@@ -846,7 +842,7 @@ func DeleteConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if name == "" {
-		return unknownConfigKind(vars["kind"])
+		return unknownConfigKind(r.PathValue("kind"))
 	}
 
 	ifRevision, err := ifMatchRevision(r, name)

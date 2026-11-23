@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gorilla/mux"
-
 	"phenix/api/experiment"
 	"phenix/api/scorch"
 	"phenix/api/scorch/scorchmd"
@@ -27,7 +25,7 @@ func GetExperimentSchedulerInput(w http.ResponseWriter, r *http.Request) error {
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		name = mux.Vars(r)["name"]
+		name = r.PathValue("name")
 	)
 
 	// the input holds the whole spec, scenario app metadata included
@@ -93,9 +91,8 @@ func GetExperimentScorchComponentInput(w http.ResponseWriter, r *http.Request) e
 	var (
 		ctx  = r.Context()
 		role = middleware.RoleFromContext(ctx)
-		vars = mux.Vars(r)
-		name = vars["name"]
-		cmp  = vars["cmp"]
+		name = r.PathValue("name")
+		cmp  = r.PathValue("cmp")
 	)
 
 	// the input holds the whole stored config, scenario app metadata included
