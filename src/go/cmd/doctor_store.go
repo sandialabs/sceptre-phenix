@@ -212,7 +212,7 @@ type doctorVLANs struct {
 // doctorVM is a VM that phenix launches for a stored experiment: not external, and not do-not-boot.
 type doctorVM struct {
 	name     string
-	snapshot bool     // minimega runs the VM on a snapshot of its first drive, so it does not write to that image
+	snapshot bool     // minimega runs the VM on snapshots of its drives, so it does not write to their images
 	images   []string // the drive images, as the topology names them
 	cc       string   // why phenix needs a miniccc client in the VM, or ""
 	injects  []string // the sources of the files minimega injects into the snapshot, as the topology gives them

@@ -1606,7 +1606,7 @@
             },
             "snapshot": {
               "default": true,
-              "description": "Run the VM on a copy-on-write snapshot of its first drive, which phenix creates for the experiment and injects files into, so the image file itself does not change. phenix turns this on when it is not set.",
+              "description": "Run the VM on copy-on-write snapshots of its drives, which phenix creates for the experiment, so the image files themselves do not change. phenix injects files only into the snapshot of the first drive. phenix turns this on when it is not set.",
               "examples": [
                 true
               ],
@@ -1650,7 +1650,7 @@
               "type": "string"
             },
             "drives": {
-              "description": "Disks attached to the VM, in order. The first is the one phenix snapshots and injects files into.",
+              "description": "Disks attached to the VM, in order. phenix injects files only into the first.",
               "items": {
                 "properties": {
                   "cache_mode": {

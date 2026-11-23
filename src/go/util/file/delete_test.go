@@ -196,6 +196,118 @@ func TestDeleteExistingFiles(t *testing.T) { //nolint:paralleltest // shares the
 	}
 }
 
+func TestDeleteNumberedFiles(t *testing.T) { //nolint:paralleltest // shares the fake minimega
+	for name, tc := range map[string]struct {
+		answers  map[string][]*minicli.Response // by command; anything else succeeds with no output
+		names    []string
+		prefixes []string
+		want     []string
+	}{
+		"deletes the named files and the numbered files of each prefix, where they are": {
+			answers: map[string][]*minicli.Response{
+				"mesh send all file list /h_foo_*": {
+					fileListing("n1", "h_foo_web_snapshot_2", "h_foo_web_snapshot_10", "h_foo_db_snapshot_1"),
+					fileListing("n2", "h_foo_web_snapshot_1"),
+				},
+				"file list /h_foo_*": {fileListing("head", "h_foo_web_snapshot", "h_foo_web_snapshot_2")},
+			},
+			names:    []string{"h_foo_web_snapshot", "h_foo_web_snapshot_1", "h_foo_db_snapshot"},
+			prefixes: []string{"h_foo_web_snapshot", "h_foo_db_snapshot"},
+			want: []string{
+				"mesh send all file list /h_foo_*",
+				"file list /h_foo_*",
+				"file delete h_foo_web_snapshot",
+				"mesh send n2 file delete h_foo_web_snapshot_1",
+				"mesh send n1 file delete h_foo_db_snapshot_1",
+				"mesh send n1 file delete h_foo_web_snapshot_10",
+				"mesh send n1 file delete h_foo_web_snapshot_2",
+				"file delete h_foo_web_snapshot_2",
+			},
+		},
+		"leaves the files of another VM or experiment that share the prefix": {
+			answers: map[string][]*minicli.Response{
+				"file list /h_foo_web_snapshot*": {fileListing("head",
+					"h_foo_web_snapshot_1_snapshot", "h_foo_web_snapshot_1_snapshot_1", "h_foo_web_snapshot_",
+					"h_foo_web_snapshot_1a", "h_foo_web_snapshot_x1", "h_foo_web_snapshot.1", "h_foo_web_snapshot_٣",
+				)},
+			},
+			prefixes: []string{"h_foo_web_snapshot"},
+			want:     []string{"mesh send all file list /h_foo_web_snapshot*", "file list /h_foo_web_snapshot*"},
+		},
+		"leaves the files of an experiment whose name starts with the experiment's": {
+			answers: map[string][]*minicli.Response{
+				"file list /h_foo_*": {fileListing("head", "h_foo_bar_web_snapshot_1", "h_foo_web_snapshot_1")},
+			},
+			prefixes: []string{"h_foo_web_snapshot", "h_foo_db_snapshot"},
+			want: []string{
+				"mesh send all file list /h_foo_*",
+				"file list /h_foo_*",
+				"file delete h_foo_web_snapshot_1",
+			},
+		},
+		"deletes only the named files everywhere when a node cannot list": {
+			answers: map[string][]*minicli.Response{
+				"mesh send all file list /h_foo_web_snapshot*": {{Host: "n1", Error: "timed out"}},
+			},
+			names:    []string{"h_foo_web_snapshot"},
+			prefixes: []string{"h_foo_web_snapshot"},
+			want: []string{
+				"mesh send all file list /h_foo_web_snapshot*",
+				"mesh send all file delete h_foo_web_snapshot",
+				"file delete h_foo_web_snapshot",
+			},
+		},
+		"ignores a prefix that is not safe in a command": {
+			answers: map[string][]*minicli.Response{
+				"file list /h_foo_web_snapshot*": {fileListing("head", "h_foo_web_snapshot", "h_foo_w*b_snapshot_1")},
+			},
+			names:    []string{"h_foo_web_snapshot"},
+			prefixes: []string{"h_foo_w*b_snapshot"},
+			want: []string{
+				"mesh send all file list /h_foo_web_snapshot*",
+				"file list /h_foo_web_snapshot*",
+				"file delete h_foo_web_snapshot",
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			received := mmtest.Use(t, func(cmd mmtest.Command) []*minicli.Response {
+				return tc.answers[cmd.Base]
+			})
+
+			err := DeleteNumberedFiles(tc.names, tc.prefixes)
+			if err != nil {
+				t.Errorf("DeleteNumberedFiles(%q, %q) error = %v, want nil", tc.names, tc.prefixes, err)
+			}
+
+			if diff := cmp.Diff(tc.want, mmtest.Bases(received()), cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("DeleteNumberedFiles(%q, %q) commands mismatch (-want +got):\n%s", tc.names, tc.prefixes, diff)
+			}
+		})
+	}
+}
+
+// Without a way to find the files, DeleteNumberedFiles deletes only the named files.
+//
+//nolint:paralleltest // replaces package globals
+func TestDeleteNumberedFilesThroughDeleteFile(t *testing.T) {
+	original := DefaultClusterFiles
+
+	t.Cleanup(func() { DefaultClusterFiles = original })
+
+	files := &deleteFailingFiles{ClusterFiles: nil, fail: "", deleted: nil}
+	DefaultClusterFiles = files
+
+	err := DeleteNumberedFiles([]string{"x", "x_1"}, []string{"x"})
+	if err != nil {
+		t.Errorf("DeleteNumberedFiles() error = %v, want nil", err)
+	}
+
+	if diff := cmp.Diff([]string{"x", "x_1"}, files.deleted); diff != "" {
+		t.Errorf("DeleteNumberedFiles() deleted mismatch (-want +got):\n%s", diff)
+	}
+}
+
 // deleteFailingFiles is a ClusterFiles that cannot tell where files are and fails
 // to delete the file named fail; other methods panic through the nil embedded interface.
 type deleteFailingFiles struct {

@@ -291,7 +291,7 @@ func mmCheckEnv() checkEnv {
 type diskUse struct {
 	vm, drive, image string
 	index            int
-	snapshot         bool // the VM's first drive, which minimega snapshots on the head node
+	snapshot         bool // a drive of a VM with snapshot set, which minimega snapshots on the head node
 	readOnly         bool // qemu opens the image read-only: a CD-ROM, or a drive of a VM with snapshot set
 }
 
@@ -477,7 +477,7 @@ func collectDisks(spec ifaces.ExperimentSpec, scope diskScope, dir string) (map[
 			iso := strings.EqualFold(filepath.Ext(d.Image()), ".iso")
 
 			add(diskUse{
-				vm: hostname, drive: driveDisk, image: d.Image(), index: i, snapshot: i == 0 && snapshot, readOnly: snapshot,
+				vm: hostname, drive: driveDisk, image: d.Image(), index: i, snapshot: snapshot, readOnly: snapshot,
 			}, iso)
 		}
 
