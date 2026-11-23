@@ -100,7 +100,7 @@ jobs:
 
       - name: Log in to GitHub Docker Registry
         if: env.PUSH == 'true'
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -233,7 +233,7 @@ jobs:
       # a release attaches them and fails without them, other builds keep them as an artifact.
       - name: SBOM of the phenix image
         continue-on-error: ${{ !env.RELEASE_TAG }}
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
           format: spdx-json
@@ -242,7 +242,7 @@ jobs:
           upload-release-assets: false
       - name: SBOM of the JIT UI image
         continue-on-error: ${{ !env.RELEASE_TAG }}
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ fromJSON(steps.meta-jit.outputs.json).tags[0] }}
           format: spdx-json
@@ -264,7 +264,7 @@ jobs:
       - name: SBOM of the Debian package
         if: steps.deb.outcome == 'success'
         continue-on-error: ${{ !env.RELEASE_TAG }}
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: build/sbom-root/${{ steps.deb.outputs.name }}
           format: spdx-json
