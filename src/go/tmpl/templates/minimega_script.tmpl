@@ -51,9 +51,6 @@ vm config disk {{ .Hardware.DiskConfig ($.SnapshotName .General.Hostname) }}
         {{- else }}
 vm config disk {{ .Hardware.DiskConfig "" }}
         {{- end }}
-        {{- if and (eq .Hardware.OSType "linux") (not (index .Advanced "vga")) }}
-vm config vga qxl
-        {{- end }}
         {{- if .Network }}
 vm config net {{ .Network.InterfaceConfig }}
         {{- end }}

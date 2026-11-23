@@ -261,7 +261,7 @@ func scriptBlocks(script string) map[string][]string {
 }
 
 // The minimega script turns on lossy VNC updates once for each KVM VM that is not external, before the
-// topology's overrides. A Linux VM gets the qxl video card through vm config vga, unless the topology sets vga.
+// topology's overrides. It sets a video card only for a VM whose topology sets vga.
 func TestMinimegaScriptVNCSettings(t *testing.T) {
 	t.Parallel()
 
@@ -300,7 +300,6 @@ func TestMinimegaScriptVNCSettings(t *testing.T) {
 		"vm config memory 0",
 		"vm config snapshot false",
 		"vm config disk image.qc2",
-		"vm config vga qxl",
 		"vm config net phenix,EXP_1",
 		lossyOverride,
 		`.preprocess false vm config qemu-override "-vnc unix:" "-vnc lossy=on,share=force-shared,vnc=unix:"`,
@@ -318,7 +317,7 @@ func TestMinimegaScriptVNCSettings(t *testing.T) {
 	}{
 		"virtio-vm":    {lossy: true, vga: []string{"vm config vga virtio"}},
 		"windows-vm":   {lossy: true},
-		"container-vm": {lossy: false, vga: []string{"vm config vga qxl"}},
+		"container-vm": {lossy: false},
 		"external-vm":  {missing: true},
 	}
 
@@ -352,8 +351,7 @@ func TestMinimegaScriptVNCSettings(t *testing.T) {
 	}
 }
 
-// The packet capture script gives each capture VM the qxl video card through vm config vga, and turns on lossy
-// VNC updates for it.
+// The packet capture script turns on lossy VNC updates for each capture VM and sets no video card.
 func TestPacketCaptureScriptVNCSettings(t *testing.T) {
 	t.Parallel()
 
@@ -385,18 +383,16 @@ func TestPacketCaptureScriptVNCSettings(t *testing.T) {
 	for _, vm := range []string{"elastic", "monitor"} {
 		lines := blocks[vm]
 
-		vga := slices.Index(lines, "vm config vga qxl")
 		lossy := slices.Index(lines, lossyOverride)
 		launch := slices.Index(lines, "vm launch kvm "+vm)
 
-		if vga < 0 || lossy < 0 || launch < 0 || lossy > launch || vga > launch {
-			t.Errorf("packet capture script for %s = %q, want vm config vga qxl and the lossy override before the launch",
-				vm, lines)
+		if lossy < 0 || launch < 0 || lossy > launch {
+			t.Errorf("packet capture script for %s = %q, want the lossy override before the launch", vm, lines)
 		}
 
 		for _, line := range lines {
-			if strings.Contains(line, "-vga") {
-				t.Errorf("packet capture script for %s has %q, want no -vga", vm, line)
+			if strings.Contains(line, "vga") {
+				t.Errorf("packet capture script for %s has %q, want no video card", vm, line)
 			}
 		}
 	}
