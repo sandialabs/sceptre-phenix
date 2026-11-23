@@ -195,10 +195,11 @@ func brokerBroadcasts(t *testing.T, prefix string) func() []string {
 					break
 				}
 
-				// a probe only shows the client registered; it may arrive late
+				// a probe only shows the client registered; it may arrive late.
+				// Broadcasts before the first probe were queued by earlier tests.
 				if m.Resource.Type == "experiment/vm/probe" {
 					probed.Store(true)
-				} else if strings.HasPrefix(m.Resource.Type, prefix) {
+				} else if probed.Load() && strings.HasPrefix(m.Resource.Type, prefix) {
 					mu.Lock()
 					got = append(got, m.Resource.Type+" "+m.Resource.Name+" "+m.Resource.Action)
 					mu.Unlock()
