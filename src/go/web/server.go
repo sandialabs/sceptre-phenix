@@ -590,6 +590,8 @@ func newRouter(assets http.FileSystem, builderOpts ...builderOption) (*mux.Route
 	api.Handle("/vms", weberror.ErrorHandler(GetAllVMs)).Methods("GET", "OPTIONS")
 	api.Handle("/applications", weberror.ErrorHandler(GetApplications)).Methods("GET", "OPTIONS")
 	api.Handle("/topologies", weberror.ErrorHandler(GetTopologies)).Methods("GET", "OPTIONS")
+	api.Handle("/topologies/{topo}/launchable-vm-names", weberror.ErrorHandler(GetTopologyLaunchableVMNames)).
+		Methods("GET", "OPTIONS")
 	api.Handle("/topologies/{topo}/scenarios", weberror.ErrorHandler(GetScenarios)).Methods("GET", "OPTIONS")
 	api.Handle("/hosts", weberror.ErrorHandler(GetClusterHosts)).Methods("GET", "OPTIONS")
 	// the literal VLAN paths come before /vlans/{id}, which would match them too

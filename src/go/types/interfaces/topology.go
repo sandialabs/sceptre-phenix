@@ -5,7 +5,8 @@ import "time"
 type TopologySpec interface { //nolint:interfacebloat // legacy interface
 	IncludedTopologies() []string
 	Nodes() []NodeSpec
-	BootableNodes() []NodeSpec
+	LaunchableNodes() []NodeSpec
+	LaunchableVMNames() []string
 	SchedulableNodes(string) []NodeSpec
 
 	FindNodeByName(string) NodeSpec
