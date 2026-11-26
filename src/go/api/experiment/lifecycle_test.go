@@ -383,6 +383,7 @@ func TestDelete(t *testing.T) { //nolint:paralleltest // replaces package global
 		exp         string
 		status      map[string]any
 		deleteErr   error
+		clearErr    error    // error of clearing the minimega namespace
 		wantErr     []string // parts of the error
 		wantDeleted []string
 		wantStored  bool
@@ -398,6 +399,14 @@ func TestDelete(t *testing.T) { //nolint:paralleltest // replaces package global
 			wantDeleted: []string{"exp/miniccc_responses"}, wantHooks: 1,
 		},
 		{
+			name: "a namespace minimega does not know", exp: "exp", clearErr: errors.New("clearing minimega namespace: unknown namespace: exp"),
+			wantDeleted: []string{"exp/miniccc_responses", "head_exp_vm1_snapshot"}, wantHooks: 1,
+		},
+		{
+			name: "a namespace minimega cannot clear", exp: "exp", clearErr: errors.New("scheduler still running for namespace"),
+			wantErr: []string{"clearing minimega namespace of experiment exp", "scheduler still running"}, wantStored: true,
+		},
+		{
 			name: "a running experiment", exp: "exp", status: map[string]any{"startTime": stopTestStart},
 			wantErr: []string{"cannot delete a running experiment"}, wantStored: true,
 		},
@@ -407,7 +416,7 @@ func TestDelete(t *testing.T) { //nolint:paralleltest // replaces package global
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			storetest.Use(t)
-			useStartMM(t, &startMM{})
+			fake := useStartMM(t, &startMM{clearErr: tc.clearErr})
 
 			files := useDeletedFiles(t)
 			files.err = tc.deleteErr
@@ -441,6 +450,10 @@ func TestDelete(t *testing.T) { //nolint:paralleltest // replaces package global
 
 			if _, err := os.Stat(base); errors.Is(err, fs.ErrNotExist) == tc.wantStored {
 				t.Errorf("os.Stat(base directory) after Delete(%s) error = %v, want it gone %t", tc.exp, err, !tc.wantStored)
+			}
+
+			if tc.exp == "exp" && tc.status == nil && len(fake.cleared) != 1 {
+				t.Errorf("Delete(%s) cleared namespaces %v, want just exp", tc.exp, fake.cleared)
 			}
 
 			if *deleted != tc.wantHooks {

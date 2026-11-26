@@ -1465,8 +1465,10 @@ func validateTriggerApps(exp *types.Experiment, stage app.Action, apps []string)
 	return nil
 }
 
-// Delete deletes the stopped experiment name: its config, then its files. A
-// delete through the web API passes DeleteWithBaseDirInside. Once the config
+// Delete deletes the stopped experiment name: it clears the experiment's minimega
+// namespace, so VMs a failed or racing stop left behind do not outlive it, then
+// deletes its config, then its files. When minimega cannot clear the namespace,
+// the experiment stays. A delete through the web API passes DeleteWithBaseDirInside. Once the config
 // is gone, it logs the time of each step and the total at info level.
 func Delete(name string, opts ...DeleteOption) error {
 	o := newDeleteOptions(opts...)
@@ -1479,6 +1481,12 @@ func Delete(name string, opts ...DeleteOption) error {
 	_, err := config.Get("experiment/" + name)
 	if err != nil {
 		return fmt.Errorf("getting experiment %s: %w", name, notFound(err))
+	}
+
+	// A stopped experiment normally has no namespace, which minimega reports as unknown.
+	err = mm.ClearNamespace(name)
+	if err != nil && !strings.Contains(err.Error(), "unknown namespace") {
+		return fmt.Errorf("clearing minimega namespace of experiment %s: %w", name, err)
 	}
 
 	// The delete config hook (see hookDelete) deletes the experiment's files
